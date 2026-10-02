@@ -1,0 +1,56 @@
+# Ragpit
+
+2D-Pixel-Sandbox mit Ragdoll-Physik, Flüssigkeiten und Pixel-Gore. Gebaut mit Godot 4.4 und GDScript.
+
+Du wirfst eine Pixel-Puppe durch einen dunklen Raum, schneidest sie mit der Klinge, setzt sie in Brand oder frierst sie ein. Ein Statuspanel zeigt dir live ihre Werte und Zustände.
+
+## Starten
+
+1. Installiere Godot 4.4 oder neuer.
+2. Öffne den Ordner im Projektmanager über "Importieren".
+3. Drücke F5.
+
+## Steuerung
+
+| Eingabe | Aktion |
+| --- | --- |
+| Linke Maustaste oder Finger | Werkzeug benutzen |
+| Klick auf die Toolbar | Werkzeug wählen |
+| 1 bis 7 | Werkzeug wählen |
+| N | Neue Puppe |
+| R | Reset |
+
+## Werkzeuge
+
+1. Greifen: Puppe packen, ziehen und werfen.
+2. Wasser: Wasser aus dem Cursor gießen.
+3. Klinge: Schnell durch die Puppe ziehen. Schnelle Schnitte trennen Glieder ab.
+4. Feuer: Flammen setzen. Die Puppe fängt Feuer. Wasser löscht.
+5. Eis: Eisblöcke setzen. Kontakt friert die Puppe ein.
+6. Neue Puppe: Lässt eine neue Puppe unter der Lampe fallen.
+7. Reset: Leert den Raum und stellt eine Puppe hin.
+
+## Statuspanel
+
+Balken: KO Bewusstsein, BL Blut, PN Schmerz, O2 Sauerstoff, HR Herzschlag.
+
+Tags: OUT, BLEED, FIRE, CHOKE, AGONY, HEAL, BLADE, TORN, FROZEN.
+
+- Offene Wunden senken BL. Unter 35 BL wird OUT aktiv.
+- Treffer erhöhen PN. Ab 65 PN wird AGONY aktiv.
+- Kopf unter Wasser senkt O2 und aktiviert CHOKE.
+- Abgetrennte Glieder aktivieren TORN.
+- Nach 4 Sekunden ohne Schaden startet HEAL. Werte steigen langsam, Wunden schließen sich.
+
+## Aufbau
+
+| Datei | Inhalt |
+| --- | --- |
+| `scripts/world.gd` | Falling-Sand-Raster mit Wasser, Blut, Feuer, Eis, Dampf und Rauch. Rendert über Image und ImageTexture. |
+| `scripts/doll.gd` | Verlet-Ragdoll mit Gelenkgrenzen, Wunden, Blutung, Abtrennen und Vitalwerten. |
+| `scripts/ui.gd` | Statuspanel, Toolbar und Cursor, komplett per `_draw()`. |
+| `scripts/pixel_font.gd` | Eigene 3x5-Pixelschrift. |
+| `scripts/background.gd` | Raum und Deckenlampe. |
+| `scripts/main.gd` | Szenenaufbau, Eingabe, Werkzeuge und Lichtkegel. |
+
+Das Spiel rendert in 384 x 216 Pixeln und skaliert mit Nearest-Filter auf die Fenstergröße.
