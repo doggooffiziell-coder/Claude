@@ -65,12 +65,21 @@ body {
 // ======================================================================
 
 // The room grows sideways to match wide phone screens, so nothing gets letterboxed.
+// It measures the free area inside the safe margins, so the notch side does not
+// squeeze the picture into bars at the top and bottom.
 const idealWidth = () => {
-  const a = Math.max(innerWidth, innerHeight) / Math.max(1, Math.min(innerWidth, innerHeight));
+  let w = innerWidth, h = innerHeight;
+  const st = document.getElementById("stage");
+  if (st) {
+    const cs = getComputedStyle(st);
+    w = st.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    h = st.clientHeight;
+  }
+  const a = Math.max(w, h) / Math.max(1, Math.min(w, h));
   return Math.min(1248, Math.max(768, Math.round(432 * a / 48) * 48));
 };
 const W = idealWidth(), H = 432, N = W * H;
-const LOADED_PORTRAIT = innerHeight > innerWidth;
+
 const FLOOR_Y = 372;
 const CHUNK = 16, CW = W / CHUNK, CH = Math.ceil(H / CHUNK);
 const DT = 1 / 60;
@@ -2173,10 +2182,14 @@ function fit() {
   K = canvas.width / W;
   buildStatic();
 }
+let refitTimer = 0;
 window.addEventListener("resize", () => {
-  // Opened upright and turned sideways: restart once with a room as wide as the screen.
-  if (LOADED_PORTRAIT && innerWidth > innerHeight && idealWidth() - W >= 96) { location.reload(); return; }
   fit();
+  // Turned sideways or the free area changed a lot: restart once with a room that fits.
+  clearTimeout(refitTimer);
+  refitTimer = setTimeout(() => {
+    if (innerWidth > innerHeight && Math.abs(idealWidth() - W) >= 96) location.reload();
+  }, 400);
 });
 window.addEventListener("orientationchange", () => setTimeout(fit, 200));
 
