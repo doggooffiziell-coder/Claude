@@ -16,7 +16,9 @@ Die Web-Version zeichnet Puppen und Fleischfetzen als große Pixel-Art mit schwa
 
 Die Infusion hängt einen Blutbeutel mit Schlauch an die Puppe. Sie füllt Blut auf, schließt Wunden, senkt Schmerz und holt die Puppe zurück, solange der Kopf dran ist.
 
-`web/ragpit.html` ist die Seite für die Claude-Artifact-Ansicht. `web/index.html` ist dieselbe Seite als vollständige HTML-Datei mit App-Symbol (`web/icon-180.png`). Liegt sie auf einer eigenen Adresse wie GitHub Pages, startet sie vom Home-Bildschirm im Vollbild ohne Browserleiste.
+`web/ragpit.html` ist die Seite für die Claude-Artifact-Ansicht. `docs/index.html` ist dieselbe Seite als vollständige HTML-Datei mit App-Symbol für GitHub Pages. Nach jeder Änderung an `web/ragpit.html` baut `web/build.sh` die Datei neu.
+
+Mit GitHub Pages läuft das Spiel unter https://doggooffiziell-coder.github.io/Claude/ und startet vom Home-Bildschirm im Vollbild ohne Browserleiste.
 
 Der Raum passt seine Breite an den Bildschirm an, damit links und rechts keine schwarzen Balken bleiben.
 
