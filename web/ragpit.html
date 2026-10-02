@@ -545,6 +545,9 @@ class Doll {
     this.noAir = 0; this.beat = false; this.severCd = 0; this.woundCd = 0; this.burnImmune = 0;
     this.standing = false;
     this.iv = 0; this.ivX = 0; this.ivY = 0;
+    this.stagger = 0;
+    this.koTimer = 0; this.koLatched = false; this.dyingTimer = 0; this.stillTime = 0; this.getUp = 0; this.getUpCd = 0;
+    this.crippled = new Array(PART_COUNT).fill(false);
   }
 
   // ------------------------------------------------ physics
@@ -561,7 +564,8 @@ class Doll {
         vy += g * 0.12;
         if (vx * vx + vy * vy > 64) splash(x, y, vx / DT, vy / DT);
       } else {
-        vx *= 0.998; vy *= 0.998;
+        const drag = this.grabbed >= 0 ? 0.93 : 0.998;
+        vx *= drag; vy *= drag;
         // Static friction: slow points resting on the ground settle down.
         if (vx * vx + vy * vy < 2.5) {
           const f = solidAt(x, y + this.rad[i] + 1.2) ? 0.6 : 0.9;
@@ -573,7 +577,11 @@ class Doll {
       if (sp > MAX_STEP) { vx *= MAX_STEP / sp; vy *= MAX_STEP / sp; }
       this.integrate(i, vx, vy);
     }
-    this.balance();
+    this.updateCripple();
+    // A held doll swings but does not spin like a propeller.
+    this.dampSpin(this.grabbed >= 0 ? 0.25 : 0.02);
+    this.behave();
+    if (this.getUp <= 0) this.balance();
     for (let it = 0; it < ITERATIONS; it++) {
       for (let k = 0; k < PART_COUNT; k++) this.solveDistance(this.pa[k], this.pb[k], this.restLen[k]);
       this.solveJoints();
@@ -591,11 +599,12 @@ class Doll {
     this.updateVitals();
   }
 
+  // The grabbed point follows the finger with a little give instead of snapping to it.
   moveGrabbed(i) {
     const x = this.x[i], y = this.y[i];
-    let tx = this.gx, ty = this.gy;
-    const d = Math.hypot(tx - x, ty - y);
-    if (d > MAX_STEP) { tx = x + (tx - x) * MAX_STEP / d; ty = y + (ty - y) * MAX_STEP / d; }
+    let tx = x + (this.gx - x) * 0.5, ty = y + (this.gy - y) * 0.5;
+    const d = Math.hypot(tx - x, ty - y), cap = 22;
+    if (d > cap) { tx = x + (tx - x) * cap / d; ty = y + (ty - y) * cap / d; }
     const r = this.rad[i];
     if (solidAt(tx, ty + r) || solidAt(tx - r, ty) || solidAt(tx + r, ty)) { tx = x; ty = y; }
     this.ox[i] = x; this.oy[i] = y;
@@ -624,11 +633,143 @@ class Doll {
     if (speed > WOUND_SPEED * 0.75 && this.impactCd[i] <= 0) { this.impactCd[i] = 0.15; this.onImpact(i, speed); }
   }
 
+  // Removes part of the spin around the center of mass.
+  dampSpin(f) {
+    const n = this.x.length;
+    let cx = 0, cy = 0, vx = 0, vy = 0;
+    for (let i = 0; i < n; i++) { cx += this.x[i]; cy += this.y[i]; vx += this.x[i] - this.ox[i]; vy += this.y[i] - this.oy[i]; }
+    cx /= n; cy /= n; vx /= n; vy /= n;
+    let L = 0, I = 0;
+    for (let i = 0; i < n; i++) {
+      const rx = this.x[i] - cx, ry = this.y[i] - cy;
+      const ux = this.x[i] - this.ox[i] - vx, uy = this.y[i] - this.oy[i] - vy;
+      L += rx * uy - ry * ux; I += rx * rx + ry * ry;
+    }
+    if (I < 1) return;
+    const w = (L / I) * f;
+    for (let i = 0; i < n; i++) {
+      if (i === this.grabbed) continue;
+      this.ox[i] -= w * (this.y[i] - cy);
+      this.oy[i] += w * (this.x[i] - cx);
+    }
+  }
+
+  // A limb counts as crippled when it is gone or bleeds hard.
+  updateCripple() {
+    const bleed = new Array(PART_COUNT).fill(0);
+    for (const w of this.wounds) bleed[w.part] += w.bleed;
+    for (let k = 0; k < PART_COUNT; k++) this.crippled[k] = !this.attached(k) || bleed[k] > 0.5 || this.char[k] > 0.7;
+  }
+
+  legsWork() {
+    return this.attached(PELVIS) && ![THIGH_L, SHIN_L, THIGH_R, SHIN_R].some((k) => this.crippled[k]);
+  }
+
+  // Blends a point's velocity toward a target, which moves it smoothly without overshoot.
+  steer(i, tx, ty, speed, k) {
+    if (i === this.grabbed) return;
+    const dx = tx - this.x[i], dy = ty - this.y[i], d = Math.hypot(dx, dy) || 1;
+    const vx = this.x[i] - this.ox[i], vy = this.y[i] - this.oy[i];
+    const nvx = lerp(vx, dx / d * speed, k), nvy = lerp(vy, dy / d * speed, k);
+    this.ox[i] = this.x[i] - nvx; this.oy[i] = this.y[i] - nvy;
+  }
+
+  push(i, ix, iy) {
+    if (i === this.grabbed) return;
+    this.ox[i] -= ix; this.oy[i] -= iy;
+  }
+
+  // Reactions that match the doll's condition: death twitches, breathing,
+  // flailing, writhing, holding the wound and getting back up.
+  behave() {
+    const ends = [];
+    for (const k of [LARM_L, LARM_R, FOOT_L, FOOT_R, SHIN_L, SHIN_R]) if (this.attached(k)) ends.push(this.pb[k]);
+    if (this.dead) {
+      if (this.dyingTimer > 0) {
+        this.dyingTimer -= DT;
+        if (ends.length && Math.random() < this.dyingTimer * 0.25) {
+          const i = ends[rnd(ends.length)];
+          this.push(i, rf(-1.5, 1.5) * this.dyingTimer, rf(-2, 0.5) * this.dyingTimer);
+        }
+      }
+      return;
+    }
+    if (this.isOut()) {
+      // Slow breathing lifts the chest a little.
+      if (this.attached(TORSO)) this.push(this.pa[TORSO], 0, Math.sin(performance.now() * 0.0018 + this.id) * 0.012);
+      return;
+    }
+    if (this.grabbed >= 0 || this.frozen) { this.getUp = 0; this.stillTime = 0; return; }
+
+    let maxV = 0;
+    for (let i = 0; i < this.x.length; i++) maxV = Math.max(maxV, Math.hypot(this.x[i] - this.ox[i], this.y[i] - this.oy[i]));
+
+    if (this.burn > 0 || this.headUnder) {
+      // Panic: flail arms and kick legs.
+      if (ends.length && Math.random() < 0.45) this.push(ends[rnd(ends.length)], rf(-2.4, 2.4), rf(-3, 0.5));
+    } else if (!this.standing && this.pn > 35 && ends.length && Math.random() < this.pn / 100 * 0.28) {
+      // Writhing in pain on the floor.
+      const i = ends[rnd(ends.length)];
+      const healthyArm = this.owner[i] === LARM_L || this.owner[i] === LARM_R;
+      if (!this.crippled[this.owner[i]] || !healthyArm) this.push(i, rf(-1.2, 1.2), rf(-1.6, 0.2));
+    }
+
+    // Press a hand onto the worst bleeding wound.
+    if (this.pn > 20) {
+      let worst = null;
+      for (const w of this.wounds) if (w.bleed > 0.15 && this.attached(w.part) && w.part !== LARM_L && w.part !== LARM_R && (!worst || w.bleed > worst.bleed)) worst = w;
+      if (worst) {
+        const [wx, wy] = this.woundPos(worst);
+        let best = -1, bd = Infinity;
+        for (const k of [LARM_R, LARM_L]) {
+          if (this.crippled[k] || this.crippled[k === LARM_R ? UARM_R : UARM_L]) continue;
+          const h = this.pb[k], dd = Math.hypot(this.x[h] - wx, this.y[h] - wy);
+          if (dd < bd) { bd = dd; best = h; }
+        }
+        if (best >= 0 && bd > 6) this.steer(best, wx, wy, Math.min(2.5, bd * 0.08), 0.15);
+      }
+    }
+
+    // Get back up after lying still for a moment, if the legs still work.
+    this.getUpCd = Math.max(0, this.getUpCd - DT);
+    this.stillTime = maxV < 2 ? this.stillTime + DT : 0;
+    const able = this.legsWork() && this.pn < 70 && this.bl > 45 && this.burn <= 0 && !this.headUnder;
+    if (this.getUp <= 0 && !this.standing && able && this.stillTime > 1.2 && this.getUpCd <= 0) { this.getUp = 1.6; this.getUpCd = 5; }
+    if (this.getUp > 0) {
+      if (!able) { this.getUp = 0; return; }
+      this.getUp -= DT;
+      const p = 1 - this.getUp / 1.6;
+      let feetX = 0, n = 0, ground = 0;
+      for (const k of [FOOT_L, FOOT_R]) if (this.attached(k)) { feetX += this.x[this.pa[k]]; n++; }
+      for (let i = 0; i < this.x.length; i++) ground = Math.max(ground, this.y[i] + this.rad[i]);
+      if (!n) { this.getUp = 0; return; }
+      this.poseToward(feetX / n, Math.min(ground, FLOOR_Y) - 1, 0.03 + 0.12 * p, true);
+    }
+  }
+
+  // Pulls the attached body points toward the standing pose above (fx, gy).
+  poseToward(fx, gy, s, withFeet) {
+    for (let i = 0; i < POSE.length; i++) {
+      const foot = i === P_ANKLE_L || i === P_ANKLE_R || i === P_TOE_L || i === P_TOE_R;
+      if ((foot && !withFeet) || !this.attached(this.owner[i]) || i === this.grabbed) continue;
+      const keep = withFeet ? 0.7 : 0.88;
+      const vx = (this.x[i] - this.ox[i]) * keep, vy = (this.y[i] - this.oy[i]) * keep;
+      this.x[i] += (fx + POSE[i][0] - this.x[i]) * s;
+      this.y[i] += (gy + POSE[i][1] - this.y[i]) * s;
+      this.ox[i] = this.x[i] - vx; this.oy[i] = this.y[i] - vy;
+    }
+  }
+
   // A conscious doll with its feet on the floor keeps its body over its feet.
   balance() {
     this.standing = false;
+    this.stagger = Math.max(0, this.stagger - DT);
+    // A hard shove to the upper body knocks the doll off its feet for a moment.
+    const nv = Math.hypot(this.x[P_NECK] - this.ox[P_NECK], this.y[P_NECK] - this.oy[P_NECK]);
+    if (nv > 5) this.stagger = Math.max(this.stagger, 1.4);
+    if (this.stagger > 0) return;
     if (this.dead || this.frozen || this.grabbed >= 0 || this.isOut() || this.pn > 90) return;
-    if (!this.attached(PELVIS) || !(this.attached(SHIN_L) || this.attached(SHIN_R))) return;
+    if (!this.legsWork()) return;
     let grounded = false, feetX = 0, feet = 0;
     for (const k of [FOOT_L, FOOT_R]) {
       if (!this.attached(k)) continue;
@@ -641,16 +782,10 @@ class Doll {
     const groundY = Math.max(this.y[P_ANKLE_L], this.y[P_ANKLE_R]) + 8;
     if (this.y[P_NECK] > this.y[P_HIP] - 30 || this.y[P_HIP] > groundY - 40 || Math.abs(this.x[P_NECK] - feetX) > 36) return;
     this.standing = true;
-    // Pull every attached body point toward the standing pose above the feet.
-    const s = 0.15 * clamp(this.ko / 100, 0, 1);
-    for (let i = 0; i < POSE.length; i++) {
-      if (i === P_ANKLE_L || i === P_ANKLE_R || i === P_TOE_L || i === P_TOE_R) continue;
-      if (!this.attached(this.owner[i])) continue;
-      const vx = (this.x[i] - this.ox[i]) * 0.7, vy = (this.y[i] - this.oy[i]) * 0.7;
-      this.x[i] += (feetX + POSE[i][0] - this.x[i]) * s;
-      this.y[i] += (groundY + POSE[i][1] - this.y[i]) * s;
-      this.ox[i] = this.x[i] - vx; this.oy[i] = this.y[i] - vy;
-    }
+    // Pain weakens the stance, so a hurt doll sways and wobbles.
+    const s = 0.15 * clamp(this.ko / 100, 0, 1) * (1 - this.pn / 160);
+    this.poseToward(feetX, groundY, s, false);
+    if (this.pn > 40 && Math.random() < 0.08) this.push(P_NECK, rf(-1, 1) * this.pn / 60, 0);
   }
 
   solveDistance(a, b, rest) {
@@ -684,13 +819,15 @@ class Doll {
     else if (!this.dead && !this.isOut()) muscle = 0.06 * clamp(this.ko / 100, 0, 1);
     for (const j of this.joints) {
       if (!j.active) continue;
+      const limp = !this.frozen && (this.crippled[j.child] || (j.parent !== TORSO && this.crippled[j.parent]));
+      const m = limp ? 0 : muscle;
       const [jp, op, cp] = this.jointIds(j);
       const jx = this.x[jp], jy = this.y[jp];
       const rel = this.jointRel(j);
       // A joint bent far past its limit counts as dislocated and stays loose.
       if (Math.abs(rel) > j.half + 0.8) continue;
       let target = clamp(rel, -j.half, j.half);
-      if (muscle > 0) target = lerp(target, this.frozen ? j.frozenRel : j.rest, muscle);
+      if (m > 0) target = lerp(target, this.frozen ? j.frozenRel : j.rest, m);
       let diff = target - rel;
       if (Math.abs(diff) < 0.0001) continue;
       const wc = cp === this.grabbed ? 0 : this.inv[cp];
@@ -740,7 +877,7 @@ class Doll {
     const force = speed - WOUND_SPEED * 0.75;
     this.pn = Math.min(100, this.pn + force / 30);
     this.damaged();
-    if (k === HEAD) this.ko -= force / 16;
+    if (k === HEAD) this.ko -= force / 9;
     if (speed > WOUND_SPEED && this.woundCd <= 0) {
       this.woundCd = 0.12;
       const t = k === HEAD ? Math.random() : (i === this.pa[k] ? 0.15 : 0.85);
@@ -887,8 +1024,11 @@ class Doll {
   }
   applyHeat(x, y, r) { if (this.near(x, y, r)) this.burn = Math.max(this.burn, 5); }
   applyCold(x, y, r) { if (this.near(x, y, r)) { this.freeze = Math.min(1.6, this.freeze + DT * 1.1); this.burn = 0; } }
-  damaged() { this.sinceDamage = 0; this.hurtFlash = 1; }
-  die() { this.dead = true; this.ko = 0; }
+  damaged() { this.sinceDamage = 0; this.hurtFlash = 1; this.stagger = Math.max(this.stagger, 0.6); }
+  die() {
+    if (!this.dead) this.dyingTimer = 2.4;
+    this.dead = true; this.ko = 0; this.getUp = 0;
+  }
 
   burst(x, y, count, dx, dy, speed) {
     if (this.bl <= 1) return;
@@ -1006,9 +1146,7 @@ class Doll {
     this.o2 = Math.min(100, this.o2 + 10 * DT);
     for (const w of this.wounds) if (this.attached(w.part)) w.bleed = Math.max(0, w.bleed - (w.stump ? 0.3 : 0.5) * DT);
     for (let k = 0; k < PART_COUNT; k++) this.stain[k] = Math.max(0, this.stain[k] - 0.05 * DT);
-    if (this.dead && this.attached(HEAD) && this.bl > 45) {
-      this.dead = false; this.ko = 15; this.noAir = 0; this.hr = 40; this.o2 = Math.max(this.o2, 40);
-    }
+    if (this.koTimer > 0) this.koTimer -= DT * 2;
     if (!this.dead) this.ko = Math.min(100, this.ko + 9 * DT);
   }
 
@@ -1071,8 +1209,12 @@ class Doll {
     cap = Math.max(0, cap);
     if (this.dead) this.ko = 0;
     else if (this.ko > cap) this.ko = moveToward(this.ko, cap, 25 * DT);
-    else this.ko = moveToward(this.ko, cap, (this.healing ? 6 : 2) * DT);
+    else if (this.koTimer <= 0) this.ko = moveToward(this.ko, cap, (this.healing || this.isOut() ? 6 : 2) * DT);
     this.ko = clamp(this.ko, 0, 100);
+    // Knocked out: stays down for a few seconds before waking up again.
+    if (!this.dead && this.ko <= 10 && !this.koLatched) { this.koTimer = rf(4, 7); this.koLatched = true; }
+    if (this.ko > 30) this.koLatched = false;
+    if (this.koTimer > 0) { this.koTimer -= DT; this.ko = Math.min(this.ko, 10); }
 
     if (!this.dead && (this.bl <= 8 || this.noAir > 6)) this.die();
 
@@ -1087,7 +1229,8 @@ class Doll {
     }
   }
 
-  isOut() { return this.dead || this.ko <= 10 || this.bl < OUT_BL; }
+  isOut() { return this.dead || this.koTimer > 0 || this.ko <= 20 || this.bl < OUT_BL; }
+  stateName() { return this.dead ? "TOT" : this.isOut() ? "K.O." : "WACH"; }
   attached(k) {
     while (k >= 0) { if (this.severed[k] || this.gone[k]) return false; k = PARENT[k]; }
     return true;
@@ -1096,7 +1239,7 @@ class Doll {
     const bleeding = this.wounds.some((w) => w.bleed > 0 && this.attached(w.part));
     return {
       OUT: this.isOut(), BLEED: bleeding && this.bl > 0, FIRE: this.burn > 0,
-      CHOKE: this.headUnder && !this.dead, AGONY: this.pn >= AGONY_PN && !this.dead,
+      CHOKE: this.headUnder && !this.dead, AGONY: this.pn >= AGONY_PN && !this.isOut(),
       HEAL: this.healing || this.iv > 0, BLADE: this.bladeTimer > 0, TORN: this.severed.includes(true), FROZEN: this.frozen,
     };
   }
@@ -1555,7 +1698,11 @@ function drawPanel(d) {
   ctx.fillStyle = "#0a0a0d"; ctx.fill();
   if (!d) { label("KEINE PUPPE", px0 + pw / 2, by0 + bh0 / 2, 12, "#55555e", "center"); return; }
   label("P" + d.id, bx0 + 8, by0 + 12, 12, "#5a5a64");
-  if (d.dead) label("TOT", bx0 + 8, by0 + 28, 12, "#e0303f");
+  const st = d.stateName();
+  const stc = st === "TOT" ? "#e0303f" : st === "K.O." ? "#f0b030" : "#4ccf5a";
+  rr(bx0 + 6, by0 + 24, 48, 17, 8.5);
+  ctx.fillStyle = stc; ctx.fill();
+  label(st, bx0 + 30, by0 + 33, 10, "#101013", "center");
   if (d.hr > 1) drawEcg(bx0 + bw0 - 40, by0 + 13, 32, d.beatFlash);
   drawMini(d, px0 + pw / 2, by0 + 52, 2.6);
 
@@ -1867,7 +2014,8 @@ function press() {
       const [i, dist] = d.nearestPoint(state.mx, state.my, bestD);
       if (i >= 0) { bestD = dist; best = d; }
     }
-    if (best) { best.attachInfusion(); state.selected = best; state.toast = 1.2; state.toastText = "Infusion angelegt"; }
+    if (best && best.dead) { state.selected = best; state.toast = 1.6; state.toastText = "Tot. Keine Rettung mehr"; }
+    else if (best) { best.attachInfusion(); state.selected = best; state.toast = 1.2; state.toastText = "Infusion angelegt"; }
     return;
   }
   if (state.tool === T_GRAB) {
