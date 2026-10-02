@@ -1,7 +1,7 @@
 <title>Ragpit</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Silkscreen:wght@400;700&display=swap">
 <style>
 /* One dark game screen: the canvas sits centered and fills the phone in landscape. */
 :root {
@@ -71,7 +71,7 @@ const CHUNK = 16, CW = W / CHUNK, CH = Math.ceil(H / CHUNK);
 const DT = 1 / 60;
 const GRAVITY = 840;
 const EMPTY = 0, WALL = 1, WATER = 2, BLOOD = 3, FIRE = 4, ICE = 5, STEAM = 6, SMOKE = 7;
-const FONT = '"Chakra Petch", "Arial Narrow", system-ui, sans-serif';
+const FONT = '"Silkscreen", "Courier New", monospace';
 
 const rnd = (n) => (Math.random() * n) | 0;
 const rf = (a, b) => a + Math.random() * (b - a);
@@ -449,7 +449,7 @@ let gibs = [];
 const COL_MEAT = hex("#8e1424"), COL_MEAT_HI = hex("#c8445a"), COL_BONE = hex("#ece3cf");
 function spawnGib(x, y, vx, vy, bone = false) {
   if (gibs.length > 220) gibs.shift();
-  gibs.push({ x, y, vx, vy, r: bone ? rf(1.4, 2.4) : rf(1.8, 3.6), rot: rf(0, 6.28), vr: rf(-12, 12), bone, bleed: rf(1, 3), still: 0 });
+  gibs.push({ x, y, vx, vy, r: bone ? rf(4, 6) : rf(4, 8.5), rot: rf(0, 6.28), vr: rf(-12, 12), bone, bleed: rf(1, 3), still: 0 });
 }
 function stepGibs() {
   for (const g of gibs) {
@@ -480,25 +480,28 @@ const PART_COUNT = 13;
 const PART_A = [P_NECK, P_NECK, P_WAIST, P_NECK, P_ELBOW_L, P_NECK, P_ELBOW_R, P_HIP, P_KNEE_L, P_ANKLE_L, P_HIP, P_KNEE_R, P_ANKLE_R];
 const PART_B = [P_HEAD, P_WAIST, P_HIP, P_ELBOW_L, P_HAND_L, P_ELBOW_R, P_HAND_R, P_KNEE_L, P_ANKLE_L, P_TOE_L, P_KNEE_R, P_ANKLE_R, P_TOE_R];
 const PARENT = [TORSO, -1, TORSO, TORSO, UARM_L, TORSO, UARM_R, PELVIS, THIGH_L, SHIN_L, PELVIS, THIGH_R, SHIN_R];
-const WIDTH = [4, 12, 10, 6, 5.5, 6, 5.5, 8, 6.5, 4.5, 8, 6.5, 4.5];
+const WIDTH = [16, 38, 34, 16, 14, 16, 14, 20, 16, 13, 20, 16, 13];
 const FAR_SIDE = [false, false, false, true, true, false, false, true, true, true, false, false, false];
 const DRAW_ORDER = [UARM_L, LARM_L, THIGH_L, SHIN_L, FOOT_L, PELVIS, TORSO, HEAD, THIGH_R, SHIN_R, FOOT_R, UARM_R, LARM_R];
 const POINT_OWNER = [HEAD, TORSO, TORSO, PELVIS, UARM_L, LARM_L, UARM_R, LARM_R, THIGH_L, SHIN_L, FOOT_L, THIGH_R, SHIN_R, FOOT_R];
 const POINT_INV_MASS = [0.8, 0.6, 0.5, 0.6, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
 // Standing pose, facing right. Origin sits on the floor between the feet.
-const POSE = [[0, -74], [0, -64], [0, -44], [0, -36], [-2, -50], [0, -36], [2, -50], [4, -36],
-  [-2, -20], [-2, -4], [4, -2], [2, -20], [2, -4], [8, -2]];
+const POSE = [[0, -162], [0, -144], [0, -92], [0, -74], [-21, -122], [-27, -97], [21, -122], [27, -97],
+  [-9, -41], [-11, -8], [-4, -6], [9, -41], [11, -8], [18, -6]];
+// Collision radius of every body point, so the thick limbs rest on the floor.
+const POINT_R = [17, 9, 14, 14, 8, 7, 8, 7, 9, 7, 5, 9, 7, 5];
 // child, parent, joint on parent end A, min and max degrees
 const JOINTS = [
   [HEAD, TORSO, true, -35, 35], [PELVIS, TORSO, false, -35, 45],
   [UARM_L, TORSO, true, 30, 330], [UARM_R, TORSO, true, 30, 330],
-  [LARM_L, UARM_L, false, -150, 0], [LARM_R, UARM_R, false, -150, 0],
+  [LARM_L, UARM_L, false, -150, 60], [LARM_R, UARM_R, false, -150, 60],
   [THIGH_L, PELVIS, false, -120, 30], [THIGH_R, PELVIS, false, -120, 30],
-  [SHIN_L, THIGH_L, false, -10, 150], [SHIN_R, THIGH_R, false, -10, 150],
-  [FOOT_L, SHIN_L, false, -140, -30], [FOOT_R, SHIN_R, false, -140, -30],
+  [SHIN_L, THIGH_L, false, -30, 150], [SHIN_R, THIGH_R, false, -30, 150],
+  [FOOT_L, SHIN_L, false, -160, -20], [FOOT_R, SHIN_R, false, -160, -20],
 ];
-const ITERATIONS = 8, HEAD_R = 8.5, MAX_STEP = 28;
-const WOUND_SPEED = 400, SEVER_SPEED = 900, GIB_SPEED = 1450, MAX_WOUNDS = 40, OUT_BL = 35, AGONY_PN = 65;
+const IV_TIME = 12;
+const ITERATIONS = 8, HEAD_R = 19, MAX_STEP = 40, DOLL_GRAVITY = 1300;
+const WOUND_SPEED = 650, SEVER_SPEED = 1450, GIB_SPEED = 2100, MAX_WOUNDS = 40, OUT_BL = 35, AGONY_PN = 65;
 const COL_SKIN = hex("#ebe7dc"), COL_SKIN_FAR = hex("#c7c2b5"), COL_LINE = hex("#121214");
 const COL_CHAR = hex("#2e2622"), COL_ICE = hex("#a6d6f6"), COL_HURT = hex("#ff6a6a");
 const COL_GORE = hex("#7a0a16"), COL_GORE_DARK = hex("#3a0207"), COL_FLESH = hex("#c43248");
@@ -508,8 +511,9 @@ class Doll {
   constructor(bx, by, id) {
     this.id = id;
     this.x = []; this.y = []; this.ox = []; this.oy = [];
-    this.inv = []; this.owner = []; this.impactCd = [];
+    this.inv = []; this.owner = []; this.impactCd = []; this.rad = [];
     for (let i = 0; i < POSE.length; i++) {
+      this.rad.push(POINT_R[i]);
       this.x.push(bx + POSE[i][0]); this.y.push(by + POSE[i][1]);
       this.ox.push(bx + POSE[i][0]); this.oy.push(by + POSE[i][1]);
       this.inv.push(POINT_INV_MASS[i]); this.owner.push(POINT_OWNER[i]); this.impactCd.push(0);
@@ -535,11 +539,12 @@ class Doll {
     this.beatPhase = 0; this.beatFlash = 0; this.hurtFlash = 0;
     this.noAir = 0; this.beat = false; this.severCd = 0; this.woundCd = 0; this.burnImmune = 0;
     this.standing = false;
+    this.iv = 0; this.ivX = 0; this.ivY = 0;
   }
 
   // ------------------------------------------------ physics
   step() {
-    const g = GRAVITY * DT * DT;
+    const g = DOLL_GRAVITY * DT * DT;
     const feet0 = [this.x[P_ANKLE_L], this.x[P_TOE_L], this.x[P_ANKLE_R], this.x[P_TOE_R]];
     for (let i = 0; i < this.x.length; i++) {
       this.impactCd[i] = Math.max(0, this.impactCd[i] - DT);
@@ -549,12 +554,12 @@ class Doll {
       if (liquidAt(x, y)) {
         vx *= 0.86; vy *= 0.86;
         vy += g * 0.12;
-        if (vx * vx + vy * vy > 25) splash(x, y, vx / DT, vy / DT);
+        if (vx * vx + vy * vy > 64) splash(x, y, vx / DT, vy / DT);
       } else {
         vx *= 0.998; vy *= 0.998;
         // Static friction: slow points resting on the ground settle down.
-        if (vx * vx + vy * vy < 1) {
-          const f = solidAt(x, y + 1.2) ? 0.6 : 0.9;
+        if (vx * vx + vy * vy < 2.5) {
+          const f = solidAt(x, y + this.rad[i] + 1.2) ? 0.6 : 0.9;
           vx *= f; vy *= f;
         }
         vy += g;
@@ -586,7 +591,8 @@ class Doll {
     let tx = this.gx, ty = this.gy;
     const d = Math.hypot(tx - x, ty - y);
     if (d > MAX_STEP) { tx = x + (tx - x) * MAX_STEP / d; ty = y + (ty - y) * MAX_STEP / d; }
-    if (solidAt(tx, ty)) { tx = x; ty = y; }
+    const r = this.rad[i];
+    if (solidAt(tx, ty + r) || solidAt(tx - r, ty) || solidAt(tx + r, ty)) { tx = x; ty = y; }
     this.ox[i] = x; this.oy[i] = y;
     this.x[i] = tx; this.y[i] = ty;
   }
@@ -595,14 +601,17 @@ class Doll {
     let x = this.x[i], y = this.y[i];
     const steps = Math.max(1, Math.ceil(Math.max(Math.abs(vx), Math.abs(vy))));
     let sx = vx / steps, sy = vy / steps, hit = 0;
+    const r = this.rad[i], r6 = r * 0.6;
     for (let s = 0; s < steps; s++) {
       if (sx !== 0) {
-        const nx = x + sx;
-        if (solidAt(nx, y)) { hit = Math.max(hit, Math.abs(vx)); vx *= -0.25; sx = 0; } else x = nx;
+        const nx = x + sx, px0 = nx + Math.sign(sx) * r;
+        if (solidAt(px0, y)) { hit = Math.max(hit, Math.abs(vx)); vx *= -0.25; sx = 0; } else x = nx;
       }
       if (sy !== 0) {
-        const ny = y + sy;
-        if (solidAt(x, ny)) { hit = Math.max(hit, Math.abs(vy)); if (vy > 0) vx *= 0.6; vy *= -0.2; sy = 0; } else y = ny;
+        const ny = y + sy, py0 = ny + Math.sign(sy) * r, py1 = ny + Math.sign(sy) * r * 0.8;
+        if (solidAt(x, py0) || solidAt(x - r6, py1) || solidAt(x + r6, py1)) {
+          hit = Math.max(hit, Math.abs(vy)); if (vy > 0) vx *= 0.6; vy *= -0.2; sy = 0;
+        } else y = ny;
       }
     }
     this.x[i] = x; this.y[i] = y; this.ox[i] = x - vx; this.oy[i] = y - vy;
@@ -620,12 +629,12 @@ class Doll {
       if (!this.attached(k)) continue;
       const a = this.pa[k], b = this.pb[k];
       feetX += this.x[a]; feet++;
-      if (solidAt(this.x[a], this.y[a] + 5) || solidAt(this.x[b], this.y[b] + 5)) grounded = true;
+      if (solidAt(this.x[a], this.y[a] + this.rad[a] + 4) || solidAt(this.x[b], this.y[b] + this.rad[b] + 4)) grounded = true;
     }
     if (!grounded || feet === 0) return;
     feetX /= feet;
-    const groundY = Math.max(this.y[P_ANKLE_L], this.y[P_ANKLE_R]) + 4;
-    if (this.y[P_NECK] > this.y[P_HIP] - 14 || this.y[P_HIP] > groundY - 20 || Math.abs(this.x[P_NECK] - feetX) > 18) return;
+    const groundY = Math.max(this.y[P_ANKLE_L], this.y[P_ANKLE_R]) + 8;
+    if (this.y[P_NECK] > this.y[P_HIP] - 30 || this.y[P_HIP] > groundY - 40 || Math.abs(this.x[P_NECK] - feetX) > 36) return;
     this.standing = true;
     // Pull every attached body point toward the standing pose above the feet.
     const s = 0.15 * clamp(this.ko / 100, 0, 1);
@@ -704,35 +713,19 @@ class Doll {
     }
   }
 
-  // A point pushed into a solid cell returns to free space and loses most of its speed.
+  // A point whose circle overlaps a solid cell moves back out and loses most of its speed.
   pushOut(i) {
-    const x = this.x[i], y = this.y[i];
-    if (!solidAt(x, y)) return;
+    const r = this.rad[i], r6 = r * 0.6;
+    let x = this.x[i], y = this.y[i], moved = false;
     const vx = x - this.ox[i], vy = y - this.oy[i];
-    const [qx, qy] = this.freeSpot(x, y, this.ox[i], this.oy[i]);
-    this.x[i] = qx; this.y[i] = qy;
-    this.ox[i] = qx - vx * 0.25; this.oy[i] = qy - vy * 0.25;
-  }
-
-  freeSpot(x, y, bx, by) {
-    const fx = Math.floor(x), fy = Math.floor(y);
-    let best = null, bestD = Infinity;
-    for (const [qx, qy] of [[x, fy - 0.001], [fx - 0.001, y], [fx + 1.001, y], [x, fy + 1.001]]) {
-      const d = (qx - x) ** 2 + (qy - y) ** 2;
-      if (d < bestD && !solidAt(qx, qy)) { bestD = d; best = [qx, qy]; }
-    }
-    if (best) return best;
-    const backX = bx - x, backY = by - y, n = Math.ceil(Math.hypot(backX, backY));
-    for (let s = 1; s <= Math.min(n, 8); s++) {
-      const qx = x + backX * s / n, qy = y + backY * s / n;
-      if (!solidAt(qx, qy)) return [qx, qy];
-    }
-    for (let r = 1; r < 8; r++) {
-      for (const [dx, dy] of [[0, -1], [-1, -1], [1, -1], [-1, 0], [1, 0], [0, 1]]) {
-        if (!solidAt(x + dx * r, y + dy * r)) return [x + dx * r, y + dy * r];
-      }
-    }
-    return [x, y];
+    const low = (yy) => solidAt(x, yy + r) || solidAt(x - r6, yy + r * 0.8) || solidAt(x + r6, yy + r * 0.8);
+    for (let n = 0; n < 2 * r + 4 && low(y); n++) { y = Math.floor(y + r) - r - 0.01; moved = true; }
+    for (let n = 0; n < 2 * r + 4 && solidAt(x, y - r); n++) { y += 1; moved = true; }
+    for (let n = 0; n < 2 * r + 4 && solidAt(x - r, y); n++) { x += 1; moved = true; }
+    for (let n = 0; n < 2 * r + 4 && solidAt(x + r, y); n++) { x -= 1; moved = true; }
+    if (!moved) return;
+    this.x[i] = x; this.y[i] = y;
+    this.ox[i] = x - vx * 0.25; this.oy[i] = y - vy * 0.25;
   }
 
   // ------------------------------------------------ damage
@@ -740,13 +733,13 @@ class Doll {
     const k = this.owner[i];
     if (this.gone[k]) return;
     const force = speed - WOUND_SPEED * 0.75;
-    this.pn = Math.min(100, this.pn + force / 18);
+    this.pn = Math.min(100, this.pn + force / 30);
     this.damaged();
-    if (k === HEAD) this.ko -= force / 10;
+    if (k === HEAD) this.ko -= force / 16;
     if (speed > WOUND_SPEED && this.woundCd <= 0) {
       this.woundCd = 0.12;
       const t = k === HEAD ? Math.random() : (i === this.pa[k] ? 0.15 : 0.85);
-      const sev = 0.5 + (speed - WOUND_SPEED) / 360;
+      const sev = 0.5 + (speed - WOUND_SPEED) / 600;
       this.addWound(k, t, rf(-1, 1), sev);
       this.burst(this.x[i], this.y[i], 8 + Math.floor(sev * 8), 0, -1, 140);
       if (speed > WOUND_SPEED * 1.6) splatAround(this.x[i], this.y[i], 4);
@@ -756,7 +749,7 @@ class Doll {
     let severAt = SEVER_SPEED * (this.frozen ? 0.55 : 1);
     if (k === HEAD) severAt *= 1.25;
     if (k !== TORSO && k !== PELVIS && speed > severAt && this.severCd <= 0) {
-      if (Math.random() < clamp((speed - severAt) / 600 + 0.25, 0, 0.8)) this.sever(k);
+      if (Math.random() < clamp((speed - severAt) / 900 + 0.25, 0, 0.8)) this.sever(k);
     }
   }
 
@@ -783,7 +776,7 @@ class Doll {
     if (k === TORSO || this.severed[k]) return;
     const jp = this.pa[k], np = this.x.length;
     this.x.push(this.x[jp]); this.y.push(this.y[jp]); this.ox.push(this.ox[jp]); this.oy.push(this.oy[jp]);
-    this.inv.push(this.inv[jp]); this.owner.push(k); this.impactCd.push(0.3);
+    this.inv.push(this.inv[jp]); this.owner.push(k); this.impactCd.push(0.3); this.rad.push(this.rad[jp]);
     this.pa[k] = np;
     this.severed[k] = true;
     for (const j of this.joints) if (j.child === k) j.active = false;
@@ -824,7 +817,7 @@ class Doll {
   }
 
   bladeHit(ax, ay, bx, by, speed) {
-    if (speed < 120) return false;
+    if (speed < 200) return false;
     let hit = false;
     for (let k = 0; k < PART_COUNT; k++) {
       if (this.gone[k]) continue;
@@ -840,16 +833,16 @@ class Doll {
         dist = r.d - WIDTH[k] * 0.5;
         cx = r.qx; cy = r.qy; t = r.t;
       }
-      if (dist > 3) continue;
+      if (dist > 5) continue;
       hit = true;
       if (this.bladeCd[k] > 0) continue;
       this.bladeCd[k] = 0.15;
-      this.addWound(k, t, rf(-1, 1), 0.7 + speed / 1000);
+      this.addWound(k, t, rf(-1, 1), 0.7 + speed / 1600);
       this.pn = Math.min(100, this.pn + 14);
       const l = Math.hypot(bx - ax, by - ay) || 1;
       this.burst(cx, cy, 22, (bx - ax) / l, (by - ay) / l, 200);
       splatAround(cx, cy, 3);
-      if (speed > 600 && k !== TORSO && this.severCd <= 0 && Math.random() < 0.85) this.sever(k);
+      if (speed > 900 && k !== TORSO && this.severCd <= 0 && Math.random() < 0.85) this.sever(k);
     }
     if (hit) { this.bladeTimer = 2; this.damaged(); }
     return hit;
@@ -862,7 +855,7 @@ class Doll {
       if (d >= R) continue;
       touched = true;
       const f = 1 - d / R;
-      const vx = this.x[i] - this.ox[i] + dx / d * f * 26, vy = this.y[i] - this.oy[i] + dy / d * f * 26 - f * 10;
+      const vx = this.x[i] - this.ox[i] + dx / d * f * 36, vy = this.y[i] - this.oy[i] + dy / d * f * 36 - f * 14;
       this.ox[i] = this.x[i] - vx; this.oy[i] = this.y[i] - vy;
     }
     if (!touched) return false;
@@ -916,14 +909,15 @@ class Doll {
       const x = this.x[i], y = this.y[i], m = matAt(x, y);
       if (m === FIRE && this.burn <= 0 && this.burnImmune <= 0) this.burn = 5;
       else if (m === WATER || m === BLOOD) wet = true;
-      if (matAt(x, y + 3) === ICE || matAt(x + 3, y) === ICE || matAt(x - 3, y) === ICE) cold++;
+      const r = this.rad[i] + 3;
+      if (matAt(x, y + r) === ICE || matAt(x + r, y) === ICE || matAt(x - r, y) === ICE) cold++;
     }
     const hx = this.x[this.pb[HEAD]], hy = this.y[this.pb[HEAD]];
-    this.headUnder = !this.severed[HEAD] && liquidAt(hx, hy) && liquidAt(hx, hy - 4);
+    this.headUnder = !this.severed[HEAD] && liquidAt(hx, hy) && liquidAt(hx, hy - 10);
 
     if (wet && this.burn > 0) {
       this.burn = 0;
-      paintDisc(this.x[this.pa[TORSO]], this.y[this.pa[TORSO]], 6, STEAM, 0.4, 60);
+      paintDisc(this.x[this.pa[TORSO]], this.y[this.pa[TORSO]], 12, STEAM, 0.4, 60);
     }
     this.burnImmune = Math.max(0, this.burnImmune - DT);
     if (this.burn > 0) {
@@ -938,7 +932,7 @@ class Doll {
         const t = Math.random();
         const x = lerp(this.x[this.pa[k]], this.x[this.pb[k]], t), y = lerp(this.y[this.pa[k]], this.y[this.pb[k]], t);
         this.char[k] = Math.min(1, this.char[k] + DT * 0.25);
-        if (matAt(x, y - 4) === EMPTY) setCell(Math.floor(x) + rnd(5) - 2, Math.floor(y) - 4, FIRE, 0, 30 + rnd(40));
+        if (matAt(x, y - 10) === EMPTY) setCell(Math.floor(x) + rnd(9) - 4, Math.floor(y) - 10, FIRE, 0, 30 + rnd(40));
       }
     }
     if (cold > 0) this.freeze = Math.min(1.6, this.freeze + DT * 0.18 * Math.min(cold, 5));
@@ -947,6 +941,8 @@ class Doll {
       this.frozen = true;
       for (const j of this.joints) j.frozenRel = this.jointRel(j);
     } else if (this.frozen && this.freeze < 0.5) this.frozen = false;
+
+    if (this.iv > 0) this.updateInfusion();
 
     // Bleeding: drips from every open wound, spurts from stumps on each heartbeat.
     let flow = this.bl <= 0 ? 0 : clamp(this.bl / 100, 0.2, 1);
@@ -975,17 +971,53 @@ class Doll {
     }
   }
 
+  // ------------------------------------------------ infusion
+  ivPoint() {
+    if (!this.gone[UARM_R] && this.attached(UARM_R)) return this.pb[UARM_R];
+    if (!this.gone[UARM_L] && this.attached(UARM_L)) return this.pb[UARM_L];
+    return this.pa[TORSO];
+  }
+
+  // The bag hangs beside the doll and switches sides before it would slide under the panel.
+  ivTargetX(i) {
+    const x = this.x[i] + 50;
+    return x > PANEL.x - 24 ? Math.max(30, this.x[i] - 50) : x;
+  }
+
+  attachInfusion() {
+    const i = this.ivPoint();
+    if (this.iv <= 0) { this.ivX = this.ivTargetX(i); this.ivY = Math.max(48, this.y[i] - 120); }
+    this.iv = IV_TIME;
+  }
+
+  // A blood bag refills blood, closes wounds and wakes the doll up.
+  updateInfusion() {
+    this.iv = Math.max(0, this.iv - DT);
+    const i = this.ivPoint();
+    this.ivX = lerp(this.ivX, this.ivTargetX(i), 0.08);
+    this.ivY = lerp(this.ivY, clamp(this.y[i] - 120, 48, FLOOR_Y - 60), 0.08);
+    this.bl = Math.min(100, this.bl + 8 * DT);
+    this.pn = Math.max(0, this.pn - 12 * DT);
+    this.o2 = Math.min(100, this.o2 + 10 * DT);
+    for (const w of this.wounds) if (this.attached(w.part)) w.bleed = Math.max(0, w.bleed - (w.stump ? 0.3 : 0.5) * DT);
+    for (let k = 0; k < PART_COUNT; k++) this.stain[k] = Math.max(0, this.stain[k] - 0.05 * DT);
+    if (this.dead && this.attached(HEAD) && this.bl > 45) {
+      this.dead = false; this.ko = 15; this.noAir = 0; this.hr = 40; this.o2 = Math.max(this.o2, 40);
+    }
+    if (!this.dead) this.ko = Math.min(100, this.ko + 9 * DT);
+  }
+
   woundPos(w) {
     const ax = this.x[this.pa[w.part]], ay = this.y[this.pa[w.part]];
     const bx = this.x[this.pb[w.part]], by = this.y[this.pb[w.part]];
     if (w.part === HEAD) {
       if (w.stump) return [ax, ay];
       const a = w.t * Math.PI * 2;
-      return [bx + Math.cos(a) * (HEAD_R - 3), by + Math.sin(a) * (HEAD_R - 3)];
+      return [bx + Math.cos(a) * HEAD_R * 0.62, by + Math.sin(a) * HEAD_R * 0.62];
     }
     if (w.stump) return w.t < 0.5 ? [ax, ay] : [bx, by];
     const l = Math.hypot(bx - ax, by - ay) || 1, dx = (bx - ax) / l, dy = (by - ay) / l;
-    const off = w.s * Math.max(0, WIDTH[w.part] * 0.5 - 1.5);
+    const off = w.s * Math.max(0, WIDTH[w.part] * 0.5 - 4);
     return [lerp(ax, bx, w.t) - dy * off, lerp(ay, by, w.t) + dx * off];
   }
 
@@ -1060,7 +1092,7 @@ class Doll {
     return {
       OUT: this.isOut(), BLEED: bleeding && this.bl > 0, FIRE: this.burn > 0,
       CHOKE: this.headUnder && !this.dead, AGONY: this.pn >= AGONY_PN && !this.dead,
-      HEAL: this.healing, BLADE: this.bladeTimer > 0, TORN: this.severed.includes(true), FROZEN: this.frozen,
+      HEAL: this.healing || this.iv > 0, BLADE: this.bladeTimer > 0, TORN: this.severed.includes(true), FROZEN: this.frozen,
     };
   }
   nearestPoint(x, y, r) {
@@ -1074,164 +1106,22 @@ class Doll {
   }
 
   // ------------------------------------------------ drawing
-  partColor(k) {
-    let c = FAR_SIDE[k] ? COL_SKIN_FAR : COL_SKIN;
-    if (this.dead) c = mixc(c, hex("#b4b2a8"), 0.35);
-    c = mixc(c, COL_CHAR, clamp(this.char[k], 0, 0.9));
-    if (this.frozen) c = mixc(c, COL_ICE, 0.6);
-    if (this.hurtFlash > 0) c = mixc(c, COL_HURT, this.hurtFlash * 0.3);
-    return c;
-  }
-
-  seg(k) {
-    return [this.x[this.pa[k]], this.y[this.pa[k]], this.x[this.pb[k]], this.y[this.pb[k]]];
-  }
-
-  // Side of the limb that faces away from the ceiling lamp.
-  shadowSide(ax, ay, bx, by) {
-    const l = Math.hypot(bx - ax, by - ay) || 1;
-    let nx = -(by - ay) / l, ny = (bx - ax) / l;
-    if (ny < 0 || (ny === 0 && nx > 0)) { nx = -nx; ny = -ny; }
-    return [nx, ny];
-  }
-
-  drawPart(k) {
-    const [ax, ay, bx, by] = this.seg(k);
-    const c = this.partColor(k);
-    const shadow = mixc(darken(c, 0.24), hex("#6e6250"), 0.25);
-    const seam = darken(c, 0.32);
-    if (k === HEAD) { this.drawHead(ax, ay, bx, by, c, shadow); return; }
-    const [ra, rb] = TAPER[k];
-    const [sx, sy] = this.shadowSide(ax, ay, bx, by);
-    taperFill(ax, ay, bx, by, ra + OUTLINE, rb + OUTLINE, COL_LINE);
-    taperFill(ax, ay, bx, by, ra, rb, c);
-    // Hard cel shadow along the lower half of the limb.
-    taperFill(ax + sx * ra * 0.5, ay + sy * ra * 0.5, bx + sx * rb * 0.5, by + sy * rb * 0.5, ra * 0.46, rb * 0.46, shadow);
-    if (this.stain[k] > 0.02) taperFill(ax, ay, bx, by, ra, rb, COL_GORE, this.stain[k] * 0.65);
-    ctx.lineCap = "round";
-    if (k === TORSO) {
-      // Chest seam across the ribcage
-      const t = 0.4, mx = lerp(ax, bx, t), my = lerp(ay, by, t), r = lerp(ra, rb, t) * 0.8;
-      ctx.strokeStyle = css(seam, 0.7); ctx.lineWidth = 0.9;
-      ctx.beginPath(); ctx.moveTo(mx - sx * r, my - sy * r); ctx.lineTo(mx + sx * r, my + sy * r); ctx.stroke();
-    } else if (k === PELVIS) {
-      const t = 0.18, mx = lerp(ax, bx, t), my = lerp(ay, by, t), r = lerp(ra, rb, t) * 0.92;
-      ctx.strokeStyle = css(seam, 0.85); ctx.lineWidth = 1.3;
-      ctx.beginPath(); ctx.moveTo(mx - sx * r, my - sy * r); ctx.lineTo(mx + sx * r, my + sy * r); ctx.stroke();
-    } else if (k === FOOT_L || k === FOOT_R) {
-      // Boot sole
-      ctx.strokeStyle = css(COL_LINE); ctx.lineWidth = 1.6;
-      ctx.beginPath(); ctx.moveTo(ax + sx * ra * 0.8, ay + sy * ra * 0.8); ctx.lineTo(bx + sx * rb * 0.9, by + sy * rb * 0.9); ctx.stroke();
-    } else if (k === LARM_L || k === LARM_R) {
-      // Mitten hand at the end of the forearm
-      const ang = Math.atan2(by - ay, bx - ax), hx = bx + Math.cos(ang) * 1.6, hy = by + Math.sin(ang) * 1.6;
-      ctx.fillStyle = css(COL_LINE);
-      ctx.beginPath(); ctx.ellipse(hx, hy, 3.6 + OUTLINE, 2.8 + OUTLINE, ang, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = css(c);
-      ctx.beginPath(); ctx.ellipse(hx, hy, 3.6, 2.8, ang, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = css(shadow);
-      ctx.beginPath(); ctx.ellipse(hx + sx * 1.3, hy + sy * 1.3, 2.4, 1.3, ang, 0, Math.PI * 2); ctx.fill();
-    }
-    // Hinge pin at elbows and knees, the mark of a wooden mannequin.
-    if ((k === LARM_L || k === LARM_R || k === SHIN_L || k === SHIN_R) && !this.severed[k]) {
-      ctx.fillStyle = css(seam);
-      ctx.beginPath(); ctx.arc(ax, ay, ra * 0.42, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = css(lighten(c, 0.2));
-      ctx.beginPath(); ctx.arc(ax - 0.4, ay - 0.4, ra * 0.18, 0, Math.PI * 2); ctx.fill();
-    }
-  }
-
-  drawHead(nx, ny, hx, hy, c, shadow) {
-    let ux = hx - nx, uy = hy - ny;
-    const l = Math.hypot(ux, uy);
-    if (l > 0) { ux /= l; uy /= l; } else { ux = 0; uy = -1; }
-    const rot = Math.atan2(uy, ux) + Math.PI / 2;
-    // Neck peg
-    taperFill(nx, ny, hx - ux * 4, hy - uy * 4, 2.6 + OUTLINE, 2.4 + OUTLINE, COL_LINE);
-    taperFill(nx, ny, hx - ux * 4, hy - uy * 4, 2.6, 2.4, darken(c, 0.12));
-    const rx = 7.4, ry = 8.8;
-    ctx.fillStyle = css(COL_LINE);
-    ctx.beginPath(); ctx.ellipse(hx, hy, rx + OUTLINE, ry + OUTLINE, rot, 0, Math.PI * 2); ctx.fill();
-    ctx.save();
-    ctx.beginPath(); ctx.ellipse(hx, hy, rx, ry, rot, 0, Math.PI * 2); ctx.clip();
-    ctx.fillStyle = css(shadow); ctx.fillRect(hx - 12, hy - 12, 24, 24);
-    // Lit cap toward the lamp, leaving a crescent of shadow underneath.
-    ctx.fillStyle = css(c);
-    ctx.beginPath(); ctx.ellipse(hx - 1.2, hy - 2.4, rx, ry * 0.92, rot, 0, Math.PI * 2); ctx.fill();
-    if (this.stain[HEAD] > 0.02) { ctx.fillStyle = css(COL_GORE, this.stain[HEAD] * 0.65); ctx.fillRect(hx - 12, hy - 12, 24, 24); }
-    ctx.restore();
-  }
-
-  drawWound(w) {
-    const [wx, wy] = this.woundPos(w);
-    if (w.stump) { this.drawStump(w, wx, wy); return; }
-    const [ax, ay, bx, by] = this.seg(w.part);
-    const ang = Math.atan2(by - ay, bx - ax) + Math.PI / 2 + w.rot;
-    const open = w.bleed > 0;
-    const r = w.size * 1.7;
-    ctx.fillStyle = css(open ? COL_GORE : hex("#6a2a2c"), open ? 0.95 : 0.8);
-    ctx.beginPath(); ctx.ellipse(wx, wy, r * 1.4, r * 0.7, ang, 0, Math.PI * 2); ctx.fill();
-    if (open) {
-      ctx.fillStyle = css(COL_GORE_DARK);
-      ctx.beginPath(); ctx.ellipse(wx, wy, r * 0.9, r * 0.3, ang, 0, Math.PI * 2); ctx.fill();
-    }
-  }
-
-  drawStump(w, wx, wy) {
-    const [ux, uy] = this.stumpDir(w);
-    const k = w.part;
-    const r = (k === HEAD ? WIDTH[HEAD] : WIDTH[k]) * 0.5 + 1.2;
-    // Bone sticks out of the torn flesh.
-    const bl = k === TORSO || k === HEAD ? 3.5 : 4.5;
-    ctx.lineCap = "round";
-    ctx.strokeStyle = css(hex("#5a4a3a")); ctx.lineWidth = r * 0.75 + 1.4;
-    ctx.beginPath(); ctx.moveTo(wx, wy); ctx.lineTo(wx + ux * bl, wy + uy * bl); ctx.stroke();
-    ctx.strokeStyle = css(COL_BONE); ctx.lineWidth = r * 0.75;
-    ctx.beginPath(); ctx.moveTo(wx, wy); ctx.lineTo(wx + ux * bl, wy + uy * bl); ctx.stroke();
-    ctx.fillStyle = css(COL_GORE_DARK);
-    ctx.beginPath(); ctx.arc(wx, wy, r + 0.8, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = css(w.bleed > 0 ? COL_FLESH : hex("#7a2a30"));
-    ctx.beginPath(); ctx.arc(wx, wy, r, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = css(COL_GORE);
-    ctx.beginPath(); ctx.arc(wx + ux * 0.8, wy + uy * 0.8, r * 0.55, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = css(COL_BONE);
-    ctx.beginPath(); ctx.arc(wx + ux * bl, wy + uy * bl, r * 0.42, 0, Math.PI * 2); ctx.fill();
-  }
-
-  draw() {
-    for (const k of DRAW_ORDER) {
-      if (this.gone[k]) continue;
-      this.drawPart(k);
-      for (const w of this.wounds) if (w.part === k && !w.stump) this.drawWound(w);
-    }
-    for (const w of this.wounds) if (w.stump && !this.gone[w.part]) this.drawWound(w);
-    if (this.gone[HEAD]) return;
-    // One eye on the side the doll faces.
-    const nx = this.x[this.pa[HEAD]], ny = this.y[this.pa[HEAD]];
-    const hx = this.x[this.pb[HEAD]], hy = this.y[this.pb[HEAD]];
-    let ux = hx - nx, uy = hy - ny;
-    const l = Math.hypot(ux, uy);
-    if (l > 0) { ux /= l; uy /= l; } else { ux = 0; uy = -1; }
-    const fx = -uy, fy = ux;
-    const ex = hx + fx * 4.4 + ux * 1.4, ey = hy + fy * 4.4 + uy * 1.4;
-    ctx.strokeStyle = css(COL_LINE); ctx.fillStyle = css(COL_LINE); ctx.lineWidth = 1.3; ctx.lineCap = "round";
-    if (this.dead) {
-      ctx.beginPath();
-      ctx.moveTo(ex - 1.7, ey - 1.7); ctx.lineTo(ex + 1.7, ey + 1.7);
-      ctx.moveTo(ex + 1.7, ey - 1.7); ctx.lineTo(ex - 1.7, ey + 1.7);
-      ctx.stroke();
-    } else if (this.isOut()) {
-      ctx.beginPath(); ctx.moveTo(ex - 1.8, ey + fx * 0.3); ctx.lineTo(ex + 1.8, ey - fx * 0.3); ctx.stroke();
-    } else {
-      ctx.beginPath(); ctx.ellipse(ex, ey, 1.1, 1.5, Math.atan2(uy, ux), 0, Math.PI * 2); ctx.fill();
-    }
+  colors(k) {
+    let light = FAR_SIDE[k] ? hex("#d6d7e0") : hex("#f8f8fa");
+    let dark = FAR_SIDE[k] ? hex("#7c7e95") : hex("#a3a5bb");
+    const tint = (c, t) => { light = mixc(light, c, t); dark = mixc(dark, c, t); };
+    if (this.dead) tint(hex("#b8b6b0"), 0.3);
+    if (this.char[k] > 0) tint(COL_CHAR, clamp(this.char[k], 0, 0.9));
+    if (this.frozen) tint(COL_ICE, 0.55);
+    if (this.hurtFlash > 0) tint(COL_HURT, this.hurtFlash * 0.3);
+    return [light, dark];
   }
 }
 
 // Tapered limb: a quad between two end circles of different radius.
 const OUTLINE = 1.7;
-const TAPER = [[0, 0], [7, 5], [5.2, 6], [3.3, 2.5], [2.5, 2], [3.3, 2.5], [2.5, 2],
-  [4.4, 3.2], [3.2, 2.4], [2.6, 2.1], [4.4, 3.2], [3.2, 2.4], [2.6, 2.1]];
+const TAPER = [[8, 7], [20, 15], [15, 17], [9, 7.5], [7.5, 6.5], [9, 7.5], [7.5, 6.5],
+  [11, 9], [9, 7.5], [7, 6], [11, 9], [9, 7.5], [7, 6]];
 function taperFill(ax, ay, bx, by, ra, rb, c, alpha = 1) {
   const l = Math.hypot(bx - ax, by - ay) || 1, nx = -(by - ay) / l, ny = (bx - ax) / l;
   ctx.fillStyle = css(c, alpha);
@@ -1248,6 +1138,191 @@ function taperFill(ax, ay, bx, by, ra, rb, c, alpha = 1) {
   ctx.closePath(); ctx.fill();
   ctx.beginPath(); ctx.arc(ax, ay, ra, 0, Math.PI * 2); ctx.fill();
   ctx.beginPath(); ctx.arc(bx, by, rb, 0, Math.PI * 2); ctx.fill();
+}
+
+// ======================================================================
+// Pixel layer: dolls and gibs are drawn as chunky pixel art.
+// One pixel covers PIX world units, then the layer scales up without smoothing.
+// ======================================================================
+
+const PIX = 3, DW = W / PIX, DH = H / PIX;
+const pixCan = document.createElement("canvas");
+pixCan.width = DW; pixCan.height = DH;
+const pixCtx = pixCan.getContext("2d");
+const pixImg = pixCtx.createImageData(DW, DH), ppx = pixImg.data;
+const tmask = new Uint8Array(DW * DH), tcol = new Uint8ClampedArray(DW * DH * 3);
+const LIGHT = (() => { const v = [-0.45, -0.72, 0.62], l = Math.hypot(...v); return v.map((c) => c / l); })();
+const PX_BLACK = hex("#0b0b0e"), PX_BONE = hex("#ece6d4"), PX_FLESH = hex("#c8344c");
+let bbx0 = 0, bby0 = 0, bbx1 = 0, bby1 = 0;
+
+function tset(i, c, order) {
+  tmask[i] = order;
+  tcol[i * 3] = c[0]; tcol[i * 3 + 1] = c[1]; tcol[i * 3 + 2] = c[2];
+}
+
+// Tapered capsule with rounded clay shading, lit from the upper left.
+function rasterLimb(ax, ay, bx, by, ra, rb, order, light, dark, stain) {
+  const x0 = Math.max(bbx0, Math.floor(Math.min(ax - ra, bx - rb))), x1 = Math.min(bbx1, Math.ceil(Math.max(ax + ra, bx + rb)));
+  const y0 = Math.max(bby0, Math.floor(Math.min(ay - ra, by - rb))), y1 = Math.min(bby1, Math.ceil(Math.max(ay + ra, by + rb)));
+  const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      const cx = x + 0.5, cy = y + 0.5;
+      const t = l2 > 0 ? clamp(((cx - ax) * dx + (cy - ay) * dy) / l2, 0, 1) : 0;
+      const r = ra + (rb - ra) * t;
+      const ex = cx - (ax + dx * t), ey = cy - (ay + dy * t), d2 = ex * ex + ey * ey;
+      if (d2 > r * r) continue;
+      const nx = ex / r, ny = ey / r, nz = Math.sqrt(Math.max(0, 1 - nx * nx - ny * ny));
+      let lam = clamp(nx * LIGHT[0] + ny * LIGHT[1] + nz * LIGHT[2], 0, 1);
+      lam = Math.round(lam * 6) / 6;
+      let c = mixc(dark, light, lam);
+      const i = y * DW + x;
+      // Where a limb crosses another one, its rim darkens so the shapes read apart.
+      if (tmask[i] && tmask[i] !== order && Math.sqrt(d2) > r - 1.1) c = darken(c, 0.2);
+      if (stain > 0.02) c = mixc(c, COL_GORE, stain * 0.6);
+      tset(i, c, order);
+    }
+  }
+}
+
+function rasterDisc(cx, cy, r, c, order, onlyBody = false) {
+  const x0 = Math.max(bbx0, Math.floor(cx - r)), x1 = Math.min(bbx1, Math.ceil(cx + r));
+  const y0 = Math.max(bby0, Math.floor(cy - r)), y1 = Math.min(bby1, Math.ceil(cy + r));
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+    const ex = x + 0.5 - cx, ey = y + 0.5 - cy;
+    if (ex * ex + ey * ey > r * r) continue;
+    const i = y * DW + x;
+    if (onlyBody && !tmask[i]) continue;
+    tset(i, c, onlyBody ? tmask[i] : order);
+  }
+}
+
+function rasterDoll(d) {
+  // Bounding box of the doll in pixels, with room for the head and outline.
+  let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+  for (let i = 0; i < d.x.length; i++) {
+    minx = Math.min(minx, d.x[i]); maxx = Math.max(maxx, d.x[i]);
+    miny = Math.min(miny, d.y[i]); maxy = Math.max(maxy, d.y[i]);
+  }
+  bbx0 = Math.max(0, Math.floor(minx / PIX) - 10); bbx1 = Math.min(DW - 1, Math.ceil(maxx / PIX) + 10);
+  bby0 = Math.max(0, Math.floor(miny / PIX) - 10); bby1 = Math.min(DH - 1, Math.ceil(maxy / PIX) + 10);
+  for (let y = bby0; y <= bby1; y++) tmask.fill(0, y * DW + bbx0, y * DW + bbx1 + 1);
+
+  let order = 1;
+  for (const k of DRAW_ORDER) {
+    order++;
+    if (d.gone[k]) continue;
+    const [light, dark] = d.colors(k);
+    const ax = d.x[d.pa[k]] / PIX, ay = d.y[d.pa[k]] / PIX, bx = d.x[d.pb[k]] / PIX, by = d.y[d.pb[k]] / PIX;
+    if (k === HEAD) {
+      rasterLimb(ax, ay, bx, by, TAPER[HEAD][0] / PIX, TAPER[HEAD][1] / PIX, order, light, dark, d.stain[k]);
+      rasterLimb(bx, by, bx, by, HEAD_R / PIX, HEAD_R / PIX, order, light, dark, d.stain[k]);
+    } else {
+      rasterLimb(ax, ay, bx, by, TAPER[k][0] / PIX, TAPER[k][1] / PIX, order, light, dark, d.stain[k]);
+      if (k === LARM_L || k === LARM_R) {
+        // Round mitten hand
+        const l = Math.hypot(bx - ax, by - ay) || 1;
+        const hx = bx + (bx - ax) / l * 1.2, hy = by + (by - ay) / l * 1.2;
+        rasterLimb(hx, hy, hx, hy, 2.9, 2.9, order, light, dark, d.stain[k]);
+      }
+    }
+    // Wounds sit on top of their own part.
+    for (const w of d.wounds) {
+      if (w.part !== k || w.stump) continue;
+      const [wx, wy] = d.woundPos(w);
+      const r = 0.7 + w.size * 0.55;
+      const open = w.bleed > 0;
+      rasterDisc(wx / PIX, wy / PIX, r + 0.6, open ? COL_GORE : hex("#7e3a3c"), 0, true);
+      if (open) rasterDisc(wx / PIX, wy / PIX, r * 0.55, COL_GORE_DARK, 0, true);
+    }
+  }
+  // Stumps: torn flesh with bone sticking out.
+  for (const w of d.wounds) {
+    if (!w.stump || d.gone[w.part]) continue;
+    const [wx, wy] = d.woundPos(w);
+    const [ux, uy] = d.stumpDir(w);
+    const k = w.part;
+    const end = k === HEAD ? TAPER[HEAD][0] : TAPER[k][w.t < 0.5 ? 0 : 1];
+    const r = end / PIX, cx = wx / PIX, cy = wy / PIX;
+    rasterDisc(cx, cy, r + 0.4, w.bleed > 0 ? PX_FLESH : hex("#82323a"), 250);
+    rasterDisc(cx + ux * 0.4, cy + uy * 0.4, r * 0.6, COL_GORE, 250);
+    const bl = Math.max(2, r * 0.9);
+    for (let s = 0; s <= bl; s += 0.5) rasterDisc(cx + ux * s, cy + uy * s, Math.max(0.7, r * 0.3), PX_BONE, 250);
+    rasterDisc(cx + ux * bl, cy + uy * bl, Math.max(0.9, r * 0.38), PX_BONE, 250);
+  }
+  // Eye on the side the doll faces.
+  if (!d.gone[HEAD]) {
+    const nx = d.x[d.pa[HEAD]], ny = d.y[d.pa[HEAD]], hx = d.x[d.pb[HEAD]], hy = d.y[d.pb[HEAD]];
+    let ux = hx - nx, uy = hy - ny;
+    const l = Math.hypot(ux, uy);
+    if (l > 0) { ux /= l; uy /= l; } else { ux = 0; uy = -1; }
+    const ex = Math.floor((hx - uy * HEAD_R * 0.5 + ux * 3) / PIX), ey = Math.floor((hy + ux * HEAD_R * 0.5 + uy * 3) / PIX);
+    const put = (x, y) => { if (x >= bbx0 && x <= bbx1 && y >= bby0 && y <= bby1 && tmask[y * DW + x]) tset(y * DW + x, PX_BLACK, tmask[y * DW + x]); };
+    if (d.dead) { put(ex - 1, ey - 1); put(ex + 1, ey - 1); put(ex, ey); put(ex - 1, ey + 1); put(ex + 1, ey + 1); }
+    else if (d.isOut()) { put(ex - 1, ey); put(ex, ey); put(ex + 1, ey); }
+    else { put(ex, ey); put(ex, ey - 1); }
+  }
+  // Copy into the layer with a one pixel black outline around the silhouette.
+  for (let y = bby0; y <= bby1; y++) {
+    for (let x = bbx0; x <= bbx1; x++) {
+      const i = y * DW + x, o = i * 4;
+      if (tmask[i]) {
+        ppx[o] = tcol[i * 3]; ppx[o + 1] = tcol[i * 3 + 1]; ppx[o + 2] = tcol[i * 3 + 2]; ppx[o + 3] = 255;
+      } else if ((x > bbx0 && tmask[i - 1]) || (x < bbx1 && tmask[i + 1]) || (y > bby0 && tmask[i - DW]) || (y < bby1 && tmask[i + DW])) {
+        ppx[o] = PX_BLACK[0]; ppx[o + 1] = PX_BLACK[1]; ppx[o + 2] = PX_BLACK[2]; ppx[o + 3] = 255;
+      }
+    }
+  }
+}
+
+function rasterInfusion(d) {
+  const put = (x, y, c) => { x |= 0; y |= 0; if (x >= 0 && y >= 0 && x < DW && y < DH) { const o = (y * DW + x) * 4; ppx[o] = c[0]; ppx[o + 1] = c[1]; ppx[o + 2] = c[2]; ppx[o + 3] = 255; } };
+  const bx = Math.round(d.ivX / PIX), by = Math.round(d.ivY / PIX);
+  const i = d.ivPoint(), tx = d.x[i] / PIX, ty = d.y[i] / PIX;
+  // Tube sags between the bag and the arm.
+  const sx = bx + 0.5, sy = by + 11, mx = (sx + tx) / 2, my = Math.max(sy, ty) + 6;
+  const n = Math.ceil(Math.hypot(tx - sx, ty - sy) * 2) + 8;
+  for (let s2 = 0; s2 <= n; s2++) {
+    const t = s2 / n, u = 1 - t;
+    const x = u * u * sx + 2 * u * t * mx + t * t * tx, y = u * u * sy + 2 * u * t * my + t * t * ty;
+    put(x, y + 1, PX_BLACK); put(x, y, hex("#9a1020"));
+  }
+  // Hook, bag body with blood level, label and drip chamber.
+  const level = d.iv / IV_TIME;
+  for (let y = by - 3; y < by; y++) put(bx, y, hex("#77777f"));
+  for (let y = by; y <= by + 9; y++) {
+    for (let x = bx - 3; x <= bx + 4; x++) {
+      const edge = x === bx - 3 || x === bx + 4 || y === by || y === by + 9;
+      const corner = (x === bx - 3 || x === bx + 4) && (y === by || y === by + 9);
+      if (corner) continue;
+      if (edge) { put(x, y, PX_BLACK); continue; }
+      const filled = y >= by + 9 - Math.round(level * 8);
+      put(x, y, filled ? (x === bx - 2 ? hex("#e04050") : hex("#b0121f")) : hex("#dfe3ea"));
+    }
+  }
+  for (let x = bx - 1; x <= bx + 2; x++) put(x, by + 3, hex("#f6f6f6"));
+  put(bx, by + 10, PX_BLACK); put(bx + 1, by + 10, PX_BLACK);
+  put(bx, by + 11, (performance.now() / 250 | 0) % 2 ? hex("#e04050") : hex("#dfe3ea"));
+}
+
+function rasterGib(g) {
+  const cx = g.x / PIX, cy = g.y / PIX, r = g.r / PIX;
+  const put = (x, y, c) => { if (x >= 0 && y >= 0 && x < DW && y < DH) { const o = (y * DW + x) * 4; ppx[o] = c[0]; ppx[o + 1] = c[1]; ppx[o + 2] = c[2]; ppx[o + 3] = 255; } };
+  const ca = Math.cos(g.rot), sa = Math.sin(g.rot);
+  const rx = g.bone ? r * 1.6 : r * 1.25, ry = g.bone ? Math.max(0.6, r * 0.45) : r * 0.85;
+  for (let pass = 0; pass < 2; pass++) {
+    const grow = pass === 0 ? 1 : 0;
+    for (let y = Math.floor(cy - rx - 1); y <= Math.ceil(cy + rx + 1); y++) {
+      for (let x = Math.floor(cx - rx - 1); x <= Math.ceil(cx + rx + 1); x++) {
+        const ex = x + 0.5 - cx, ey = y + 0.5 - cy;
+        const u = (ex * ca + ey * sa) / (rx + grow), v = (-ex * sa + ey * ca) / (ry + grow);
+        if (u * u + v * v > 1) continue;
+        if (pass === 0) put(x, y, PX_BLACK);
+        else if (g.bone) put(x, y, PX_BONE);
+        else put(x, y, u * 0.6 + v * 0.8 < -0.35 ? COL_MEAT_HI : COL_MEAT);
+      }
+    }
+  }
 }
 
 function splatAround(x, y, n) {
@@ -1283,7 +1358,7 @@ function segSeg(ax, ay, bx, by, p0x, p0y, p1x, p1y) {
 
 let effects = [];
 function explode(x, y) {
-  const R = 90;
+  const R = 130;
   for (const d of state.dolls) if (d.blast(x, y, R)) state.selected = d;
   for (const g of gibs) {
     const dx = g.x - x, dy = g.y - y, dd = Math.hypot(dx, dy) || 1;
@@ -1314,11 +1389,11 @@ function explode(x, y) {
 // HUD
 // ======================================================================
 
-const T_GRAB = 0, T_WATER = 1, T_BLADE = 2, T_FIRE = 3, T_ICE = 4, T_BOMB = 5, T_DOLL = 6, T_RESET = 7;
-const TOOL_NAMES = ["Greifen", "Wasser", "Klinge", "Feuer", "Eis", "Bombe", "Neue Puppe", "Reset"];
-const TOOL_COUNT = 8;
-const BTN = 34, BTN_GAP = 6, TOOLBAR_Y = H - 44;
-const PANEL = { x: 612, y: 8, w: 148, h: 290 };
+const T_GRAB = 0, T_WATER = 1, T_BLADE = 2, T_FIRE = 3, T_ICE = 4, T_BOMB = 5, T_IV = 6, T_DOLL = 7, T_RESET = 8;
+const TOOL_NAMES = ["Greifen", "Wasser", "Klinge", "Feuer", "Eis", "Bombe", "Infusion", "Neue Puppe", "Reset"];
+const TOOL_COUNT = 9;
+const BTN = 46, BTN_GAP = 6, TOOLBAR_Y = H - 54;
+const PANEL = { x: 570, y: 8, w: 190, h: 345 };
 const BARS = [["KO", "#4ccf5a"], ["BL", "#d0283a"], ["PN", "#f08a24"], ["O2", "#2ec8c0"], ["HR", "#ec5f92"]];
 const TAGS = [["OUT", "#a2a2aa"], ["BLEED", "#d6202f"], ["FIRE", "#ff5a1e"], ["CHOKE", "#2ec8c0"],
   ["AGONY", "#f08a24"], ["HEAL", "#f2da3a"], ["BLADE", "#c8d0dc"], ["TORN", "#f272b8"], ["FROZEN", "#86c4ff"]];
@@ -1330,7 +1405,7 @@ const buttonX = (i) => toolbarX() + i * (BTN + BTN_GAP);
 function toolbarHit(x, y) {
   for (let i = 0; i < TOOL_COUNT; i++) {
     const bx = buttonX(i);
-    if (x >= bx - 3 && x < bx + BTN + 3 && y >= TOOLBAR_Y - 4 && y < TOOLBAR_Y + BTN + 4) return i;
+    if (x >= bx - 3 && x < bx + BTN + 3 && y >= TOOLBAR_Y - 6 && y < TOOLBAR_Y + BTN + 6) return i;
   }
   return -1;
 }
@@ -1347,7 +1422,7 @@ function rr(x, y, w, h, r) {
   ctx.closePath();
 }
 
-function label(s, x, y, size, color, align = "left", weight = 600) {
+function label(s, x, y, size, color, align = "left", weight = 700) {
   ctx.font = `${weight} ${size}px ${FONT}`;
   ctx.textAlign = align;
   ctx.textBaseline = "middle";
@@ -1378,7 +1453,7 @@ function drawMini(d, cx, cy, s) {
         ctx.beginPath(); ctx.ellipse(cx + b[0] * s, cy + b[1] * s, 2.7 * s + grow, 3.2 * s + grow, 0, 0, Math.PI * 2); ctx.fill();
       } else {
         const [ra, rb] = TAPER[k];
-        taperFill(cx + a[0] * s, cy + a[1] * s, cx + b[0] * s, cy + b[1] * s, ra * 0.72 + grow, rb * 0.72 + grow, col);
+        taperFill(cx + a[0] * s, cy + a[1] * s, cx + b[0] * s, cy + b[1] * s, ra * 0.26 + grow, rb * 0.26 + grow, col);
       }
     }
   }
@@ -1414,46 +1489,69 @@ function drawMini(d, cx, cy, s) {
   ctx.setLineDash([]);
 }
 
+// Dotted fill for empty bars and idle tags, like an unlit LED grid.
+let dotPattern = null;
+function dots() {
+  if (dotPattern) return dotPattern;
+  const c = document.createElement("canvas");
+  c.width = c.height = 3;
+  const g = c.getContext("2d");
+  g.fillStyle = "#1c1c22"; g.fillRect(0, 0, 3, 3);
+  g.fillStyle = "#2c2c34"; g.fillRect(0, 0, 1.5, 1.5);
+  dotPattern = ctx.createPattern(c, "repeat");
+  return dotPattern;
+}
+
+function drawEcg(x, y, w, flash) {
+  const pts = [[0, 0], [0.3, 0], [0.38, -0.25], [0.46, 0.15], [0.54, -1], [0.62, 0.7], [0.7, 0], [1, 0]];
+  ctx.strokeStyle = css(mixc(hex("#d8d8e0"), hex("#ff6a8a"), flash)); ctx.lineWidth = 2; ctx.lineJoin = "round"; ctx.lineCap = "round";
+  ctx.beginPath();
+  pts.forEach(([px0, py0], n) => (n ? ctx.lineTo : ctx.moveTo).call(ctx, x + px0 * w, y + py0 * 9));
+  ctx.stroke();
+}
+
 function drawPanel(d) {
   const { x: px0, y: py0, w: pw, h: ph } = PANEL;
-  rr(px0, py0, pw, ph, 10);
-  ctx.fillStyle = "rgba(17,17,21,0.94)"; ctx.fill();
-  ctx.strokeStyle = "#383840"; ctx.lineWidth = 1.5; ctx.stroke();
-  rr(px0 + 8, py0 + 8, pw - 16, 82, 6);
-  ctx.fillStyle = "#0c0c0f"; ctx.fill();
-  if (!d) { label("KEINE PUPPE", px0 + pw / 2, py0 + 49, 10, "#55555e", "center"); return; }
-  label("P" + d.id, px0 + 14, py0 + 18, 10, "#55555e");
-  if (d.dead) label("TOT", px0 + pw - 14, py0 + 18, 10, "#d0283a", "right", 700);
-  drawMini(d, px0 + pw / 2, py0 + 50, 2.3);
+  rr(px0, py0, pw, ph, 12);
+  ctx.fillStyle = "rgba(14,14,18,0.94)"; ctx.fill();
+  ctx.strokeStyle = "#34343c"; ctx.lineWidth = 2; ctx.stroke();
+  const bx0 = px0 + 10, by0 = py0 + 10, bw0 = pw - 20, bh0 = 94;
+  rr(bx0, by0, bw0, bh0, 8);
+  ctx.fillStyle = "#0a0a0d"; ctx.fill();
+  if (!d) { label("KEINE PUPPE", px0 + pw / 2, by0 + bh0 / 2, 12, "#55555e", "center"); return; }
+  label("P" + d.id, bx0 + 8, by0 + 12, 12, "#5a5a64");
+  if (d.dead) label("TOT", bx0 + 8, by0 + 28, 12, "#e0303f");
+  if (d.hr > 1) drawEcg(bx0 + bw0 - 40, by0 + 13, 32, d.beatFlash);
+  drawMini(d, px0 + pw / 2, by0 + 52, 2.6);
 
   const values = [d.ko, d.bl, d.pn, d.o2, clamp(d.hr / 1.6, 0, 100)];
   for (let i = 0; i < BARS.length; i++) {
-    const y = py0 + 102 + i * 15, bx = px0 + 10, bw = 100;
-    rr(bx, y, bw, 8, 4); ctx.fillStyle = "#24242a"; ctx.fill();
+    const y = py0 + 116 + i * 19, bx = px0 + 12, bw = 128, bh = 11;
+    rr(bx, y, bw, bh, 5.5); ctx.fillStyle = dots(); ctx.fill();
     let c = hex(BARS[i][1]);
     if (i === 4) c = mixc(c, [255, 255, 255], d.beatFlash * 0.45);
     const fw = bw * clamp(values[i] / 100, 0, 1);
     if (fw > 1) {
-      rr(bx, y, Math.max(8, fw), 8, 4);
-      const g = ctx.createLinearGradient(0, y, 0, y + 8);
-      g.addColorStop(0, css(lighten(c, 0.25))); g.addColorStop(1, css(c));
-      ctx.fillStyle = g; ctx.fill();
+      rr(bx, y, Math.max(bh, fw), bh, 5.5);
+      ctx.fillStyle = css(c); ctx.fill();
+      rr(bx + 3, y + 2, Math.max(4, fw - 6), 2.5, 1.2);
+      ctx.fillStyle = css(lighten(c, 0.45), 0.8); ctx.fill();
     }
-    label(BARS[i][0], px0 + pw - 12, y + 4.5, 11, "#dcdcd4", "right", 700);
+    label(BARS[i][0], px0 + pw - 12, y + bh / 2 + 0.5, 13, "#e4e4dc", "right");
   }
   const f = d.flags();
   for (let i = 0; i < TAGS.length; i++) {
-    const tw = 62, th = 18;
-    const tx = px0 + 10 + (i % 2) * (tw + 4), ty = py0 + 182 + Math.floor(i / 2) * (th + 3);
+    const tw = 80, th = 21;
+    const tx = px0 + 12 + (i % 2) * (tw + 6), ty = py0 + 216 + Math.floor(i / 2) * 25;
     const [name, col] = TAGS[i];
-    rr(tx, ty, tw, th, 9);
+    rr(tx, ty, tw, th, 10.5);
     if (f[name]) {
-      ctx.save(); ctx.shadowColor = col; ctx.shadowBlur = 8;
+      ctx.save(); ctx.shadowColor = col; ctx.shadowBlur = 10;
       ctx.fillStyle = col; ctx.fill(); ctx.restore();
-      label(name, tx + tw / 2, ty + th / 2 + 0.5, 10, "#111114", "center", 700);
+      label(name, tx + tw / 2, ty + th / 2 + 1, 11, "#101013", "center");
     } else {
-      ctx.fillStyle = "#212127"; ctx.fill();
-      label(name, tx + tw / 2, ty + th / 2 + 0.5, 10, "#4e4e57", "center", 600);
+      ctx.fillStyle = dots(); ctx.fill();
+      label(name, tx + tw / 2, ty + th / 2 + 1, 11, "#4c4c56", "center");
     }
   }
 }
@@ -1461,6 +1559,7 @@ function drawPanel(d) {
 function drawIcon(i, cx, cy) {
   ctx.save();
   ctx.translate(cx, cy);
+  ctx.scale(1.35, 1.35);
   ctx.lineCap = "round"; ctx.lineJoin = "round";
   switch (i) {
     case T_GRAB: {
@@ -1513,6 +1612,18 @@ function drawIcon(i, cx, cy) {
       ctx.fillStyle = "#ffd050"; ctx.beginPath(); ctx.arc(10, -8.5, 2.4, 0, Math.PI * 2); ctx.fill();
       break;
     }
+    case T_IV: {
+      // Blood bag with a tube
+      ctx.strokeStyle = "#8c8c96"; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(-1, -12); ctx.lineTo(-1, -9); ctx.stroke();
+      ctx.fillStyle = "#d8dde4"; rr(-7, -9, 12, 15, 3); ctx.fill();
+      ctx.fillStyle = "#c8182a"; rr(-7, -3, 12, 9, 3); ctx.fill();
+      ctx.fillStyle = "#f4f4f4"; ctx.fillRect(-4, -6, 6, 3);
+      ctx.strokeStyle = "#c8182a"; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.moveTo(-1, 6); ctx.quadraticCurveTo(-1, 12, 6, 11); ctx.stroke();
+      ctx.fillStyle = "#6ee66e"; ctx.fillRect(5, 4, 6, 2); ctx.fillRect(7, 2, 2, 6);
+      break;
+    }
     case T_DOLL: {
       ctx.fillStyle = "#ecece6"; ctx.strokeStyle = "#ecece6"; ctx.lineWidth = 2.6;
       ctx.beginPath(); ctx.arc(-3, -7, 3.6, 0, Math.PI * 2); ctx.fill();
@@ -1535,7 +1646,7 @@ function drawIcon(i, cx, cy) {
 
 function drawToolbar() {
   const x0 = toolbarX(), total = TOOL_COUNT * BTN + (TOOL_COUNT - 1) * BTN_GAP;
-  rr(x0 - 7, TOOLBAR_Y - 6, total + 14, BTN + 12, 12);
+  rr(x0 - 8, TOOLBAR_Y - 6, total + 16, BTN + 12, 14);
   ctx.fillStyle = "rgba(15,15,19,0.92)"; ctx.fill();
   ctx.strokeStyle = "#383840"; ctx.lineWidth = 1.5; ctx.stroke();
   for (let i = 0; i < TOOL_COUNT; i++) {
@@ -1543,19 +1654,19 @@ function drawToolbar() {
     let bg = "#26262c", edge = "#3e3e46";
     if (i === state.tool) { bg = "#3a3a44"; edge = "#ecece6"; }
     else if (i === state.hover || i === state.flashBtn) { bg = "#303038"; edge = "#6a6a74"; }
-    rr(bx, by, BTN, BTN, 8);
+    rr(bx, by, BTN, BTN, 10);
     ctx.fillStyle = bg; ctx.fill();
     ctx.strokeStyle = edge; ctx.lineWidth = i === state.tool ? 2 : 1.2; ctx.stroke();
     drawIcon(i, bx + BTN / 2, by + BTN / 2);
   }
   const text = state.hover >= 0 ? TOOL_NAMES[state.hover] + "  " + (state.hover + 1) : state.toast > 0 ? state.toastText : "";
   if (text) {
-    ctx.font = `600 12px ${FONT}`;
-    const lw = ctx.measureText(text).width + 20;
-    rr(W / 2 - lw / 2, TOOLBAR_Y - 30, lw, 20, 10);
+    ctx.font = `700 14px ${FONT}`;
+    const lw = ctx.measureText(text).width + 24;
+    rr(W / 2 - lw / 2, TOOLBAR_Y - 38, lw, 26, 13);
     ctx.fillStyle = "rgba(15,15,19,0.92)"; ctx.fill();
-    ctx.strokeStyle = "#383840"; ctx.lineWidth = 1; ctx.stroke();
-    label(text, W / 2, TOOLBAR_Y - 19.5, 12, "#e2e2da", "center");
+    ctx.strokeStyle = "#383840"; ctx.lineWidth = 1.5; ctx.stroke();
+    label(text, W / 2, TOOLBAR_Y - 24.5, 14, "#e2e2da", "center");
   }
 }
 
@@ -1567,9 +1678,12 @@ function drawCursor() {
     ctx.beginPath(); ctx.arc(mx, my, state.tool === T_WATER ? 4 : 8, 0, Math.PI * 2); ctx.stroke();
   } else if (state.tool === T_BOMB) {
     ctx.setLineDash([4, 4]);
-    ctx.beginPath(); ctx.arc(mx, my, 90, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(mx, my, 130, 0, Math.PI * 2); ctx.stroke();
     ctx.setLineDash([]);
     ctx.beginPath(); ctx.arc(mx, my, 3, 0, Math.PI * 2); ctx.stroke();
+  } else if (state.tool === T_IV) {
+    ctx.strokeStyle = "rgba(110,230,110,0.8)"; ctx.lineWidth = 2.4;
+    ctx.beginPath(); ctx.moveTo(mx - 6, my); ctx.lineTo(mx + 6, my); ctx.moveTo(mx, my - 6); ctx.lineTo(mx, my + 6); ctx.stroke();
   } else if (state.tool === T_BLADE) {
     ctx.fillStyle = "rgba(255,255,255,0.8)"; ctx.beginPath(); ctx.arc(mx, my, 1.6, 0, Math.PI * 2); ctx.fill();
   } else {
@@ -1684,14 +1798,14 @@ function resetScene() {
   gibs = []; effects = [];
   dctx.clearRect(0, 0, decal.width, decal.height);
   state.dolls = []; state.selected = null; state.grabDoll = null; state.counter = 0;
-  spawnDoll(W / 2 - 60, FLOOR_Y);
+  spawnDoll(W / 2 - 110, FLOOR_Y);
 }
 
 function useButton(i) {
   state.flashBtn = i;
   setTimeout(() => { if (state.flashBtn === i) state.flashBtn = -1; }, 150);
   if (i === T_DOLL) {
-    const d = spawnDoll(LAMP_X + rf(-60, 60), 160);
+    const d = spawnDoll(LAMP_X + rf(-80, 80), 250);
     for (let k = 0; k < d.x.length; k++) { d.ox[k] = d.x[k] + rf(-2, 2); d.oy[k] = d.y[k] - 2; }
   } else if (i === T_RESET) {
     resetScene();
@@ -1710,8 +1824,18 @@ function press() {
   state.pressing = true;
   state.lastX = state.mx; state.lastY = state.my;
   if (state.tool === T_BOMB) { explode(state.mx, Math.min(state.my, FLOOR_Y - 2)); state.pressing = false; return; }
+  if (state.tool === T_IV) {
+    state.pressing = false;
+    let bestD = 70, best = null;
+    for (const d of state.dolls) {
+      const [i, dist] = d.nearestPoint(state.mx, state.my, bestD);
+      if (i >= 0) { bestD = dist; best = d; }
+    }
+    if (best) { best.attachInfusion(); state.selected = best; state.toast = 1.2; state.toastText = "Infusion angelegt"; }
+    return;
+  }
   if (state.tool === T_GRAB) {
-    let bestD = 18, best = null, bestI = -1;
+    let bestD = 40, best = null, bestI = -1;
     for (const d of state.dolls) {
       const [i, dist] = d.nearestPoint(state.mx, state.my, bestD);
       if (i >= 0) { bestD = dist; best = d; bestI = i; }
@@ -1736,10 +1860,10 @@ function applyTool() {
     for (let n = 0; n < 12; n++) spawnParticle(mx + rf(-3, 3), my, rf(-24, 24), rf(20, 80), WATER, 0);
   } else if (state.tool === T_FIRE) {
     paintDisc(mx, my, 8, FIRE, 0.25);
-    for (const d of state.dolls) d.applyHeat(mx, my, 12);
+    for (const d of state.dolls) d.applyHeat(mx, my, 26);
   } else if (state.tool === T_ICE) {
     paintDisc(mx, my, 7, ICE, 0.6, 200);
-    for (const d of state.dolls) d.applyCold(mx, my, 14);
+    for (const d of state.dolls) d.applyCold(mx, my, 30);
   } else if (state.tool === T_BLADE) {
     if (mx !== state.lastX || my !== state.lastY) {
       const speed = Math.hypot(mx - state.lastX, my - state.lastY) / DT;
@@ -1800,7 +1924,7 @@ document.addEventListener("touchmove", (ev) => ev.preventDefault(), { passive: f
 document.addEventListener("gesturestart", (ev) => ev.preventDefault());
 
 window.addEventListener("keydown", (ev) => {
-  if (ev.key >= "1" && ev.key <= "8") useButton(+ev.key - 1);
+  if (ev.key >= "1" && ev.key <= "9") useButton(+ev.key - 1);
   else if (ev.key === "r" || ev.key === "R") useButton(T_RESET);
   else if (ev.key === "n" || ev.key === "N") useButton(T_DOLL);
   else if (ev.key === "b" || ev.key === "B") useButton(T_BOMB);
@@ -1841,20 +1965,15 @@ function render() {
   ctx.setTransform(K, 0, 0, K, rf(-sh, sh) * K, rf(-sh, sh) * K);
   ctx.imageSmoothingEnabled = true;
   ctx.drawImage(decal, 0, 0, W, H);
-  // Gibs on the floor sit behind the dolls.
-  for (const g of gibs) {
-    ctx.save(); ctx.translate(g.x, g.y); ctx.rotate(g.rot);
-    if (g.bone) {
-      ctx.fillStyle = css(COL_BONE); rr(-g.r * 1.4, -g.r * 0.45, g.r * 2.8, g.r * 0.9, g.r * 0.4); ctx.fill();
-      ctx.beginPath(); ctx.arc(-g.r * 1.4, 0, g.r * 0.55, 0, Math.PI * 2); ctx.arc(g.r * 1.4, 0, g.r * 0.55, 0, Math.PI * 2); ctx.fill();
-    } else {
-      ctx.fillStyle = css(COL_GORE_DARK); ctx.beginPath(); ctx.ellipse(0, 0, g.r * 1.25 + 0.6, g.r * 0.85 + 0.6, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = css(COL_MEAT); ctx.beginPath(); ctx.ellipse(0, 0, g.r * 1.25, g.r * 0.85, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = css(COL_MEAT_HI); ctx.beginPath(); ctx.ellipse(-g.r * 0.3, -g.r * 0.25, g.r * 0.5, g.r * 0.3, 0, 0, Math.PI * 2); ctx.fill();
-    }
-    ctx.restore();
-  }
-  for (const d of state.dolls) d.draw();
+  // Gibs and dolls are pixel art on their own layer.
+  ppx.fill(0);
+  for (const g of gibs) rasterGib(g);
+  for (const d of state.dolls) rasterDoll(d);
+  for (const d of state.dolls) if (d.iv > 0) rasterInfusion(d);
+  pixCtx.putImageData(pixImg, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(pixCan, 0, 0, W, H);
+  ctx.imageSmoothingEnabled = true;
   // Liquids, fire and smoke cover the dolls.
   ctx.drawImage(wcan, 0, 0, W, H);
   ctx.fillStyle = COL_P_BLOOD;
@@ -1890,8 +2009,8 @@ function render() {
   ctx.globalCompositeOperation = "source-over";
   // HUD
   ctx.setTransform(K, 0, 0, K, 0, 0);
-  label("RAGPIT", 14, 22, 18, "#8e8e98", "left", 700);
-  label(TOOL_NAMES[state.tool].toUpperCase(), 14, 40, 11, "#55555e", "left", 600);
+  label("RAGPIT", 14, 26, 26, "#8e8e98");
+  label(TOOL_NAMES[state.tool].toUpperCase(), 15, 52, 13, "#5a5a64");
   drawCursor();
   let sel = state.selected;
   if (!sel || !state.dolls.includes(sel)) sel = state.selected = state.dolls[state.dolls.length - 1] || null;

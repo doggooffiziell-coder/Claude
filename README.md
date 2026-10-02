@@ -12,7 +12,9 @@ Die Web-Version liegt in `web/`. Sie läuft in Safari ohne App Store und ohne Ma
 2. Tippe auf Teilen und dann auf "Zum Home-Bildschirm".
 3. Starte Ragpit über das neue Symbol und dreh das iPhone quer.
 
-Die Web-Version rechnet in 768 x 432 und zeichnet Puppe, Gore und HUD als glatte Vektorgrafik. Sie hat ein achtes Werkzeug: die Bombe. Harte Treffer lassen Körperteile zerplatzen, Stümpfe zeigen Knochen, Fleischfetzen fliegen durch den Raum und Blut spritzt an die Wand.
+Die Web-Version zeichnet Puppen und Fleischfetzen als große Pixel-Art mit schwarzer Kontur und weicher Schattierung. Wasser und Blut laufen in feiner Auflösung. Sie hat 9 Werkzeuge: Greifen, Wasser, Klinge, Feuer, Eis, Bombe, Infusion, Neue Puppe und Reset.
+
+Die Infusion hängt einen Blutbeutel mit Schlauch an die Puppe. Sie füllt Blut auf, schließt Wunden, senkt Schmerz und holt die Puppe zurück, solange der Kopf dran ist.
 
 `web/ragpit.html` ist die Seite für die Claude-Artifact-Ansicht. `web/index.html` ist dieselbe Seite als vollständige HTML-Datei, etwa für GitHub Pages.
 
