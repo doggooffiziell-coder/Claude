@@ -4,7 +4,17 @@
 
 Du wirfst eine Pixel-Puppe durch einen dunklen Raum, schneidest sie mit der Klinge, setzt sie in Brand oder frierst sie ein. Ein Statuspanel zeigt dir live ihre Werte und Zustände.
 
-## Starten
+## Auf dem iPhone spielen
+
+Die Web-Version liegt in `web/`. Sie läuft in Safari ohne App Store und ohne Mac.
+
+1. Öffne die Seite in Safari.
+2. Tippe auf Teilen und dann auf "Zum Home-Bildschirm".
+3. Starte Ragpit über das neue Symbol und dreh das iPhone quer.
+
+`web/ragpit.html` ist die Seite für die Claude-Artifact-Ansicht. `web/index.html` ist dieselbe Seite als vollständige HTML-Datei, etwa für GitHub Pages.
+
+## Starten in Godot
 
 1. Installiere Godot 4.4 oder neuer.
 2. Öffne den Ordner im Projektmanager über "Importieren".

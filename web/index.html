@@ -1,0 +1,1550 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Ragpit">
+<style>body{margin:0}</style>
+</head>
+<body>
+<title>Ragpit</title>
+<style>
+/* One dark game screen: the pixel canvas sits centered and scales to the phone. */
+:root {
+  --ground: #0d0d10;
+  --hint: #6a6a74;
+  --hint-strong: #d8d8d0;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body {
+  background: var(--ground);
+  color: var(--hint);
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  font: 13px/1.4 ui-monospace, "SF Mono", Menlo, monospace;
+}
+#stage {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding-inline: max(8px, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px));
+  box-sizing: border-box;
+}
+#screen {
+  display: block;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  touch-action: none;
+  max-width: 100%;
+  background: #000;
+}
+#hint {
+  display: none;
+  text-align: center;
+  letter-spacing: 0.04em;
+  max-width: 32ch;
+}
+#hint strong { color: var(--hint-strong); font-weight: 600; }
+@media (orientation: portrait) {
+  #hint { display: block; }
+}
+</style>
+
+<div id="stage">
+  <canvas id="screen" width="384" height="216" aria-label="Ragpit Spielfeld"></canvas>
+  <p id="hint"><strong>Dreh dein iPhone quer</strong><br>Dann wird das Spielfeld groß.</p>
+</div>
+
+<script>
+"use strict";
+// ======================================================================
+// Ragpit web port. Same rules as the Godot version: a falling-sand grid,
+// a Verlet ragdoll with joint limits, wounds and a hand drawn pixel HUD.
+// Everything renders into one 384x216 RGBA buffer.
+// ======================================================================
+
+const W = 384, H = 216, N = W * H;
+const FLOOR_Y = 186;
+const CHUNK = 16, CW = W / CHUNK, CH = Math.ceil(H / CHUNK);
+const DT = 1 / 60;
+const GRAVITY = 420;
+const EMPTY = 0, WALL = 1, WATER = 2, BLOOD = 3, FIRE = 4, ICE = 5, STEAM = 6, SMOKE = 7;
+
+const rnd = (n) => (Math.random() * n) | 0;
+const rf = (a, b) => a + Math.random() * (b - a);
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const lerp = (a, b, t) => a + (b - a) * t;
+const moveToward = (v, to, d) => (Math.abs(to - v) <= d ? to : v + Math.sign(to - v) * d);
+const wrapPi = (a) => a - Math.PI * 2 * Math.floor((a + Math.PI) / (Math.PI * 2));
+const hex = (s) => [parseInt(s.slice(1, 3), 16), parseInt(s.slice(3, 5), 16), parseInt(s.slice(5, 7), 16)];
+const mixc = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
+const lighten = (c, t) => [c[0] + (255 - c[0]) * t, c[1] + (255 - c[1]) * t, c[2] + (255 - c[2]) * t];
+const darken = (c, t) => [c[0] * (1 - t), c[1] * (1 - t), c[2] * (1 - t)];
+
+// ---------------------------------------------------------------- frame buffer
+
+const canvas = document.getElementById("screen");
+const ctx = canvas.getContext("2d");
+const frame = ctx.createImageData(W, H);
+const fb = frame.data;
+
+function px(x, y, c, a = 255) {
+  x |= 0; y |= 0;
+  if (x < 0 || y < 0 || x >= W || y >= H) return;
+  const o = (y * W + x) * 4;
+  if (a >= 255) {
+    fb[o] = c[0]; fb[o + 1] = c[1]; fb[o + 2] = c[2];
+  } else {
+    const t = a / 255;
+    fb[o] += (c[0] - fb[o]) * t;
+    fb[o + 1] += (c[1] - fb[o + 1]) * t;
+    fb[o + 2] += (c[2] - fb[o + 2]) * t;
+  }
+}
+
+function rect(x, y, w, h, c, a = 255) {
+  const x0 = Math.max(0, Math.floor(x)), y0 = Math.max(0, Math.floor(y));
+  const x1 = Math.min(W, Math.floor(x + w)), y1 = Math.min(H, Math.floor(y + h));
+  for (let yy = y0; yy < y1; yy++) for (let xx = x0; xx < x1; xx++) px(xx, yy, c, a);
+}
+
+function roundRect(x, y, w, h, c, a = 255) {
+  rect(x + 2, y, w - 4, 1, c, a);
+  rect(x + 1, y + 1, w - 2, 1, c, a);
+  rect(x, y + 2, w, h - 4, c, a);
+  rect(x + 1, y + h - 2, w - 2, 1, c, a);
+  rect(x + 2, y + h - 1, w - 4, 1, c, a);
+}
+
+function framed(x, y, w, h, fill, edge) {
+  roundRect(x, y, w, h, edge);
+  roundRect(x + 1, y + 1, w - 2, h - 2, fill);
+}
+
+// Filled capsule between two points, sampled at pixel centers for crisp pixels.
+function capsule(ax, ay, bx, by, r, c) {
+  const x0 = Math.max(0, Math.floor(Math.min(ax, bx) - r - 1));
+  const x1 = Math.min(W - 1, Math.ceil(Math.max(ax, bx) + r + 1));
+  const y0 = Math.max(0, Math.floor(Math.min(ay, by) - r - 1));
+  const y1 = Math.min(H - 1, Math.ceil(Math.max(ay, by) + r + 1));
+  const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy, r2 = r * r;
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      const cx = x + 0.5, cy = y + 0.5;
+      const t = l2 > 0 ? clamp(((cx - ax) * dx + (cy - ay) * dy) / l2, 0, 1) : 0;
+      const ex = ax + dx * t - cx, ey = ay + dy * t - cy;
+      if (ex * ex + ey * ey <= r2) px(x, y, c);
+    }
+  }
+}
+
+function line(ax, ay, bx, by, c, a = 255) {
+  const n = Math.max(1, Math.ceil(Math.max(Math.abs(bx - ax), Math.abs(by - ay))));
+  for (let s = 0; s <= n; s++) px(Math.floor(lerp(ax, bx, s / n)), Math.floor(lerp(ay, by, s / n)), c, a);
+}
+
+// ---------------------------------------------------------------- pixel font 3x5
+
+const GLYPHS = {
+  A: [".#.", "#.#", "###", "#.#", "#.#"], B: ["##.", "#.#", "##.", "#.#", "##."],
+  C: [".##", "#..", "#..", "#..", ".##"], D: ["##.", "#.#", "#.#", "#.#", "##."],
+  E: ["###", "#..", "##.", "#..", "###"], F: ["###", "#..", "##.", "#..", "#.."],
+  G: [".##", "#..", "#.#", "#.#", ".##"], H: ["#.#", "#.#", "###", "#.#", "#.#"],
+  I: ["###", ".#.", ".#.", ".#.", "###"], J: ["..#", "..#", "..#", "#.#", ".#."],
+  K: ["#.#", "#.#", "##.", "#.#", "#.#"], L: ["#..", "#..", "#..", "#..", "###"],
+  M: ["#.#", "###", "###", "#.#", "#.#"], N: ["##.", "#.#", "#.#", "#.#", "#.#"],
+  O: [".#.", "#.#", "#.#", "#.#", ".#."], P: ["##.", "#.#", "##.", "#..", "#.."],
+  Q: [".#.", "#.#", "#.#", "##.", ".##"], R: ["##.", "#.#", "##.", "#.#", "#.#"],
+  S: [".##", "#..", ".#.", "..#", "##."], T: ["###", ".#.", ".#.", ".#.", ".#."],
+  U: ["#.#", "#.#", "#.#", "#.#", "###"], V: ["#.#", "#.#", "#.#", "#.#", ".#."],
+  W: ["#.#", "#.#", "###", "###", "#.#"], X: ["#.#", "#.#", ".#.", "#.#", "#.#"],
+  Y: ["#.#", "#.#", ".#.", ".#.", ".#."], Z: ["###", "..#", ".#.", "#..", "###"],
+  0: ["###", "#.#", "#.#", "#.#", "###"], 1: [".#.", "##.", ".#.", ".#.", "###"],
+  2: ["##.", "..#", ".#.", "#..", "###"], 3: ["##.", "..#", ".#.", "..#", "##."],
+  4: ["#.#", "#.#", "###", "..#", "..#"], 5: ["###", "#..", "##.", "..#", "##."],
+  6: [".##", "#..", "###", "#.#", "###"], 7: ["###", "..#", ".#.", ".#.", ".#."],
+  8: ["###", "#.#", "###", "#.#", "###"], 9: ["###", "#.#", "###", "..#", "##."],
+  "-": ["...", "...", "###", "...", "..."], ".": ["...", "...", "...", "...", ".#."],
+  ":": ["...", ".#.", "...", ".#.", "..."], "!": [".#.", ".#.", ".#.", "...", ".#."],
+  "+": ["...", ".#.", "###", ".#.", "..."], "/": ["..#", "..#", ".#.", "#..", "#.."],
+};
+const textWidth = (s) => (s.length ? s.length * 4 - 1 : 0);
+function text(x, y, s, c, a = 255) {
+  x = Math.floor(x); y = Math.floor(y);
+  for (const ch of s.toUpperCase()) {
+    const g = GLYPHS[ch];
+    if (g) for (let r = 0; r < 5; r++) for (let k = 0; k < 3; k++) if (g[r][k] === "#") px(x + k, y + r, c, a);
+    x += 4;
+  }
+}
+const textCentered = (cx, y, s, c, a) => text(Math.round(cx - textWidth(s) / 2), y, s, c, a);
+
+// ======================================================================
+// World: falling-sand grid
+// ======================================================================
+
+const mat = new Uint8Array(N), mixv = new Uint8Array(N), life = new Uint8Array(N);
+const shade = new Uint8Array(N), stamp = new Uint8Array(N), rest = new Uint8Array(N);
+const paintMark = new Uint8Array(N);
+const wpx = new Uint8ClampedArray(N * 4);
+let paintList = [];
+let chunkNow = new Uint8Array(CW * CH), chunkNext = new Uint8Array(CW * CH);
+let tick = 0, curStamp = 1;
+let particles = [];
+for (let i = 0; i < N; i++) shade[i] = rnd(16);
+
+const COL_WATER = hex("#2f63c4"), COL_VIOLET = hex("#6e2c96"), COL_BLOODLIQ = hex("#7a0c14");
+function waterColor(share) {
+  const t = Math.sqrt(share / 255);
+  return t < 0.5 ? mixc(COL_WATER, COL_VIOLET, t * 2) : mixc(COL_VIOLET, COL_BLOODLIQ, (t - 0.5) * 2);
+}
+const waterLut = new Uint8Array(256 * 6);
+for (let s = 0; s < 256; s++) {
+  const c = waterColor(s), top = lighten(c, 0.45);
+  waterLut.set([c[0], c[1], c[2], top[0], top[1], top[2]], s * 6);
+}
+
+const isFree = (m) => m === EMPTY || m >= STEAM;
+function getMat(x, y) {
+  if (x < 0 || x >= W || y < 0 || y >= H) return WALL;
+  return mat[y * W + x];
+}
+const matAt = (x, y) => getMat(Math.floor(x), Math.floor(y));
+const solidAt = (x, y) => { const m = matAt(x, y); return m === WALL || m === ICE; };
+const liquidAt = (x, y) => { const m = matAt(x, y); return m === WATER || m === BLOOD; };
+
+function worldReset() {
+  mat.fill(EMPTY); mixv.fill(0); life.fill(0); stamp.fill(0); rest.fill(0);
+  chunkNow.fill(0); chunkNext.fill(0); paintMark.fill(0); paintList = [];
+  for (let y = FLOOR_Y; y < H; y++) for (let x = 0; x < W; x++) mat[y * W + x] = WALL;
+  particles = [];
+  for (let i = 0; i < N; i++) paintCell(i);
+}
+
+function setCell(x, y, m, mx = 0, lf = 0) {
+  if (x < 0 || x >= W || y < 0 || y >= H) return;
+  const i = y * W + x;
+  mat[i] = m; mixv[i] = mx; life[i] = lf;
+  touch(i);
+}
+
+function paintDisc(cx, cy, radius, m, chance, lf = 0) {
+  const r = Math.ceil(radius);
+  cx = Math.floor(cx); cy = Math.floor(cy);
+  for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+    if (dx * dx + dy * dy > radius * radius || Math.random() > chance) continue;
+    const x = cx + dx, y = cy + dy, cur = getMat(x, y);
+    if (cur === EMPTY || cur === STEAM || cur === SMOKE) setCell(x, y, m, 0, m === FIRE ? 40 + rnd(50) : lf);
+  }
+}
+
+function spawnParticle(x, y, vx, vy, m, mx = 255) {
+  if (particles.length >= 1800) return;
+  particles.push({ x, y, vx, vy, m, mx });
+}
+
+function splash(x, y, vx, vy) {
+  x = Math.floor(x); y = Math.floor(y);
+  const m = getMat(x, y);
+  if (m !== WATER && m !== BLOOD) return;
+  const mx = mixv[y * W + x];
+  setCell(x, y, EMPTY);
+  spawnParticle(x + 0.5, y - 0.5, vx * 0.5 + rf(-25, 25), -Math.abs(vy) * 0.45 - rf(20, 60), m, m === WATER ? mx : 255);
+}
+
+function touch(i) {
+  const x = i % W, y = (i / W) | 0;
+  const cx = x >> 4, cy = y >> 4;
+  chunkNext[cy * CW + cx] = 1;
+  const lx = x & 15, ly = y & 15;
+  if (lx === 0 && cx > 0) chunkNext[cy * CW + cx - 1] = 1;
+  else if (lx === 15 && cx < CW - 1) chunkNext[cy * CW + cx + 1] = 1;
+  if (ly === 0 && cy > 0) chunkNext[(cy - 1) * CW + cx] = 1;
+  else if (ly === 15 && cy < CH - 1) chunkNext[(cy + 1) * CW + cx] = 1;
+  // Wake resting neighbours that could move into this cell.
+  rest[i] = 0;
+  if (x > 0) rest[i - 1] = 0;
+  if (x < W - 1) rest[i + 1] = 0;
+  if (y > 0) {
+    const u = i - W;
+    rest[u] = 0;
+    if (x > 0) rest[u - 1] = 0;
+    if (x < W - 1) rest[u + 1] = 0;
+  }
+  if (!paintMark[i]) { paintMark[i] = 1; paintList.push(i); }
+  if (y + 1 < H && !paintMark[i + W]) { paintMark[i + W] = 1; paintList.push(i + W); }
+}
+
+function swap(i, j) {
+  let t = mat[i]; mat[i] = mat[j]; mat[j] = t;
+  t = mixv[i]; mixv[i] = mixv[j]; mixv[j] = t;
+  t = life[i]; life[i] = life[j]; life[j] = t;
+  stamp[i] = curStamp; stamp[j] = curStamp;
+  touch(i); touch(j);
+}
+
+function neighbor(x, y, n) {
+  switch (n) {
+    case 0: return x > 0 ? y * W + x - 1 : -1;
+    case 1: return x < W - 1 ? y * W + x + 1 : -1;
+    case 2: return y > 0 ? (y - 1) * W + x : -1;
+    default: return y < H - 1 ? (y + 1) * W + x : -1;
+  }
+}
+
+function worldStep() {
+  tick++;
+  curStamp = (tick % 250) + 1;
+  const sw = chunkNow; chunkNow = chunkNext; chunkNext = sw; chunkNext.fill(0);
+  const leftFirst = (tick & 1) === 0;
+  for (let cy = CH - 1; cy >= 0; cy--) {
+    let any = false;
+    for (let cx = 0; cx < CW; cx++) if (chunkNow[cy * CW + cx]) { any = true; break; }
+    if (!any) continue;
+    const y0 = cy * CHUNK, y1 = Math.min(y0 + CHUNK, H) - 1;
+    for (let y = y1; y >= y0; y--) {
+      for (let ci = 0; ci < CW; ci++) {
+        const cx = leftFirst ? ci : CW - 1 - ci;
+        if (!chunkNow[cy * CW + cx]) continue;
+        const x0 = cx * CHUNK;
+        for (let k = 0; k < CHUNK; k++) {
+          const x = leftFirst ? x0 + k : x0 + CHUNK - 1 - k;
+          const i = y * W + x, m = mat[i];
+          if (m === EMPTY || m === WALL || m === ICE) continue;
+          if (stamp[i] === curStamp) continue;
+          if (rest[i] > 3 && ((tick + i) & 15) !== 0) continue;
+          if (m === WATER || m === BLOOD) liquid(x, y, i, m);
+          else if (m === FIRE) fireCell(x, y, i);
+          else gasCell(x, y, i);
+        }
+      }
+    }
+  }
+  stepParticles();
+}
+
+function liquid(x, y, i, m) {
+  const hasBelow = y + 1 < H;
+  if (hasBelow) {
+    const b = i + W, mb = mat[b];
+    if (isFree(mb)) { swap(i, b); life[b] = 0; return; }
+    let d = Math.random() < 0.5 ? 1 : -1;
+    for (let k = 0; k < 2; k++) {
+      const nx = x + d;
+      if (nx >= 0 && nx < W && isFree(mat[b + d]) && isFree(mat[i + d])) { swap(i, b + d); life[b + d] = 0; return; }
+      d = -d;
+    }
+  }
+  // Look sideways for a drop and flow toward it. Water looks far, blood is thick.
+  const look = m === WATER ? 32 : 3;
+  let dir = Math.random() < 0.5 ? 1 : -1;
+  const row = y * W;
+  for (let k = 0; k < 2; k++) {
+    let nx = x, s = 0, found = false;
+    while (s < look) {
+      const tx = nx + dir;
+      if (tx < 0 || tx >= W || !isFree(mat[row + tx])) break;
+      nx = tx; s++;
+      if (hasBelow && isFree(mat[row + W + tx])) { found = true; break; }
+    }
+    if (found) { swap(i, row + x + dir * Math.min(s, m === WATER ? 4 : 1)); return; }
+    dir = -dir;
+  }
+  // No drop in reach: spread at random. Every hop tires the cell, so pools come to rest.
+  const tired = life[i];
+  if (tired < 48 && (m === WATER || rnd(4) === 0)) {
+    for (let k = 0; k < 2; k++) {
+      let tx = x + dir;
+      if (tx >= 0 && tx < W && isFree(mat[row + tx])) {
+        const tx2 = tx + dir;
+        if (m === WATER && tx2 >= 0 && tx2 < W && isFree(mat[row + tx2])) tx = tx2;
+        swap(i, row + tx);
+        life[row + tx] = tired + 1;
+        return;
+      }
+      dir = -dir;
+    }
+  }
+  if (rest[i] < 255) rest[i]++;
+  if (rnd(4) === 0) liquidReact(x, y, i, m);
+}
+
+function setLiquid(i, share) {
+  if (share >= 250) { mat[i] = BLOOD; mixv[i] = 255; }
+  else { mat[i] = WATER; mixv[i] = share; }
+  touch(i);
+}
+
+function liquidReact(x, y, i, m) {
+  const j = neighbor(x, y, rnd(4));
+  if (j < 0) return;
+  const mj = mat[j];
+  if (mj === WATER || mj === BLOOD) {
+    const fa = m === BLOOD ? 255 : mixv[i], fb2 = mj === BLOOD ? 255 : mixv[j];
+    if (Math.abs(fa - fb2) > 6) {
+      const avg = (fa + fb2) >> 1;
+      setLiquid(i, avg); setLiquid(j, avg);
+    }
+  } else if (mj === ICE && m === WATER && life[j] > 40 && rnd(5) === 0) {
+    mat[i] = ICE; life[i] = life[j] - 40; touch(i);
+  }
+}
+
+function fireCell(x, y, i) {
+  const l = life[i] - 1 - rnd(3);
+  if (l <= 0) {
+    if (rnd(3) === 0) { mat[i] = SMOKE; life[i] = 50 + rnd(40); }
+    else { mat[i] = EMPTY; life[i] = 0; }
+    touch(i);
+    return;
+  }
+  life[i] = l;
+  for (let n = 0; n < 4; n++) {
+    const j = neighbor(x, y, n);
+    if (j < 0) continue;
+    const mj = mat[j];
+    if (mj === WATER || mj === BLOOD) {
+      mat[i] = STEAM; life[i] = 60;
+      if (rnd(2) === 0) { mat[j] = STEAM; life[j] = 70; touch(j); }
+      touch(i);
+      return;
+    }
+    if (mj === ICE && rnd(4) === 0) { mat[j] = WATER; mixv[j] = 0; life[j] = 0; touch(j); }
+  }
+  const nx = x + rnd(3) - 1;
+  if (y > 0 && nx >= 0 && nx < W && isFree(mat[(y - 1) * W + nx]) && rnd(3) !== 0) swap(i, (y - 1) * W + nx);
+  else touch(i);
+}
+
+function gasCell(x, y, i) {
+  let l = life[i] - 1;
+  if (y === 0) l -= 3;
+  if (l <= 0) { mat[i] = EMPTY; life[i] = 0; touch(i); return; }
+  life[i] = l;
+  const nx = x + rnd(3) - 1;
+  if (y > 0 && nx >= 0 && nx < W && mat[(y - 1) * W + nx] === EMPTY) { swap(i, (y - 1) * W + nx); return; }
+  const sx = x + (Math.random() < 0.5 ? 1 : -1);
+  if (sx >= 0 && sx < W && mat[y * W + sx] === EMPTY) { swap(i, y * W + sx); return; }
+  touch(i);
+}
+
+function stepParticles() {
+  for (let k = particles.length - 1; k >= 0; k--) {
+    const p = particles[k];
+    p.vy += GRAVITY * DT;
+    p.vx *= 0.995; p.vy *= 0.995;
+    const x1 = p.x + p.vx * DT, y1 = p.y + p.vy * DT;
+    const n = Math.floor(Math.max(Math.abs(x1 - p.x), Math.abs(y1 - p.y))) + 1;
+    let done = false, lx = p.x, ly = p.y;
+    for (let s = 1; s <= n; s++) {
+      const qx = lerp(p.x, x1, s / n), qy = lerp(p.y, y1, s / n);
+      const ix = Math.floor(qx), iy = Math.floor(qy);
+      if (ix < 0 || ix >= W || iy >= H) { done = true; break; }
+      if (iy < 0) { lx = qx; ly = qy; continue; }
+      if (!isFree(mat[iy * W + ix])) { settle(lx, ly, p.m, p.mx); done = true; break; }
+      lx = qx; ly = qy;
+    }
+    if (done) { particles[k] = particles[particles.length - 1]; particles.pop(); }
+    else { p.x = x1; p.y = y1; }
+  }
+}
+
+function settle(fx, fy, m, mx) {
+  const x = Math.floor(fx);
+  let y = Math.floor(fy);
+  for (let k = 0; k < 4; k++) {
+    if (y < 0) return;
+    if (isFree(getMat(x, y))) { setCell(x, y, m, m === BLOOD ? 255 : mx); return; }
+    y--;
+  }
+}
+
+function paintCell(i) {
+  const o = i * 4, m = mat[i];
+  let r = 0, g = 0, b = 0, a = 255;
+  switch (m) {
+    case EMPTY: a = 0; break;
+    case WALL: {
+      const x = i % W, y = (i / W) | 0, s = shade[i];
+      let v = 150 + (s >> 2);
+      if (y === FLOOR_Y) v = 204;
+      else if (y === FLOOR_Y + 1) v = 178;
+      else if (x % 32 === 0 || (y - FLOOR_Y) % 12 === 0) v = 128;
+      else if (x % 32 === 1 || (y - FLOOR_Y) % 12 === 1) v = 168;
+      else if (s === 0) v = 138;
+      r = v; g = v; b = v + 4;
+      break;
+    }
+    case WATER: {
+      let li = mixv[i] * 6;
+      if (i >= W && isFree(mat[i - W])) li += 3;
+      r = waterLut[li]; g = waterLut[li + 1]; b = waterLut[li + 2];
+      if (shade[i] < 2) { r += 10; g += 10; b += 10; }
+      a = 190;
+      break;
+    }
+    case BLOOD: {
+      const s2 = shade[i] % 4;
+      r = 112 + s2 * 4; g = 8 + s2; b = 16;
+      if (i >= W && isFree(mat[i - W])) { r = 150; g = 22; b = 30; }
+      break;
+    }
+    case FIRE: {
+      const l = life[i] + rnd(12);
+      if (l > 60) { r = 255; g = 226; b = 110; }
+      else if (l > 32) { r = 246; g = 132; b = 34; }
+      else { r = 190; g = 44; b = 22; }
+      break;
+    }
+    case ICE: {
+      const s3 = shade[i];
+      r = 168 + s3; g = 214 + (s3 >> 1); b = 240;
+      if (i >= W && mat[i - W] !== ICE) { r = 222; g = 244; b = 255; }
+      a = 235;
+      break;
+    }
+    case STEAM: r = 205; g = 210; b = 220; a = Math.min(150, life[i] * 2); break;
+    case SMOKE: r = 58; g = 58; b = 62; a = Math.min(170, life[i] * 2); break;
+  }
+  wpx[o] = r; wpx[o + 1] = g; wpx[o + 2] = b; wpx[o + 3] = a;
+}
+
+function flushPaint() {
+  for (const i of paintList) { paintCell(i); paintMark[i] = 0; }
+  paintList = [];
+}
+
+// ======================================================================
+// Doll: Verlet ragdoll
+// ======================================================================
+
+const HEAD = 0, TORSO = 1, PELVIS = 2, UARM_L = 3, LARM_L = 4, UARM_R = 5, LARM_R = 6;
+const THIGH_L = 7, SHIN_L = 8, FOOT_L = 9, THIGH_R = 10, SHIN_R = 11, FOOT_R = 12;
+const P_HEAD = 0, P_NECK = 1, P_WAIST = 2, P_HIP = 3, P_ELBOW_L = 4, P_HAND_L = 5, P_ELBOW_R = 6, P_HAND_R = 7;
+const P_KNEE_L = 8, P_ANKLE_L = 9, P_TOE_L = 10, P_KNEE_R = 11, P_ANKLE_R = 12, P_TOE_R = 13;
+const PART_COUNT = 13;
+const PART_A = [P_NECK, P_NECK, P_WAIST, P_NECK, P_ELBOW_L, P_NECK, P_ELBOW_R, P_HIP, P_KNEE_L, P_ANKLE_L, P_HIP, P_KNEE_R, P_ANKLE_R];
+const PART_B = [P_HEAD, P_WAIST, P_HIP, P_ELBOW_L, P_HAND_L, P_ELBOW_R, P_HAND_R, P_KNEE_L, P_ANKLE_L, P_TOE_L, P_KNEE_R, P_ANKLE_R, P_TOE_R];
+const PARENT = [TORSO, -1, TORSO, TORSO, UARM_L, TORSO, UARM_R, PELVIS, THIGH_L, SHIN_L, PELVIS, THIGH_R, SHIN_R];
+const WIDTH = [2, 6, 5, 3, 3, 3, 3, 4, 3, 2, 4, 3, 2];
+const FAR_SIDE = [false, false, false, true, true, false, false, true, true, true, false, false, false];
+const DRAW_ORDER = [UARM_L, LARM_L, THIGH_L, SHIN_L, FOOT_L, PELVIS, TORSO, HEAD, THIGH_R, SHIN_R, FOOT_R, UARM_R, LARM_R];
+const POINT_OWNER = [HEAD, TORSO, TORSO, PELVIS, UARM_L, LARM_L, UARM_R, LARM_R, THIGH_L, SHIN_L, FOOT_L, THIGH_R, SHIN_R, FOOT_R];
+const POINT_INV_MASS = [0.8, 0.6, 0.5, 0.6, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+// Standing pose, facing right. Origin sits on the floor between the feet.
+const POSE = [[0, -37], [0, -32], [0, -22], [0, -18], [-1, -25], [0, -18], [1, -25], [2, -18],
+  [-1, -10], [-1, -2], [2, -1], [1, -10], [1, -2], [4, -1]];
+// child, parent, joint on parent end A, min and max degrees
+const JOINTS = [
+  [HEAD, TORSO, true, -35, 35], [PELVIS, TORSO, false, -35, 45],
+  [UARM_L, TORSO, true, 30, 330], [UARM_R, TORSO, true, 30, 330],
+  [LARM_L, UARM_L, false, -150, 0], [LARM_R, UARM_R, false, -150, 0],
+  [THIGH_L, PELVIS, false, -120, 30], [THIGH_R, PELVIS, false, -120, 30],
+  [SHIN_L, THIGH_L, false, -10, 150], [SHIN_R, THIGH_R, false, -10, 150],
+  [FOOT_L, SHIN_L, false, -140, -30], [FOOT_R, SHIN_R, false, -140, -30],
+];
+const ITERATIONS = 8, HEAD_R = 4, MAX_STEP = 14;
+const WOUND_SPEED = 210, SEVER_SPEED = 520, MAX_WOUNDS = 32, OUT_BL = 35, AGONY_PN = 65;
+const COL_SKIN = hex("#f2f2ec"), COL_SKIN_FAR = hex("#cdcdc6"), COL_LINE = hex("#0c0c0e");
+const COL_CHAR = hex("#342c28"), COL_ICE = hex("#a0d2f5"), COL_WOUND = hex("#b01020");
+const COL_SCAR = hex("#5a1418"), COL_STUMP = hex("#d01828"), COL_HURT = hex("#ff7070");
+const D2R = Math.PI / 180;
+
+class Doll {
+  constructor(bx, by, id) {
+    this.id = id;
+    this.x = []; this.y = []; this.ox = []; this.oy = [];
+    this.inv = []; this.owner = []; this.impactCd = [];
+    for (let i = 0; i < POSE.length; i++) {
+      this.x.push(bx + POSE[i][0]); this.y.push(by + POSE[i][1]);
+      this.ox.push(bx + POSE[i][0]); this.oy.push(by + POSE[i][1]);
+      this.inv.push(POINT_INV_MASS[i]); this.owner.push(POINT_OWNER[i]); this.impactCd.push(0);
+    }
+    this.pa = PART_A.slice(); this.pb = PART_B.slice();
+    this.restLen = []; this.severed = []; this.char = []; this.bladeCd = [];
+    for (let k = 0; k < PART_COUNT; k++) {
+      this.restLen.push(Math.hypot(this.x[this.pb[k]] - this.x[this.pa[k]], this.y[this.pb[k]] - this.y[this.pa[k]]));
+      this.severed.push(false); this.char.push(0); this.bladeCd.push(0);
+    }
+    this.joints = JOINTS.map((d) => ({
+      child: d[0], parent: d[1], atA: d[2],
+      center: (d[3] + d[4]) * 0.5 * D2R, half: (d[4] - d[3]) * 0.5 * D2R,
+      rest: 0, frozenRel: 0, active: true,
+    }));
+    for (const j of this.joints) j.rest = this.jointRel(j);
+    this.wounds = [];
+    this.grabbed = -1; this.gx = 0; this.gy = 0;
+    this.ko = 100; this.bl = 100; this.pn = 0; this.o2 = 100; this.hr = 72;
+    this.dead = false; this.headUnder = false;
+    this.burn = 0; this.bladeTimer = 0; this.freeze = 0; this.frozen = false;
+    this.sinceDamage = 0; this.healing = false;
+    this.beatPhase = 0; this.beatFlash = 0; this.hurtFlash = 0;
+    this.noAir = 0; this.beat = false; this.severCd = 0; this.woundCd = 0; this.burnImmune = 0;
+    this.standing = false;
+  }
+
+  // ------------------------------------------------ physics
+  step() {
+    const g = GRAVITY * DT * DT;
+    const feet0 = [this.x[P_ANKLE_L], this.x[P_TOE_L], this.x[P_ANKLE_R], this.x[P_TOE_R]];
+    for (let i = 0; i < this.x.length; i++) {
+      this.impactCd[i] = Math.max(0, this.impactCd[i] - DT);
+      if (i === this.grabbed) { this.moveGrabbed(i); continue; }
+      const x = this.x[i], y = this.y[i];
+      let vx = x - this.ox[i], vy = y - this.oy[i];
+      if (liquidAt(x, y)) {
+        vx *= 0.86; vy *= 0.86;
+        vy += g * 0.12;
+        if (vx * vx + vy * vy > 6.25) splash(x, y, vx / DT, vy / DT);
+      } else {
+        vx *= 0.998; vy *= 0.998;
+        // Static friction: slow points resting on the ground settle down.
+        if (vx * vx + vy * vy < 0.25) {
+          const f = solidAt(x, y + 1.2) ? 0.6 : 0.9;
+          vx *= f; vy *= f;
+        }
+        vy += g;
+      }
+      const sp = Math.hypot(vx, vy);
+      if (sp > MAX_STEP) { vx *= MAX_STEP / sp; vy *= MAX_STEP / sp; }
+      this.integrate(i, vx, vy);
+    }
+    this.balance();
+    for (let it = 0; it < ITERATIONS; it++) {
+      for (let k = 0; k < PART_COUNT; k++) this.solveDistance(this.pa[k], this.pb[k], this.restLen[k]);
+      this.solveJoints();
+      if (it % 2 === 1) for (let i = 0; i < this.x.length; i++) this.pushOut(i);
+    }
+    // Standing feet grip the floor instead of sliding.
+    if (this.standing) {
+      const ids = [P_ANKLE_L, P_TOE_L, P_ANKLE_R, P_TOE_R];
+      for (let n = 0; n < 4; n++) {
+        const i = ids[n];
+        if (this.attached(this.owner[i])) { this.x[i] = feet0[n]; this.ox[i] = feet0[n]; }
+      }
+    }
+    this.updateEffects();
+    this.updateVitals();
+  }
+
+  moveGrabbed(i) {
+    const x = this.x[i], y = this.y[i];
+    let tx = this.gx, ty = this.gy;
+    const d = Math.hypot(tx - x, ty - y);
+    if (d > MAX_STEP) { tx = x + (tx - x) * MAX_STEP / d; ty = y + (ty - y) * MAX_STEP / d; }
+    if (solidAt(tx, ty)) { tx = x; ty = y; }
+    this.ox[i] = x; this.oy[i] = y;
+    this.x[i] = tx; this.y[i] = ty;
+  }
+
+  integrate(i, vx, vy) {
+    let x = this.x[i], y = this.y[i];
+    const steps = Math.max(1, Math.ceil(Math.max(Math.abs(vx), Math.abs(vy))));
+    let sx = vx / steps, sy = vy / steps, hit = 0;
+    for (let s = 0; s < steps; s++) {
+      if (sx !== 0) {
+        const nx = x + sx;
+        if (solidAt(nx, y)) { hit = Math.max(hit, Math.abs(vx)); vx *= -0.25; sx = 0; } else x = nx;
+      }
+      if (sy !== 0) {
+        const ny = y + sy;
+        if (solidAt(x, ny)) { hit = Math.max(hit, Math.abs(vy)); if (vy > 0) vx *= 0.6; vy *= -0.2; sy = 0; } else y = ny;
+      }
+    }
+    this.x[i] = x; this.y[i] = y; this.ox[i] = x - vx; this.oy[i] = y - vy;
+    const speed = hit / DT;
+    if (speed > WOUND_SPEED * 0.75 && this.impactCd[i] <= 0) { this.impactCd[i] = 0.15; this.onImpact(i, speed); }
+  }
+
+  // A conscious doll with its feet on the floor keeps its body over its feet.
+  balance() {
+    this.standing = false;
+    if (this.dead || this.frozen || this.grabbed >= 0 || this.isOut() || this.pn > 90) return;
+    if (!this.attached(PELVIS) || !(this.attached(SHIN_L) || this.attached(SHIN_R))) return;
+    let grounded = false, feetX = 0, feet = 0;
+    for (const k of [FOOT_L, FOOT_R]) {
+      if (!this.attached(k)) continue;
+      const a = this.pa[k], b = this.pb[k];
+      feetX += this.x[a]; feet++;
+      if (solidAt(this.x[a], this.y[a] + 2.5) || solidAt(this.x[b], this.y[b] + 2.5)) grounded = true;
+    }
+    if (!grounded || feet === 0) return;
+    feetX /= feet;
+    const groundY = Math.max(this.y[P_ANKLE_L], this.y[P_ANKLE_R]) + 2;
+    if (this.y[P_NECK] > this.y[P_HIP] - 7 || this.y[P_HIP] > groundY - 10 || Math.abs(this.x[P_NECK] - feetX) > 9) return;
+    this.standing = true;
+    // Pull every attached body point toward the standing pose above the feet.
+    const s = 0.15 * clamp(this.ko / 100, 0, 1);
+    for (let i = 0; i < POSE.length; i++) {
+      if (i === P_ANKLE_L || i === P_ANKLE_R || i === P_TOE_L || i === P_TOE_R) continue;
+      if (!this.attached(this.owner[i])) continue;
+      const vx = (this.x[i] - this.ox[i]) * 0.7, vy = (this.y[i] - this.oy[i]) * 0.7;
+      this.x[i] += (feetX + POSE[i][0] - this.x[i]) * s;
+      this.y[i] += (groundY + POSE[i][1] - this.y[i]) * s;
+      this.ox[i] = this.x[i] - vx; this.oy[i] = this.y[i] - vy;
+    }
+  }
+
+  solveDistance(a, b, rest) {
+    const dx = this.x[b] - this.x[a], dy = this.y[b] - this.y[a];
+    const len = Math.hypot(dx, dy);
+    if (len < 0.0001) return;
+    const wa = a === this.grabbed ? 0 : this.inv[a], wb = b === this.grabbed ? 0 : this.inv[b];
+    const ws = wa + wb;
+    if (ws <= 0) return;
+    const f = (len - rest) / len;
+    this.x[a] += dx * f * wa / ws; this.y[a] += dy * f * wa / ws;
+    this.x[b] -= dx * f * wb / ws; this.y[b] -= dy * f * wb / ws;
+  }
+
+  jointIds(j) {
+    const jp = j.atA ? this.pa[j.parent] : this.pb[j.parent];
+    const op = j.atA ? this.pb[j.parent] : this.pa[j.parent];
+    return [jp, op, this.pb[j.child]];
+  }
+
+  jointRel(j) {
+    const [jp, op, cp] = this.jointIds(j);
+    const ap = Math.atan2(this.y[jp] - this.y[op], this.x[jp] - this.x[op]);
+    const ac = Math.atan2(this.y[cp] - this.y[jp], this.x[cp] - this.x[jp]);
+    return wrapPi(ac - ap - j.center);
+  }
+
+  solveJoints() {
+    let muscle = 0;
+    if (this.frozen) muscle = 0.5;
+    else if (!this.dead && !this.isOut()) muscle = 0.06 * clamp(this.ko / 100, 0, 1);
+    for (const j of this.joints) {
+      if (!j.active) continue;
+      const [jp, op, cp] = this.jointIds(j);
+      const jx = this.x[jp], jy = this.y[jp];
+      const rel = this.jointRel(j);
+      // A joint bent far past its limit counts as dislocated and stays loose.
+      if (Math.abs(rel) > j.half + 0.8) continue;
+      let target = clamp(rel, -j.half, j.half);
+      if (muscle > 0) target = lerp(target, this.frozen ? j.frozenRel : j.rest, muscle);
+      let diff = target - rel;
+      if (Math.abs(diff) < 0.0001) continue;
+      const wc = cp === this.grabbed ? 0 : this.inv[cp];
+      const wo = op === this.grabbed ? 0 : this.inv[op];
+      const ws = wc + wo;
+      if (ws <= 0) continue;
+      // Small steps keep a tangled joint from flipping between its two limits.
+      diff = clamp(diff * 0.5, -0.12, 0.12);
+      const rc = diff * wc / ws, ro = -diff * wo / ws;
+      let cx = this.x[cp] - jx, cy = this.y[cp] - jy;
+      const ncx = jx + cx * Math.cos(rc) - cy * Math.sin(rc), ncy = jy + cx * Math.sin(rc) + cy * Math.cos(rc);
+      let qx = this.x[op] - jx, qy = this.y[op] - jy;
+      const nox = jx + qx * Math.cos(ro) - qy * Math.sin(ro), noy = jy + qx * Math.sin(ro) + qy * Math.cos(ro);
+      const dcx = ncx - this.x[cp], dcy = ncy - this.y[cp], dox = nox - this.x[op], doy = noy - this.y[op];
+      this.x[cp] = ncx; this.y[cp] = ncy; this.x[op] = nox; this.y[op] = noy;
+      // Shift all three points so the rotation adds no linear momentum.
+      const wj = jp === this.grabbed ? 0 : this.inv[jp];
+      if (wc > 0 && wo > 0 && wj > 0) {
+        const m = 1 / wc + 1 / wo + 1 / wj;
+        const shx = -(dcx / wc + dox / wo) / m, shy = -(dcy / wc + doy / wo) / m;
+        this.x[cp] += shx; this.y[cp] += shy;
+        this.x[op] += shx; this.y[op] += shy;
+        this.x[jp] += shx; this.y[jp] += shy;
+      }
+    }
+  }
+
+  // A point pushed into a solid cell returns to free space and loses most of its speed.
+  pushOut(i) {
+    const x = this.x[i], y = this.y[i];
+    if (!solidAt(x, y)) return;
+    const vx = x - this.ox[i], vy = y - this.oy[i];
+    const [qx, qy] = this.freeSpot(x, y, this.ox[i], this.oy[i]);
+    this.x[i] = qx; this.y[i] = qy;
+    this.ox[i] = qx - vx * 0.25; this.oy[i] = qy - vy * 0.25;
+  }
+
+  freeSpot(x, y, bx, by) {
+    const fx = Math.floor(x), fy = Math.floor(y);
+    let best = null, bestD = Infinity;
+    for (const [qx, qy] of [[x, fy - 0.001], [fx - 0.001, y], [fx + 1.001, y], [x, fy + 1.001]]) {
+      const d = (qx - x) ** 2 + (qy - y) ** 2;
+      if (d < bestD && !solidAt(qx, qy)) { bestD = d; best = [qx, qy]; }
+    }
+    if (best) return best;
+    const backX = bx - x, backY = by - y, n = Math.ceil(Math.hypot(backX, backY));
+    for (let s = 1; s <= Math.min(n, 6); s++) {
+      const qx = x + backX * s / n, qy = y + backY * s / n;
+      if (!solidAt(qx, qy)) return [qx, qy];
+    }
+    for (let r = 1; r < 6; r++) {
+      for (const [dx, dy] of [[0, -1], [-1, -1], [1, -1], [-1, 0], [1, 0], [0, 1]]) {
+        if (!solidAt(x + dx * r, y + dy * r)) return [x + dx * r, y + dy * r];
+      }
+    }
+    return [x, y];
+  }
+
+  // ------------------------------------------------ damage
+  onImpact(i, speed) {
+    const k = this.owner[i];
+    const force = speed - WOUND_SPEED * 0.75;
+    this.pn = Math.min(100, this.pn + force / 9);
+    this.damaged();
+    if (k === HEAD) this.ko -= force / 5;
+    if (speed > WOUND_SPEED && this.woundCd <= 0) {
+      this.woundCd = 0.12;
+      const t = k === HEAD ? Math.random() : (i === this.pa[k] ? 0.15 : 0.85);
+      const sev = 0.5 + (speed - WOUND_SPEED) / 180;
+      this.addWound(k, t, rf(-1, 1), sev);
+      this.burst(this.x[i], this.y[i], 4 + Math.floor(sev * 4), 0, -1, 70);
+    }
+    let severAt = SEVER_SPEED * (this.frozen ? 0.6 : 1);
+    if (k === HEAD) severAt *= 1.3;
+    if (k !== TORSO && k !== PELVIS && speed > severAt && this.severCd <= 0) {
+      if (Math.random() < clamp((speed - severAt) / 350 + 0.15, 0, 0.7)) this.sever(k);
+    }
+  }
+
+  addWound(k, t, s, severity, stump = false) {
+    if (!stump) {
+      for (const w of this.wounds) {
+        if (w.part === k && !w.stump && Math.abs(w.t - t) < 0.2) {
+          w.bleed = Math.min(1, w.bleed + severity * 0.12);
+          w.size = Math.min(3, w.size + 1);
+          return;
+        }
+      }
+    }
+    if (this.wounds.length >= MAX_WOUNDS) this.wounds.shift();
+    this.wounds.push({ part: k, t: clamp(t, 0, 1), s: clamp(s, -1, 1), bleed: severity * 0.25, size: severity < 1.5 ? 1 : 2, stump });
+  }
+
+  sever(k) {
+    if (k === TORSO || this.severed[k]) return;
+    const jp = this.pa[k], np = this.x.length;
+    this.x.push(this.x[jp]); this.y.push(this.y[jp]); this.ox.push(this.ox[jp]); this.oy.push(this.oy[jp]);
+    this.inv.push(this.inv[jp]); this.owner.push(k); this.impactCd.push(0.3);
+    this.pa[k] = np;
+    this.severed[k] = true;
+    for (const j of this.joints) if (j.child === k) j.active = false;
+    let parentT = 0;
+    for (const d of JOINTS) if (d[0] === k) parentT = d[2] ? 0 : 1;
+    this.addWound(PARENT[k], parentT, 0, 9, true);
+    this.addWound(k, 0, 0, 3.2, true);
+    this.severCd = 0.25;
+    if (this.grabbed === jp) this.grabbed = -1;
+    this.pn = 100;
+    this.burst(this.x[jp], this.y[jp], 26, 0, -1, 120);
+    this.damaged();
+    if (k === HEAD) this.die();
+  }
+
+  bladeHit(ax, ay, bx, by, speed) {
+    if (speed < 60) return false;
+    let hit = false;
+    for (let k = 0; k < PART_COUNT; k++) {
+      const p0x = this.x[this.pa[k]], p0y = this.y[this.pa[k]];
+      const p1x = this.x[this.pb[k]], p1y = this.y[this.pb[k]];
+      let t = 0.5, dist, cx, cy;
+      if (k === HEAD) {
+        [cx, cy] = closestOnSeg(p1x, p1y, ax, ay, bx, by);
+        dist = Math.hypot(cx - p1x, cy - p1y) - HEAD_R;
+        t = Math.random();
+      } else {
+        const r = segSeg(ax, ay, bx, by, p0x, p0y, p1x, p1y);
+        dist = r.d - WIDTH[k] * 0.5;
+        cx = r.qx; cy = r.qy; t = r.t;
+      }
+      if (dist > 1.5) continue;
+      hit = true;
+      if (this.bladeCd[k] > 0) continue;
+      this.bladeCd[k] = 0.15;
+      this.addWound(k, t, rf(-1, 1), 0.6 + speed / 600);
+      this.pn = Math.min(100, this.pn + 14);
+      const l = Math.hypot(bx - ax, by - ay) || 1;
+      this.burst(cx, cy, 10, (bx - ax) / l, (by - ay) / l, 90);
+      if (speed > 380 && k !== TORSO && this.severCd <= 0 && Math.random() < 0.8) this.sever(k);
+    }
+    if (hit) { this.bladeTimer = 2; this.damaged(); }
+    return hit;
+  }
+
+  near(px0, py0, r) {
+    for (let i = 0; i < this.x.length; i++) if (Math.hypot(this.x[i] - px0, this.y[i] - py0) <= r) return true;
+    return false;
+  }
+  applyHeat(x, y, r) { if (this.near(x, y, r)) this.burn = Math.max(this.burn, 5); }
+  applyCold(x, y, r) { if (this.near(x, y, r)) { this.freeze = Math.min(1.6, this.freeze + DT * 1.1); this.burn = 0; } }
+  damaged() { this.sinceDamage = 0; this.hurtFlash = 1; }
+  die() { this.dead = true; this.ko = 0; }
+
+  burst(x, y, count, dx, dy, speed) {
+    if (this.bl <= 1) return;
+    for (let n = 0; n < count; n++) {
+      const a = rf(-1.1, 1.1), s = speed * rf(0.3, 1);
+      const vx = (dx * Math.cos(a) - dy * Math.sin(a)) * s + rf(-30, 30);
+      const vy = (dx * Math.sin(a) + dy * Math.cos(a)) * s + rf(-50, 10);
+      spawnParticle(x, y, vx, vy, BLOOD);
+    }
+  }
+
+  // ------------------------------------------------ effects
+  updateEffects() {
+    this.severCd = Math.max(0, this.severCd - DT);
+    this.woundCd = Math.max(0, this.woundCd - DT);
+    for (let k = 0; k < PART_COUNT; k++) this.bladeCd[k] = Math.max(0, this.bladeCd[k] - DT);
+    this.bladeTimer = Math.max(0, this.bladeTimer - DT);
+    this.hurtFlash = Math.max(0, this.hurtFlash - DT * 4);
+    this.beatFlash = Math.max(0, this.beatFlash - DT * 5);
+
+    let cold = 0, wet = false;
+    for (let i = 0; i < this.x.length; i++) {
+      const x = this.x[i], y = this.y[i], m = matAt(x, y);
+      if (m === FIRE && this.burn <= 0 && this.burnImmune <= 0) this.burn = 5;
+      else if (m === WATER || m === BLOOD) wet = true;
+      if (matAt(x, y + 1.5) === ICE || matAt(x + 1.5, y) === ICE || matAt(x - 1.5, y) === ICE) cold++;
+    }
+    const hx = this.x[this.pb[HEAD]], hy = this.y[this.pb[HEAD]];
+    this.headUnder = !this.severed[HEAD] && liquidAt(hx, hy) && liquidAt(hx, hy - 2);
+
+    if (wet && this.burn > 0) {
+      this.burn = 0;
+      paintDisc(this.x[this.pa[TORSO]], this.y[this.pa[TORSO]], 3, STEAM, 0.4, 60);
+    }
+    this.burnImmune = Math.max(0, this.burnImmune - DT);
+    if (this.burn > 0) {
+      this.burn -= DT;
+      if (this.burn <= 0) this.burnImmune = 1.5;
+      this.freeze = Math.max(0, this.freeze - DT * 0.9);
+      this.pn = Math.min(100, this.pn + 9 * DT);
+      this.sinceDamage = 0;
+      for (let n = 0; n < 2; n++) {
+        const k = rnd(PART_COUNT), t = Math.random();
+        const x = lerp(this.x[this.pa[k]], this.x[this.pb[k]], t), y = lerp(this.y[this.pa[k]], this.y[this.pb[k]], t);
+        this.char[k] = Math.min(1, this.char[k] + DT * 0.25);
+        if (matAt(x, y - 2) === EMPTY) setCell(Math.floor(x) + rnd(3) - 1, Math.floor(y) - 2, FIRE, 0, 30 + rnd(40));
+      }
+    }
+    if (cold > 0) this.freeze = Math.min(1.6, this.freeze + DT * 0.18 * Math.min(cold, 5));
+    else if (this.burn <= 0) this.freeze = Math.max(0, this.freeze - DT * 0.06);
+    if (!this.frozen && this.freeze >= 1) {
+      this.frozen = true;
+      for (const j of this.joints) j.frozenRel = this.jointRel(j);
+    } else if (this.frozen && this.freeze < 0.5) this.frozen = false;
+
+    // Bleeding: drips from every open wound, spurts from stumps on each heartbeat.
+    let flow = this.bl <= 0 ? 0 : clamp(this.bl / 100, 0.2, 1);
+    if (this.dead) flow *= 0.25;
+    for (const w of this.wounds) {
+      if (w.bleed <= 0 || flow <= 0) continue;
+      const [wx, wy] = this.woundPos(w);
+      if (Math.random() < w.bleed * DT * 7 * flow) {
+        const [nx, ny] = this.woundNormal(w), s = rf(5, 25);
+        spawnParticle(wx, wy, nx * s + rf(-6, 6), ny * s, BLOOD);
+      }
+      if (w.stump && this.beat) {
+        const [ux, uy] = this.stumpDir(w);
+        const n = 3 + Math.floor(w.bleed * 1.5);
+        for (let q = 0; q < n; q++) {
+          const a = rf(-0.35, 0.35), s = rf(50, 110) * flow;
+          spawnParticle(wx, wy, (ux * Math.cos(a) - uy * Math.sin(a)) * s, (ux * Math.sin(a) + uy * Math.cos(a)) * s, BLOOD);
+        }
+      }
+    }
+  }
+
+  woundPos(w) {
+    const ax = this.x[this.pa[w.part]], ay = this.y[this.pa[w.part]];
+    const bx = this.x[this.pb[w.part]], by = this.y[this.pb[w.part]];
+    if (w.part === HEAD) {
+      if (w.stump) return [ax, ay];
+      const a = w.t * Math.PI * 2;
+      return [bx + Math.cos(a) * (HEAD_R - 1.5), by + Math.sin(a) * (HEAD_R - 1.5)];
+    }
+    const l = Math.hypot(bx - ax, by - ay) || 1, dx = (bx - ax) / l, dy = (by - ay) / l;
+    const off = w.s * Math.max(0, WIDTH[w.part] * 0.5 - 0.5);
+    return [lerp(ax, bx, w.t) - dy * off, lerp(ay, by, w.t) + dx * off];
+  }
+
+  woundNormal(w) {
+    if (w.part === HEAD) return [Math.cos(w.t * Math.PI * 2), Math.sin(w.t * Math.PI * 2)];
+    const ax = this.x[this.pa[w.part]], ay = this.y[this.pa[w.part]];
+    const bx = this.x[this.pb[w.part]], by = this.y[this.pb[w.part]];
+    const l = Math.hypot(bx - ax, by - ay) || 1, sg = w.s >= 0 ? 1 : -1;
+    return [-(by - ay) / l * sg, (bx - ax) / l * sg];
+  }
+
+  stumpDir(w) {
+    const ax = this.x[this.pa[w.part]], ay = this.y[this.pa[w.part]];
+    const bx = this.x[this.pb[w.part]], by = this.y[this.pb[w.part]];
+    let dx = w.t < 0.5 ? ax - bx : bx - ax, dy = w.t < 0.5 ? ay - by : by - ay;
+    const l = Math.hypot(dx, dy);
+    return l > 0 ? [dx / l, dy / l] : [0, -1];
+  }
+
+  // ------------------------------------------------ vitals
+  updateVitals() {
+    this.beat = false;
+    this.sinceDamage += DT;
+    let bleedTotal = 0;
+    for (const w of this.wounds) bleedTotal += w.bleed;
+    this.bl = Math.max(0, this.bl - bleedTotal * DT * (this.dead ? 0.2 : 0.8));
+
+    if (this.headUnder && !this.dead) this.o2 = Math.max(0, this.o2 - 11 * DT);
+    else this.o2 = Math.min(100, this.o2 + 20 * DT);
+    this.noAir = this.o2 <= 0 ? this.noAir + DT : 0;
+
+    this.healing = !this.dead && this.sinceDamage > 4 && this.burn <= 0 && !this.headUnder &&
+      (this.bl < 99.9 || this.pn > 0.5 || this.ko < 99 || this.o2 < 99 || bleedTotal > 0);
+    if (this.healing) {
+      this.bl = Math.min(100, this.bl + 1.2 * DT);
+      this.pn = Math.max(0, this.pn - 6 * DT);
+      for (const w of this.wounds) w.bleed = Math.max(0, w.bleed - (w.stump ? 0.05 : 0.14) * DT);
+    }
+    this.pn = Math.max(0, this.pn - 3 * DT);
+
+    let cap = 100;
+    if (this.bl < 55) cap = (this.bl - 30) * 4;
+    if (this.o2 < 40) cap = Math.min(cap, this.o2 * 2.5);
+    if (this.frozen) cap = Math.min(cap, 30);
+    if (this.pn > 85) cap = Math.min(cap, 60);
+    cap = Math.max(0, cap);
+    if (this.dead) this.ko = 0;
+    else if (this.ko > cap) this.ko = moveToward(this.ko, cap, 25 * DT);
+    else this.ko = moveToward(this.ko, cap, (this.healing ? 6 : 2) * DT);
+    this.ko = clamp(this.ko, 0, 100);
+
+    if (!this.dead && (this.bl <= 8 || this.noAir > 6)) this.die();
+
+    let target = 72 + this.pn * 0.5 + Math.max(0, 100 - this.bl) * 0.9;
+    if (this.o2 < 50) target -= (50 - this.o2) * 1.4;
+    if (this.frozen) target = 38;
+    if (this.dead) target = 0;
+    this.hr = moveToward(this.hr, Math.max(0, target), 30 * DT);
+    if (this.hr > 1) {
+      this.beatPhase += DT * this.hr / 60;
+      if (this.beatPhase >= 1) { this.beatPhase -= 1; this.beat = true; this.beatFlash = 1; }
+    }
+  }
+
+  isOut() { return this.dead || this.ko <= 10 || this.bl < OUT_BL; }
+  attached(k) {
+    while (k >= 0) { if (this.severed[k]) return false; k = PARENT[k]; }
+    return true;
+  }
+  flags() {
+    const bleeding = this.wounds.some((w) => w.bleed > 0);
+    return {
+      OUT: this.isOut(), BLEED: bleeding && this.bl > 0, FIRE: this.burn > 0,
+      CHOKE: this.headUnder && !this.dead, AGONY: this.pn >= AGONY_PN && !this.dead,
+      HEAL: this.healing, BLADE: this.bladeTimer > 0, TORN: this.severed.includes(true), FROZEN: this.frozen,
+    };
+  }
+  nearestPoint(x, y, r) {
+    let best = -1, bd = r;
+    for (let i = 0; i < this.x.length; i++) {
+      const d = Math.hypot(this.x[i] - x, this.y[i] - y);
+      if (d < bd) { bd = d; best = i; }
+    }
+    return [best, bd];
+  }
+
+  // ------------------------------------------------ drawing
+  partColor(k) {
+    let c = FAR_SIDE[k] ? COL_SKIN_FAR : COL_SKIN;
+    if (this.dead) c = darken(c, 0.08);
+    c = mixc(c, COL_CHAR, clamp(this.char[k], 0, 0.9));
+    if (this.frozen) c = mixc(c, COL_ICE, 0.6);
+    if (this.hurtFlash > 0) c = mixc(c, COL_HURT, this.hurtFlash * 0.35);
+    return c;
+  }
+
+  drawPart(k, c, grow) {
+    const ax = this.x[this.pa[k]], ay = this.y[this.pa[k]], bx = this.x[this.pb[k]], by = this.y[this.pb[k]];
+    if (k === HEAD) {
+      capsule(ax, ay, bx, by, 1 + grow, c);
+      capsule(bx, by, bx, by, HEAD_R + grow, c);
+    } else {
+      capsule(ax, ay, bx, by, WIDTH[k] * 0.5 + grow, c);
+    }
+  }
+
+  draw() {
+    for (const k of DRAW_ORDER) {
+      this.drawPart(k, COL_LINE, 1);
+      this.drawPart(k, this.partColor(k), 0);
+    }
+    for (const w of this.wounds) {
+      const [wx, wy] = this.woundPos(w);
+      const fx = Math.floor(wx), fy = Math.floor(wy);
+      if (w.stump) rect(fx - 1, fy - 1, 3, 3, w.bleed > 0 ? COL_STUMP : COL_SCAR);
+      else rect(fx, fy, w.size, w.size, w.bleed > 0 ? COL_WOUND : COL_SCAR);
+    }
+    // Face
+    const nx = this.x[this.pa[HEAD]], ny = this.y[this.pa[HEAD]];
+    const hx = this.x[this.pb[HEAD]], hy = this.y[this.pb[HEAD]];
+    let ux = hx - nx, uy = hy - ny;
+    const l = Math.hypot(ux, uy);
+    if (l > 0) { ux /= l; uy /= l; } else { ux = 0; uy = -1; }
+    const fx = -uy, fy = ux;
+    const ex = Math.floor(hx + fx * 2 + ux * 0.5), ey = Math.floor(hy + fy * 2 + uy * 0.5);
+    if (this.dead) {
+      for (const [dx, dy] of [[-1, -1], [1, -1], [0, 0], [-1, 1], [1, 1]]) px(ex + dx, ey + dy, COL_LINE);
+    } else if (this.isOut()) {
+      rect(ex - 1, ey, 2, 1, COL_LINE);
+    } else {
+      px(ex, ey, COL_LINE);
+    }
+  }
+}
+
+function closestOnSeg(px0, py0, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+  const t = l2 > 0 ? clamp(((px0 - ax) * dx + (py0 - ay) * dy) / l2, 0, 1) : 0;
+  return [ax + dx * t, ay + dy * t];
+}
+
+// Closest points between segment a-b and segment p-q. t is the position on p-q.
+function segSeg(ax, ay, bx, by, p0x, p0y, p1x, p1y) {
+  let best = { d: Infinity, qx: p0x, qy: p0y, t: 0 };
+  const n = 12;
+  for (let s = 0; s <= n; s++) {
+    const t = s / n, qx = lerp(p0x, p1x, t), qy = lerp(p0y, p1y, t);
+    const [cx, cy] = closestOnSeg(qx, qy, ax, ay, bx, by);
+    const d = Math.hypot(cx - qx, cy - qy);
+    if (d < best.d) best = { d, qx, qy, t };
+  }
+  return best;
+}
+
+// ======================================================================
+// Static layers: room, lamp and the light cone
+// ======================================================================
+
+const LAMP_X = 192, LAMP_Y = 21;
+const bg = new Uint8ClampedArray(N * 4);
+const lightA = new Float32Array(N);
+const WARM = hex("#fff0cc");
+
+(function buildStatic() {
+  fb.fill(0);
+  for (let o = 3; o < fb.length; o += 4) fb[o] = 255;
+  const fy = FLOOR_Y;
+  rect(0, 0, W, fy, hex("#222226"));
+  for (let x = 0; x < W; x += 48) {
+    rect(x + 2, 10, 44, fy - 18, hex("#27272c"));
+    rect(x, 8, 1, fy - 8, hex("#1b1b1f"));
+    rect(x + 1, 8, 1, fy - 8, hex("#2b2b31"));
+  }
+  for (let y = 40; y < fy - 8; y += 40) rect(0, y, W, 1, hex("#1b1b1f"));
+  rect(0, 0, W, 8, hex("#17171a"));
+  rect(0, 8, W, 1, hex("#101012"));
+  rect(0, fy - 6, W, 6, hex("#2f2f35"));
+  rect(0, fy - 6, W, 1, hex("#3a3a41"));
+  // Lamp: cord, stepped shade, bulb
+  const x = LAMP_X;
+  rect(x, 0, 1, 13, hex("#0e0e10"));
+  rect(x - 1, 8, 3, 2, hex("#0e0e10"));
+  for (const [half, y] of [[2, 13], [3, 14], [4, 15], [5, 16], [6, 17], [8, 18], [9, 19]]) {
+    rect(x - half - 1, y, half * 2 + 3, 1, hex("#0e0e10"));
+    rect(x - half, y, half * 2 + 1, 1, hex("#4a4a52"));
+  }
+  rect(x - 2, 13, 5, 1, hex("#6a6a74"));
+  rect(x - 9, 19, 19, 1, hex("#33333a"));
+  rect(x - 2, 20, 5, 2, hex("#fff2c8"));
+  rect(x - 1, 22, 3, 1, hex("#ffe6a0"));
+  bg.set(fb);
+
+  // Soft cone with ordered dither, drawn additive every frame.
+  const bayer = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+  const half = 27 * D2R, soft = 9 * D2R;
+  for (let y = 0; y < H; y++) for (let xx = 0; xx < W; xx++) {
+    const dx = xx + 0.5 - LAMP_X, dy = y + 0.5 - LAMP_Y;
+    let glow = 0;
+    const r = Math.hypot(dx, dy);
+    if (r < 26) glow = Math.pow(1 - r / 26, 2) * 0.55;
+    let cone = 0;
+    if (dy > 0) {
+      let e = clamp((half + soft - Math.atan2(Math.abs(dx), dy)) / (soft * 2), 0, 1);
+      e = e * e * (3 - 2 * e);
+      cone = e * Math.pow(clamp(1 - dy / 240, 0, 1), 1.2) * 0.2;
+      if (y >= FLOOR_Y && y < FLOOR_Y + 5) cone *= 1.6;
+    }
+    let v = clamp(glow + cone, 0, 1);
+    v = Math.floor(v * 48 + (bayer[(y % 4) * 4 + (xx % 4)] + 0.5) / 16) / 48;
+    lightA[y * W + xx] = v;
+  }
+})();
+
+// ======================================================================
+// HUD
+// ======================================================================
+
+const T_GRAB = 0, T_WATER = 1, T_BLADE = 2, T_FIRE = 3, T_ICE = 4, T_DOLL = 5, T_RESET = 6;
+const TOOL_NAMES = ["GREIFEN", "WASSER", "KLINGE", "FEUER", "EIS", "NEUE PUPPE", "RESET"];
+const BTN = 16, BTN_GAP = 3, TOOLBAR_Y = H - 20;
+const PANEL = { x: 308, y: 4, w: 72, h: 136 };
+const C = {
+  panel: hex("#16161a"), edge: hex("#3a3a42"), text: hex("#d8d8d0"), dim: hex("#4a4a52"),
+  barBg: hex("#26262c"), tagOff: hex("#23232a"), black: [0, 0, 0], ink: hex("#101012"),
+};
+const BARS = [["KO", hex("#4ccf5a")], ["BL", hex("#c81e2c")], ["PN", hex("#f08a24")], ["O2", hex("#2ec8c0")], ["HR", hex("#e85a8a")]];
+const TAGS = [["OUT", hex("#9a9aa2")], ["BLEED", hex("#d0202e")], ["FIRE", hex("#ff5a1e")], ["CHOKE", hex("#2ec8c0")],
+  ["AGONY", hex("#f08a24")], ["HEAL", hex("#f0d838")], ["BLADE", hex("#c4ccd8")], ["TORN", hex("#f070b4")], ["FROZEN", hex("#80c0ff")]];
+const MINI = [[0, -12], [0, -8], [0, 0], [0, 3], [-5, -3], [-7, 2], [5, -3], [7, 2], [-2, 9], [-3, 15], [-5, 15], [2, 9], [3, 15], [5, 15]];
+const MINI_W = [2, 4, 4, 2, 2, 2, 2, 2, 2, 1, 2, 2, 1];
+const ICONS = [
+  ["...#.#..", ".#.#.#.#", ".#.#.#.#", ".#######", "########", ".#######", "..#####.", "..#####."],
+  ["...##...", "...##...", "..####..", ".######.", ".#+####.", ".#+####.", ".######.", "..####.."],
+  ["......##", ".....###", "....###.", "...###..", "..###...", ".+##....", "++......", "+......."],
+  ["...#....", "...##...", "..###.#.", ".####.#.", ".######.", "##+++###", "#+++++##", ".#+++##."],
+  ["...#....", ".#.#.#..", "..###...", "#######.", "..###...", ".#.#.#..", "...#....", "........"],
+  [".##.....", ".##...+.", "####.+++", ".##...+.", ".##.....", ".#.#....", ".#.#....", "........"],
+  ["..###.#.", ".#...##.", "#...###.", "#.......", "#......#", ".#....#.", "..####..", "........"],
+];
+const ICON_COLORS = [["#ecece6", "#ecece6"], ["#3c82e6", "#b4d8ff"], ["#c8ccd8", "#8c5a32"], ["#f06e1e", "#ffdc50"],
+  ["#a0dcfa", "#a0dcfa"], ["#ecece6", "#6ee66e"], ["#e6c850", "#e6c850"]].map((p) => p.map(hex));
+
+const toolbarX = () => Math.floor((W - (ICONS.length * BTN + (ICONS.length - 1) * BTN_GAP)) / 2);
+const buttonX = (i) => toolbarX() + i * (BTN + BTN_GAP);
+function toolbarHit(x, y) {
+  for (let i = 0; i < ICONS.length; i++) {
+    const bx = buttonX(i);
+    if (x >= bx - 1 && x < bx + BTN + 1 && y >= TOOLBAR_Y - 1 && y < TOOLBAR_Y + BTN + 1) return i;
+  }
+  return -1;
+}
+const inPanel = (x, y) => x >= PANEL.x && x < PANEL.x + PANEL.w && y >= PANEL.y && y < PANEL.y + PANEL.h;
+const blocksInput = (x, y) => toolbarHit(x, y) >= 0 || inPanel(x, y);
+
+function drawMini(d, cx, cy) {
+  for (let pass = 0; pass < 2; pass++) {
+    for (const k of DRAW_ORDER) {
+      const a = MINI[PART_A[k]], b = MINI[PART_B[k]];
+      let c;
+      if (pass === 0) c = C.black;
+      else if (!d.attached(k)) c = hex("#3a3a40");
+      else {
+        c = mixc(hex("#e6e6e0"), COL_CHAR, clamp(d.char[k], 0, 0.8));
+        if (d.frozen) c = mixc(c, COL_ICE, 0.6);
+      }
+      const grow = pass === 0 ? 1 : 0;
+      if (k === HEAD) capsule(cx + b[0], cy + b[1], cx + b[0], cy + b[1], 3 + grow, c);
+      else capsule(cx + a[0], cy + a[1], cx + b[0], cy + b[1], MINI_W[k] * 0.5 + grow, c);
+    }
+  }
+  const pulse = 0.5 + 0.5 * Math.sin(performance.now() * 0.008);
+  for (const w of d.wounds) {
+    const a = MINI[PART_A[w.part]], b = MINI[PART_B[w.part]];
+    let wx, wy;
+    if (w.part === HEAD) {
+      if (w.stump) { wx = a[0]; wy = a[1]; }
+      else { wx = b[0] + Math.cos(w.t * Math.PI * 2) * 1.5; wy = b[1] + Math.sin(w.t * Math.PI * 2) * 1.5; }
+    } else {
+      const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, off = w.s * MINI_W[w.part] * 0.4;
+      wx = lerp(a[0], b[0], w.t) - (b[1] - a[1]) / l * off;
+      wy = lerp(a[1], b[1], w.t) + (b[0] - a[0]) / l * off;
+    }
+    const c = w.bleed > 0 ? mixc(hex("#ff2030"), hex("#ff8080"), pulse) : hex("#6a1a1e");
+    const s = w.stump ? 2 : 1;
+    rect(Math.floor(cx + wx), Math.floor(cy + wy), s, s, c);
+  }
+}
+
+function drawPanel(d) {
+  const { x: px0, y: py0, w: pw, h: ph } = PANEL;
+  framed(px0, py0, pw, ph, C.panel, C.edge);
+  rect(px0 + 4, py0 + 4, 64, 36, hex("#101013"));
+  if (!d) { textCentered(px0 + 36, py0 + 20, "KEINE", C.dim); return; }
+  text(px0 + 6, py0 + 6, "P" + d.id, C.dim);
+  drawMini(d, px0 + 36, py0 + 23);
+  const values = [d.ko, d.bl, d.pn, d.o2, clamp(d.hr / 1.6, 0, 100)];
+  for (let i = 0; i < BARS.length; i++) {
+    const y = py0 + 45 + i * 7, bx = px0 + 4;
+    rect(bx, y, 50, 4, C.barBg);
+    let c = BARS[i][1];
+    if (i === 4) c = mixc(c, [255, 255, 255], d.beatFlash * 0.5);
+    const fill = Math.round(50 * clamp(values[i] / 100, 0, 1));
+    if (fill > 0) { rect(bx, y, fill, 4, c); rect(bx, y, fill, 1, lighten(c, 0.3)); }
+    for (let nx = 10; nx < 50; nx += 10) rect(bx + nx, y, 1, 4, C.black, 90);
+    text(px0 + 58, y, BARS[i][0], C.text);
+  }
+  const f = d.flags();
+  for (let i = 0; i < TAGS.length; i++) {
+    const tx = px0 + 4 + (i % 2) * 33, ty = py0 + 82 + Math.floor(i / 2) * 10;
+    const [name, col] = TAGS[i];
+    if (f[name]) {
+      roundRect(tx, ty, 31, 8, col);
+      rect(tx + 2, ty, 27, 1, lighten(col, 0.35));
+      textCentered(tx + 15.5, ty + 2, name, C.ink);
+    } else {
+      roundRect(tx, ty, 31, 8, C.tagOff);
+      textCentered(tx + 15.5, ty + 2, name, C.dim);
+    }
+  }
+}
+
+function drawToolbar() {
+  const x0 = toolbarX(), total = ICONS.length * BTN + (ICONS.length - 1) * BTN_GAP;
+  framed(x0 - 3, TOOLBAR_Y - 3, total + 6, BTN + 6, hex("#141418"), C.edge);
+  for (let i = 0; i < ICONS.length; i++) {
+    const bx = buttonX(i), by = TOOLBAR_Y;
+    let bgc = hex("#2a2a30"), edge = hex("#44444c");
+    if (i === state.tool) { bgc = hex("#3c3c46"); edge = hex("#e6e6e0"); }
+    else if (i === state.hover || i === state.flashBtn) { bgc = hex("#33333a"); edge = hex("#6a6a74"); }
+    framed(bx, by, BTN, BTN, bgc, edge);
+    const [mc, ac] = ICON_COLORS[i];
+    ICONS[i].forEach((row, y) => {
+      for (let x = 0; x < 8; x++) {
+        if (row[x] === "#") px(bx + 4 + x, by + 4 + y, mc);
+        else if (row[x] === "+") px(bx + 4 + x, by + 4 + y, ac);
+      }
+    });
+  }
+  const label = state.hover >= 0 ? TOOL_NAMES[state.hover] + "  " + (state.hover + 1) : state.toast > 0 ? state.toastText : "";
+  if (label) {
+    const lw = textWidth(label) + 6, lx = Math.round(W / 2 - lw / 2);
+    framed(lx, TOOLBAR_Y - 13, lw, 9, hex("#141418"), C.edge);
+    textCentered(W / 2, TOOLBAR_Y - 11, label, C.text);
+  }
+}
+
+function drawCursor() {
+  const { mx, my } = state;
+  if (!state.pointerSeen || blocksInput(mx, my)) return;
+  const fx = Math.floor(mx), fy = Math.floor(my), white = [255, 255, 255];
+  if (state.tool === T_WATER || state.tool === T_FIRE || state.tool === T_ICE) {
+    const r = state.tool === T_WATER ? 2 : 4;
+    for (let a = 0; a < 24; a++) px(fx + Math.round(Math.cos(a / 24 * Math.PI * 2) * r), fy + Math.round(Math.sin(a / 24 * Math.PI * 2) * r), white, 90);
+  } else if (state.tool === T_BLADE) {
+    px(fx, fy, white, 180);
+  } else {
+    rect(fx - 3, fy, 2, 1, white, 128); rect(fx + 2, fy, 2, 1, white, 128);
+    rect(fx, fy - 3, 1, 2, white, 128); rect(fx, fy + 2, 1, 2, white, 128);
+  }
+}
+
+// ======================================================================
+// Game state, tools and input
+// ======================================================================
+
+const state = {
+  tool: T_GRAB, mx: W / 2, my: H / 2, lastX: W / 2, lastY: H / 2,
+  pressing: false, pointerSeen: false, hover: -1, flashBtn: -1, toast: 0, toastText: "",
+  dolls: [], selected: null, grabDoll: null, counter: 0, trail: [],
+};
+
+function spawnDoll(bx, by) {
+  if (state.dolls.length >= 6) {
+    const old = state.dolls.shift();
+    if (state.grabDoll === old) state.grabDoll = null;
+  }
+  const d = new Doll(bx, by, ++state.counter);
+  state.dolls.push(d);
+  state.selected = d;
+  return d;
+}
+
+function resetScene() {
+  worldReset();
+  state.dolls = []; state.selected = null; state.grabDoll = null; state.counter = 0;
+  spawnDoll(W / 2 - 30, FLOOR_Y);
+}
+
+function useButton(i) {
+  state.flashBtn = i;
+  setTimeout(() => { if (state.flashBtn === i) state.flashBtn = -1; }, 150);
+  if (i === T_DOLL) {
+    const d = spawnDoll(LAMP_X + rf(-30, 30), 80);
+    for (let k = 0; k < d.x.length; k++) { d.ox[k] = d.x[k] + rf(-1, 1); d.oy[k] = d.y[k] - 1; }
+  } else if (i === T_RESET) {
+    resetScene();
+  } else {
+    release();
+    state.tool = i;
+  }
+  state.toast = 1.2;
+  state.toastText = TOOL_NAMES[i];
+}
+
+function press() {
+  const b = toolbarHit(state.mx, state.my);
+  if (b >= 0) { useButton(b); return; }
+  if (blocksInput(state.mx, state.my)) return;
+  state.pressing = true;
+  state.lastX = state.mx; state.lastY = state.my;
+  if (state.tool === T_GRAB) {
+    let bestD = 9, best = null, bestI = -1;
+    for (const d of state.dolls) {
+      const [i, dist] = d.nearestPoint(state.mx, state.my, bestD);
+      if (i >= 0) { bestD = dist; best = d; bestI = i; }
+    }
+    if (best) {
+      for (const d of state.dolls) d.grabbed = -1;
+      best.grabbed = bestI; best.gx = state.mx; best.gy = state.my;
+      state.grabDoll = best; state.selected = best;
+    }
+  }
+}
+
+function release() {
+  state.pressing = false;
+  if (state.grabDoll) state.grabDoll.grabbed = -1;
+  state.grabDoll = null;
+}
+
+function applyTool() {
+  const { mx, my } = state;
+  if (state.tool === T_WATER) {
+    for (let n = 0; n < 5; n++) spawnParticle(mx + rf(-1.5, 1.5), my, rf(-12, 12), rf(10, 40), WATER, 0);
+  } else if (state.tool === T_FIRE) {
+    paintDisc(mx, my, 4, FIRE, 0.3);
+    for (const d of state.dolls) d.applyHeat(mx, my, 6);
+  } else if (state.tool === T_ICE) {
+    paintDisc(mx, my, 3.5, ICE, 0.6, 200);
+    for (const d of state.dolls) d.applyCold(mx, my, 7);
+  } else if (state.tool === T_BLADE) {
+    if (mx !== state.lastX || my !== state.lastY) {
+      const speed = Math.hypot(mx - state.lastX, my - state.lastY) / DT;
+      state.trail.push({ ax: state.lastX, ay: state.lastY, bx: mx, by: my, age: 0 });
+      for (const d of state.dolls) if (d.bladeHit(state.lastX, state.lastY, mx, my, speed)) state.selected = d;
+    }
+  }
+}
+
+function physicsStep() {
+  if (state.pressing) applyTool();
+  worldStep();
+  for (const d of state.dolls) {
+    if (d === state.grabDoll) { d.gx = state.mx; d.gy = state.my; }
+    d.step();
+  }
+  for (const s of state.trail) s.age += DT;
+  state.trail = state.trail.filter((s) => s.age < 0.25);
+  state.toast = Math.max(0, state.toast - DT);
+  state.lastX = state.mx; state.lastY = state.my;
+}
+
+function toGame(ev) {
+  const r = canvas.getBoundingClientRect();
+  state.mx = clamp((ev.clientX - r.left) / r.width * W, 0, W - 0.01);
+  state.my = clamp((ev.clientY - r.top) / r.height * H, 0, H - 0.01);
+  state.pointerSeen = true;
+}
+
+let activePointer = null;
+canvas.addEventListener("pointerdown", (ev) => {
+  ev.preventDefault();
+  if (activePointer !== null) return;
+  activePointer = ev.pointerId;
+  try { canvas.setPointerCapture(ev.pointerId); } catch (e) { /* pointer capture is optional */ }
+  toGame(ev);
+  state.lastX = state.mx; state.lastY = state.my;
+  press();
+});
+canvas.addEventListener("pointermove", (ev) => {
+  if (activePointer !== null && ev.pointerId !== activePointer) return;
+  toGame(ev);
+  state.hover = ev.pointerType === "mouse" ? toolbarHit(state.mx, state.my) : -1;
+});
+const endPointer = (ev) => {
+  if (ev.pointerId !== activePointer) return;
+  activePointer = null;
+  release();
+};
+canvas.addEventListener("pointerup", endPointer);
+canvas.addEventListener("pointercancel", endPointer);
+canvas.addEventListener("contextmenu", (ev) => ev.preventDefault());
+document.addEventListener("touchmove", (ev) => ev.preventDefault(), { passive: false });
+document.addEventListener("gesturestart", (ev) => ev.preventDefault());
+
+window.addEventListener("keydown", (ev) => {
+  if (ev.key >= "1" && ev.key <= "7") useButton(+ev.key - 1);
+  else if (ev.key === "r" || ev.key === "R") useButton(T_RESET);
+  else if (ev.key === "n" || ev.key === "N") useButton(T_DOLL);
+});
+
+// ---------------------------------------------------------------- layout
+
+function fit() {
+  const stage = document.getElementById("stage");
+  const hint = document.getElementById("hint");
+  const cs = getComputedStyle(stage);
+  const availW = stage.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const hintH = hint.offsetParent ? hint.offsetHeight + 12 : 0;
+  const availH = stage.clientHeight - hintH;
+  let s = Math.min(availW / W, availH / H);
+  if (s >= 2) s = Math.floor(s * 2) / 2;
+  canvas.style.width = Math.floor(W * s) + "px";
+  canvas.style.height = Math.floor(H * s) + "px";
+}
+window.addEventListener("resize", fit);
+window.addEventListener("orientationchange", () => setTimeout(fit, 200));
+
+// ---------------------------------------------------------------- render loop
+
+function render() {
+  flushPaint();
+  fb.set(bg);
+  for (const d of state.dolls) d.draw();
+  // World cells blend over the dolls, so water and smoke cover them.
+  for (let i = 0, o = 0; i < N; i++, o += 4) {
+    const a = wpx[o + 3];
+    if (a === 0) continue;
+    if (a === 255) { fb[o] = wpx[o]; fb[o + 1] = wpx[o + 1]; fb[o + 2] = wpx[o + 2]; }
+    else {
+      const t = a / 255;
+      fb[o] += (wpx[o] - fb[o]) * t;
+      fb[o + 1] += (wpx[o + 1] - fb[o + 1]) * t;
+      fb[o + 2] += (wpx[o + 2] - fb[o + 2]) * t;
+    }
+  }
+  const pBlood = hex("#a0101c"), pFire = hex("#ffc048");
+  for (const p of particles) {
+    const c = p.m === BLOOD ? pBlood : p.m === WATER ? lighten(waterColor(p.mx), 0.25) : pFire;
+    px(p.x, p.y, c);
+  }
+  // Additive warm light
+  for (let i = 0, o = 0; i < N; i++, o += 4) {
+    const a = lightA[i];
+    if (a <= 0) continue;
+    fb[o] += WARM[0] * a; fb[o + 1] += WARM[1] * a; fb[o + 2] += WARM[2] * a;
+  }
+  // HUD
+  text(5, 12, "RAGPIT", hex("#8a8a92"));
+  text(5, 19, TOOL_NAMES[state.tool], C.dim);
+  drawCursor();
+  for (const s of state.trail) line(s.ax, s.ay, s.bx, s.by, [242, 247, 255], Math.round(255 * (1 - s.age / 0.25)));
+  let sel = state.selected;
+  if (!sel || !state.dolls.includes(sel)) sel = state.selected = state.dolls[state.dolls.length - 1] || null;
+  drawPanel(sel);
+  drawToolbar();
+  ctx.putImageData(frame, 0, 0);
+}
+
+let acc = 0, lastT = performance.now();
+function loop(now) {
+  acc += Math.min(0.1, (now - lastT) / 1000);
+  lastT = now;
+  let steps = 0;
+  while (acc >= DT && steps < 4) { physicsStep(); acc -= DT; steps++; }
+  if (steps === 4) acc = 0;
+  render();
+  requestAnimationFrame(loop);
+}
+
+resetScene();
+fit();
+requestAnimationFrame((t) => { lastT = t; loop(t); });
+</script>
+
+</body>
+</html>
