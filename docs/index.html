@@ -513,13 +513,14 @@ const POINT_R = [17, 9, 14, 14, 8, 7, 8, 7, 9, 7, 5, 9, 7, 5];
 // child, parent, joint on parent end A, min and max degrees
 const JOINTS = [
   [HEAD, TORSO, true, -35, 35], [PELVIS, TORSO, false, -35, 45],
-  [UARM_L, TORSO, true, 30, 330], [UARM_R, TORSO, true, 30, 330],
+  [UARM_L, TORSO, true, 8, 352], [UARM_R, TORSO, true, 8, 352],
   [LARM_L, UARM_L, false, -150, 60], [LARM_R, UARM_R, false, -150, 60],
   [THIGH_L, PELVIS, false, -120, 30], [THIGH_R, PELVIS, false, -120, 30],
   [SHIN_L, THIGH_L, false, -30, 150], [SHIN_R, THIGH_R, false, -30, 150],
   [FOOT_L, SHIN_L, false, -160, -20], [FOOT_R, SHIN_R, false, -160, -20],
 ];
 const IV_TIME = 12;
+let MUSCLE_HELD = 0.04, LIMIT_SOAK = 0.6;
 const ITERATIONS = 8, HEAD_R = 19, MAX_STEP = 40, DOLL_GRAVITY = 1300;
 const WOUND_SPEED = 650, SEVER_SPEED = 1450, GIB_SPEED = 2100, MAX_WOUNDS = 40, OUT_BL = 35, AGONY_PN = 65;
 const COL_SKIN = hex("#ebe7dc"), COL_SKIN_FAR = hex("#c7c2b5"), COL_LINE = hex("#121214");
@@ -579,7 +580,7 @@ class Doll {
         vy += g * 0.12;
         if (vx * vx + vy * vy > 64) splash(x, y, vx / DT, vy / DT);
       } else {
-        const drag = this.grabbed >= 0 ? 0.93 : 0.998;
+        const drag = 0.998;
         vx *= drag; vy *= drag;
         // Static friction: slow points resting on the ground settle down.
         if (vx * vx + vy * vy < 2.5) {
@@ -593,14 +594,21 @@ class Doll {
       this.integrate(i, vx, vy);
     }
     this.updateCripple();
-    // A held doll swings but does not spin like a propeller.
-    this.dampSpin(this.grabbed >= 0 ? 0.25 : 0.02);
+    // A held doll swings around the finger and settles instead of whirling.
+    if (this.grabbed >= 0) this.dampAroundGrab(0.86);
+    else this.dampSpin(0.02);
     this.behave();
     if (this.getUp <= 0) this.balance();
     for (let it = 0; it < ITERATIONS; it++) {
       for (let k = 0; k < PART_COUNT; k++) this.solveDistance(this.pa[k], this.pb[k], this.restLen[k]);
-      this.solveJoints();
+      this.solveJoints(this.frozen ? 0.5 : 0, false);
       if (it % 2 === 1) for (let i = 0; i < this.x.length; i++) this.pushOut(i);
+    }
+    // Muscles hold the posture once per step. They move the limbs without
+    // adding speed, so they cannot rock the body into shaking.
+    if (!this.frozen && !this.dead && !this.isOut()) {
+      this.solveJoints((this.grabbed >= 0 ? MUSCLE_HELD : 0.08) * clamp(this.ko / 100, 0, 1), true);
+      for (let i = 0; i < this.x.length; i++) this.pushOut(i);
     }
     // Standing feet grip the floor instead of sliding.
     if (this.standing) {
@@ -646,6 +654,18 @@ class Doll {
     this.x[i] = x; this.y[i] = y; this.ox[i] = x - vx; this.oy[i] = y - vy;
     const speed = hit / DT;
     if (speed > WOUND_SPEED * 0.75 && this.impactCd[i] <= 0) { this.impactCd[i] = 0.15; this.onImpact(i, speed); }
+  }
+
+  // Damps every point's motion relative to the held point.
+  dampAroundGrab(keep) {
+    const g = this.grabbed;
+    const gvx = this.x[g] - this.ox[g], gvy = this.y[g] - this.oy[g];
+    for (let i = 0; i < this.x.length; i++) {
+      if (i === g) continue;
+      const vx = this.x[i] - this.ox[i], vy = this.y[i] - this.oy[i];
+      this.ox[i] = this.x[i] - (gvx + (vx - gvx) * keep);
+      this.oy[i] = this.y[i] - (gvy + (vy - gvy) * keep);
+    }
   }
 
   // Removes part of the spin around the center of mass.
@@ -716,8 +736,9 @@ class Doll {
     }
     if (this.grabbed >= 0 || this.frozen) { this.getUp = 0; this.stillTime = 0; return; }
 
+    // Stillness is judged on head and trunk, so a hand holding a wound does not count.
     let maxV = 0;
-    for (let i = 0; i < this.x.length; i++) maxV = Math.max(maxV, Math.hypot(this.x[i] - this.ox[i], this.y[i] - this.oy[i]));
+    for (const i of [P_HEAD, P_NECK, P_WAIST, P_HIP]) maxV = Math.max(maxV, Math.hypot(this.x[i] - this.ox[i], this.y[i] - this.oy[i]));
 
     if (this.burn > 0 || this.headUnder) {
       // Panic: flail arms and kick legs.
@@ -828,31 +849,41 @@ class Doll {
     return wrapPi(ac - ap - j.center);
   }
 
-  solveJoints() {
-    let muscle = 0;
-    if (this.frozen) muscle = 0.5;
-    else if (!this.dead && !this.isOut()) muscle = 0.06 * clamp(this.ko / 100, 0, 1);
+  // Limits pass (kinematic = false) keeps joints inside their range.
+  // Muscle pass (kinematic = true) eases joints toward the rest pose.
+  solveJoints(muscle, kinematic) {
     for (const j of this.joints) {
       if (!j.active) continue;
       const limp = !this.frozen && (this.crippled[j.child] || (j.parent !== TORSO && this.crippled[j.parent]));
       const m = limp ? 0 : muscle;
       const [jp, op, cp] = this.jointIds(j);
+      // The finger holds the outer end of this joint: leave the joint loose
+      // instead of twisting the whole body around it against gravity.
+      if (cp === this.grabbed) continue;
       const jx = this.x[jp], jy = this.y[jp];
       const rel = this.jointRel(j);
       // A joint bent far past its limit counts as dislocated and stays loose.
       if (Math.abs(rel) > j.half + 0.8) continue;
-      let target = clamp(rel, -j.half, j.half);
+      let target = kinematic ? rel : clamp(rel, -j.half, j.half);
       if (m > 0) target = lerp(target, this.frozen ? j.frozenRel : j.rest, m);
       let diff = target - rel;
       if (Math.abs(diff) < 0.0001) continue;
+      if (kinematic) diff = clamp(diff * 2, -0.05, 0.05);
       const wc = cp === this.grabbed ? 0 : this.inv[cp];
       const wo = op === this.grabbed ? 0 : this.inv[op];
       const ws = wc + wo;
       if (ws <= 0) continue;
       // Small steps keep a tangled joint from flipping between its two limits.
-      diff = clamp(diff * 0.5, -0.12, 0.12);
-      const rc = diff * wc / ws, ro = -diff * wo / ws;
+      if (!kinematic) diff = clamp(diff * 0.5, -0.12, 0.12);
+      // Split the turn by moment of inertia (r^2 / inverse mass), so a joint
+      // correction conserves angular momentum and cannot set the body spinning.
       const cx = this.x[cp] - jx, cy = this.y[cp] - jy;
+      const ic = wc > 0 ? (cx * cx + cy * cy) / wc : Infinity;
+      const io = wo > 0 ? ((this.x[op] - jx) ** 2 + (this.y[op] - jy) ** 2) / wo : Infinity;
+      let rc, ro;
+      if (ic === Infinity) { rc = 0; ro = -diff; }
+      else if (io === Infinity) { rc = diff; ro = 0; }
+      else { rc = diff * io / (ic + io); ro = -diff * ic / (ic + io); }
       const ncx = jx + cx * Math.cos(rc) - cy * Math.sin(rc), ncy = jy + cx * Math.sin(rc) + cy * Math.cos(rc);
       const qx = this.x[op] - jx, qy = this.y[op] - jy;
       const nox = jx + qx * Math.cos(ro) - qy * Math.sin(ro), noy = jy + qx * Math.sin(ro) + qy * Math.cos(ro);
@@ -860,12 +891,21 @@ class Doll {
       this.x[cp] = ncx; this.y[cp] = ncy; this.x[op] = nox; this.y[op] = noy;
       // Shift all three points so the rotation adds no linear momentum.
       const wj = jp === this.grabbed ? 0 : this.inv[jp];
+      let shx = 0, shy = 0;
       if (wc > 0 && wo > 0 && wj > 0) {
-        const m = 1 / wc + 1 / wo + 1 / wj;
-        const shx = -(dcx / wc + dox / wo) / m, shy = -(dcy / wc + doy / wo) / m;
+        const mm = 1 / wc + 1 / wo + 1 / wj;
+        shx = -(dcx / wc + dox / wo) / mm; shy = -(dcy / wc + doy / wo) / mm;
         this.x[cp] += shx; this.y[cp] += shy;
         this.x[op] += shx; this.y[op] += shy;
         this.x[jp] += shx; this.y[jp] += shy;
+      }
+      // Muscles move without adding speed. Limits soak up most of the push,
+      // so a limb hitting its joint stop stays there instead of bouncing.
+      const soak = kinematic ? 1 : LIMIT_SOAK;
+      if (soak > 0) {
+        this.ox[cp] += (dcx + shx) * soak; this.oy[cp] += (dcy + shy) * soak;
+        this.ox[op] += (dox + shx) * soak; this.oy[op] += (doy + shy) * soak;
+        this.ox[jp] += shx * soak; this.oy[jp] += shy * soak;
       }
     }
   }
