@@ -37,7 +37,6 @@ body {
   touch-action: none;
   max-width: 100%;
   background: #000;
-  border-radius: 6px;
 }
 #hint {
   display: none;
@@ -65,7 +64,13 @@ body {
 // smooth vectors at the full device resolution.
 // ======================================================================
 
-const W = 768, H = 432, N = W * H;
+// The room grows sideways to match wide phone screens, so nothing gets letterboxed.
+const idealWidth = () => {
+  const a = Math.max(innerWidth, innerHeight) / Math.max(1, Math.min(innerWidth, innerHeight));
+  return Math.min(1248, Math.max(768, Math.round(432 * a / 48) * 48));
+};
+const W = idealWidth(), H = 432, N = W * H;
+const LOADED_PORTRAIT = innerHeight > innerWidth;
 const FLOOR_Y = 372;
 const CHUNK = 16, CW = W / CHUNK, CH = Math.ceil(H / CHUNK);
 const DT = 1 / 60;
@@ -1393,7 +1398,7 @@ const T_GRAB = 0, T_WATER = 1, T_BLADE = 2, T_FIRE = 3, T_ICE = 4, T_BOMB = 5, T
 const TOOL_NAMES = ["Greifen", "Wasser", "Klinge", "Feuer", "Eis", "Bombe", "Infusion", "Neue Puppe", "Reset"];
 const TOOL_COUNT = 9;
 const BTN = 46, BTN_GAP = 6, TOOLBAR_Y = H - 54;
-const PANEL = { x: 570, y: 8, w: 190, h: 345 };
+const PANEL = { x: W - 198, y: 8, w: 190, h: 345 };
 const BARS = [["KO", "#4ccf5a"], ["BL", "#d0283a"], ["PN", "#f08a24"], ["O2", "#2ec8c0"], ["HR", "#ec5f92"]];
 const TAGS = [["OUT", "#a2a2aa"], ["BLEED", "#d6202f"], ["FIRE", "#ff5a1e"], ["CHOKE", "#2ec8c0"],
   ["AGONY", "#f08a24"], ["HEAL", "#f2da3a"], ["BLADE", "#c8d0dc"], ["TORN", "#f272b8"], ["FROZEN", "#86c4ff"]];
@@ -1410,7 +1415,37 @@ function toolbarHit(x, y) {
   return -1;
 }
 const inPanel = (x, y) => x >= PANEL.x && x < PANEL.x + PANEL.w && y >= PANEL.y && y < PANEL.y + PANEL.h;
-const blocksInput = (x, y) => toolbarHit(x, y) >= 0 || inPanel(x, y);
+const FS_OK = !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+const FS_BTN = { x: 14, y: 66, w: 34, h: 34 };
+const inFsBtn = (x, y) => FS_OK && x >= FS_BTN.x && x < FS_BTN.x + FS_BTN.w && y >= FS_BTN.y && y < FS_BTN.y + FS_BTN.h;
+const blocksInput = (x, y) => toolbarHit(x, y) >= 0 || inPanel(x, y) || inFsBtn(x, y);
+
+function toggleFullscreen() {
+  const el = document.documentElement;
+  const active = document.fullscreenElement || document.webkitFullscreenElement;
+  try {
+    if (active) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    else {
+      const r = (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
+      if (r && r.catch) r.catch(() => {});
+    }
+  } catch (e) { /* fullscreen is optional */ }
+}
+
+function drawFsButton() {
+  if (!FS_OK) return;
+  const { x, y, w, h } = FS_BTN;
+  rr(x, y, w, h, 9);
+  ctx.fillStyle = "rgba(15,15,19,0.85)"; ctx.fill();
+  ctx.strokeStyle = "#3e3e46"; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.strokeStyle = "#cfcfd6"; ctx.lineWidth = 2.4; ctx.lineCap = "round";
+  const a = 8, b = 14, cx = x + w / 2, cy = y + h / 2;
+  ctx.beginPath();
+  for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+    ctx.moveTo(cx + sx * b, cy + sy * a); ctx.lineTo(cx + sx * b, cy + sy * b); ctx.lineTo(cx + sx * a, cy + sy * b);
+  }
+  ctx.stroke();
+}
 
 function rr(x, y, w, h, r) {
   ctx.beginPath();
@@ -1698,7 +1733,7 @@ function drawCursor() {
 // Static layers: room, lamp and light, rebuilt on every resize
 // ======================================================================
 
-const LAMP_X = 384, LAMP_Y = 42;
+const LAMP_X = W / 2, LAMP_Y = 42;
 const bgCan = document.createElement("canvas"), lightCan = document.createElement("canvas");
 
 function buildStatic() {
@@ -1818,6 +1853,7 @@ function useButton(i) {
 }
 
 function press() {
+  if (inFsBtn(state.mx, state.my)) { toggleFullscreen(); return; }
   const b = toolbarHit(state.mx, state.my);
   if (b >= 0) { useButton(b); return; }
   if (blocksInput(state.mx, state.my)) return;
@@ -1949,7 +1985,11 @@ function fit() {
   K = canvas.width / W;
   buildStatic();
 }
-window.addEventListener("resize", fit);
+window.addEventListener("resize", () => {
+  // Opened upright and turned sideways: restart once with a room as wide as the screen.
+  if (LOADED_PORTRAIT && innerWidth > innerHeight && idealWidth() - W >= 96) { location.reload(); return; }
+  fit();
+});
 window.addEventListener("orientationchange", () => setTimeout(fit, 200));
 
 // ---------------------------------------------------------------- render
@@ -2016,6 +2056,7 @@ function render() {
   if (!sel || !state.dolls.includes(sel)) sel = state.selected = state.dolls[state.dolls.length - 1] || null;
   drawPanel(sel);
   drawToolbar();
+  drawFsButton();
 }
 
 let acc = 0, lastT = performance.now();

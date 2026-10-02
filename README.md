@@ -16,7 +16,9 @@ Die Web-Version zeichnet Puppen und Fleischfetzen als große Pixel-Art mit schwa
 
 Die Infusion hängt einen Blutbeutel mit Schlauch an die Puppe. Sie füllt Blut auf, schließt Wunden, senkt Schmerz und holt die Puppe zurück, solange der Kopf dran ist.
 
-`web/ragpit.html` ist die Seite für die Claude-Artifact-Ansicht. `web/index.html` ist dieselbe Seite als vollständige HTML-Datei, etwa für GitHub Pages.
+`web/ragpit.html` ist die Seite für die Claude-Artifact-Ansicht. `web/index.html` ist dieselbe Seite als vollständige HTML-Datei mit App-Symbol (`web/icon-180.png`). Liegt sie auf einer eigenen Adresse wie GitHub Pages, startet sie vom Home-Bildschirm im Vollbild ohne Browserleiste.
+
+Der Raum passt seine Breite an den Bildschirm an, damit links und rechts keine schwarzen Balken bleiben.
 
 ## Starten in Godot
 
