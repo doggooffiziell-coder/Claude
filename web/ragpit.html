@@ -1,10 +1,13 @@
 <title>Ragpit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&display=swap">
 <style>
-/* One dark game screen: the pixel canvas sits centered and scales to the phone. */
+/* One dark game screen: the canvas sits centered and fills the phone in landscape. */
 :root {
-  --ground: #0d0d10;
+  --ground: #0b0b0e;
   --hint: #6a6a74;
-  --hint-strong: #d8d8d0;
+  --hint-strong: #e2e2da;
   color-scheme: dark;
 }
 html, body { height: 100%; }
@@ -17,7 +20,7 @@ body {
   user-select: none;
   -webkit-touch-callout: none;
   -webkit-tap-highlight-color: transparent;
-  font: 13px/1.4 ui-monospace, "SF Mono", Menlo, monospace;
+  font: 500 14px/1.4 "Chakra Petch", "Arial Narrow", system-ui, sans-serif;
 }
 #stage {
   height: 100%;
@@ -26,22 +29,22 @@ body {
   align-items: center;
   justify-content: center;
   gap: 12px;
-  padding-inline: max(8px, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px));
+  padding-inline: max(6px, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px));
   box-sizing: border-box;
 }
 #screen {
   display: block;
-  image-rendering: pixelated;
-  image-rendering: crisp-edges;
   touch-action: none;
   max-width: 100%;
   background: #000;
+  border-radius: 6px;
 }
 #hint {
   display: none;
   text-align: center;
   letter-spacing: 0.04em;
   max-width: 32ch;
+  margin: 0;
 }
 #hint strong { color: var(--hint-strong); font-weight: 600; }
 @media (orientation: portrait) {
@@ -50,24 +53,25 @@ body {
 </style>
 
 <div id="stage">
-  <canvas id="screen" width="384" height="216" aria-label="Ragpit Spielfeld"></canvas>
+  <canvas id="screen" aria-label="Ragpit Spielfeld"></canvas>
   <p id="hint"><strong>Dreh dein iPhone quer</strong><br>Dann wird das Spielfeld groß.</p>
 </div>
 
 <script>
 "use strict";
 // ======================================================================
-// Ragpit web port. Same rules as the Godot version: a falling-sand grid,
-// a Verlet ragdoll with joint limits, wounds and a hand drawn pixel HUD.
-// Everything renders into one 384x216 RGBA buffer.
+// Ragpit web edition.
+// Simulation runs on a 768x432 grid. The doll, gore and HUD are drawn as
+// smooth vectors at the full device resolution.
 // ======================================================================
 
-const W = 384, H = 216, N = W * H;
-const FLOOR_Y = 186;
+const W = 768, H = 432, N = W * H;
+const FLOOR_Y = 372;
 const CHUNK = 16, CW = W / CHUNK, CH = Math.ceil(H / CHUNK);
 const DT = 1 / 60;
-const GRAVITY = 420;
+const GRAVITY = 840;
 const EMPTY = 0, WALL = 1, WATER = 2, BLOOD = 3, FIRE = 4, ICE = 5, STEAM = 6, SMOKE = 7;
+const FONT = '"Chakra Petch", "Arial Narrow", system-ui, sans-serif';
 
 const rnd = (n) => (Math.random() * n) | 0;
 const rf = (a, b) => a + Math.random() * (b - a);
@@ -79,104 +83,11 @@ const hex = (s) => [parseInt(s.slice(1, 3), 16), parseInt(s.slice(3, 5), 16), pa
 const mixc = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
 const lighten = (c, t) => [c[0] + (255 - c[0]) * t, c[1] + (255 - c[1]) * t, c[2] + (255 - c[2]) * t];
 const darken = (c, t) => [c[0] * (1 - t), c[1] * (1 - t), c[2] * (1 - t)];
-
-// ---------------------------------------------------------------- frame buffer
+const css = (c, a = 1) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`;
 
 const canvas = document.getElementById("screen");
 const ctx = canvas.getContext("2d");
-const frame = ctx.createImageData(W, H);
-const fb = frame.data;
-
-function px(x, y, c, a = 255) {
-  x |= 0; y |= 0;
-  if (x < 0 || y < 0 || x >= W || y >= H) return;
-  const o = (y * W + x) * 4;
-  if (a >= 255) {
-    fb[o] = c[0]; fb[o + 1] = c[1]; fb[o + 2] = c[2];
-  } else {
-    const t = a / 255;
-    fb[o] += (c[0] - fb[o]) * t;
-    fb[o + 1] += (c[1] - fb[o + 1]) * t;
-    fb[o + 2] += (c[2] - fb[o + 2]) * t;
-  }
-}
-
-function rect(x, y, w, h, c, a = 255) {
-  const x0 = Math.max(0, Math.floor(x)), y0 = Math.max(0, Math.floor(y));
-  const x1 = Math.min(W, Math.floor(x + w)), y1 = Math.min(H, Math.floor(y + h));
-  for (let yy = y0; yy < y1; yy++) for (let xx = x0; xx < x1; xx++) px(xx, yy, c, a);
-}
-
-function roundRect(x, y, w, h, c, a = 255) {
-  rect(x + 2, y, w - 4, 1, c, a);
-  rect(x + 1, y + 1, w - 2, 1, c, a);
-  rect(x, y + 2, w, h - 4, c, a);
-  rect(x + 1, y + h - 2, w - 2, 1, c, a);
-  rect(x + 2, y + h - 1, w - 4, 1, c, a);
-}
-
-function framed(x, y, w, h, fill, edge) {
-  roundRect(x, y, w, h, edge);
-  roundRect(x + 1, y + 1, w - 2, h - 2, fill);
-}
-
-// Filled capsule between two points, sampled at pixel centers for crisp pixels.
-function capsule(ax, ay, bx, by, r, c) {
-  const x0 = Math.max(0, Math.floor(Math.min(ax, bx) - r - 1));
-  const x1 = Math.min(W - 1, Math.ceil(Math.max(ax, bx) + r + 1));
-  const y0 = Math.max(0, Math.floor(Math.min(ay, by) - r - 1));
-  const y1 = Math.min(H - 1, Math.ceil(Math.max(ay, by) + r + 1));
-  const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy, r2 = r * r;
-  for (let y = y0; y <= y1; y++) {
-    for (let x = x0; x <= x1; x++) {
-      const cx = x + 0.5, cy = y + 0.5;
-      const t = l2 > 0 ? clamp(((cx - ax) * dx + (cy - ay) * dy) / l2, 0, 1) : 0;
-      const ex = ax + dx * t - cx, ey = ay + dy * t - cy;
-      if (ex * ex + ey * ey <= r2) px(x, y, c);
-    }
-  }
-}
-
-function line(ax, ay, bx, by, c, a = 255) {
-  const n = Math.max(1, Math.ceil(Math.max(Math.abs(bx - ax), Math.abs(by - ay))));
-  for (let s = 0; s <= n; s++) px(Math.floor(lerp(ax, bx, s / n)), Math.floor(lerp(ay, by, s / n)), c, a);
-}
-
-// ---------------------------------------------------------------- pixel font 3x5
-
-const GLYPHS = {
-  A: [".#.", "#.#", "###", "#.#", "#.#"], B: ["##.", "#.#", "##.", "#.#", "##."],
-  C: [".##", "#..", "#..", "#..", ".##"], D: ["##.", "#.#", "#.#", "#.#", "##."],
-  E: ["###", "#..", "##.", "#..", "###"], F: ["###", "#..", "##.", "#..", "#.."],
-  G: [".##", "#..", "#.#", "#.#", ".##"], H: ["#.#", "#.#", "###", "#.#", "#.#"],
-  I: ["###", ".#.", ".#.", ".#.", "###"], J: ["..#", "..#", "..#", "#.#", ".#."],
-  K: ["#.#", "#.#", "##.", "#.#", "#.#"], L: ["#..", "#..", "#..", "#..", "###"],
-  M: ["#.#", "###", "###", "#.#", "#.#"], N: ["##.", "#.#", "#.#", "#.#", "#.#"],
-  O: [".#.", "#.#", "#.#", "#.#", ".#."], P: ["##.", "#.#", "##.", "#..", "#.."],
-  Q: [".#.", "#.#", "#.#", "##.", ".##"], R: ["##.", "#.#", "##.", "#.#", "#.#"],
-  S: [".##", "#..", ".#.", "..#", "##."], T: ["###", ".#.", ".#.", ".#.", ".#."],
-  U: ["#.#", "#.#", "#.#", "#.#", "###"], V: ["#.#", "#.#", "#.#", "#.#", ".#."],
-  W: ["#.#", "#.#", "###", "###", "#.#"], X: ["#.#", "#.#", ".#.", "#.#", "#.#"],
-  Y: ["#.#", "#.#", ".#.", ".#.", ".#."], Z: ["###", "..#", ".#.", "#..", "###"],
-  0: ["###", "#.#", "#.#", "#.#", "###"], 1: [".#.", "##.", ".#.", ".#.", "###"],
-  2: ["##.", "..#", ".#.", "#..", "###"], 3: ["##.", "..#", ".#.", "..#", "##."],
-  4: ["#.#", "#.#", "###", "..#", "..#"], 5: ["###", "#..", "##.", "..#", "##."],
-  6: [".##", "#..", "###", "#.#", "###"], 7: ["###", "..#", ".#.", ".#.", ".#."],
-  8: ["###", "#.#", "###", "#.#", "###"], 9: ["###", "#.#", "###", "..#", "##."],
-  "-": ["...", "...", "###", "...", "..."], ".": ["...", "...", "...", "...", ".#."],
-  ":": ["...", ".#.", "...", ".#.", "..."], "!": [".#.", ".#.", ".#.", "...", ".#."],
-  "+": ["...", ".#.", "###", ".#.", "..."], "/": ["..#", "..#", ".#.", "#..", "#.."],
-};
-const textWidth = (s) => (s.length ? s.length * 4 - 1 : 0);
-function text(x, y, s, c, a = 255) {
-  x = Math.floor(x); y = Math.floor(y);
-  for (const ch of s.toUpperCase()) {
-    const g = GLYPHS[ch];
-    if (g) for (let r = 0; r < 5; r++) for (let k = 0; k < 3; k++) if (g[r][k] === "#") px(x + k, y + r, c, a);
-    x += 4;
-  }
-}
-const textCentered = (cx, y, s, c, a) => text(Math.round(cx - textWidth(s) / 2), y, s, c, a);
+let K = 1; // device pixels per world unit
 
 // ======================================================================
 // World: falling-sand grid
@@ -185,7 +96,12 @@ const textCentered = (cx, y, s, c, a) => text(Math.round(cx - textWidth(s) / 2),
 const mat = new Uint8Array(N), mixv = new Uint8Array(N), life = new Uint8Array(N);
 const shade = new Uint8Array(N), stamp = new Uint8Array(N), rest = new Uint8Array(N);
 const paintMark = new Uint8Array(N);
-const wpx = new Uint8ClampedArray(N * 4);
+const wcan = document.createElement("canvas");
+wcan.width = W; wcan.height = H;
+const wctx = wcan.getContext("2d");
+const wimg = wctx.createImageData(W, H);
+const wpx = wimg.data;
+let worldDirty = true;
 let paintList = [];
 let chunkNow = new Uint8Array(CW * CH), chunkNext = new Uint8Array(CW * CH);
 let tick = 0, curStamp = 1;
@@ -199,7 +115,7 @@ function waterColor(share) {
 }
 const waterLut = new Uint8Array(256 * 6);
 for (let s = 0; s < 256; s++) {
-  const c = waterColor(s), top = lighten(c, 0.45);
+  const c = waterColor(s), top = lighten(c, 0.4);
   waterLut.set([c[0], c[1], c[2], top[0], top[1], top[2]], s * 6);
 }
 
@@ -218,6 +134,7 @@ function worldReset() {
   for (let y = FLOOR_Y; y < H; y++) for (let x = 0; x < W; x++) mat[y * W + x] = WALL;
   particles = [];
   for (let i = 0; i < N; i++) paintCell(i);
+  worldDirty = true;
 }
 
 function setCell(x, y, m, mx = 0, lf = 0) {
@@ -238,8 +155,8 @@ function paintDisc(cx, cy, radius, m, chance, lf = 0) {
 }
 
 function spawnParticle(x, y, vx, vy, m, mx = 255) {
-  if (particles.length >= 1800) return;
-  particles.push({ x, y, vx, vy, m, mx });
+  if (particles.length >= 4000) return;
+  particles.push({ x, y, vx, vy, m, mx, age: 0 });
 }
 
 function splash(x, y, vx, vy) {
@@ -248,7 +165,7 @@ function splash(x, y, vx, vy) {
   if (m !== WATER && m !== BLOOD) return;
   const mx = mixv[y * W + x];
   setCell(x, y, EMPTY);
-  spawnParticle(x + 0.5, y - 0.5, vx * 0.5 + rf(-25, 25), -Math.abs(vy) * 0.45 - rf(20, 60), m, m === WATER ? mx : 255);
+  spawnParticle(x + 0.5, y - 0.5, vx * 0.5 + rf(-50, 50), -Math.abs(vy) * 0.45 - rf(40, 120), m, m === WATER ? mx : 255);
 }
 
 function touch(i) {
@@ -325,8 +242,8 @@ function worldStep() {
 function liquid(x, y, i, m) {
   const hasBelow = y + 1 < H;
   if (hasBelow) {
-    const b = i + W, mb = mat[b];
-    if (isFree(mb)) { swap(i, b); life[b] = 0; return; }
+    const b = i + W;
+    if (isFree(mat[b])) { swap(i, b); life[b] = 0; return; }
     let d = Math.random() < 0.5 ? 1 : -1;
     for (let k = 0; k < 2; k++) {
       const nx = x + d;
@@ -335,7 +252,7 @@ function liquid(x, y, i, m) {
     }
   }
   // Look sideways for a drop and flow toward it. Water looks far, blood is thick.
-  const look = m === WATER ? 32 : 3;
+  const look = m === WATER ? 48 : 4;
   let dir = Math.random() < 0.5 ? 1 : -1;
   const row = y * W;
   for (let k = 0; k < 2; k++) {
@@ -430,8 +347,15 @@ function gasCell(x, y, i) {
 function stepParticles() {
   for (let k = particles.length - 1; k >= 0; k--) {
     const p = particles[k];
+    p.age += DT;
     p.vy += GRAVITY * DT;
     p.vx *= 0.995; p.vy *= 0.995;
+    // Fast blood sometimes hits the back wall and leaves a stain there.
+    if (p.m === BLOOD && p.age > 0.04 && p.y < FLOOR_Y - 2 && p.vx * p.vx + p.vy * p.vy > 90000 && Math.random() < 0.014) {
+      splat(p.x, p.y, rf(1.2, 3.2));
+      particles[k] = particles[particles.length - 1]; particles.pop();
+      continue;
+    }
     const x1 = p.x + p.vx * DT, y1 = p.y + p.vy * DT;
     const n = Math.floor(Math.max(Math.abs(x1 - p.x), Math.abs(y1 - p.y))) + 1;
     let done = false, lx = p.x, ly = p.y;
@@ -462,55 +386,86 @@ function paintCell(i) {
   const o = i * 4, m = mat[i];
   let r = 0, g = 0, b = 0, a = 255;
   switch (m) {
-    case EMPTY: a = 0; break;
-    case WALL: {
-      const x = i % W, y = (i / W) | 0, s = shade[i];
-      let v = 150 + (s >> 2);
-      if (y === FLOOR_Y) v = 204;
-      else if (y === FLOOR_Y + 1) v = 178;
-      else if (x % 32 === 0 || (y - FLOOR_Y) % 12 === 0) v = 128;
-      else if (x % 32 === 1 || (y - FLOOR_Y) % 12 === 1) v = 168;
-      else if (s === 0) v = 138;
-      r = v; g = v; b = v + 4;
-      break;
-    }
+    case EMPTY: case WALL: a = 0; break;
     case WATER: {
       let li = mixv[i] * 6;
       if (i >= W && isFree(mat[i - W])) li += 3;
       r = waterLut[li]; g = waterLut[li + 1]; b = waterLut[li + 2];
-      if (shade[i] < 2) { r += 10; g += 10; b += 10; }
-      a = 190;
+      a = 200;
       break;
     }
     case BLOOD: {
       const s2 = shade[i] % 4;
-      r = 112 + s2 * 4; g = 8 + s2; b = 16;
-      if (i >= W && isFree(mat[i - W])) { r = 150; g = 22; b = 30; }
+      r = 108 + s2 * 5; g = 6 + s2; b = 14;
+      if (i >= W && isFree(mat[i - W])) { r = 156; g = 24; b = 34; }
       break;
     }
     case FIRE: {
       const l = life[i] + rnd(12);
-      if (l > 60) { r = 255; g = 226; b = 110; }
-      else if (l > 32) { r = 246; g = 132; b = 34; }
-      else { r = 190; g = 44; b = 22; }
+      if (l > 60) { r = 255; g = 230; b = 120; }
+      else if (l > 32) { r = 250; g = 140; b = 40; }
+      else { r = 200; g = 50; b = 24; }
       break;
     }
     case ICE: {
       const s3 = shade[i];
-      r = 168 + s3; g = 214 + (s3 >> 1); b = 240;
-      if (i >= W && mat[i - W] !== ICE) { r = 222; g = 244; b = 255; }
+      r = 172 + s3; g = 216 + (s3 >> 1); b = 242;
+      if (i >= W && mat[i - W] !== ICE) { r = 226; g = 246; b = 255; }
       a = 235;
       break;
     }
-    case STEAM: r = 205; g = 210; b = 220; a = Math.min(150, life[i] * 2); break;
-    case SMOKE: r = 58; g = 58; b = 62; a = Math.min(170, life[i] * 2); break;
+    case STEAM: r = 210; g = 214; b = 224; a = Math.min(140, life[i] * 2); break;
+    case SMOKE: r = 50; g = 50; b = 56; a = Math.min(170, life[i] * 2); break;
   }
   wpx[o] = r; wpx[o + 1] = g; wpx[o + 2] = b; wpx[o + 3] = a;
 }
 
 function flushPaint() {
+  if (paintList.length === 0) return;
   for (const i of paintList) { paintCell(i); paintMark[i] = 0; }
   paintList = [];
+  worldDirty = true;
+}
+
+// ---------------------------------------------------------------- wall stains
+
+const decal = document.createElement("canvas");
+decal.width = W * 2; decal.height = H * 2;
+const dctx = decal.getContext("2d");
+function splat(x, y, r) {
+  dctx.fillStyle = css(mixc(hex("#5c0610"), hex("#8e0f1c"), Math.random()), rf(0.55, 0.9));
+  dctx.beginPath();
+  dctx.ellipse(x * 2, y * 2, r * 2 * rf(0.8, 1.3), r * 2 * rf(0.7, 1.1), rf(0, Math.PI), 0, Math.PI * 2);
+  dctx.fill();
+  // A short run down the wall
+  if (Math.random() < 0.5) {
+    dctx.fillRect(x * 2 - 0.8, y * 2, 1.6, rf(4, 18));
+  }
+}
+
+// ---------------------------------------------------------------- gibs
+
+let gibs = [];
+const COL_MEAT = hex("#8e1424"), COL_MEAT_HI = hex("#c8445a"), COL_BONE = hex("#ece3cf");
+function spawnGib(x, y, vx, vy, bone = false) {
+  if (gibs.length > 220) gibs.shift();
+  gibs.push({ x, y, vx, vy, r: bone ? rf(1.4, 2.4) : rf(1.8, 3.6), rot: rf(0, 6.28), vr: rf(-12, 12), bone, bleed: rf(1, 3), still: 0 });
+}
+function stepGibs() {
+  for (const g of gibs) {
+    if (g.still > 1.5) continue;
+    g.vy += GRAVITY * DT;
+    let nx = g.x + g.vx * DT, ny = g.y + g.vy * DT;
+    if (solidAt(nx, g.y)) { g.vx *= -0.35; nx = g.x; }
+    if (solidAt(nx, ny + g.r * 0.6)) {
+      if (g.vy > 200) for (let n = 0; n < 2; n++) spawnParticle(nx, ny - 1, rf(-60, 60), rf(-120, -30), BLOOD);
+      g.vy *= -0.3; g.vx *= 0.65; g.vr *= 0.6; ny = g.y;
+    }
+    g.x = clamp(nx, 1, W - 1); g.y = ny;
+    g.rot += g.vr * DT;
+    if (g.bleed > 0 && Math.random() < 0.3) { spawnParticle(g.x, g.y, rf(-20, 20), rf(-20, 20), BLOOD); g.bleed -= DT * 3; }
+    g.still = Math.abs(g.vx) + Math.abs(g.vy) < 20 ? g.still + DT : 0;
+  }
 }
 
 // ======================================================================
@@ -525,14 +480,14 @@ const PART_COUNT = 13;
 const PART_A = [P_NECK, P_NECK, P_WAIST, P_NECK, P_ELBOW_L, P_NECK, P_ELBOW_R, P_HIP, P_KNEE_L, P_ANKLE_L, P_HIP, P_KNEE_R, P_ANKLE_R];
 const PART_B = [P_HEAD, P_WAIST, P_HIP, P_ELBOW_L, P_HAND_L, P_ELBOW_R, P_HAND_R, P_KNEE_L, P_ANKLE_L, P_TOE_L, P_KNEE_R, P_ANKLE_R, P_TOE_R];
 const PARENT = [TORSO, -1, TORSO, TORSO, UARM_L, TORSO, UARM_R, PELVIS, THIGH_L, SHIN_L, PELVIS, THIGH_R, SHIN_R];
-const WIDTH = [2, 6, 5, 3, 3, 3, 3, 4, 3, 2, 4, 3, 2];
+const WIDTH = [4, 12, 10, 6, 5.5, 6, 5.5, 8, 6.5, 4.5, 8, 6.5, 4.5];
 const FAR_SIDE = [false, false, false, true, true, false, false, true, true, true, false, false, false];
 const DRAW_ORDER = [UARM_L, LARM_L, THIGH_L, SHIN_L, FOOT_L, PELVIS, TORSO, HEAD, THIGH_R, SHIN_R, FOOT_R, UARM_R, LARM_R];
 const POINT_OWNER = [HEAD, TORSO, TORSO, PELVIS, UARM_L, LARM_L, UARM_R, LARM_R, THIGH_L, SHIN_L, FOOT_L, THIGH_R, SHIN_R, FOOT_R];
 const POINT_INV_MASS = [0.8, 0.6, 0.5, 0.6, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
 // Standing pose, facing right. Origin sits on the floor between the feet.
-const POSE = [[0, -37], [0, -32], [0, -22], [0, -18], [-1, -25], [0, -18], [1, -25], [2, -18],
-  [-1, -10], [-1, -2], [2, -1], [1, -10], [1, -2], [4, -1]];
+const POSE = [[0, -74], [0, -64], [0, -44], [0, -36], [-2, -50], [0, -36], [2, -50], [4, -36],
+  [-2, -20], [-2, -4], [4, -2], [2, -20], [2, -4], [8, -2]];
 // child, parent, joint on parent end A, min and max degrees
 const JOINTS = [
   [HEAD, TORSO, true, -35, 35], [PELVIS, TORSO, false, -35, 45],
@@ -542,11 +497,11 @@ const JOINTS = [
   [SHIN_L, THIGH_L, false, -10, 150], [SHIN_R, THIGH_R, false, -10, 150],
   [FOOT_L, SHIN_L, false, -140, -30], [FOOT_R, SHIN_R, false, -140, -30],
 ];
-const ITERATIONS = 8, HEAD_R = 4, MAX_STEP = 14;
-const WOUND_SPEED = 210, SEVER_SPEED = 520, MAX_WOUNDS = 32, OUT_BL = 35, AGONY_PN = 65;
-const COL_SKIN = hex("#f2f2ec"), COL_SKIN_FAR = hex("#cdcdc6"), COL_LINE = hex("#0c0c0e");
-const COL_CHAR = hex("#342c28"), COL_ICE = hex("#a0d2f5"), COL_WOUND = hex("#b01020");
-const COL_SCAR = hex("#5a1418"), COL_STUMP = hex("#d01828"), COL_HURT = hex("#ff7070");
+const ITERATIONS = 8, HEAD_R = 8.5, MAX_STEP = 28;
+const WOUND_SPEED = 400, SEVER_SPEED = 900, GIB_SPEED = 1450, MAX_WOUNDS = 40, OUT_BL = 35, AGONY_PN = 65;
+const COL_SKIN = hex("#f1f0ea"), COL_SKIN_FAR = hex("#c9c8c0"), COL_LINE = hex("#0d0d10");
+const COL_CHAR = hex("#2e2622"), COL_ICE = hex("#a6d6f6"), COL_HURT = hex("#ff6a6a");
+const COL_GORE = hex("#7a0a16"), COL_GORE_DARK = hex("#3a0207"), COL_FLESH = hex("#c43248");
 const D2R = Math.PI / 180;
 
 class Doll {
@@ -560,10 +515,10 @@ class Doll {
       this.inv.push(POINT_INV_MASS[i]); this.owner.push(POINT_OWNER[i]); this.impactCd.push(0);
     }
     this.pa = PART_A.slice(); this.pb = PART_B.slice();
-    this.restLen = []; this.severed = []; this.char = []; this.bladeCd = [];
+    this.restLen = []; this.severed = []; this.gone = []; this.char = []; this.stain = []; this.bladeCd = [];
     for (let k = 0; k < PART_COUNT; k++) {
       this.restLen.push(Math.hypot(this.x[this.pb[k]] - this.x[this.pa[k]], this.y[this.pb[k]] - this.y[this.pa[k]]));
-      this.severed.push(false); this.char.push(0); this.bladeCd.push(0);
+      this.severed.push(false); this.gone.push(false); this.char.push(0); this.stain.push(0); this.bladeCd.push(0);
     }
     this.joints = JOINTS.map((d) => ({
       child: d[0], parent: d[1], atA: d[2],
@@ -594,11 +549,11 @@ class Doll {
       if (liquidAt(x, y)) {
         vx *= 0.86; vy *= 0.86;
         vy += g * 0.12;
-        if (vx * vx + vy * vy > 6.25) splash(x, y, vx / DT, vy / DT);
+        if (vx * vx + vy * vy > 25) splash(x, y, vx / DT, vy / DT);
       } else {
         vx *= 0.998; vy *= 0.998;
         // Static friction: slow points resting on the ground settle down.
-        if (vx * vx + vy * vy < 0.25) {
+        if (vx * vx + vy * vy < 1) {
           const f = solidAt(x, y + 1.2) ? 0.6 : 0.9;
           vx *= f; vy *= f;
         }
@@ -665,12 +620,12 @@ class Doll {
       if (!this.attached(k)) continue;
       const a = this.pa[k], b = this.pb[k];
       feetX += this.x[a]; feet++;
-      if (solidAt(this.x[a], this.y[a] + 2.5) || solidAt(this.x[b], this.y[b] + 2.5)) grounded = true;
+      if (solidAt(this.x[a], this.y[a] + 5) || solidAt(this.x[b], this.y[b] + 5)) grounded = true;
     }
     if (!grounded || feet === 0) return;
     feetX /= feet;
-    const groundY = Math.max(this.y[P_ANKLE_L], this.y[P_ANKLE_R]) + 2;
-    if (this.y[P_NECK] > this.y[P_HIP] - 7 || this.y[P_HIP] > groundY - 10 || Math.abs(this.x[P_NECK] - feetX) > 9) return;
+    const groundY = Math.max(this.y[P_ANKLE_L], this.y[P_ANKLE_R]) + 4;
+    if (this.y[P_NECK] > this.y[P_HIP] - 14 || this.y[P_HIP] > groundY - 20 || Math.abs(this.x[P_NECK] - feetX) > 18) return;
     this.standing = true;
     // Pull every attached body point toward the standing pose above the feet.
     const s = 0.15 * clamp(this.ko / 100, 0, 1);
@@ -731,9 +686,9 @@ class Doll {
       // Small steps keep a tangled joint from flipping between its two limits.
       diff = clamp(diff * 0.5, -0.12, 0.12);
       const rc = diff * wc / ws, ro = -diff * wo / ws;
-      let cx = this.x[cp] - jx, cy = this.y[cp] - jy;
+      const cx = this.x[cp] - jx, cy = this.y[cp] - jy;
       const ncx = jx + cx * Math.cos(rc) - cy * Math.sin(rc), ncy = jy + cx * Math.sin(rc) + cy * Math.cos(rc);
-      let qx = this.x[op] - jx, qy = this.y[op] - jy;
+      const qx = this.x[op] - jx, qy = this.y[op] - jy;
       const nox = jx + qx * Math.cos(ro) - qy * Math.sin(ro), noy = jy + qx * Math.sin(ro) + qy * Math.cos(ro);
       const dcx = ncx - this.x[cp], dcy = ncy - this.y[cp], dox = nox - this.x[op], doy = noy - this.y[op];
       this.x[cp] = ncx; this.y[cp] = ncy; this.x[op] = nox; this.y[op] = noy;
@@ -768,11 +723,11 @@ class Doll {
     }
     if (best) return best;
     const backX = bx - x, backY = by - y, n = Math.ceil(Math.hypot(backX, backY));
-    for (let s = 1; s <= Math.min(n, 6); s++) {
+    for (let s = 1; s <= Math.min(n, 8); s++) {
       const qx = x + backX * s / n, qy = y + backY * s / n;
       if (!solidAt(qx, qy)) return [qx, qy];
     }
-    for (let r = 1; r < 6; r++) {
+    for (let r = 1; r < 8; r++) {
       for (const [dx, dy] of [[0, -1], [-1, -1], [1, -1], [-1, 0], [1, 0], [0, 1]]) {
         if (!solidAt(x + dx * r, y + dy * r)) return [x + dx * r, y + dy * r];
       }
@@ -783,36 +738,45 @@ class Doll {
   // ------------------------------------------------ damage
   onImpact(i, speed) {
     const k = this.owner[i];
+    if (this.gone[k]) return;
     const force = speed - WOUND_SPEED * 0.75;
-    this.pn = Math.min(100, this.pn + force / 9);
+    this.pn = Math.min(100, this.pn + force / 18);
     this.damaged();
-    if (k === HEAD) this.ko -= force / 5;
+    if (k === HEAD) this.ko -= force / 10;
     if (speed > WOUND_SPEED && this.woundCd <= 0) {
       this.woundCd = 0.12;
       const t = k === HEAD ? Math.random() : (i === this.pa[k] ? 0.15 : 0.85);
-      const sev = 0.5 + (speed - WOUND_SPEED) / 180;
+      const sev = 0.5 + (speed - WOUND_SPEED) / 360;
       this.addWound(k, t, rf(-1, 1), sev);
-      this.burst(this.x[i], this.y[i], 4 + Math.floor(sev * 4), 0, -1, 70);
+      this.burst(this.x[i], this.y[i], 8 + Math.floor(sev * 8), 0, -1, 140);
+      if (speed > WOUND_SPEED * 1.6) splatAround(this.x[i], this.y[i], 4);
     }
-    let severAt = SEVER_SPEED * (this.frozen ? 0.6 : 1);
-    if (k === HEAD) severAt *= 1.3;
+    // Brutal hits burst the body part apart, hard hits tear it off.
+    if (k !== TORSO && speed > GIB_SPEED * (this.frozen ? 0.6 : 1) && Math.random() < 0.45) { this.gib(k); return; }
+    let severAt = SEVER_SPEED * (this.frozen ? 0.55 : 1);
+    if (k === HEAD) severAt *= 1.25;
     if (k !== TORSO && k !== PELVIS && speed > severAt && this.severCd <= 0) {
-      if (Math.random() < clamp((speed - severAt) / 350 + 0.15, 0, 0.7)) this.sever(k);
+      if (Math.random() < clamp((speed - severAt) / 600 + 0.25, 0, 0.8)) this.sever(k);
     }
   }
 
   addWound(k, t, s, severity, stump = false) {
+    if (this.gone[k]) return;
     if (!stump) {
       for (const w of this.wounds) {
         if (w.part === k && !w.stump && Math.abs(w.t - t) < 0.2) {
           w.bleed = Math.min(1, w.bleed + severity * 0.12);
-          w.size = Math.min(3, w.size + 1);
+          w.size = Math.min(3.5, w.size + 0.5);
           return;
         }
       }
     }
-    if (this.wounds.length >= MAX_WOUNDS) this.wounds.shift();
-    this.wounds.push({ part: k, t: clamp(t, 0, 1), s: clamp(s, -1, 1), bleed: severity * 0.25, size: severity < 1.5 ? 1 : 2, stump });
+    if (this.wounds.length >= MAX_WOUNDS) {
+      const idx = this.wounds.findIndex((w) => !w.stump);
+      this.wounds.splice(idx >= 0 ? idx : 0, 1);
+    }
+    this.wounds.push({ part: k, t: clamp(t, 0, 1), s: clamp(s, -1, 1), bleed: severity * 0.25,
+      size: severity < 1.5 ? 1.4 : 2.2, stump, rot: rf(-0.6, 0.6) });
   }
 
   sever(k) {
@@ -830,15 +794,40 @@ class Doll {
     this.severCd = 0.25;
     if (this.grabbed === jp) this.grabbed = -1;
     this.pn = 100;
-    this.burst(this.x[jp], this.y[jp], 26, 0, -1, 120);
+    const jx = this.x[jp], jy = this.y[jp];
+    this.burst(jx, jy, 46, 0, -1, 240);
+    splatAround(jx, jy, 10);
+    for (let n = 0; n < 3; n++) spawnGib(jx, jy, rf(-160, 160), rf(-320, -80));
     this.damaged();
     if (k === HEAD) this.die();
   }
 
+  // The part bursts into meat and bone. Its children fall off as loose pieces.
+  gib(k) {
+    if (k === TORSO || this.gone[k]) return;
+    const ax = this.x[this.pa[k]], ay = this.y[this.pa[k]], bx = this.x[this.pb[k]], by = this.y[this.pb[k]];
+    const vx = (bx - this.ox[this.pb[k]]) / DT, vy = (by - this.oy[this.pb[k]]) / DT;
+    this.severCd = 0;
+    this.sever(k);
+    for (let c = 0; c < PART_COUNT; c++) if (PARENT[c] === k) { this.severCd = 0; this.sever(c); }
+    this.gone[k] = true;
+    this.wounds = this.wounds.filter((w) => w.part !== k);
+    if (this.grabbed === this.pa[k] || this.grabbed === this.pb[k]) this.grabbed = -1;
+    const count = k === HEAD ? 16 : 9;
+    for (let n = 0; n < count; n++) {
+      const t = Math.random();
+      spawnGib(lerp(ax, bx, t), lerp(ay, by, t), vx * 0.3 + rf(-260, 260), vy * 0.3 + rf(-420, -60), n % 4 === 0);
+    }
+    this.burst(lerp(ax, bx, 0.5), lerp(ay, by, 0.5), 80, 0, -1, 320);
+    splatAround(bx, by, 22);
+    if (k === HEAD) this.die();
+  }
+
   bladeHit(ax, ay, bx, by, speed) {
-    if (speed < 60) return false;
+    if (speed < 120) return false;
     let hit = false;
     for (let k = 0; k < PART_COUNT; k++) {
+      if (this.gone[k]) continue;
       const p0x = this.x[this.pa[k]], p0y = this.y[this.pa[k]];
       const p1x = this.x[this.pb[k]], p1y = this.y[this.pb[k]];
       let t = 0.5, dist, cx, cy;
@@ -851,18 +840,47 @@ class Doll {
         dist = r.d - WIDTH[k] * 0.5;
         cx = r.qx; cy = r.qy; t = r.t;
       }
-      if (dist > 1.5) continue;
+      if (dist > 3) continue;
       hit = true;
       if (this.bladeCd[k] > 0) continue;
       this.bladeCd[k] = 0.15;
-      this.addWound(k, t, rf(-1, 1), 0.6 + speed / 600);
+      this.addWound(k, t, rf(-1, 1), 0.7 + speed / 1000);
       this.pn = Math.min(100, this.pn + 14);
       const l = Math.hypot(bx - ax, by - ay) || 1;
-      this.burst(cx, cy, 10, (bx - ax) / l, (by - ay) / l, 90);
-      if (speed > 380 && k !== TORSO && this.severCd <= 0 && Math.random() < 0.8) this.sever(k);
+      this.burst(cx, cy, 22, (bx - ax) / l, (by - ay) / l, 200);
+      splatAround(cx, cy, 3);
+      if (speed > 600 && k !== TORSO && this.severCd <= 0 && Math.random() < 0.85) this.sever(k);
     }
     if (hit) { this.bladeTimer = 2; this.damaged(); }
     return hit;
+  }
+
+  blast(x, y, R) {
+    let touched = false;
+    for (let i = 0; i < this.x.length; i++) {
+      const dx = this.x[i] - x, dy = this.y[i] - y, d = Math.hypot(dx, dy) || 1;
+      if (d >= R) continue;
+      touched = true;
+      const f = 1 - d / R;
+      const vx = this.x[i] - this.ox[i] + dx / d * f * 26, vy = this.y[i] - this.oy[i] + dy / d * f * 26 - f * 10;
+      this.ox[i] = this.x[i] - vx; this.oy[i] = this.y[i] - vy;
+    }
+    if (!touched) return false;
+    for (let k = 0; k < PART_COUNT; k++) {
+      if (this.gone[k]) continue;
+      const mx = (this.x[this.pa[k]] + this.x[this.pb[k]]) / 2, my = (this.y[this.pa[k]] + this.y[this.pb[k]]) / 2;
+      const f = 1 - Math.hypot(mx - x, my - y) / R;
+      if (f <= 0) continue;
+      if (f > 0.25) this.addWound(k, Math.random(), rf(-1, 1), 1 + f * 2);
+      if (k === TORSO) { if (f > 0.7) { this.addWound(k, rf(0.3, 0.8), rf(-1, 1), 4); for (let n = 0; n < 6; n++) spawnGib(mx, my, rf(-250, 250), rf(-400, -100)); } continue; }
+      if (f > 0.72 && Math.random() < 0.75) this.gib(k);
+      else if (f > 0.45 && Math.random() < 0.7) { this.severCd = 0; this.sever(k); }
+    }
+    this.pn = 100;
+    this.ko -= 40;
+    this.burn = Math.max(this.burn, 3);
+    this.damaged();
+    return true;
   }
 
   near(px0, py0, r) {
@@ -878,8 +896,8 @@ class Doll {
     if (this.bl <= 1) return;
     for (let n = 0; n < count; n++) {
       const a = rf(-1.1, 1.1), s = speed * rf(0.3, 1);
-      const vx = (dx * Math.cos(a) - dy * Math.sin(a)) * s + rf(-30, 30);
-      const vy = (dx * Math.sin(a) + dy * Math.cos(a)) * s + rf(-50, 10);
+      const vx = (dx * Math.cos(a) - dy * Math.sin(a)) * s + rf(-60, 60);
+      const vy = (dx * Math.sin(a) + dy * Math.cos(a)) * s + rf(-100, 20);
       spawnParticle(x, y, vx, vy, BLOOD);
     }
   }
@@ -898,14 +916,14 @@ class Doll {
       const x = this.x[i], y = this.y[i], m = matAt(x, y);
       if (m === FIRE && this.burn <= 0 && this.burnImmune <= 0) this.burn = 5;
       else if (m === WATER || m === BLOOD) wet = true;
-      if (matAt(x, y + 1.5) === ICE || matAt(x + 1.5, y) === ICE || matAt(x - 1.5, y) === ICE) cold++;
+      if (matAt(x, y + 3) === ICE || matAt(x + 3, y) === ICE || matAt(x - 3, y) === ICE) cold++;
     }
     const hx = this.x[this.pb[HEAD]], hy = this.y[this.pb[HEAD]];
-    this.headUnder = !this.severed[HEAD] && liquidAt(hx, hy) && liquidAt(hx, hy - 2);
+    this.headUnder = !this.severed[HEAD] && liquidAt(hx, hy) && liquidAt(hx, hy - 4);
 
     if (wet && this.burn > 0) {
       this.burn = 0;
-      paintDisc(this.x[this.pa[TORSO]], this.y[this.pa[TORSO]], 3, STEAM, 0.4, 60);
+      paintDisc(this.x[this.pa[TORSO]], this.y[this.pa[TORSO]], 6, STEAM, 0.4, 60);
     }
     this.burnImmune = Math.max(0, this.burnImmune - DT);
     if (this.burn > 0) {
@@ -914,11 +932,13 @@ class Doll {
       this.freeze = Math.max(0, this.freeze - DT * 0.9);
       this.pn = Math.min(100, this.pn + 9 * DT);
       this.sinceDamage = 0;
-      for (let n = 0; n < 2; n++) {
-        const k = rnd(PART_COUNT), t = Math.random();
+      for (let n = 0; n < 4; n++) {
+        const k = rnd(PART_COUNT);
+        if (this.gone[k]) continue;
+        const t = Math.random();
         const x = lerp(this.x[this.pa[k]], this.x[this.pb[k]], t), y = lerp(this.y[this.pa[k]], this.y[this.pb[k]], t);
         this.char[k] = Math.min(1, this.char[k] + DT * 0.25);
-        if (matAt(x, y - 2) === EMPTY) setCell(Math.floor(x) + rnd(3) - 1, Math.floor(y) - 2, FIRE, 0, 30 + rnd(40));
+        if (matAt(x, y - 4) === EMPTY) setCell(Math.floor(x) + rnd(5) - 2, Math.floor(y) - 4, FIRE, 0, 30 + rnd(40));
       }
     }
     if (cold > 0) this.freeze = Math.min(1.6, this.freeze + DT * 0.18 * Math.min(cold, 5));
@@ -932,17 +952,23 @@ class Doll {
     let flow = this.bl <= 0 ? 0 : clamp(this.bl / 100, 0.2, 1);
     if (this.dead) flow *= 0.25;
     for (const w of this.wounds) {
-      if (w.bleed <= 0 || flow <= 0) continue;
+      if (w.bleed <= 0) continue;
+      const loose = !this.attached(w.part);
+      if (loose) w.bleed = Math.max(0, w.bleed - 0.07 * DT);
+      this.stain[w.part] = Math.min(0.75, this.stain[w.part] + w.bleed * DT * 0.08);
+      const f = loose ? 0.6 : flow;
+      if (f <= 0) continue;
       const [wx, wy] = this.woundPos(w);
-      if (Math.random() < w.bleed * DT * 7 * flow) {
-        const [nx, ny] = this.woundNormal(w), s = rf(5, 25);
-        spawnParticle(wx, wy, nx * s + rf(-6, 6), ny * s, BLOOD);
+      if (Math.random() < w.bleed * DT * 12 * f) {
+        const [nx, ny] = this.woundNormal(w), s = rf(10, 50);
+        spawnParticle(wx, wy, nx * s + rf(-12, 12), ny * s, BLOOD);
       }
-      if (w.stump && this.beat) {
+      const pump = loose ? Math.random() < DT * 1.5 : this.beat;
+      if (w.stump && pump) {
         const [ux, uy] = this.stumpDir(w);
-        const n = 3 + Math.floor(w.bleed * 1.5);
+        const n = 5 + Math.floor(w.bleed * 3);
         for (let q = 0; q < n; q++) {
-          const a = rf(-0.35, 0.35), s = rf(50, 110) * flow;
+          const a = rf(-0.3, 0.3), s = rf(110, 240) * f;
           spawnParticle(wx, wy, (ux * Math.cos(a) - uy * Math.sin(a)) * s, (ux * Math.sin(a) + uy * Math.cos(a)) * s, BLOOD);
         }
       }
@@ -955,10 +981,11 @@ class Doll {
     if (w.part === HEAD) {
       if (w.stump) return [ax, ay];
       const a = w.t * Math.PI * 2;
-      return [bx + Math.cos(a) * (HEAD_R - 1.5), by + Math.sin(a) * (HEAD_R - 1.5)];
+      return [bx + Math.cos(a) * (HEAD_R - 3), by + Math.sin(a) * (HEAD_R - 3)];
     }
+    if (w.stump) return w.t < 0.5 ? [ax, ay] : [bx, by];
     const l = Math.hypot(bx - ax, by - ay) || 1, dx = (bx - ax) / l, dy = (by - ay) / l;
-    const off = w.s * Math.max(0, WIDTH[w.part] * 0.5 - 0.5);
+    const off = w.s * Math.max(0, WIDTH[w.part] * 0.5 - 1.5);
     return [lerp(ax, bx, w.t) - dy * off, lerp(ay, by, w.t) + dx * off];
   }
 
@@ -973,7 +1000,7 @@ class Doll {
   stumpDir(w) {
     const ax = this.x[this.pa[w.part]], ay = this.y[this.pa[w.part]];
     const bx = this.x[this.pb[w.part]], by = this.y[this.pb[w.part]];
-    let dx = w.t < 0.5 ? ax - bx : bx - ax, dy = w.t < 0.5 ? ay - by : by - ay;
+    const dx = w.t < 0.5 ? ax - bx : bx - ax, dy = w.t < 0.5 ? ay - by : by - ay;
     const l = Math.hypot(dx, dy);
     return l > 0 ? [dx / l, dy / l] : [0, -1];
   }
@@ -983,7 +1010,7 @@ class Doll {
     this.beat = false;
     this.sinceDamage += DT;
     let bleedTotal = 0;
-    for (const w of this.wounds) bleedTotal += w.bleed;
+    for (const w of this.wounds) if (this.attached(w.part)) bleedTotal += w.bleed;
     this.bl = Math.max(0, this.bl - bleedTotal * DT * (this.dead ? 0.2 : 0.8));
 
     if (this.headUnder && !this.dead) this.o2 = Math.max(0, this.o2 - 11 * DT);
@@ -995,7 +1022,7 @@ class Doll {
     if (this.healing) {
       this.bl = Math.min(100, this.bl + 1.2 * DT);
       this.pn = Math.max(0, this.pn - 6 * DT);
-      for (const w of this.wounds) w.bleed = Math.max(0, w.bleed - (w.stump ? 0.05 : 0.14) * DT);
+      for (const w of this.wounds) if (this.attached(w.part)) w.bleed = Math.max(0, w.bleed - (w.stump ? 0.05 : 0.14) * DT);
     }
     this.pn = Math.max(0, this.pn - 3 * DT);
 
@@ -1025,11 +1052,11 @@ class Doll {
 
   isOut() { return this.dead || this.ko <= 10 || this.bl < OUT_BL; }
   attached(k) {
-    while (k >= 0) { if (this.severed[k]) return false; k = PARENT[k]; }
+    while (k >= 0) { if (this.severed[k] || this.gone[k]) return false; k = PARENT[k]; }
     return true;
   }
   flags() {
-    const bleeding = this.wounds.some((w) => w.bleed > 0);
+    const bleeding = this.wounds.some((w) => w.bleed > 0 && this.attached(w.part));
     return {
       OUT: this.isOut(), BLEED: bleeding && this.bl > 0, FIRE: this.burn > 0,
       CHOKE: this.headUnder && !this.dead, AGONY: this.pn >= AGONY_PN && !this.dead,
@@ -1039,6 +1066,7 @@ class Doll {
   nearestPoint(x, y, r) {
     let best = -1, bd = r;
     for (let i = 0; i < this.x.length; i++) {
+      if (this.gone[this.owner[i]]) continue;
       const d = Math.hypot(this.x[i] - x, this.y[i] - y);
       if (d < bd) { bd = d; best = i; }
     }
@@ -1048,34 +1076,98 @@ class Doll {
   // ------------------------------------------------ drawing
   partColor(k) {
     let c = FAR_SIDE[k] ? COL_SKIN_FAR : COL_SKIN;
-    if (this.dead) c = darken(c, 0.08);
+    if (this.dead) c = mixc(c, hex("#b9bcb4"), 0.35);
     c = mixc(c, COL_CHAR, clamp(this.char[k], 0, 0.9));
     if (this.frozen) c = mixc(c, COL_ICE, 0.6);
-    if (this.hurtFlash > 0) c = mixc(c, COL_HURT, this.hurtFlash * 0.35);
+    if (this.hurtFlash > 0) c = mixc(c, COL_HURT, this.hurtFlash * 0.3);
     return c;
   }
 
-  drawPart(k, c, grow) {
-    const ax = this.x[this.pa[k]], ay = this.y[this.pa[k]], bx = this.x[this.pb[k]], by = this.y[this.pb[k]];
+  seg(k) {
+    return [this.x[this.pa[k]], this.y[this.pa[k]], this.x[this.pb[k]], this.y[this.pb[k]]];
+  }
+
+  drawPart(k) {
+    const [ax, ay, bx, by] = this.seg(k);
+    const c = this.partColor(k);
+    ctx.lineCap = "round";
     if (k === HEAD) {
-      capsule(ax, ay, bx, by, 1 + grow, c);
-      capsule(bx, by, bx, by, HEAD_R + grow, c);
-    } else {
-      capsule(ax, ay, bx, by, WIDTH[k] * 0.5 + grow, c);
+      ctx.strokeStyle = css(COL_LINE);
+      ctx.lineWidth = WIDTH[k] + 3;
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+      ctx.fillStyle = css(COL_LINE);
+      ctx.beginPath(); ctx.arc(bx, by, HEAD_R + 1.5, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = css(c); ctx.lineWidth = WIDTH[k];
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+      const g = ctx.createRadialGradient(bx - 3, by - 3, 1, bx, by, HEAD_R);
+      g.addColorStop(0, css(lighten(c, 0.35))); g.addColorStop(1, css(darken(c, 0.12)));
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(bx, by, HEAD_R, 0, Math.PI * 2); ctx.fill();
+      if (this.stain[k] > 0.02) {
+        ctx.fillStyle = css(COL_GORE, this.stain[k] * 0.7);
+        ctx.beginPath(); ctx.arc(bx, by, HEAD_R, 0, Math.PI * 2); ctx.fill();
+      }
+      return;
     }
+    const w = WIDTH[k];
+    ctx.strokeStyle = css(COL_LINE); ctx.lineWidth = w + 3;
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+    ctx.strokeStyle = css(c); ctx.lineWidth = w;
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+    // Soft shading on one side gives the limb some volume.
+    const l = Math.hypot(bx - ax, by - ay) || 1, nx = -(by - ay) / l, ny = (bx - ax) / l, o = w * 0.22;
+    ctx.strokeStyle = css(darken(c, 0.18), 0.55); ctx.lineWidth = w * 0.35;
+    ctx.beginPath(); ctx.moveTo(ax + nx * o, ay + ny * o); ctx.lineTo(bx + nx * o, by + ny * o); ctx.stroke();
+    if (this.stain[k] > 0.02) {
+      ctx.strokeStyle = css(COL_GORE, this.stain[k] * 0.65); ctx.lineWidth = w;
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+    }
+  }
+
+  drawWound(w) {
+    const [wx, wy] = this.woundPos(w);
+    if (w.stump) { this.drawStump(w, wx, wy); return; }
+    const [ax, ay, bx, by] = this.seg(w.part);
+    const ang = Math.atan2(by - ay, bx - ax) + Math.PI / 2 + w.rot;
+    const open = w.bleed > 0;
+    const r = w.size * 1.7;
+    ctx.fillStyle = css(open ? COL_GORE : hex("#6a2a2c"), open ? 0.95 : 0.8);
+    ctx.beginPath(); ctx.ellipse(wx, wy, r * 1.4, r * 0.7, ang, 0, Math.PI * 2); ctx.fill();
+    if (open) {
+      ctx.fillStyle = css(COL_GORE_DARK);
+      ctx.beginPath(); ctx.ellipse(wx, wy, r * 0.9, r * 0.3, ang, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  drawStump(w, wx, wy) {
+    const [ux, uy] = this.stumpDir(w);
+    const k = w.part;
+    const r = (k === HEAD ? WIDTH[HEAD] : WIDTH[k]) * 0.5 + 1.2;
+    // Bone sticks out of the torn flesh.
+    const bl = k === TORSO || k === HEAD ? 3.5 : 4.5;
+    ctx.lineCap = "round";
+    ctx.strokeStyle = css(hex("#5a4a3a")); ctx.lineWidth = r * 0.75 + 1.4;
+    ctx.beginPath(); ctx.moveTo(wx, wy); ctx.lineTo(wx + ux * bl, wy + uy * bl); ctx.stroke();
+    ctx.strokeStyle = css(COL_BONE); ctx.lineWidth = r * 0.75;
+    ctx.beginPath(); ctx.moveTo(wx, wy); ctx.lineTo(wx + ux * bl, wy + uy * bl); ctx.stroke();
+    ctx.fillStyle = css(COL_GORE_DARK);
+    ctx.beginPath(); ctx.arc(wx, wy, r + 0.8, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = css(w.bleed > 0 ? COL_FLESH : hex("#7a2a30"));
+    ctx.beginPath(); ctx.arc(wx, wy, r, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = css(COL_GORE);
+    ctx.beginPath(); ctx.arc(wx + ux * 0.8, wy + uy * 0.8, r * 0.55, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = css(COL_BONE);
+    ctx.beginPath(); ctx.arc(wx + ux * bl, wy + uy * bl, r * 0.42, 0, Math.PI * 2); ctx.fill();
   }
 
   draw() {
     for (const k of DRAW_ORDER) {
-      this.drawPart(k, COL_LINE, 1);
-      this.drawPart(k, this.partColor(k), 0);
+      if (this.gone[k]) continue;
+      this.drawPart(k);
+      for (const w of this.wounds) if (w.part === k && !w.stump) this.drawWound(w);
     }
-    for (const w of this.wounds) {
-      const [wx, wy] = this.woundPos(w);
-      const fx = Math.floor(wx), fy = Math.floor(wy);
-      if (w.stump) rect(fx - 1, fy - 1, 3, 3, w.bleed > 0 ? COL_STUMP : COL_SCAR);
-      else rect(fx, fy, w.size, w.size, w.bleed > 0 ? COL_WOUND : COL_SCAR);
-    }
+    for (const w of this.wounds) if (w.stump && !this.gone[w.part]) this.drawWound(w);
+    if (this.gone[HEAD]) return;
     // Face
     const nx = this.x[this.pa[HEAD]], ny = this.y[this.pa[HEAD]];
     const hx = this.x[this.pb[HEAD]], hy = this.y[this.pb[HEAD]];
@@ -1083,14 +1175,26 @@ class Doll {
     const l = Math.hypot(ux, uy);
     if (l > 0) { ux /= l; uy /= l; } else { ux = 0; uy = -1; }
     const fx = -uy, fy = ux;
-    const ex = Math.floor(hx + fx * 2 + ux * 0.5), ey = Math.floor(hy + fy * 2 + uy * 0.5);
+    const ex = hx + fx * 4.2 + ux * 1.2, ey = hy + fy * 4.2 + uy * 1.2;
+    ctx.strokeStyle = css(COL_LINE); ctx.fillStyle = css(COL_LINE); ctx.lineWidth = 1.2;
     if (this.dead) {
-      for (const [dx, dy] of [[-1, -1], [1, -1], [0, 0], [-1, 1], [1, 1]]) px(ex + dx, ey + dy, COL_LINE);
+      ctx.beginPath();
+      ctx.moveTo(ex - 1.6, ey - 1.6); ctx.lineTo(ex + 1.6, ey + 1.6);
+      ctx.moveTo(ex + 1.6, ey - 1.6); ctx.lineTo(ex - 1.6, ey + 1.6);
+      ctx.stroke();
     } else if (this.isOut()) {
-      rect(ex - 1, ey, 2, 1, COL_LINE);
+      ctx.beginPath(); ctx.moveTo(ex - 1.6, ey); ctx.lineTo(ex + 1.6, ey); ctx.stroke();
     } else {
-      px(ex, ey, COL_LINE);
+      ctx.beginPath(); ctx.arc(ex, ey, 1.3, 0, Math.PI * 2); ctx.fill();
     }
+  }
+}
+
+function splatAround(x, y, n) {
+  for (let i = 0; i < n; i++) {
+    const a = rf(0, Math.PI * 2), d = rf(2, 10 + n * 2);
+    const sx = x + Math.cos(a) * d, sy = y + Math.sin(a) * d * 0.8;
+    if (sy < FLOOR_Y - 1) splat(sx, sy, rf(0.8, 2.6));
   }
 }
 
@@ -1114,210 +1218,383 @@ function segSeg(ax, ay, bx, by, p0x, p0y, p1x, p1y) {
 }
 
 // ======================================================================
-// Static layers: room, lamp and the light cone
+// Explosion
 // ======================================================================
 
-const LAMP_X = 192, LAMP_Y = 21;
-const bg = new Uint8ClampedArray(N * 4);
-const lightA = new Float32Array(N);
-const WARM = hex("#fff0cc");
-
-(function buildStatic() {
-  fb.fill(0);
-  for (let o = 3; o < fb.length; o += 4) fb[o] = 255;
-  const fy = FLOOR_Y;
-  rect(0, 0, W, fy, hex("#222226"));
-  for (let x = 0; x < W; x += 48) {
-    rect(x + 2, 10, 44, fy - 18, hex("#27272c"));
-    rect(x, 8, 1, fy - 8, hex("#1b1b1f"));
-    rect(x + 1, 8, 1, fy - 8, hex("#2b2b31"));
+let effects = [];
+function explode(x, y) {
+  const R = 90;
+  for (const d of state.dolls) if (d.blast(x, y, R)) state.selected = d;
+  for (const g of gibs) {
+    const dx = g.x - x, dy = g.y - y, dd = Math.hypot(dx, dy) || 1;
+    if (dd < R) { const f = 1 - dd / R; g.vx += dx / dd * f * 900; g.vy += dy / dd * f * 900 - 200 * f; g.still = 0; }
   }
-  for (let y = 40; y < fy - 8; y += 40) rect(0, y, W, 1, hex("#1b1b1f"));
-  rect(0, 0, W, 8, hex("#17171a"));
-  rect(0, 8, W, 1, hex("#101012"));
-  rect(0, fy - 6, W, 6, hex("#2f2f35"));
-  rect(0, fy - 6, W, 1, hex("#3a3a41"));
-  // Lamp: cord, stepped shade, bulb
-  const x = LAMP_X;
-  rect(x, 0, 1, 13, hex("#0e0e10"));
-  rect(x - 1, 8, 3, 2, hex("#0e0e10"));
-  for (const [half, y] of [[2, 13], [3, 14], [4, 15], [5, 16], [6, 17], [8, 18], [9, 19]]) {
-    rect(x - half - 1, y, half * 2 + 3, 1, hex("#0e0e10"));
-    rect(x - half, y, half * 2 + 1, 1, hex("#4a4a52"));
-  }
-  rect(x - 2, 13, 5, 1, hex("#6a6a74"));
-  rect(x - 9, 19, 19, 1, hex("#33333a"));
-  rect(x - 2, 20, 5, 2, hex("#fff2c8"));
-  rect(x - 1, 22, 3, 1, hex("#ffe6a0"));
-  bg.set(fb);
-
-  // Soft cone with ordered dither, drawn additive every frame.
-  const bayer = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
-  const half = 27 * D2R, soft = 9 * D2R;
-  for (let y = 0; y < H; y++) for (let xx = 0; xx < W; xx++) {
-    const dx = xx + 0.5 - LAMP_X, dy = y + 0.5 - LAMP_Y;
-    let glow = 0;
-    const r = Math.hypot(dx, dy);
-    if (r < 26) glow = Math.pow(1 - r / 26, 2) * 0.55;
-    let cone = 0;
-    if (dy > 0) {
-      let e = clamp((half + soft - Math.atan2(Math.abs(dx), dy)) / (soft * 2), 0, 1);
-      e = e * e * (3 - 2 * e);
-      cone = e * Math.pow(clamp(1 - dy / 240, 0, 1), 1.2) * 0.2;
-      if (y >= FLOOR_Y && y < FLOOR_Y + 5) cone *= 1.6;
+  // Blow out liquids and ice near the blast, then leave fire and smoke behind.
+  const r = 22, cx = Math.floor(x), cy = Math.floor(y);
+  for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+    const dd = Math.hypot(dx, dy);
+    if (dd > r) continue;
+    const m = getMat(cx + dx, cy + dy);
+    if (m === WATER || m === BLOOD || m === ICE) {
+      const i = (cy + dy) * W + cx + dx, mx = mixv[i];
+      setCell(cx + dx, cy + dy, EMPTY);
+      if (Math.random() < 0.6) {
+        const s = rf(200, 600) * (1 - dd / r) + 80;
+        spawnParticle(cx + dx, cy + dy, dx / (dd || 1) * s, dy / (dd || 1) * s - 150, m === BLOOD ? BLOOD : WATER, m === BLOOD ? 255 : mx);
+      }
     }
-    let v = clamp(glow + cone, 0, 1);
-    v = Math.floor(v * 48 + (bayer[(y % 4) * 4 + (xx % 4)] + 0.5) / 16) / 48;
-    lightA[y * W + xx] = v;
   }
-})();
+  paintDisc(x, y, 12, FIRE, 0.5);
+  paintDisc(x, y - 6, 20, SMOKE, 0.25, 90);
+  effects.push({ x, y, age: 0 });
+  state.shake = 0.35;
+}
 
 // ======================================================================
 // HUD
 // ======================================================================
 
-const T_GRAB = 0, T_WATER = 1, T_BLADE = 2, T_FIRE = 3, T_ICE = 4, T_DOLL = 5, T_RESET = 6;
-const TOOL_NAMES = ["GREIFEN", "WASSER", "KLINGE", "FEUER", "EIS", "NEUE PUPPE", "RESET"];
-const BTN = 16, BTN_GAP = 3, TOOLBAR_Y = H - 20;
-const PANEL = { x: 308, y: 4, w: 72, h: 136 };
-const C = {
-  panel: hex("#16161a"), edge: hex("#3a3a42"), text: hex("#d8d8d0"), dim: hex("#4a4a52"),
-  barBg: hex("#26262c"), tagOff: hex("#23232a"), black: [0, 0, 0], ink: hex("#101012"),
-};
-const BARS = [["KO", hex("#4ccf5a")], ["BL", hex("#c81e2c")], ["PN", hex("#f08a24")], ["O2", hex("#2ec8c0")], ["HR", hex("#e85a8a")]];
-const TAGS = [["OUT", hex("#9a9aa2")], ["BLEED", hex("#d0202e")], ["FIRE", hex("#ff5a1e")], ["CHOKE", hex("#2ec8c0")],
-  ["AGONY", hex("#f08a24")], ["HEAL", hex("#f0d838")], ["BLADE", hex("#c4ccd8")], ["TORN", hex("#f070b4")], ["FROZEN", hex("#80c0ff")]];
+const T_GRAB = 0, T_WATER = 1, T_BLADE = 2, T_FIRE = 3, T_ICE = 4, T_BOMB = 5, T_DOLL = 6, T_RESET = 7;
+const TOOL_NAMES = ["Greifen", "Wasser", "Klinge", "Feuer", "Eis", "Bombe", "Neue Puppe", "Reset"];
+const TOOL_COUNT = 8;
+const BTN = 34, BTN_GAP = 6, TOOLBAR_Y = H - 44;
+const PANEL = { x: 612, y: 8, w: 148, h: 290 };
+const BARS = [["KO", "#4ccf5a"], ["BL", "#d0283a"], ["PN", "#f08a24"], ["O2", "#2ec8c0"], ["HR", "#ec5f92"]];
+const TAGS = [["OUT", "#a2a2aa"], ["BLEED", "#d6202f"], ["FIRE", "#ff5a1e"], ["CHOKE", "#2ec8c0"],
+  ["AGONY", "#f08a24"], ["HEAL", "#f2da3a"], ["BLADE", "#c8d0dc"], ["TORN", "#f272b8"], ["FROZEN", "#86c4ff"]];
 const MINI = [[0, -12], [0, -8], [0, 0], [0, 3], [-5, -3], [-7, 2], [5, -3], [7, 2], [-2, 9], [-3, 15], [-5, 15], [2, 9], [3, 15], [5, 15]];
-const MINI_W = [2, 4, 4, 2, 2, 2, 2, 2, 2, 1, 2, 2, 1];
-const ICONS = [
-  ["...#.#..", ".#.#.#.#", ".#.#.#.#", ".#######", "########", ".#######", "..#####.", "..#####."],
-  ["...##...", "...##...", "..####..", ".######.", ".#+####.", ".#+####.", ".######.", "..####.."],
-  ["......##", ".....###", "....###.", "...###..", "..###...", ".+##....", "++......", "+......."],
-  ["...#....", "...##...", "..###.#.", ".####.#.", ".######.", "##+++###", "#+++++##", ".#+++##."],
-  ["...#....", ".#.#.#..", "..###...", "#######.", "..###...", ".#.#.#..", "...#....", "........"],
-  [".##.....", ".##...+.", "####.+++", ".##...+.", ".##.....", ".#.#....", ".#.#....", "........"],
-  ["..###.#.", ".#...##.", "#...###.", "#.......", "#......#", ".#....#.", "..####..", "........"],
-];
-const ICON_COLORS = [["#ecece6", "#ecece6"], ["#3c82e6", "#b4d8ff"], ["#c8ccd8", "#8c5a32"], ["#f06e1e", "#ffdc50"],
-  ["#a0dcfa", "#a0dcfa"], ["#ecece6", "#6ee66e"], ["#e6c850", "#e6c850"]].map((p) => p.map(hex));
+const MINI_W = [2, 4.2, 4, 2, 1.8, 2, 1.8, 2.4, 2, 1.4, 2.4, 2, 1.4];
 
-const toolbarX = () => Math.floor((W - (ICONS.length * BTN + (ICONS.length - 1) * BTN_GAP)) / 2);
+const toolbarX = () => (W - (TOOL_COUNT * BTN + (TOOL_COUNT - 1) * BTN_GAP)) / 2;
 const buttonX = (i) => toolbarX() + i * (BTN + BTN_GAP);
 function toolbarHit(x, y) {
-  for (let i = 0; i < ICONS.length; i++) {
+  for (let i = 0; i < TOOL_COUNT; i++) {
     const bx = buttonX(i);
-    if (x >= bx - 1 && x < bx + BTN + 1 && y >= TOOLBAR_Y - 1 && y < TOOLBAR_Y + BTN + 1) return i;
+    if (x >= bx - 3 && x < bx + BTN + 3 && y >= TOOLBAR_Y - 4 && y < TOOLBAR_Y + BTN + 4) return i;
   }
   return -1;
 }
 const inPanel = (x, y) => x >= PANEL.x && x < PANEL.x + PANEL.w && y >= PANEL.y && y < PANEL.y + PANEL.h;
 const blocksInput = (x, y) => toolbarHit(x, y) >= 0 || inPanel(x, y);
 
-function drawMini(d, cx, cy) {
+function rr(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function label(s, x, y, size, color, align = "left", weight = 600) {
+  ctx.font = `${weight} ${size}px ${FONT}`;
+  ctx.textAlign = align;
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = color;
+  ctx.fillText(s, x, y);
+}
+
+function drawMini(d, cx, cy, s) {
+  ctx.lineCap = "round";
   for (let pass = 0; pass < 2; pass++) {
     for (const k of DRAW_ORDER) {
       const a = MINI[PART_A[k]], b = MINI[PART_B[k]];
       let c;
-      if (pass === 0) c = C.black;
-      else if (!d.attached(k)) c = hex("#3a3a40");
+      if (pass === 0) c = "#000";
+      else if (d.gone[k]) continue;
+      else if (!d.attached(k)) c = "#3c3c44";
       else {
-        c = mixc(hex("#e6e6e0"), COL_CHAR, clamp(d.char[k], 0, 0.8));
-        if (d.frozen) c = mixc(c, COL_ICE, 0.6);
+        let col = mixc(hex("#e8e8e2"), COL_CHAR, clamp(d.char[k], 0, 0.8));
+        if (d.frozen) col = mixc(col, COL_ICE, 0.6);
+        col = mixc(col, COL_GORE, d.stain[k] * 0.6);
+        c = css(col);
       }
-      const grow = pass === 0 ? 1 : 0;
-      if (k === HEAD) capsule(cx + b[0], cy + b[1], cx + b[0], cy + b[1], 3 + grow, c);
-      else capsule(cx + a[0], cy + a[1], cx + b[0], cy + b[1], MINI_W[k] * 0.5 + grow, c);
+      if (pass === 0 && d.gone[k]) continue;
+      const grow = pass === 0 ? 1.6 : 0;
+      ctx.strokeStyle = c; ctx.fillStyle = c;
+      if (k === HEAD) {
+        ctx.beginPath(); ctx.arc(cx + b[0] * s, cy + b[1] * s, 3 * s + grow, 0, Math.PI * 2); ctx.fill();
+      } else {
+        ctx.lineWidth = MINI_W[k] * s + grow * 2;
+        ctx.beginPath(); ctx.moveTo(cx + a[0] * s, cy + a[1] * s); ctx.lineTo(cx + b[0] * s, cy + b[1] * s); ctx.stroke();
+      }
     }
   }
   const pulse = 0.5 + 0.5 * Math.sin(performance.now() * 0.008);
   for (const w of d.wounds) {
+    if (d.gone[w.part]) continue;
     const a = MINI[PART_A[w.part]], b = MINI[PART_B[w.part]];
     let wx, wy;
     if (w.part === HEAD) {
       if (w.stump) { wx = a[0]; wy = a[1]; }
-      else { wx = b[0] + Math.cos(w.t * Math.PI * 2) * 1.5; wy = b[1] + Math.sin(w.t * Math.PI * 2) * 1.5; }
+      else { wx = b[0] + Math.cos(w.t * Math.PI * 2) * 1.6; wy = b[1] + Math.sin(w.t * Math.PI * 2) * 1.6; }
+    } else if (w.stump) {
+      [wx, wy] = w.t < 0.5 ? a : b;
     } else {
-      const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, off = w.s * MINI_W[w.part] * 0.4;
+      const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, off = w.s * MINI_W[w.part] * 0.35;
       wx = lerp(a[0], b[0], w.t) - (b[1] - a[1]) / l * off;
       wy = lerp(a[1], b[1], w.t) + (b[0] - a[0]) / l * off;
     }
-    const c = w.bleed > 0 ? mixc(hex("#ff2030"), hex("#ff8080"), pulse) : hex("#6a1a1e");
-    const s = w.stump ? 2 : 1;
-    rect(Math.floor(cx + wx), Math.floor(cy + wy), s, s, c);
+    ctx.fillStyle = w.bleed > 0 ? css(mixc(hex("#ff1f30"), hex("#ff8a8a"), pulse)) : "#6a1a1e";
+    ctx.beginPath(); ctx.arc(cx + wx * s, cy + wy * s, w.stump ? 2.6 : 1.7, 0, Math.PI * 2); ctx.fill();
   }
+  // Missing parts get a dashed ghost outline.
+  ctx.setLineDash([2, 2]);
+  ctx.strokeStyle = "rgba(208,40,58,0.6)"; ctx.lineWidth = 1;
+  for (let k = 0; k < PART_COUNT; k++) {
+    if (!d.gone[k]) continue;
+    const a = MINI[PART_A[k]], b = MINI[PART_B[k]];
+    ctx.beginPath();
+    if (k === HEAD) ctx.arc(cx + b[0] * s, cy + b[1] * s, 3 * s, 0, Math.PI * 2);
+    else { ctx.moveTo(cx + a[0] * s, cy + a[1] * s); ctx.lineTo(cx + b[0] * s, cy + b[1] * s); }
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
 }
 
 function drawPanel(d) {
   const { x: px0, y: py0, w: pw, h: ph } = PANEL;
-  framed(px0, py0, pw, ph, C.panel, C.edge);
-  rect(px0 + 4, py0 + 4, 64, 36, hex("#101013"));
-  if (!d) { textCentered(px0 + 36, py0 + 20, "KEINE", C.dim); return; }
-  text(px0 + 6, py0 + 6, "P" + d.id, C.dim);
-  drawMini(d, px0 + 36, py0 + 23);
+  rr(px0, py0, pw, ph, 10);
+  ctx.fillStyle = "rgba(17,17,21,0.94)"; ctx.fill();
+  ctx.strokeStyle = "#383840"; ctx.lineWidth = 1.5; ctx.stroke();
+  rr(px0 + 8, py0 + 8, pw - 16, 82, 6);
+  ctx.fillStyle = "#0c0c0f"; ctx.fill();
+  if (!d) { label("KEINE PUPPE", px0 + pw / 2, py0 + 49, 10, "#55555e", "center"); return; }
+  label("P" + d.id, px0 + 14, py0 + 18, 10, "#55555e");
+  if (d.dead) label("TOT", px0 + pw - 14, py0 + 18, 10, "#d0283a", "right", 700);
+  drawMini(d, px0 + pw / 2, py0 + 50, 2.3);
+
   const values = [d.ko, d.bl, d.pn, d.o2, clamp(d.hr / 1.6, 0, 100)];
   for (let i = 0; i < BARS.length; i++) {
-    const y = py0 + 45 + i * 7, bx = px0 + 4;
-    rect(bx, y, 50, 4, C.barBg);
-    let c = BARS[i][1];
-    if (i === 4) c = mixc(c, [255, 255, 255], d.beatFlash * 0.5);
-    const fill = Math.round(50 * clamp(values[i] / 100, 0, 1));
-    if (fill > 0) { rect(bx, y, fill, 4, c); rect(bx, y, fill, 1, lighten(c, 0.3)); }
-    for (let nx = 10; nx < 50; nx += 10) rect(bx + nx, y, 1, 4, C.black, 90);
-    text(px0 + 58, y, BARS[i][0], C.text);
+    const y = py0 + 102 + i * 15, bx = px0 + 10, bw = 100;
+    rr(bx, y, bw, 8, 4); ctx.fillStyle = "#24242a"; ctx.fill();
+    let c = hex(BARS[i][1]);
+    if (i === 4) c = mixc(c, [255, 255, 255], d.beatFlash * 0.45);
+    const fw = bw * clamp(values[i] / 100, 0, 1);
+    if (fw > 1) {
+      rr(bx, y, Math.max(8, fw), 8, 4);
+      const g = ctx.createLinearGradient(0, y, 0, y + 8);
+      g.addColorStop(0, css(lighten(c, 0.25))); g.addColorStop(1, css(c));
+      ctx.fillStyle = g; ctx.fill();
+    }
+    label(BARS[i][0], px0 + pw - 12, y + 4.5, 11, "#dcdcd4", "right", 700);
   }
   const f = d.flags();
   for (let i = 0; i < TAGS.length; i++) {
-    const tx = px0 + 4 + (i % 2) * 33, ty = py0 + 82 + Math.floor(i / 2) * 10;
+    const tw = 62, th = 18;
+    const tx = px0 + 10 + (i % 2) * (tw + 4), ty = py0 + 182 + Math.floor(i / 2) * (th + 3);
     const [name, col] = TAGS[i];
+    rr(tx, ty, tw, th, 9);
     if (f[name]) {
-      roundRect(tx, ty, 31, 8, col);
-      rect(tx + 2, ty, 27, 1, lighten(col, 0.35));
-      textCentered(tx + 15.5, ty + 2, name, C.ink);
+      ctx.save(); ctx.shadowColor = col; ctx.shadowBlur = 8;
+      ctx.fillStyle = col; ctx.fill(); ctx.restore();
+      label(name, tx + tw / 2, ty + th / 2 + 0.5, 10, "#111114", "center", 700);
     } else {
-      roundRect(tx, ty, 31, 8, C.tagOff);
-      textCentered(tx + 15.5, ty + 2, name, C.dim);
+      ctx.fillStyle = "#212127"; ctx.fill();
+      label(name, tx + tw / 2, ty + th / 2 + 0.5, 10, "#4e4e57", "center", 600);
     }
   }
 }
 
-function drawToolbar() {
-  const x0 = toolbarX(), total = ICONS.length * BTN + (ICONS.length - 1) * BTN_GAP;
-  framed(x0 - 3, TOOLBAR_Y - 3, total + 6, BTN + 6, hex("#141418"), C.edge);
-  for (let i = 0; i < ICONS.length; i++) {
-    const bx = buttonX(i), by = TOOLBAR_Y;
-    let bgc = hex("#2a2a30"), edge = hex("#44444c");
-    if (i === state.tool) { bgc = hex("#3c3c46"); edge = hex("#e6e6e0"); }
-    else if (i === state.hover || i === state.flashBtn) { bgc = hex("#33333a"); edge = hex("#6a6a74"); }
-    framed(bx, by, BTN, BTN, bgc, edge);
-    const [mc, ac] = ICON_COLORS[i];
-    ICONS[i].forEach((row, y) => {
-      for (let x = 0; x < 8; x++) {
-        if (row[x] === "#") px(bx + 4 + x, by + 4 + y, mc);
-        else if (row[x] === "+") px(bx + 4 + x, by + 4 + y, ac);
+function drawIcon(i, cx, cy) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.lineCap = "round"; ctx.lineJoin = "round";
+  switch (i) {
+    case T_GRAB: {
+      ctx.fillStyle = "#ecece6";
+      rr(-6, -1, 12, 9, 3); ctx.fill();
+      for (const fx of [-5, -2, 1, 4]) { rr(fx, -9 + Math.abs(fx + 0.5) * 0.4, 2.6, 10, 1.3); ctx.fill(); }
+      ctx.beginPath(); ctx.ellipse(-7, 2, 2, 4, -0.6, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
+    case T_WATER: {
+      ctx.fillStyle = "#3c82e6";
+      ctx.beginPath(); ctx.moveTo(0, -10);
+      ctx.bezierCurveTo(5, -3, 8, 1, 8, 4); ctx.arc(0, 4, 8, 0, Math.PI); ctx.bezierCurveTo(-8, 1, -5, -3, 0, -10);
+      ctx.fill();
+      ctx.fillStyle = "#b4d8ff"; ctx.beginPath(); ctx.ellipse(-3, 4, 1.6, 3, 0.3, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
+    case T_BLADE: {
+      ctx.rotate(-Math.PI / 4);
+      ctx.fillStyle = "#d4d9e3";
+      ctx.beginPath(); ctx.moveTo(-3, -12); ctx.lineTo(2.5, -8); ctx.lineTo(2.5, 3); ctx.lineTo(-3, 3); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = "#8c5a32"; rr(-3.5, 4, 7, 9, 2); ctx.fill();
+      ctx.fillStyle = "#5c5c66"; ctx.fillRect(-5, 2.5, 10, 2);
+      break;
+    }
+    case T_FIRE: {
+      ctx.fillStyle = "#f06e1e";
+      ctx.beginPath(); ctx.moveTo(0, -11);
+      ctx.bezierCurveTo(7, -4, 9, 2, 7, 6); ctx.quadraticCurveTo(0, 13, -7, 6); ctx.bezierCurveTo(-9, 1, -4, -2, 0, -11); ctx.fill();
+      ctx.fillStyle = "#ffdc50";
+      ctx.beginPath(); ctx.moveTo(0, -3); ctx.bezierCurveTo(4, 1, 5, 4, 3, 7); ctx.quadraticCurveTo(0, 10, -3, 7); ctx.bezierCurveTo(-5, 4, -2, 1, 0, -3); ctx.fill();
+      break;
+    }
+    case T_ICE: {
+      ctx.strokeStyle = "#a6e0fc"; ctx.lineWidth = 2;
+      for (let a = 0; a < 3; a++) {
+        ctx.save(); ctx.rotate(a * Math.PI / 3);
+        ctx.beginPath(); ctx.moveTo(0, -10); ctx.lineTo(0, 10);
+        ctx.moveTo(-3, -7); ctx.lineTo(0, -4.5); ctx.lineTo(3, -7);
+        ctx.moveTo(-3, 7); ctx.lineTo(0, 4.5); ctx.lineTo(3, 7);
+        ctx.stroke(); ctx.restore();
       }
-    });
+      break;
+    }
+    case T_BOMB: {
+      ctx.fillStyle = "#3a3a44"; ctx.beginPath(); ctx.arc(-1, 3, 8, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#62626e"; ctx.beginPath(); ctx.arc(-4, 0, 2.6, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "#b08a5a"; ctx.lineWidth = 1.8;
+      ctx.beginPath(); ctx.moveTo(4, -3); ctx.quadraticCurveTo(7, -9, 10, -8); ctx.stroke();
+      ctx.fillStyle = "#ffd050"; ctx.beginPath(); ctx.arc(10, -8.5, 2.4, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
+    case T_DOLL: {
+      ctx.fillStyle = "#ecece6"; ctx.strokeStyle = "#ecece6"; ctx.lineWidth = 2.6;
+      ctx.beginPath(); ctx.arc(-3, -7, 3.6, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(-3, -3); ctx.lineTo(-3, 4); ctx.moveTo(-8, -1); ctx.lineTo(2, -1);
+      ctx.moveTo(-3, 4); ctx.lineTo(-6, 11); ctx.moveTo(-3, 4); ctx.lineTo(0, 11); ctx.stroke();
+      ctx.strokeStyle = "#6ee66e"; ctx.lineWidth = 2.4;
+      ctx.beginPath(); ctx.moveTo(8, -6); ctx.lineTo(8, 2); ctx.moveTo(4, -2); ctx.lineTo(12, -2); ctx.stroke();
+      break;
+    }
+    case T_RESET: {
+      ctx.strokeStyle = "#e6c850"; ctx.lineWidth = 2.6;
+      ctx.beginPath(); ctx.arc(0, 1, 8, -Math.PI * 0.35, Math.PI * 1.45); ctx.stroke();
+      ctx.fillStyle = "#e6c850";
+      ctx.beginPath(); ctx.moveTo(4, -9); ctx.lineTo(10, -6); ctx.lineTo(4, -2); ctx.closePath(); ctx.fill();
+      break;
+    }
   }
-  const label = state.hover >= 0 ? TOOL_NAMES[state.hover] + "  " + (state.hover + 1) : state.toast > 0 ? state.toastText : "";
-  if (label) {
-    const lw = textWidth(label) + 6, lx = Math.round(W / 2 - lw / 2);
-    framed(lx, TOOLBAR_Y - 13, lw, 9, hex("#141418"), C.edge);
-    textCentered(W / 2, TOOLBAR_Y - 11, label, C.text);
+  ctx.restore();
+}
+
+function drawToolbar() {
+  const x0 = toolbarX(), total = TOOL_COUNT * BTN + (TOOL_COUNT - 1) * BTN_GAP;
+  rr(x0 - 7, TOOLBAR_Y - 6, total + 14, BTN + 12, 12);
+  ctx.fillStyle = "rgba(15,15,19,0.92)"; ctx.fill();
+  ctx.strokeStyle = "#383840"; ctx.lineWidth = 1.5; ctx.stroke();
+  for (let i = 0; i < TOOL_COUNT; i++) {
+    const bx = buttonX(i), by = TOOLBAR_Y;
+    let bg = "#26262c", edge = "#3e3e46";
+    if (i === state.tool) { bg = "#3a3a44"; edge = "#ecece6"; }
+    else if (i === state.hover || i === state.flashBtn) { bg = "#303038"; edge = "#6a6a74"; }
+    rr(bx, by, BTN, BTN, 8);
+    ctx.fillStyle = bg; ctx.fill();
+    ctx.strokeStyle = edge; ctx.lineWidth = i === state.tool ? 2 : 1.2; ctx.stroke();
+    drawIcon(i, bx + BTN / 2, by + BTN / 2);
+  }
+  const text = state.hover >= 0 ? TOOL_NAMES[state.hover] + "  " + (state.hover + 1) : state.toast > 0 ? state.toastText : "";
+  if (text) {
+    ctx.font = `600 12px ${FONT}`;
+    const lw = ctx.measureText(text).width + 20;
+    rr(W / 2 - lw / 2, TOOLBAR_Y - 30, lw, 20, 10);
+    ctx.fillStyle = "rgba(15,15,19,0.92)"; ctx.fill();
+    ctx.strokeStyle = "#383840"; ctx.lineWidth = 1; ctx.stroke();
+    label(text, W / 2, TOOLBAR_Y - 19.5, 12, "#e2e2da", "center");
   }
 }
 
 function drawCursor() {
   const { mx, my } = state;
   if (!state.pointerSeen || blocksInput(mx, my)) return;
-  const fx = Math.floor(mx), fy = Math.floor(my), white = [255, 255, 255];
+  ctx.strokeStyle = "rgba(255,255,255,0.45)"; ctx.lineWidth = 1.2;
   if (state.tool === T_WATER || state.tool === T_FIRE || state.tool === T_ICE) {
-    const r = state.tool === T_WATER ? 2 : 4;
-    for (let a = 0; a < 24; a++) px(fx + Math.round(Math.cos(a / 24 * Math.PI * 2) * r), fy + Math.round(Math.sin(a / 24 * Math.PI * 2) * r), white, 90);
+    ctx.beginPath(); ctx.arc(mx, my, state.tool === T_WATER ? 4 : 8, 0, Math.PI * 2); ctx.stroke();
+  } else if (state.tool === T_BOMB) {
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.arc(mx, my, 90, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath(); ctx.arc(mx, my, 3, 0, Math.PI * 2); ctx.stroke();
   } else if (state.tool === T_BLADE) {
-    px(fx, fy, white, 180);
+    ctx.fillStyle = "rgba(255,255,255,0.8)"; ctx.beginPath(); ctx.arc(mx, my, 1.6, 0, Math.PI * 2); ctx.fill();
   } else {
-    rect(fx - 3, fy, 2, 1, white, 128); rect(fx + 2, fy, 2, 1, white, 128);
-    rect(fx, fy - 3, 1, 2, white, 128); rect(fx, fy + 2, 1, 2, white, 128);
+    ctx.beginPath();
+    ctx.moveTo(mx - 8, my); ctx.lineTo(mx - 3, my); ctx.moveTo(mx + 3, my); ctx.lineTo(mx + 8, my);
+    ctx.moveTo(mx, my - 8); ctx.lineTo(mx, my - 3); ctx.moveTo(mx, my + 3); ctx.lineTo(mx, my + 8);
+    ctx.stroke();
   }
+}
+
+// ======================================================================
+// Static layers: room, lamp and light, rebuilt on every resize
+// ======================================================================
+
+const LAMP_X = 384, LAMP_Y = 42;
+const bgCan = document.createElement("canvas"), lightCan = document.createElement("canvas");
+
+function buildStatic() {
+  bgCan.width = lightCan.width = canvas.width;
+  bgCan.height = lightCan.height = canvas.height;
+  const b = bgCan.getContext("2d");
+  b.setTransform(K, 0, 0, K, 0, 0);
+  const wall = b.createLinearGradient(0, 0, 0, FLOOR_Y);
+  wall.addColorStop(0, "#18181c"); wall.addColorStop(1, "#24242a");
+  b.fillStyle = wall; b.fillRect(0, 0, W, FLOOR_Y);
+  for (let x = 0; x < W; x += 96) {
+    b.fillStyle = "rgba(255,255,255,0.018)"; b.fillRect(x + 4, 20, 88, FLOOR_Y - 36);
+    b.fillStyle = "#141417"; b.fillRect(x, 16, 1.5, FLOOR_Y - 16);
+    b.fillStyle = "rgba(255,255,255,0.03)"; b.fillRect(x + 1.5, 16, 1, FLOOR_Y - 16);
+  }
+  for (let y = 96; y < FLOOR_Y - 20; y += 80) { b.fillStyle = "#141417"; b.fillRect(0, y, W, 1.5); }
+  b.fillStyle = "#111114"; b.fillRect(0, 0, W, 16);
+  b.fillStyle = "#0a0a0c"; b.fillRect(0, 16, W, 1.5);
+  b.fillStyle = "#2a2a31"; b.fillRect(0, FLOOR_Y - 12, W, 12);
+  b.fillStyle = "#3a3a42"; b.fillRect(0, FLOOR_Y - 12, W, 1.2);
+  // Floor tiles
+  const fl = b.createLinearGradient(0, FLOOR_Y, 0, H);
+  fl.addColorStop(0, "#bdbdc2"); fl.addColorStop(1, "#8a8a90");
+  b.fillStyle = fl; b.fillRect(0, FLOOR_Y, W, H - FLOOR_Y);
+  b.fillStyle = "#dedee2"; b.fillRect(0, FLOOR_Y, W, 2);
+  b.fillStyle = "rgba(0,0,0,0.18)";
+  for (let x = 0; x < W; x += 64) b.fillRect(x, FLOOR_Y + 2, 1.5, H - FLOOR_Y);
+  b.fillRect(0, FLOOR_Y + 26, W, 1.5);
+  let seed = 7;
+  const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let n = 0; n < 500; n++) {
+    b.fillStyle = `rgba(0,0,0,${0.04 + rand() * 0.08})`;
+    b.fillRect(rand() * W, FLOOR_Y + 3 + rand() * (H - FLOOR_Y - 3), 1 + rand() * 1.5, 1 + rand());
+  }
+  // Lamp
+  b.strokeStyle = "#0b0b0d"; b.lineWidth = 1.6;
+  b.beginPath(); b.moveTo(LAMP_X, 0); b.lineTo(LAMP_X, 26); b.stroke();
+  const shadeG = b.createLinearGradient(0, 24, 0, 40);
+  shadeG.addColorStop(0, "#5a5a64"); shadeG.addColorStop(1, "#2e2e35");
+  b.fillStyle = shadeG;
+  b.beginPath(); b.moveTo(LAMP_X - 5, 25); b.lineTo(LAMP_X + 5, 25); b.lineTo(LAMP_X + 20, 39); b.lineTo(LAMP_X - 20, 39); b.closePath(); b.fill();
+  b.strokeStyle = "#0b0b0d"; b.lineWidth = 1.4; b.stroke();
+  b.fillStyle = "#fff4d0"; b.beginPath(); b.ellipse(LAMP_X, 40.5, 6, 3, 0, 0, Math.PI * 2); b.fill();
+
+  // Light: stacked cones give soft edges, plus a glow at the bulb and on the floor.
+  const l = lightCan.getContext("2d");
+  l.setTransform(K, 0, 0, K, 0, 0);
+  for (let n = 0; n < 6; n++) {
+    const spread = 0.42 + n * 0.035;
+    const g = l.createLinearGradient(0, LAMP_Y, 0, FLOOR_Y + 20);
+    g.addColorStop(0, `rgba(255,240,204,${0.05})`);
+    g.addColorStop(1, `rgba(255,240,204,${0.012})`);
+    l.fillStyle = g;
+    l.beginPath();
+    l.moveTo(LAMP_X - 14, LAMP_Y - 2); l.lineTo(LAMP_X + 14, LAMP_Y - 2);
+    l.lineTo(LAMP_X + (FLOOR_Y - LAMP_Y) * spread, FLOOR_Y + 30);
+    l.lineTo(LAMP_X - (FLOOR_Y - LAMP_Y) * spread, FLOOR_Y + 30);
+    l.closePath(); l.fill();
+  }
+  const glow = l.createRadialGradient(LAMP_X, LAMP_Y, 0, LAMP_X, LAMP_Y, 60);
+  glow.addColorStop(0, "rgba(255,240,204,0.5)"); glow.addColorStop(1, "rgba(255,240,204,0)");
+  l.fillStyle = glow; l.fillRect(LAMP_X - 60, LAMP_Y - 60, 120, 120);
+  l.save(); l.translate(LAMP_X, FLOOR_Y + 4); l.scale(1, 0.12);
+  const spot = l.createRadialGradient(0, 0, 0, 0, 0, 170);
+  spot.addColorStop(0, "rgba(255,240,204,0.35)"); spot.addColorStop(1, "rgba(255,240,204,0)");
+  l.fillStyle = spot; l.beginPath(); l.arc(0, 0, 170, 0, Math.PI * 2); l.fill();
+  l.restore();
+  // Vignette
+  const v = l.createRadialGradient(W / 2, H / 2, H * 0.4, W / 2, H / 2, W * 0.75);
+  v.addColorStop(0, "rgba(0,0,0,0)"); v.addColorStop(1, "rgba(0,0,0,0.0)");
+  l.fillStyle = v; l.fillRect(0, 0, W, H);
 }
 
 // ======================================================================
@@ -1327,7 +1604,7 @@ function drawCursor() {
 const state = {
   tool: T_GRAB, mx: W / 2, my: H / 2, lastX: W / 2, lastY: H / 2,
   pressing: false, pointerSeen: false, hover: -1, flashBtn: -1, toast: 0, toastText: "",
-  dolls: [], selected: null, grabDoll: null, counter: 0, trail: [],
+  dolls: [], selected: null, grabDoll: null, counter: 0, trail: [], shake: 0,
 };
 
 function spawnDoll(bx, by) {
@@ -1343,16 +1620,18 @@ function spawnDoll(bx, by) {
 
 function resetScene() {
   worldReset();
+  gibs = []; effects = [];
+  dctx.clearRect(0, 0, decal.width, decal.height);
   state.dolls = []; state.selected = null; state.grabDoll = null; state.counter = 0;
-  spawnDoll(W / 2 - 30, FLOOR_Y);
+  spawnDoll(W / 2 - 60, FLOOR_Y);
 }
 
 function useButton(i) {
   state.flashBtn = i;
   setTimeout(() => { if (state.flashBtn === i) state.flashBtn = -1; }, 150);
   if (i === T_DOLL) {
-    const d = spawnDoll(LAMP_X + rf(-30, 30), 80);
-    for (let k = 0; k < d.x.length; k++) { d.ox[k] = d.x[k] + rf(-1, 1); d.oy[k] = d.y[k] - 1; }
+    const d = spawnDoll(LAMP_X + rf(-60, 60), 160);
+    for (let k = 0; k < d.x.length; k++) { d.ox[k] = d.x[k] + rf(-2, 2); d.oy[k] = d.y[k] - 2; }
   } else if (i === T_RESET) {
     resetScene();
   } else {
@@ -1369,8 +1648,9 @@ function press() {
   if (blocksInput(state.mx, state.my)) return;
   state.pressing = true;
   state.lastX = state.mx; state.lastY = state.my;
+  if (state.tool === T_BOMB) { explode(state.mx, Math.min(state.my, FLOOR_Y - 2)); state.pressing = false; return; }
   if (state.tool === T_GRAB) {
-    let bestD = 9, best = null, bestI = -1;
+    let bestD = 18, best = null, bestI = -1;
     for (const d of state.dolls) {
       const [i, dist] = d.nearestPoint(state.mx, state.my, bestD);
       if (i >= 0) { bestD = dist; best = d; bestI = i; }
@@ -1392,13 +1672,13 @@ function release() {
 function applyTool() {
   const { mx, my } = state;
   if (state.tool === T_WATER) {
-    for (let n = 0; n < 5; n++) spawnParticle(mx + rf(-1.5, 1.5), my, rf(-12, 12), rf(10, 40), WATER, 0);
+    for (let n = 0; n < 12; n++) spawnParticle(mx + rf(-3, 3), my, rf(-24, 24), rf(20, 80), WATER, 0);
   } else if (state.tool === T_FIRE) {
-    paintDisc(mx, my, 4, FIRE, 0.3);
-    for (const d of state.dolls) d.applyHeat(mx, my, 6);
+    paintDisc(mx, my, 8, FIRE, 0.25);
+    for (const d of state.dolls) d.applyHeat(mx, my, 12);
   } else if (state.tool === T_ICE) {
-    paintDisc(mx, my, 3.5, ICE, 0.6, 200);
-    for (const d of state.dolls) d.applyCold(mx, my, 7);
+    paintDisc(mx, my, 7, ICE, 0.6, 200);
+    for (const d of state.dolls) d.applyCold(mx, my, 14);
   } else if (state.tool === T_BLADE) {
     if (mx !== state.lastX || my !== state.lastY) {
       const speed = Math.hypot(mx - state.lastX, my - state.lastY) / DT;
@@ -1411,13 +1691,17 @@ function applyTool() {
 function physicsStep() {
   if (state.pressing) applyTool();
   worldStep();
+  stepGibs();
   for (const d of state.dolls) {
     if (d === state.grabDoll) { d.gx = state.mx; d.gy = state.my; }
     d.step();
   }
   for (const s of state.trail) s.age += DT;
   state.trail = state.trail.filter((s) => s.age < 0.25);
+  for (const e of effects) e.age += DT;
+  effects = effects.filter((e) => e.age < 0.5);
   state.toast = Math.max(0, state.toast - DT);
+  state.shake = Math.max(0, state.shake - DT);
   state.lastX = state.mx; state.lastY = state.my;
 }
 
@@ -1455,9 +1739,10 @@ document.addEventListener("touchmove", (ev) => ev.preventDefault(), { passive: f
 document.addEventListener("gesturestart", (ev) => ev.preventDefault());
 
 window.addEventListener("keydown", (ev) => {
-  if (ev.key >= "1" && ev.key <= "7") useButton(+ev.key - 1);
+  if (ev.key >= "1" && ev.key <= "8") useButton(+ev.key - 1);
   else if (ev.key === "r" || ev.key === "R") useButton(T_RESET);
   else if (ev.key === "n" || ev.key === "N") useButton(T_DOLL);
+  else if (ev.key === "b" || ev.key === "B") useButton(T_BOMB);
 });
 
 // ---------------------------------------------------------------- layout
@@ -1469,53 +1754,88 @@ function fit() {
   const availW = stage.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
   const hintH = hint.offsetParent ? hint.offsetHeight + 12 : 0;
   const availH = stage.clientHeight - hintH;
-  let s = Math.min(availW / W, availH / H);
-  if (s >= 2) s = Math.floor(s * 2) / 2;
-  canvas.style.width = Math.floor(W * s) + "px";
-  canvas.style.height = Math.floor(H * s) + "px";
+  const s = Math.max(0.2, Math.min(availW / W, availH / H));
+  const cw = Math.floor(W * s), ch = Math.floor(H * s);
+  canvas.style.width = cw + "px";
+  canvas.style.height = ch + "px";
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.round(cw * dpr);
+  canvas.height = Math.round(ch * dpr);
+  K = canvas.width / W;
+  buildStatic();
 }
 window.addEventListener("resize", fit);
 window.addEventListener("orientationchange", () => setTimeout(fit, 200));
 
-// ---------------------------------------------------------------- render loop
+// ---------------------------------------------------------------- render
 
+const COL_P_BLOOD = "#9c0e1c", COL_P_FIRE = "#ffc048";
 function render() {
   flushPaint();
-  fb.set(bg);
-  for (const d of state.dolls) d.draw();
-  // World cells blend over the dolls, so water and smoke cover them.
-  for (let i = 0, o = 0; i < N; i++, o += 4) {
-    const a = wpx[o + 3];
-    if (a === 0) continue;
-    if (a === 255) { fb[o] = wpx[o]; fb[o + 1] = wpx[o + 1]; fb[o + 2] = wpx[o + 2]; }
-    else {
-      const t = a / 255;
-      fb[o] += (wpx[o] - fb[o]) * t;
-      fb[o + 1] += (wpx[o + 1] - fb[o + 1]) * t;
-      fb[o + 2] += (wpx[o + 2] - fb[o + 2]) * t;
+  if (worldDirty) { wctx.putImageData(wimg, 0, 0); worldDirty = false; }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalCompositeOperation = "source-over";
+  ctx.drawImage(bgCan, 0, 0);
+  const sh = state.shake > 0 ? state.shake * 14 : 0;
+  ctx.setTransform(K, 0, 0, K, rf(-sh, sh) * K, rf(-sh, sh) * K);
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(decal, 0, 0, W, H);
+  // Gibs on the floor sit behind the dolls.
+  for (const g of gibs) {
+    ctx.save(); ctx.translate(g.x, g.y); ctx.rotate(g.rot);
+    if (g.bone) {
+      ctx.fillStyle = css(COL_BONE); rr(-g.r * 1.4, -g.r * 0.45, g.r * 2.8, g.r * 0.9, g.r * 0.4); ctx.fill();
+      ctx.beginPath(); ctx.arc(-g.r * 1.4, 0, g.r * 0.55, 0, Math.PI * 2); ctx.arc(g.r * 1.4, 0, g.r * 0.55, 0, Math.PI * 2); ctx.fill();
+    } else {
+      ctx.fillStyle = css(COL_GORE_DARK); ctx.beginPath(); ctx.ellipse(0, 0, g.r * 1.25 + 0.6, g.r * 0.85 + 0.6, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = css(COL_MEAT); ctx.beginPath(); ctx.ellipse(0, 0, g.r * 1.25, g.r * 0.85, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = css(COL_MEAT_HI); ctx.beginPath(); ctx.ellipse(-g.r * 0.3, -g.r * 0.25, g.r * 0.5, g.r * 0.3, 0, 0, Math.PI * 2); ctx.fill();
     }
+    ctx.restore();
   }
-  const pBlood = hex("#a0101c"), pFire = hex("#ffc048");
-  for (const p of particles) {
-    const c = p.m === BLOOD ? pBlood : p.m === WATER ? lighten(waterColor(p.mx), 0.25) : pFire;
-    px(p.x, p.y, c);
+  for (const d of state.dolls) d.draw();
+  // Liquids, fire and smoke cover the dolls.
+  ctx.drawImage(wcan, 0, 0, W, H);
+  ctx.fillStyle = COL_P_BLOOD;
+  ctx.beginPath();
+  for (const p of particles) if (p.m === BLOOD) ctx.rect(p.x - 0.8, p.y - 0.8, 1.6, 1.6);
+  ctx.fill();
+  ctx.fillStyle = "rgba(120,170,240,0.85)";
+  ctx.beginPath();
+  for (const p of particles) if (p.m === WATER) ctx.rect(p.x - 0.8, p.y - 0.8, 1.6, 1.6);
+  ctx.fill();
+  ctx.fillStyle = COL_P_FIRE;
+  ctx.beginPath();
+  for (const p of particles) if (p.m !== BLOOD && p.m !== WATER) ctx.rect(p.x - 0.8, p.y - 0.8, 1.6, 1.6);
+  ctx.fill();
+  // Blade trail
+  ctx.lineCap = "round";
+  for (const s of state.trail) {
+    ctx.strokeStyle = `rgba(240,246,255,${1 - s.age / 0.25})`; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(s.ax, s.ay); ctx.lineTo(s.bx, s.by); ctx.stroke();
   }
-  // Additive warm light
-  for (let i = 0, o = 0; i < N; i++, o += 4) {
-    const a = lightA[i];
-    if (a <= 0) continue;
-    fb[o] += WARM[0] * a; fb[o + 1] += WARM[1] * a; fb[o + 2] += WARM[2] * a;
+  // Light and explosion flashes add on top.
+  ctx.globalCompositeOperation = "lighter";
+  for (const e of effects) {
+    const t = e.age / 0.5, r = 30 + t * 90;
+    const g = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, r);
+    g.addColorStop(0, `rgba(255,230,160,${0.9 * (1 - t)})`);
+    g.addColorStop(0.4, `rgba(255,120,40,${0.6 * (1 - t)})`);
+    g.addColorStop(1, "rgba(255,60,0,0)");
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(e.x, e.y, r, 0, Math.PI * 2); ctx.fill();
   }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(lightCan, 0, 0);
+  ctx.globalCompositeOperation = "source-over";
   // HUD
-  text(5, 12, "RAGPIT", hex("#8a8a92"));
-  text(5, 19, TOOL_NAMES[state.tool], C.dim);
+  ctx.setTransform(K, 0, 0, K, 0, 0);
+  label("RAGPIT", 14, 22, 18, "#8e8e98", "left", 700);
+  label(TOOL_NAMES[state.tool].toUpperCase(), 14, 40, 11, "#55555e", "left", 600);
   drawCursor();
-  for (const s of state.trail) line(s.ax, s.ay, s.bx, s.by, [242, 247, 255], Math.round(255 * (1 - s.age / 0.25)));
   let sel = state.selected;
   if (!sel || !state.dolls.includes(sel)) sel = state.selected = state.dolls[state.dolls.length - 1] || null;
   drawPanel(sel);
   drawToolbar();
-  ctx.putImageData(frame, 0, 0);
 }
 
 let acc = 0, lastT = performance.now();
@@ -1532,4 +1852,5 @@ function loop(now) {
 resetScene();
 fit();
 requestAnimationFrame((t) => { lastT = t; loop(t); });
+if (document.fonts && document.fonts.load) document.fonts.load(`700 12px ${FONT}`).catch(() => {});
 </script>

@@ -12,6 +12,8 @@ Die Web-Version liegt in `web/`. Sie läuft in Safari ohne App Store und ohne Ma
 2. Tippe auf Teilen und dann auf "Zum Home-Bildschirm".
 3. Starte Ragpit über das neue Symbol und dreh das iPhone quer.
 
+Die Web-Version rechnet in 768 x 432 und zeichnet Puppe, Gore und HUD als glatte Vektorgrafik. Sie hat ein achtes Werkzeug: die Bombe. Harte Treffer lassen Körperteile zerplatzen, Stümpfe zeigen Knochen, Fleischfetzen fliegen durch den Raum und Blut spritzt an die Wand.
+
 `web/ragpit.html` ist die Seite für die Claude-Artifact-Ansicht. `web/index.html` ist dieselbe Seite als vollständige HTML-Datei, etwa für GitHub Pages.
 
 ## Starten in Godot
