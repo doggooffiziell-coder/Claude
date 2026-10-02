@@ -499,7 +499,7 @@ const JOINTS = [
 ];
 const ITERATIONS = 8, HEAD_R = 8.5, MAX_STEP = 28;
 const WOUND_SPEED = 400, SEVER_SPEED = 900, GIB_SPEED = 1450, MAX_WOUNDS = 40, OUT_BL = 35, AGONY_PN = 65;
-const COL_SKIN = hex("#f1f0ea"), COL_SKIN_FAR = hex("#c9c8c0"), COL_LINE = hex("#0d0d10");
+const COL_SKIN = hex("#ebe7dc"), COL_SKIN_FAR = hex("#c7c2b5"), COL_LINE = hex("#121214");
 const COL_CHAR = hex("#2e2622"), COL_ICE = hex("#a6d6f6"), COL_HURT = hex("#ff6a6a");
 const COL_GORE = hex("#7a0a16"), COL_GORE_DARK = hex("#3a0207"), COL_FLESH = hex("#c43248");
 const D2R = Math.PI / 180;
@@ -1076,7 +1076,7 @@ class Doll {
   // ------------------------------------------------ drawing
   partColor(k) {
     let c = FAR_SIDE[k] ? COL_SKIN_FAR : COL_SKIN;
-    if (this.dead) c = mixc(c, hex("#b9bcb4"), 0.35);
+    if (this.dead) c = mixc(c, hex("#b4b2a8"), 0.35);
     c = mixc(c, COL_CHAR, clamp(this.char[k], 0, 0.9));
     if (this.frozen) c = mixc(c, COL_ICE, 0.6);
     if (this.hurtFlash > 0) c = mixc(c, COL_HURT, this.hurtFlash * 0.3);
@@ -1087,41 +1087,79 @@ class Doll {
     return [this.x[this.pa[k]], this.y[this.pa[k]], this.x[this.pb[k]], this.y[this.pb[k]]];
   }
 
+  // Side of the limb that faces away from the ceiling lamp.
+  shadowSide(ax, ay, bx, by) {
+    const l = Math.hypot(bx - ax, by - ay) || 1;
+    let nx = -(by - ay) / l, ny = (bx - ax) / l;
+    if (ny < 0 || (ny === 0 && nx > 0)) { nx = -nx; ny = -ny; }
+    return [nx, ny];
+  }
+
   drawPart(k) {
     const [ax, ay, bx, by] = this.seg(k);
     const c = this.partColor(k);
+    const shadow = mixc(darken(c, 0.24), hex("#6e6250"), 0.25);
+    const seam = darken(c, 0.32);
+    if (k === HEAD) { this.drawHead(ax, ay, bx, by, c, shadow); return; }
+    const [ra, rb] = TAPER[k];
+    const [sx, sy] = this.shadowSide(ax, ay, bx, by);
+    taperFill(ax, ay, bx, by, ra + OUTLINE, rb + OUTLINE, COL_LINE);
+    taperFill(ax, ay, bx, by, ra, rb, c);
+    // Hard cel shadow along the lower half of the limb.
+    taperFill(ax + sx * ra * 0.5, ay + sy * ra * 0.5, bx + sx * rb * 0.5, by + sy * rb * 0.5, ra * 0.46, rb * 0.46, shadow);
+    if (this.stain[k] > 0.02) taperFill(ax, ay, bx, by, ra, rb, COL_GORE, this.stain[k] * 0.65);
     ctx.lineCap = "round";
-    if (k === HEAD) {
-      ctx.strokeStyle = css(COL_LINE);
-      ctx.lineWidth = WIDTH[k] + 3;
-      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+    if (k === TORSO) {
+      // Chest seam across the ribcage
+      const t = 0.4, mx = lerp(ax, bx, t), my = lerp(ay, by, t), r = lerp(ra, rb, t) * 0.8;
+      ctx.strokeStyle = css(seam, 0.7); ctx.lineWidth = 0.9;
+      ctx.beginPath(); ctx.moveTo(mx - sx * r, my - sy * r); ctx.lineTo(mx + sx * r, my + sy * r); ctx.stroke();
+    } else if (k === PELVIS) {
+      const t = 0.18, mx = lerp(ax, bx, t), my = lerp(ay, by, t), r = lerp(ra, rb, t) * 0.92;
+      ctx.strokeStyle = css(seam, 0.85); ctx.lineWidth = 1.3;
+      ctx.beginPath(); ctx.moveTo(mx - sx * r, my - sy * r); ctx.lineTo(mx + sx * r, my + sy * r); ctx.stroke();
+    } else if (k === FOOT_L || k === FOOT_R) {
+      // Boot sole
+      ctx.strokeStyle = css(COL_LINE); ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.moveTo(ax + sx * ra * 0.8, ay + sy * ra * 0.8); ctx.lineTo(bx + sx * rb * 0.9, by + sy * rb * 0.9); ctx.stroke();
+    } else if (k === LARM_L || k === LARM_R) {
+      // Mitten hand at the end of the forearm
+      const ang = Math.atan2(by - ay, bx - ax), hx = bx + Math.cos(ang) * 1.6, hy = by + Math.sin(ang) * 1.6;
       ctx.fillStyle = css(COL_LINE);
-      ctx.beginPath(); ctx.arc(bx, by, HEAD_R + 1.5, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = css(c); ctx.lineWidth = WIDTH[k];
-      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
-      const g = ctx.createRadialGradient(bx - 3, by - 3, 1, bx, by, HEAD_R);
-      g.addColorStop(0, css(lighten(c, 0.35))); g.addColorStop(1, css(darken(c, 0.12)));
-      ctx.fillStyle = g;
-      ctx.beginPath(); ctx.arc(bx, by, HEAD_R, 0, Math.PI * 2); ctx.fill();
-      if (this.stain[k] > 0.02) {
-        ctx.fillStyle = css(COL_GORE, this.stain[k] * 0.7);
-        ctx.beginPath(); ctx.arc(bx, by, HEAD_R, 0, Math.PI * 2); ctx.fill();
-      }
-      return;
+      ctx.beginPath(); ctx.ellipse(hx, hy, 3.6 + OUTLINE, 2.8 + OUTLINE, ang, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = css(c);
+      ctx.beginPath(); ctx.ellipse(hx, hy, 3.6, 2.8, ang, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = css(shadow);
+      ctx.beginPath(); ctx.ellipse(hx + sx * 1.3, hy + sy * 1.3, 2.4, 1.3, ang, 0, Math.PI * 2); ctx.fill();
     }
-    const w = WIDTH[k];
-    ctx.strokeStyle = css(COL_LINE); ctx.lineWidth = w + 3;
-    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
-    ctx.strokeStyle = css(c); ctx.lineWidth = w;
-    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
-    // Soft shading on one side gives the limb some volume.
-    const l = Math.hypot(bx - ax, by - ay) || 1, nx = -(by - ay) / l, ny = (bx - ax) / l, o = w * 0.22;
-    ctx.strokeStyle = css(darken(c, 0.18), 0.55); ctx.lineWidth = w * 0.35;
-    ctx.beginPath(); ctx.moveTo(ax + nx * o, ay + ny * o); ctx.lineTo(bx + nx * o, by + ny * o); ctx.stroke();
-    if (this.stain[k] > 0.02) {
-      ctx.strokeStyle = css(COL_GORE, this.stain[k] * 0.65); ctx.lineWidth = w;
-      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+    // Hinge pin at elbows and knees, the mark of a wooden mannequin.
+    if ((k === LARM_L || k === LARM_R || k === SHIN_L || k === SHIN_R) && !this.severed[k]) {
+      ctx.fillStyle = css(seam);
+      ctx.beginPath(); ctx.arc(ax, ay, ra * 0.42, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = css(lighten(c, 0.2));
+      ctx.beginPath(); ctx.arc(ax - 0.4, ay - 0.4, ra * 0.18, 0, Math.PI * 2); ctx.fill();
     }
+  }
+
+  drawHead(nx, ny, hx, hy, c, shadow) {
+    let ux = hx - nx, uy = hy - ny;
+    const l = Math.hypot(ux, uy);
+    if (l > 0) { ux /= l; uy /= l; } else { ux = 0; uy = -1; }
+    const rot = Math.atan2(uy, ux) + Math.PI / 2;
+    // Neck peg
+    taperFill(nx, ny, hx - ux * 4, hy - uy * 4, 2.6 + OUTLINE, 2.4 + OUTLINE, COL_LINE);
+    taperFill(nx, ny, hx - ux * 4, hy - uy * 4, 2.6, 2.4, darken(c, 0.12));
+    const rx = 7.4, ry = 8.8;
+    ctx.fillStyle = css(COL_LINE);
+    ctx.beginPath(); ctx.ellipse(hx, hy, rx + OUTLINE, ry + OUTLINE, rot, 0, Math.PI * 2); ctx.fill();
+    ctx.save();
+    ctx.beginPath(); ctx.ellipse(hx, hy, rx, ry, rot, 0, Math.PI * 2); ctx.clip();
+    ctx.fillStyle = css(shadow); ctx.fillRect(hx - 12, hy - 12, 24, 24);
+    // Lit cap toward the lamp, leaving a crescent of shadow underneath.
+    ctx.fillStyle = css(c);
+    ctx.beginPath(); ctx.ellipse(hx - 1.2, hy - 2.4, rx, ry * 0.92, rot, 0, Math.PI * 2); ctx.fill();
+    if (this.stain[HEAD] > 0.02) { ctx.fillStyle = css(COL_GORE, this.stain[HEAD] * 0.65); ctx.fillRect(hx - 12, hy - 12, 24, 24); }
+    ctx.restore();
   }
 
   drawWound(w) {
@@ -1168,26 +1206,48 @@ class Doll {
     }
     for (const w of this.wounds) if (w.stump && !this.gone[w.part]) this.drawWound(w);
     if (this.gone[HEAD]) return;
-    // Face
+    // One eye on the side the doll faces.
     const nx = this.x[this.pa[HEAD]], ny = this.y[this.pa[HEAD]];
     const hx = this.x[this.pb[HEAD]], hy = this.y[this.pb[HEAD]];
     let ux = hx - nx, uy = hy - ny;
     const l = Math.hypot(ux, uy);
     if (l > 0) { ux /= l; uy /= l; } else { ux = 0; uy = -1; }
     const fx = -uy, fy = ux;
-    const ex = hx + fx * 4.2 + ux * 1.2, ey = hy + fy * 4.2 + uy * 1.2;
-    ctx.strokeStyle = css(COL_LINE); ctx.fillStyle = css(COL_LINE); ctx.lineWidth = 1.2;
+    const ex = hx + fx * 4.4 + ux * 1.4, ey = hy + fy * 4.4 + uy * 1.4;
+    ctx.strokeStyle = css(COL_LINE); ctx.fillStyle = css(COL_LINE); ctx.lineWidth = 1.3; ctx.lineCap = "round";
     if (this.dead) {
       ctx.beginPath();
-      ctx.moveTo(ex - 1.6, ey - 1.6); ctx.lineTo(ex + 1.6, ey + 1.6);
-      ctx.moveTo(ex + 1.6, ey - 1.6); ctx.lineTo(ex - 1.6, ey + 1.6);
+      ctx.moveTo(ex - 1.7, ey - 1.7); ctx.lineTo(ex + 1.7, ey + 1.7);
+      ctx.moveTo(ex + 1.7, ey - 1.7); ctx.lineTo(ex - 1.7, ey + 1.7);
       ctx.stroke();
     } else if (this.isOut()) {
-      ctx.beginPath(); ctx.moveTo(ex - 1.6, ey); ctx.lineTo(ex + 1.6, ey); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(ex - 1.8, ey + fx * 0.3); ctx.lineTo(ex + 1.8, ey - fx * 0.3); ctx.stroke();
     } else {
-      ctx.beginPath(); ctx.arc(ex, ey, 1.3, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(ex, ey, 1.1, 1.5, Math.atan2(uy, ux), 0, Math.PI * 2); ctx.fill();
     }
   }
+}
+
+// Tapered limb: a quad between two end circles of different radius.
+const OUTLINE = 1.7;
+const TAPER = [[0, 0], [7, 5], [5.2, 6], [3.3, 2.5], [2.5, 2], [3.3, 2.5], [2.5, 2],
+  [4.4, 3.2], [3.2, 2.4], [2.6, 2.1], [4.4, 3.2], [3.2, 2.4], [2.6, 2.1]];
+function taperFill(ax, ay, bx, by, ra, rb, c, alpha = 1) {
+  const l = Math.hypot(bx - ax, by - ay) || 1, nx = -(by - ay) / l, ny = (bx - ax) / l;
+  ctx.fillStyle = css(c, alpha);
+  if (alpha < 1) {
+    ctx.beginPath();
+    ctx.moveTo(ax + nx * ra, ay + ny * ra); ctx.lineTo(bx + nx * rb, by + ny * rb);
+    ctx.lineTo(bx - nx * rb, by - ny * rb); ctx.lineTo(ax - nx * ra, ay - ny * ra);
+    ctx.closePath(); ctx.fill();
+    return;
+  }
+  ctx.beginPath();
+  ctx.moveTo(ax + nx * ra, ay + ny * ra); ctx.lineTo(bx + nx * rb, by + ny * rb);
+  ctx.lineTo(bx - nx * rb, by - ny * rb); ctx.lineTo(ax - nx * ra, ay - ny * ra);
+  ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.arc(ax, ay, ra, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(bx, by, rb, 0, Math.PI * 2); ctx.fill();
 }
 
 function splatAround(x, y, n) {
@@ -1301,23 +1361,24 @@ function drawMini(d, cx, cy, s) {
     for (const k of DRAW_ORDER) {
       const a = MINI[PART_A[k]], b = MINI[PART_B[k]];
       let c;
-      if (pass === 0) c = "#000";
+      if (pass === 0) c = COL_LINE;
       else if (d.gone[k]) continue;
-      else if (!d.attached(k)) c = "#3c3c44";
+      else if (!d.attached(k)) c = hex("#3c3c44");
       else {
         let col = mixc(hex("#e8e8e2"), COL_CHAR, clamp(d.char[k], 0, 0.8));
         if (d.frozen) col = mixc(col, COL_ICE, 0.6);
         col = mixc(col, COL_GORE, d.stain[k] * 0.6);
-        c = css(col);
+        c = col;
       }
       if (pass === 0 && d.gone[k]) continue;
-      const grow = pass === 0 ? 1.6 : 0;
-      ctx.strokeStyle = c; ctx.fillStyle = c;
+      const grow = pass === 0 ? 1.4 : 0;
+      const col = c;
       if (k === HEAD) {
-        ctx.beginPath(); ctx.arc(cx + b[0] * s, cy + b[1] * s, 3 * s + grow, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = css(col);
+        ctx.beginPath(); ctx.ellipse(cx + b[0] * s, cy + b[1] * s, 2.7 * s + grow, 3.2 * s + grow, 0, 0, Math.PI * 2); ctx.fill();
       } else {
-        ctx.lineWidth = MINI_W[k] * s + grow * 2;
-        ctx.beginPath(); ctx.moveTo(cx + a[0] * s, cy + a[1] * s); ctx.lineTo(cx + b[0] * s, cy + b[1] * s); ctx.stroke();
+        const [ra, rb] = TAPER[k];
+        taperFill(cx + a[0] * s, cy + a[1] * s, cx + b[0] * s, cy + b[1] * s, ra * 0.72 + grow, rb * 0.72 + grow, col);
       }
     }
   }
