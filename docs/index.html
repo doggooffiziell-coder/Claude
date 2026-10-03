@@ -3179,13 +3179,7 @@ function drawTitle(dt) {
   ctx.beginPath(); ctx.ellipse(px1 + 30, floor + 2, 46, 4, 0, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = "rgba(0,0,0,0.35)";
   ctx.beginPath(); ctx.ellipse(px1, floor + 1, 34, 3, 0, 0, Math.PI * 2); ctx.fill();
-  const breathe = Math.sin(f.t * 2.2) * 1.2;
-  drawBlockPerson(px1, floor, 1, MENU_LOOKS[0], { bob: breathe });
-  // a bandage and a fresh wound on the person
-  ctx.fillStyle = "#e8e4d8"; ctx.fillRect(px1 + 15, floor - 132 + breathe, 11, 5);
-  ctx.fillStyle = "#a8162a"; ctx.fillRect(px1 + 18, floor - 131 + breathe, 4, 3);
-  ctx.fillStyle = "#1a0306"; ctx.fillRect(px1 - 8, floor - 128 + breathe, 4, 4);
-  ctx.fillStyle = "#8e0f1c"; ctx.fillRect(px1 - 7.5, floor - 124 + breathe, 2.5, 10 + Math.sin(f.t) * 2);
+  drawTitleDoll(px1, floor, f.t);
   // AK on the floor
   drawSprite(SPRITE_AK, px1 - 150, floor - 13 * 2.2 + 4, 2.2);
   // Title with dripping blood
@@ -3206,6 +3200,39 @@ function drawTitle(dt) {
   label("PIXEL RAGDOLL SANDBOX", 56, 158, 12, "#7a7a84");
   for (const b of titleButtons()) menuButton(b, b.text, b.primary, state.pointerSeen && hitBox(b, state.mx, state.my) && state.menuDown);
   label("v2 · 5 MAPS · 11 WERKZEUGE", 56, H - 16, 9, "#4c4c56");
+}
+
+// The person on the title screen is a real game doll, drawn with the same
+// pixel renderer, posed by hand and a little larger than in the game.
+let titleDoll = null;
+const TD_X = 240, TD_Y = 300, TD_SCALE = 1.35;
+function drawTitleDoll(cx, floor, t) {
+  if (!titleDoll) {
+    titleDoll = new Doll(TD_X, TD_Y, 0);
+    titleDoll.look = { skin: hex("#e8c09a"), shirt: hex("#3c7a74"), pants: hex("#38425a"), shoes: hex("#2a2420"), hair: hex("#4a3020") };
+    titleDoll.addWound(TORSO, 0.42, 0.5, 2.2, false, "shot");
+    titleDoll.addWound(UARM_R, 0.55, 0.4, 1.2, false, "cut");
+    titleDoll.stain[TORSO] = 0.25; titleDoll.stain[UARM_R] = 0.2;
+  }
+  const d = titleDoll, breathe = Math.sin(t * 2.2) * 1.4, sway = Math.sin(t * 0.9) * 1.5;
+  // Rest pose with breathing in the chest and a slow sway of head and arms.
+  for (let i = 0; i < POSE.length; i++) {
+    let x = TD_X + POSE[i][0], y = TD_Y + POSE[i][1];
+    if (i <= P_WAIST || (i >= P_ELBOW_L && i <= P_HAND_R)) y += breathe * (i === P_WAIST ? 0.4 : 1);
+    if (i === P_HEAD) x += sway * 0.8;
+    if (i === P_HAND_L || i === P_HAND_R) x += sway * 0.5;
+    d.x[i] = x; d.y[i] = y;
+  }
+  // The right hand presses on the bullet wound.
+  d.x[P_ELBOW_R] = TD_X + 20; d.y[P_ELBOW_R] = TD_Y - 117 + breathe;
+  d.x[P_HAND_R] = TD_X - 1; d.y[P_HAND_R] = TD_Y - 125 + breathe;
+  ppx.fill(0);
+  rasterDoll(d);
+  pixCtx.putImageData(pixImg, 0, 0);
+  const sx = (TD_X - 70) / PIX, sy = (TD_Y - 200) / PIX, sw = 140 / PIX, sh = 210 / PIX;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(pixCan, sx, sy, sw, sh, cx - 70 * TD_SCALE, floor - 200 * TD_SCALE, 140 * TD_SCALE, 210 * TD_SCALE);
+  ctx.imageSmoothingEnabled = true;
 }
 
 // ----------------------------------------------------------------- maps

@@ -18,7 +18,7 @@ Oben links unter dem Titel erscheint je nach Werkzeug eine Leiste. Beim Wasser s
 
 Im Schadenspanel sehen Wunden echt aus: Einschüsse als dunkles Loch mit rotem Rand, Schnitte als schräger Riss, Prellungen als blauroter Fleck und abgetrennte Glieder als offener Stumpf mit Knochen. Blutende Wunden ziehen eine tropfende Blutspur nach unten.
 
-Das Spiel startet mit einem Hauptmenü: Eine Figur steht unter einer flackernden Lampe, vom Titel tropft Blut. Von dort kommst du zu SPIELEN, ANLEITUNG und EINSTELLUNGEN. Läuft schon ein Spiel, erscheint WEITERSPIELEN. Die Anleitung erklärt jedes Werkzeug mit seinem Symbol. In den Einstellungen schaltest du Ton, Bildschirmwackeln und das Schadenspanel an oder aus.
+Das Spiel startet mit einem Hauptmenü: Eine verletzte Figur im selben Pixel-Stil wie im Spiel steht unter einer flackernden Lampe, atmet und drückt eine Hand auf ihre Schusswunde. Vom Titel tropft Blut. Von dort kommst du zu SPIELEN, ANLEITUNG und EINSTELLUNGEN. Läuft schon ein Spiel, erscheint WEITERSPIELEN. Die Anleitung erklärt jedes Werkzeug mit seinem Symbol. In den Einstellungen schaltest du Ton, Bildschirmwackeln und das Schadenspanel an oder aus.
 
 Es gibt fünf Maps: Labor, Schwimmbad, Treppenhaus, Halle und Eiskeller. Jede Karte zeigt ein gemaltes Bild der Map mit Lampe, Blöcken, Wasser, Eis und den Figuren an ihren Startplätzen, dazu ein eigenes Symbol: Kolben, Wellen, Treppe, Plattformen und Schneeflocke. Der Knopf "MENÜ" im Spiel bringt dich zurück ins Hauptmenü, Reset baut die aktuelle Map neu auf.
 
