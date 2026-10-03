@@ -821,7 +821,7 @@ class Doll {
     const t = k === HEAD ? Math.random() : clamp(((x - ax) * sx + (y - ay) * sy) / l2, 0, 1);
     const side = Math.sign(sx * (y - ay) - sy * (x - ax)) || 1;
     this.addWound(k, t, side * 0.8, 1.1 + wp.dmg * 0.7, false, "shot");
-    this.addWound(k, clamp(t + rf(-0.12, 0.12), 0, 1), -side * 0.8, 1.2 + wp.dmg, false, "shot");
+    this.addWound(k, clamp(t + rf(-0.12, 0.12), 0, 1), -side * 0.8, 1.2 + wp.dmg, false, "shot", { exit: true });
     const w = k === HEAD ? HEAD_R : (TAPER[k][0] + TAPER[k][1]) / 2;
     this.burst(x + dx * w, y + dy * w, 16 + Math.round(wp.dmg * 12), dx, dy, 340);
     this.burst(x, y, 5, -dx, -dy, 120);
@@ -851,7 +851,8 @@ class Doll {
   preciseShot(hit, wp, dir = 0) {
     const { k, t, s, organs } = hit;
     this.addWound(k, t, s, 1.1 + wp.dmg * 0.7, false, "shot");
-    this.addWound(k, t, s, 1.2 + wp.dmg, false, "shot");
+    // The exit hole sits on the back, out of sight in the front view, but it bleeds.
+    this.addWound(k, t, s, 1.2 + wp.dmg, false, "shot", { exit: true });
     const [x, y] = this.woundPos({ part: k, t, s, stump: false });
     // The bullet flies into the picture: blood sprays out of the hole on all
     // sides and the exit wound marks the wall right behind the body.
@@ -1378,11 +1379,15 @@ class Doll {
     }
   }
 
-  addWound(k, t, s, severity, stump = false, kind = "hit") {
+  // extra: { exit: true } for the hole where a bullet left the body,
+  // { ang } for a cut, the blade's path measured against the limb.
+  addWound(k, t, s, severity, stump = false, kind = "hit", extra = null) {
     if (this.gone[k]) return;
     if (!stump) {
+      // Bruises on one spot grow together. Every bullet and every cut keeps its own hole.
+      const exit = !!(extra && extra.exit), near = kind === "hit" ? 0.2 : 0.035;
       for (const w of this.wounds) {
-        if (w.part === k && !w.stump && w.kind === kind && Math.abs(w.t - t) < 0.2) {
+        if (w.part === k && !w.stump && w.kind === kind && !!w.exit === exit && Math.abs(w.t - t) < near && Math.abs(w.s - s) < 0.25) {
           w.bleed = Math.min(1, w.bleed + severity * 0.12);
           w.size = Math.min(3.5, w.size + 0.5);
           return;
@@ -1394,7 +1399,7 @@ class Doll {
       this.wounds.splice(idx >= 0 ? idx : 0, 1);
     }
     this.wounds.push({ part: k, t: clamp(t, 0, 1), s: clamp(s, -1, 1), bleed: severity * 0.25,
-      size: severity < 1.5 ? 1.4 : 2.2, stump, kind, rot: rf(-0.6, 0.6), seed: Math.random() * 6.28 });
+      size: severity < 1.5 ? 1.4 : 2.2, stump, kind, rot: rf(-0.6, 0.6), seed: Math.random() * 6.28, drip: 0, ...extra });
   }
 
   sever(k) {
@@ -1465,7 +1470,10 @@ class Doll {
       if (this.bladeCd[k] > 0) continue;
       this.bladeCd[k] = 0.15;
       this.hurtPart(k, 30);
-      this.addWound(k, t, rf(-1, 1), 0.7 + speed / 1600, false, "cut");
+      // The cut runs along the blade's path. A slow push leaves a short stab.
+      const lx = k === HEAD ? 0 : p1x - p0x, ly = k === HEAD ? 1 : p1y - p0y;
+      const ang = Math.atan2(lx * (by - ay) - ly * (bx - ax), lx * (bx - ax) + ly * (by - ay));
+      this.addWound(k, t, rf(-0.7, 0.7), 0.7 + speed / 1600, false, "cut", { ang, len: clamp(speed / 700, 0.8, 2.4) });
       this.hitOrgans(k, t, 30 + speed / 60, 0.5);
       this.pn = Math.min(100, this.pn + 14);
       const l = Math.hypot(bx - ax, by - ay) || 1;
@@ -1589,6 +1597,8 @@ class Doll {
       if (loose) w.bleed = Math.max(0, w.bleed - 0.07 * DT);
       this.stain[w.part] = Math.min(0.75, this.stain[w.part] + w.bleed * DT * 0.08);
       const f = loose ? 0.6 : flow;
+      // Blood runs down the skin from the wound. The trail stays when it stops.
+      w.drip = Math.min(3 + w.size * 2 + w.bleed * 5, (w.drip || 0) + w.bleed * f * DT * 4);
       if (f <= 0) continue;
       const [wx, wy] = this.woundPos(w);
       if (Math.random() < w.bleed * DT * 12 * f) {
@@ -1990,6 +2000,75 @@ function rasterRect(ax, ay, bx, by, hw, e0, e1, order, base, stain) {
   }
 }
 
+// Wound colors in the pixel layer.
+const WC_HOLE = hex("#1a0306"), WC_COLLAR = hex("#6e0c18"), WC_BRUISE = hex("#4a1a34"), WC_TORN = hex("#9a1828");
+const WC_LIP = hex("#d4566a"), WC_CORE = hex("#2c0409"), WC_RUN = hex("#860c18"), WC_DRIED = hex("#560a12"), WC_DROP = hex("#b0141f");
+
+// One wound in pixel art, only on the pixels of its own body part:
+// a bullet hole with its dark collar, a torn exit hole, a gaping cut or a
+// bruise, and a thin line of blood running down the skin.
+function rasterWound(d, w, order) {
+  const [wx, wy] = d.woundPos(w);
+  const cx = Math.floor(wx / PIX), cy = Math.floor(wy / PIX);
+  const at = (x, y) => (x >= bbx0 && x <= bbx1 && y >= bby0 && y <= bby1 && tmask[y * DW + x] === order ? y * DW + x : -1);
+  const put = (x, y, c) => { const i = at(x, y); if (i >= 0) tset(i, c, order); };
+  const tint = (x, y, c, a) => {
+    const i = at(x, y); if (i < 0) return;
+    tcol[i * 3] += (c[0] - tcol[i * 3]) * a; tcol[i * 3 + 1] += (c[1] - tcol[i * 3 + 1]) * a; tcol[i * 3 + 2] += (c[2] - tcol[i * 3 + 2]) * a;
+  };
+  const hash = (n) => { const v = Math.sin(w.seed * 91.7 + n * 12.9898) * 43758.5453; return v - Math.floor(v); };
+  const open = w.bleed > 0;
+  let lowX = cx, lowY = cy;
+  if (w.kind === "shot" && !w.exit) {
+    // Entry: a small dark hole, a ring of scraped skin, a faint bruise.
+    for (const [ox, oy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) tint(cx + ox, cy + oy, WC_BRUISE, 0.3);
+    for (const [ox, oy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) tint(cx + ox, cy + oy, WC_COLLAR, 0.75);
+    put(cx, cy, WC_HOLE);
+    if (w.size > 2) { put(cx + 1, cy, WC_HOLE); tint(cx + 2, cy, WC_COLLAR, 0.75); tint(cx + 1, cy + 1, WC_COLLAR, 0.75); tint(cx + 1, cy - 1, WC_COLLAR, 0.75); }
+  } else if (w.kind === "shot") {
+    // Exit: bigger and torn open, the flesh pushed outward in ragged flaps.
+    for (let oy = -2; oy <= 2; oy++) for (let ox = -2; ox <= 2; ox++) if (ox * ox + oy * oy <= 5) tint(cx + ox, cy + oy, WC_BRUISE, 0.25);
+    for (const [ox, oy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) put(cx + ox, cy + oy, hash(ox * 3 + oy) < 0.5 ? PX_FLESH : WC_TORN);
+    for (let n = 0; n < 3; n++) { const a = hash(n + 7) * 6.28; put(cx + Math.round(Math.cos(a) * 1.6), cy + Math.round(Math.sin(a) * 1.6), n === 0 ? WC_LIP : WC_TORN); }
+    put(cx, cy, WC_CORE);
+    lowY = cy + 1;
+  } else if (w.kind === "cut") {
+    // A cut gapes in the middle and closes at both ends, the flesh shows inside.
+    const [ax, ay] = limbStart(d, w.part), bx = d.x[d.pb[w.part]], by = d.y[d.pb[w.part]];
+    const l = Math.hypot(bx - ax, by - ay) || 1, ux = (bx - ax) / l, uy = (by - ay) / l;
+    const a = w.ang !== undefined ? w.ang : Math.PI / 2 + w.rot;
+    const dx = ux * Math.cos(a) - uy * Math.sin(a), dy = ux * Math.sin(a) + uy * Math.cos(a);
+    const half = (w.len || 1.6) * (w.size > 2 ? 1.25 : 1), px = -dy, py = dx;
+    const fx = wx / PIX, fy = wy / PIX;
+    for (let u = -half; u <= half + 0.01; u += 0.5) {
+      const x = Math.floor(fx + dx * u), y = Math.floor(fy + dy * u), gape = 1 - Math.abs(u) / (half + 0.5);
+      tint(x + Math.round(px), y + Math.round(py), WC_COLLAR, 0.45 * gape);
+      tint(x - Math.round(px), y - Math.round(py), WC_COLLAR, 0.45 * gape);
+      if (gape > 0.45) put(x + Math.round(px * 0.8), y + Math.round(py * 0.8), open ? WC_LIP : WC_TORN);
+      put(x, y, gape > 0.3 ? WC_CORE : WC_TORN);
+      if (y > lowY || (y === lowY && gape > 0.5)) { lowX = x; lowY = y; }
+    }
+  } else {
+    // Blunt hit: a bruise, torn skin in the middle when it bleeds,
+    // and a deep ragged gash after a blast.
+    const r = w.size > 3 ? 2.2 : 1.5;
+    for (let oy = -2; oy <= 2; oy++) for (let ox = -2; ox <= 2; ox++) if (ox * ox + oy * oy <= r * r + 0.5) tint(cx + ox, cy + oy, WC_BRUISE, 0.32 * (1 - (ox * ox + oy * oy) / 9));
+    if (w.size > 3) {
+      for (const [ox, oy] of [[-1, 0], [1, 0], [0, -1], [0, 1], [1, 1]]) put(cx + ox, cy + oy, hash(ox + oy * 5) < 0.5 ? PX_FLESH : WC_TORN);
+      put(cx, cy, WC_CORE); lowY = cy + 1;
+    } else if (open || w.size > 2) put(cx, cy, WC_TORN);
+  }
+  // The line of blood runs straight down and wanders a little.
+  const len = Math.floor(w.drip || 0);
+  let x = lowX, y = lowY;
+  for (let n = 1; n <= len; n++) {
+    if (n > 1 && hash(n + 30) < 0.22) x += hash(n + 50) < 0.5 ? -1 : 1;
+    y++;
+    if (at(x, y) < 0) break;
+    put(x, y, open ? (n === len ? WC_DROP : WC_RUN) : WC_DRIED);
+  }
+}
+
 // Where a limb is drawn to start. The arms leave the torso at its edge and,
 // in the front view, the legs leave the hip on their own side. Hits and
 // wounds use the same spot, so they land where the body is drawn.
@@ -2096,11 +2175,9 @@ function rasterDoll(d) {
     // Wounds sit on top of their own part.
     for (const w of d.wounds) {
       if (w.part !== k || w.stump) continue;
-      const [wx, wy] = d.woundPos(w);
-      const r = 0.7 + w.size * 0.55;
-      const open = w.bleed > 0;
-      rasterDisc(wx / PIX, wy / PIX, r + 0.6, open ? COL_GORE : hex("#7e3a3c"), 0, true);
-      if (open) rasterDisc(wx / PIX, wy / PIX, r * 0.55, COL_GORE_DARK, 0, true);
+      // In the front view an exit hole is on the back of the body.
+      if (w.exit && settings.front) continue;
+      rasterWound(d, w, order);
     }
   }
   // Stumps: torn flesh with bone sticking out.
@@ -3633,7 +3710,8 @@ function drawBodyChart(d, x, y, w, h) {
   drawChartOrgans(d, cx, cy, s, "live");
   const now = performance.now() / 1000;
   for (const wd of d.wounds) {
-    if (!d.attached(wd.part)) continue;
+    // The chart shows the front. In the front view exit holes sit on the back.
+    if (!d.attached(wd.part) || (wd.exit && settings.front)) continue;
     const [wx, wy] = chartPoint(wd);
     drawWoundMark(wd, cx + wx * s, cy + wy * s, s * 1.2, now);
   }
@@ -3692,21 +3770,39 @@ function drawWoundMark(w, x, y, s, now) {
     return;
   }
   if (w.kind === "cut") {
-    // Slanted gash: dark core with swollen red edges
-    const a = w.rot + 0.6, l = 3.4 * s * big, ux = Math.cos(a) * l, uy = Math.sin(a) * l;
-    ctx.lineCap = "round";
-    ctx.strokeStyle = "rgba(200,52,76,0.9)"; ctx.lineWidth = 2.2 * s;
-    ctx.beginPath(); ctx.moveTo(x - ux, y - uy); ctx.lineTo(x + ux, y + uy); ctx.stroke();
-    ctx.strokeStyle = "#3a0207"; ctx.lineWidth = 0.9 * s;
-    ctx.beginPath(); ctx.moveTo(x - ux * 0.9, y - uy * 0.9); ctx.lineTo(x + ux * 0.9, y + uy * 0.9); ctx.stroke();
-    if (w.bleed > 0.05) drawDrip(x + ux * 0.4, y + uy * 0.4 + 0.6 * s, s, w.bleed, seed, now);
+    // A cut along the blade's path: it gapes in the middle like an eye,
+    // red flesh inside, a dark slit in the center, pointed ends.
+    const a = w.ang !== undefined ? Math.PI / 2 + w.ang : w.rot + 0.6;
+    const l = (1.6 + (w.len || 1.6) * 1.3) * s * big, gw = (0.9 + w.size * 0.35) * s;
+    const ux = Math.cos(a), uy = Math.sin(a), px = -uy, py = ux;
+    const lens = (k) => {
+      ctx.beginPath(); ctx.moveTo(x - ux * l, y - uy * l);
+      ctx.quadraticCurveTo(x + px * gw * k * 2, y + py * gw * k * 2, x + ux * l, y + uy * l);
+      ctx.quadraticCurveTo(x - px * gw * k * 2, y - py * gw * k * 2, x - ux * l, y - uy * l);
+      ctx.closePath();
+    };
+    lens(1.6); ctx.fillStyle = "rgba(110,12,24,0.45)"; ctx.fill();
+    lens(1); ctx.fillStyle = w.bleed > 0 ? "#d4566a" : "#9a1828"; ctx.fill();
+    lens(0.45); ctx.fillStyle = "#2c0409"; ctx.fill();
+    ctx.strokeStyle = "rgba(60,4,10,0.7)"; ctx.lineWidth = 0.5 * s; lens(1); ctx.stroke();
+    if (w.bleed > 0.05) drawDrip(x, y + gw * 1.2, s, w.bleed, seed, now);
+    return;
+  }
+  if (w.kind === "shot" && w.exit) {
+    // Exit hole: bigger and torn outward, ragged flaps of flesh around it.
+    const r = 1.5 * s * big;
+    blobPath(x, y, r * 2.5, seed, 9, 0.45); ctx.fillStyle = "rgba(110,30,60,0.32)"; ctx.fill();
+    blobPath(x, y, r * 1.8, seed + 1, 11, 0.7); ctx.fillStyle = "#c8344c"; ctx.fill();
+    blobPath(x, y, r * 1.2, seed + 4, 8, 0.5); ctx.fillStyle = "#8a1222"; ctx.fill();
+    blobPath(x, y, r * 0.65, seed + 2, 7, 0.4); ctx.fillStyle = "#2c0409"; ctx.fill();
+    if (w.bleed > 0.05) drawDrip(x, y + r * 1.3, s, w.bleed, seed, now);
     return;
   }
   if (w.kind === "shot") {
-    // Bullet hole: bruised ring, red abrasion collar and a dark hole
-    const r = 1.2 * s * big;
-    blobPath(x, y, r * 2.6, seed, 8, 0.3); ctx.fillStyle = "rgba(110,30,60,0.35)"; ctx.fill();
-    blobPath(x, y, r * 1.75, seed + 2, 7, 0.25); ctx.fillStyle = "#a8162a"; ctx.fill();
+    // Entry hole: small and round, a ring of scraped skin, a faint bruise
+    const r = 0.95 * s * big;
+    blobPath(x, y, r * 2.6, seed, 8, 0.3); ctx.fillStyle = "rgba(110,30,60,0.3)"; ctx.fill();
+    ctx.fillStyle = "#7a0e1c"; ctx.beginPath(); ctx.arc(x, y, r * 1.7, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = "#1a0306"; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = "rgba(255,140,140,0.35)"; ctx.beginPath(); ctx.arc(x - r * 0.9, y - r * 0.9, r * 0.45, 0, Math.PI * 2); ctx.fill();
     if (w.bleed > 0.05) drawDrip(x, y + r, s, w.bleed, seed, now);
@@ -4382,7 +4478,9 @@ function drawTitleDoll(cx, floor, t) {
     titleDoll = new Doll(TD_X, TD_Y, 0);
     titleDoll.look = { skin: hex("#e8c09a"), shirt: hex("#3c7a74"), pants: hex("#38425a"), shoes: hex("#2a2420"), hair: hex("#4a3020") };
     titleDoll.addWound(TORSO, 0.42, 0.5, 2.2, false, "shot");
-    titleDoll.addWound(UARM_R, 0.55, 0.4, 1.2, false, "cut");
+    titleDoll.addWound(UARM_R, 0.55, 0.4, 1.2, false, "cut", { ang: 1.3, len: 1.6 });
+    // Blood has already run down from both wounds.
+    for (const w of titleDoll.wounds) w.drip = 5;
     titleDoll.stain[TORSO] = 0.25; titleDoll.stain[UARM_R] = 0.2;
   }
   const d = titleDoll, breathe = Math.sin(t * 2.2) * 1.4, sway = Math.sin(t * 0.9) * 1.5;
@@ -4767,7 +4865,7 @@ function drawFrontDoll(d, cx, cy, F) {
     ctx.restore();
   }
   for (const w of d.wounds) {
-    if (!d.attached(w.part)) continue;
+    if (!d.attached(w.part) || w.exit) continue;
     const [wx, wy] = chartPoint(w);
     drawWoundMark(w, cx + wx * F, cy + wy * F, F * 1.1, now);
   }
