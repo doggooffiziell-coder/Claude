@@ -185,9 +185,11 @@ function paintDisc(cx, cy, radius, m, chance, lf = 0, skip = null) {
   }
 }
 
+const MAX_PARTICLES = 12000;
 function spawnParticle(x, y, vx, vy, m, mx = 255) {
-  if (particles.length >= 4000) return;
+  if (particles.length >= MAX_PARTICLES) return false;
   particles.push({ x, y, vx, vy, m, mx, age: 0 });
+  return true;
 }
 
 function splash(x, y, vx, vy) {
@@ -259,7 +261,11 @@ function worldStep() {
           const i = y * W + x, m = mat[i];
           if (m === EMPTY || m === WALL || m === ICE) continue;
           if (stamp[i] === curStamp) continue;
-          if (rest[i] > 3 && ((tick + i) & 15) !== 0) continue;
+          if (rest[i] > 3 && ((tick + i) & 15) !== 0) {
+            // A dozing liquid cell keeps its chunk awake until it has fully settled.
+            if (rest[i] < 255) chunkNext[cy * CW + cx] = 1;
+            continue;
+          }
           if (m === WATER || m === BLOOD) liquid(x, y, i, m);
           else if (m === FIRE) fireCell(x, y, i);
           else gasCell(x, y, i);
@@ -267,14 +273,62 @@ function worldStep() {
       }
     }
   }
+  levelWater();
   stepParticles();
+}
+
+// Communicating vessels: water from a high surface flows to the lowest
+// connected surface nearby, so a pool levels out within a second or two.
+const colTop = new Int16Array(W);
+function levelWater() {
+  let any = false;
+  for (let x = 0; x < W; x++) {
+    let y = 0;
+    while (y < H && isFree(mat[y * W + x])) y++;
+    colTop[x] = y;
+    if (y < H && mat[y * W + x] === WATER) any = true;
+  }
+  if (!any) return;
+  for (let n = 0; n < 400; n++) {
+    const x = rnd(W), h = colTop[x];
+    if (h >= H || mat[h * W + x] !== WATER || h === 0) continue;
+    const d = Math.random() < 0.5 ? 1 : -1;
+    let bestX = -1, bestT = h + 2;
+    for (let c = x, k = 0; k < 160; k++) {
+      const nc = c + d;
+      if (nc < 0 || nc >= W) break;
+      // Neighbors must share water just below the lower of their two
+      // surfaces. A few rows of slack let small air pockets through.
+      const r0 = Math.max(colTop[c], colTop[nc]);
+      let joined = false;
+      for (let r = r0; r < r0 + 5 && r < H; r++) {
+        if (mat[r * W + c] === WATER && mat[r * W + nc] === WATER) { joined = true; break; }
+      }
+      if (!joined) break;
+      if (colTop[nc] > bestT) { bestT = colTop[nc]; bestX = nc; }
+      c = nc;
+    }
+    if (bestX < 0) continue;
+    const from = h * W + x, to = (bestT - 1) * W + bestX;
+    swap(from, to); life[to] = 0;
+    colTop[x] = h + 1; colTop[bestX] = bestT - 1;
+  }
 }
 
 function liquid(x, y, i, m) {
   const hasBelow = y + 1 < H;
   if (hasBelow) {
     const b = i + W;
-    if (isFree(mat[b])) { swap(i, b); life[b] = 0; return; }
+    if (isFree(mat[b])) {
+      // Over open air the cell turns back into a falling drop, so water
+      // pours off ledges with real gravity instead of sliding down slowly.
+      if (y + 3 < H && isFree(mat[b + W]) && isFree(mat[b + 2 * W]) &&
+          spawnParticle(x + 0.5, y + 0.5, rf(-6, 6), rf(40, 90), m, m === WATER ? mixv[i] : 255)) {
+        mat[i] = EMPTY; mixv[i] = 0; life[i] = 0; touch(i);
+        return;
+      }
+      swap(i, b); life[b] = 0; return;
+    }
     let d = Math.random() < 0.5 ? 1 : -1;
     for (let k = 0; k < 2; k++) {
       const nx = x + d;
@@ -282,9 +336,14 @@ function liquid(x, y, i, m) {
       d = -d;
     }
   }
+  let dir = Math.random() < 0.5 ? 1 : -1;
+  // Surface water runs downhill along the surface, so mounds flatten into a level pool.
+  if (m === WATER && y > 0 && isFree(mat[i - W])) {
+    const j = rollTarget(x, y, dir);
+    if (j >= 0) { swap(i, j); life[j] = 0; return; }
+  }
   // Look sideways for a drop and flow toward it. Water looks far, blood is thick.
   const look = m === WATER ? 48 : 4;
-  let dir = Math.random() < 0.5 ? 1 : -1;
   const row = y * W;
   for (let k = 0; k < 2; k++) {
     let nx = x, s = 0, found = false;
@@ -294,17 +353,23 @@ function liquid(x, y, i, m) {
       nx = tx; s++;
       if (hasBelow && isFree(mat[row + W + tx])) { found = true; break; }
     }
-    if (found) { swap(i, row + x + dir * Math.min(s, m === WATER ? 4 : 1)); return; }
+    if (found) { swap(i, row + x + dir * Math.min(s, m === WATER ? 8 : 1)); return; }
     dir = -dir;
   }
   // No drop in reach: spread at random. Every hop tires the cell, so pools come to rest.
   const tired = life[i];
-  if (tired < 48 && (m === WATER || rnd(4) === 0)) {
+  if (tired < (m === WATER ? 140 : 48) && (m === WATER || rnd(4) === 0)) {
+    // Water slides several cells per step along the surface, blood one.
+    const reach = m === WATER ? 3 + rnd(6) : 1;
     for (let k = 0; k < 2; k++) {
-      let tx = x + dir;
-      if (tx >= 0 && tx < W && isFree(mat[row + tx])) {
-        const tx2 = tx + dir;
-        if (m === WATER && tx2 >= 0 && tx2 < W && isFree(mat[row + tx2])) tx = tx2;
+      let tx = x, n = 0;
+      while (n < reach) {
+        const nx = tx + dir;
+        if (nx < 0 || nx >= W || !isFree(mat[row + nx])) break;
+        tx = nx; n++;
+        if (hasBelow && isFree(mat[row + W + tx])) break;
+      }
+      if (n > 0) {
         swap(i, row + tx);
         life[row + tx] = tired + 1;
         return;
@@ -395,7 +460,7 @@ function stepParticles() {
       const ix = Math.floor(qx), iy = Math.floor(qy);
       if (ix < 0 || ix >= W || iy >= H) { done = true; break; }
       if (iy < 0) { lx = qx; ly = qy; continue; }
-      if (!isFree(mat[iy * W + ix])) { settle(lx, ly, p.m, p.mx); done = true; break; }
+      if (!isFree(mat[iy * W + ix])) { settle(lx, ly, p.m, p.mx, p.vx); done = true; break; }
       lx = qx; ly = qy;
     }
     if (done) { particles[k] = particles[particles.length - 1]; particles.pop(); }
@@ -403,14 +468,42 @@ function stepParticles() {
   }
 }
 
-function settle(fx, fy, m, mx) {
-  const x = Math.floor(fx);
-  let y = Math.floor(fy);
-  for (let k = 0; k < 4; k++) {
-    if (y < 0) return;
-    if (isFree(getMat(x, y))) { setCell(x, y, m, m === BLOOD ? 255 : mx); return; }
-    y--;
+// Where a surface cell would end up if it ran down the surface. Only a move
+// at least two rows down counts, so water always loses height and settles.
+function rollTarget(x0, y0, dir) {
+  let x = x0, y = y0, flat = 0, turned = false;
+  for (let n = 0; n < 160; n++) {
+    if (y + 1 < H && isFree(mat[(y + 1) * W + x])) { y++; flat = 0; continue; }
+    const nx = x + dir;
+    if (flat < 40 && nx >= 0 && nx < W && isFree(mat[y * W + nx])) { x = nx; flat++; continue; }
+    if (!turned) { dir = -dir; turned = true; flat = 0; x = x0; y = y0; continue; }
+    break;
   }
+  return y >= y0 + 2 ? y * W + x : -1;
+}
+
+// A landing drop runs down the surface before it rests, so a strong jet
+// spreads into a pool instead of stacking up into a tower.
+function settle(fx, fy, m, mx, vx = 0) {
+  let x = Math.floor(fx), y = Math.floor(fy), ok = false;
+  for (let k = 0; k < 10 && !ok; k++) {
+    if (y < 0) return;
+    for (const dx of [0, 1, -1]) {
+      if (isFree(getMat(x + dx, y))) { x += dx; ok = true; break; }
+    }
+    if (!ok) y--;
+  }
+  if (!ok) return;
+  if (m === WATER) {
+    let dir = Math.abs(vx) > 20 ? Math.sign(vx) : (Math.random() < 0.5 ? 1 : -1), flat = 0, turned = false;
+    for (let n = 0; n < 160; n++) {
+      if (y + 1 < H && isFree(getMat(x, y + 1))) { y++; flat = 0; continue; }
+      if (flat < 28 && isFree(getMat(x + dir, y))) { x += dir; flat++; continue; }
+      if (!turned && isFree(getMat(x - dir, y))) { dir = -dir; turned = true; flat = 0; continue; }
+      break;
+    }
+  }
+  setCell(x, y, m, m === BLOOD ? 255 : mx);
 }
 
 function paintCell(i) {
@@ -2247,7 +2340,7 @@ function drawCursor() {
     ctx.beginPath(); ctx.arc(mx, my, 3, 0, Math.PI * 2); ctx.stroke();
   } else if (state.tool === T_BUCKET) {
     ctx.setLineDash([3, 3]);
-    ctx.beginPath(); ctx.arc(mx, my, 18, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(mx, my, 26, 0, Math.PI * 2); ctx.stroke();
     ctx.setLineDash([]);
   } else if (state.tool === T_GUN) {
     // The laser dot is the reticle.
@@ -3788,11 +3881,16 @@ function release() {
 function applyTool() {
   const { mx, my } = state;
   if (state.tool === T_WATER) {
-    const lv = state.waterLevel, count = [3, 7, 13, 22, 36][lv - 1], spread = 1 + lv * 1.6;
-    for (let n = 0; n < count; n++) spawnParticle(mx + rf(-spread, spread), my, rf(-12 - lv * 6, 12 + lv * 6), rf(20, 80), WATER, 0);
+    // Each level roughly doubles the flow. Level 5 is a thick, fast jet.
+    const lv = state.waterLevel, count = [5, 12, 26, 52, 100][lv - 1], spread = [1.5, 3, 4.5, 6.5, 9][lv - 1];
+    const push = [30, 60, 100, 150, 220][lv - 1];
+    for (let n = 0; n < count; n++) {
+      const ox = rf(-spread, spread);
+      spawnParticle(mx + ox, my + rf(-spread, spread) * 0.5, ox * 3 + rf(-8, 8), push * rf(0.7, 1.1), WATER, 0);
+    }
   } else if (state.tool === T_BUCKET) {
     // Scoop up water and blood under the finger.
-    const r = 18;
+    const r = 26;
     for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
       if (dx * dx + dy * dy > r * r) continue;
       const x = Math.floor(mx) + dx, y = Math.floor(my) + dy, m = getMat(x, y);
