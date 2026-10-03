@@ -1617,8 +1617,9 @@ function rasterDoll(d) {
       }
       put(mx, my, darken(base, 0.45)); put(mx - fx, my - fy, darken(base, 0.45));
     } else {
-      if (k === UARM_L || k === UARM_R) {
+      if ((k === UARM_L || k === UARM_R) && !d.severed[k]) {
         // Each arm leaves the torso at the shoulder on the side it hangs toward.
+        // A severed arm is drawn from its own torn end instead.
         const tx = (wsx - nkx) / tl, ty = (wsy - nky) / tl, nx = -ty, ny = tx;
         const side = Math.sign((bx - shoulder[0]) * nx + (by - shoulder[1]) * ny) || 1;
         const off = (RECT[TORSO][0] - RECT[k][0] * 0.8) / PIX;
