@@ -18,7 +18,9 @@ Oben links unter dem Titel erscheint je nach Werkzeug eine Leiste. Beim Wasser s
 
 Im Schadenspanel sehen Wunden echt aus: Einschüsse als dunkles Loch mit rotem Rand, Schnitte als schräger Riss, Prellungen als blauroter Fleck und abgetrennte Glieder als offener Stumpf mit Knochen. Blutende Wunden ziehen eine tropfende Blutspur nach unten.
 
-Das Spiel startet mit einem Hauptmenü und fünf Maps: Labor, Schwimmbad, Treppenhaus, Halle und Eiskeller. Der Knopf "MENÜ" oben links bringt dich zurück, Reset baut die aktuelle Map neu auf.
+Das Spiel startet mit einem Hauptmenü: Eine Figur steht unter einer flackernden Lampe, vom Titel tropft Blut. Von dort kommst du zu SPIELEN, ANLEITUNG und EINSTELLUNGEN. Läuft schon ein Spiel, erscheint WEITERSPIELEN. Die Anleitung erklärt jedes Werkzeug mit seinem Symbol. In den Einstellungen schaltest du Ton, Bildschirmwackeln und das Schadenspanel an oder aus.
+
+Es gibt fünf Maps: Labor, Schwimmbad, Treppenhaus, Halle und Eiskeller. Jede Karte zeigt ein gemaltes Bild der Map mit Lampe, Blöcken, Wasser, Eis und den Figuren an ihren Startplätzen, dazu ein eigenes Symbol: Kolben, Wellen, Treppe, Plattformen und Schneeflocke. Der Knopf "MENÜ" im Spiel bringt dich zurück ins Hauptmenü, Reset baut die aktuelle Map neu auf.
 
 Mit "Neue Puppe" tippst du auf die Stelle, an der die Puppe stehen soll. Sie steht dort sofort aufrecht auf dem Boden. Der Eimer saugt Wasser und Blut unter deinem Finger auf.
 

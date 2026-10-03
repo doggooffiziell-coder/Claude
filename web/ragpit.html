@@ -2230,6 +2230,7 @@ function fire() {
 
 // Short metallic clicks for an empty gun and for reloading.
 function clickSound(freq, vol = 0.12) {
+  if (!settings.sound) return;
   try {
     if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
     if (audio.state === "suspended") audio.resume();
@@ -2383,6 +2384,7 @@ function drawGunControls() {
 
 let audio = null;
 function gunSound(power) {
+  if (!settings.sound) return;
   try {
     if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
     if (audio.state === "suspended") audio.resume();
@@ -2725,12 +2727,12 @@ function buildStatic() {
 // the spots where dolls start, and the colors of its room.
 const MAPS = [
   {
-    name: "Labor", desc: "Der leere Raum",
+    name: "Labor", accent: "#c8d0dc", desc: "Der leere Raum",
     theme: { wall: ["#18181c", "#24242a"], floor: ["#bdbdc2", "#8a8a90"], edge: "#dedee2", line: "#141417" },
     build: () => ({ walls: [], water: [], ice: [], dolls: [W / 2 - 110] }),
   },
   {
-    name: "Schwimmbad", desc: "Ein volles Becken",
+    name: "Schwimmbad", accent: "#5ab4f0", desc: "Ein volles Becken",
     theme: { wall: ["#0f2c32", "#174048"], floor: ["#d4e6e8", "#98b8bc"], edge: "#f0fafa", line: "#0a2226" },
     build: () => {
       const x0 = Math.round(W * 0.36), x1 = Math.round(W * 0.74), h = 74;
@@ -2742,7 +2744,7 @@ const MAPS = [
     },
   },
   {
-    name: "Treppenhaus", desc: "Lange Treppe zum Werfen",
+    name: "Treppenhaus", accent: "#d8a070", desc: "Lange Treppe zum Werfen",
     theme: { wall: ["#241a16", "#33251e"], floor: ["#8c7c6c", "#5c4e42"], edge: "#a89888", line: "#1a120e" },
     build: () => {
       const walls = [], x0 = Math.round(W * 0.2), step = 30, rise = 22;
@@ -2753,7 +2755,7 @@ const MAPS = [
     },
   },
   {
-    name: "Halle", desc: "Plattformen in der Höhe",
+    name: "Halle", accent: "#f0b030", desc: "Plattformen in der Höhe",
     theme: { wall: ["#13161c", "#1e232c"], floor: ["#6c7078", "#46494f"], edge: "#8c9098", line: "#0c0e12" },
     build: () => ({
       walls: [[W * 0.08, 300, 150, 12], [W * 0.32, 245, 160, 12], [W * 0.54, 205, 140, 12]],
@@ -2761,7 +2763,7 @@ const MAPS = [
     }),
   },
   {
-    name: "Eiskeller", desc: "Glatter Boden und Eissäulen",
+    name: "Eiskeller", accent: "#a6e0ff", desc: "Glatter Boden und Eissäulen",
     theme: { wall: ["#0c1824", "#152c40"], floor: ["#d2eaf8", "#90b6ce"], edge: "#f4fcff", line: "#08121c" },
     build: () => ({
       walls: [],
@@ -2926,17 +2928,94 @@ function drawExtras() {
   });
 }
 
-// Menu cards: three on top, two below.
-function menuCards() {
-  const cw = 196, ch = 132, gap = 16, cards = [];
-  const rows = [[0, 1, 2], [3, 4]];
-  rows.forEach((row, r) => {
-    const total = row.length * cw + (row.length - 1) * gap;
-    row.forEach((i, c) => cards.push({ i, x: W / 2 - total / 2 + c * (cw + gap), y: 136 + r * (ch + gap), w: cw, h: ch }));
-  });
-  return cards;
+// ======================================================================
+// Screens: title, map choice, help and settings
+// ======================================================================
+
+const settings = { sound: true, shake: true };
+try { Object.assign(settings, JSON.parse(localStorage.getItem("ragpit.settings") || "{}")); } catch (e) { /* storage is optional */ }
+function saveSettings() {
+  try { localStorage.setItem("ragpit.settings", JSON.stringify(settings)); } catch (e) { /* storage is optional */ }
 }
 
+// A blocky person in front view, used on the title screen and in map pictures.
+// Units match the dolls: the person is about 186 units tall, feet at footY.
+function drawBlockPerson(cx, footY, sc, look, opt = {}) {
+  const bob = opt.bob || 0, arm = opt.arm || 0, outline = opt.outline !== false;
+  const R = (x, y, w, h, c) => { ctx.fillStyle = typeof c === "string" ? c : css(c); ctx.fillRect(cx + x * sc, footY + y * sc, w * sc, h * sc); };
+  const parts = [
+    // shoes, legs, hips
+    [-16, -7, 14, 7, look.shoes], [2, -7, 14, 7, look.shoes],
+    [-14, -76, 12, 70, look.pants], [2, -76, 12, 70, look.pants],
+    [-15, -94 + bob, 30, 22, look.pants],
+    // arms behind the torso edge
+    [-26, -146 + bob - arm, 11, 26, look.shirt], [15, -146 + bob, 11, 26, look.shirt],
+    [-25, -121 + bob - arm, 9, 34, look.skin], [16, -121 + bob, 9, 34, look.skin],
+    [-25.5, -88 + bob - arm, 10, 9, darken(look.skin, 0.08)], [15.5, -88 + bob, 10, 9, darken(look.skin, 0.08)],
+    // torso, neck, head
+    [-16, -148 + bob, 32, 58, look.shirt],
+    [-5, -157 + bob, 10, 10, darken(look.skin, 0.12)],
+    [-14, -187 + bob, 28, 32, look.skin],
+    [-15, -190 + bob, 30, 9, look.hair], [-15, -184 + bob, 5, 12, look.hair], [10, -184 + bob, 5, 12, look.hair],
+  ];
+  if (outline) {
+    const o = Math.max(1, 1.6 / sc);
+    for (const [x, y, w, h] of parts) R(x - o, y - o, w + o * 2, h + o * 2, "#0b0b0e");
+  }
+  for (const [x, y, w, h, c] of parts) {
+    R(x, y, w, h, c);
+    if (sc > 0.4) { R(x, y, w, Math.min(2.5, h * 0.2), lighten(c, 0.16)); R(x + w - Math.min(3, w * 0.25), y, Math.min(3, w * 0.25), h, darken(c, 0.14)); }
+  }
+  if (sc > 0.3) {
+    // eyes and mouth
+    R(-8, -172 + bob, 4, 4, "#16161a"); R(4, -172 + bob, 4, 4, "#16161a");
+    R(-4, -162 + bob, 8, 2, darken(look.skin, 0.35));
+    // belt
+    R(-15, -94 + bob, 30, 3, darken(look.pants, 0.35));
+  }
+}
+
+const MENU_LOOKS = [
+  { skin: hex("#ecc8a6"), shirt: hex("#3c7a74"), pants: hex("#38425a"), shoes: hex("#2a2420"), hair: hex("#4a3020") },
+  { skin: hex("#d9a87e"), shirt: hex("#8a3a3a"), pants: hex("#2e2e34"), shoes: hex("#1e1e22"), hair: hex("#1a1a1a") },
+  { skin: hex("#b47c54"), shirt: hex("#c49a3c"), pants: hex("#5a4a3a"), shoes: hex("#4a3a2a"), hair: hex("#2a1e16") },
+  { skin: hex("#f4d8c0"), shirt: hex("#5a6c80"), pants: hex("#3e4a3a"), shoes: hex("#3a3a40"), hair: hex("#9a4a24") },
+];
+
+// Small symbol for each map, drawn in a round badge.
+function drawMapBadge(i, x, y, r) {
+  ctx.save();
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(10,10,13,0.85)"; ctx.fill();
+  ctx.strokeStyle = MAPS[i].accent; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.translate(x, y); ctx.scale(r / 14, r / 14);
+  ctx.strokeStyle = MAPS[i].accent; ctx.fillStyle = MAPS[i].accent; ctx.lineWidth = 1.8; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  ctx.beginPath();
+  switch (i) {
+    case 0: // flask
+      ctx.moveTo(-3, -8); ctx.lineTo(-3, -2); ctx.lineTo(-8, 7); ctx.lineTo(8, 7); ctx.lineTo(3, -2); ctx.lineTo(3, -8); ctx.moveTo(-5, -8); ctx.lineTo(5, -8);
+      ctx.stroke(); ctx.beginPath(); ctx.moveTo(-5.5, 3); ctx.lineTo(5.5, 3); ctx.lineTo(7, 6); ctx.lineTo(-7, 6); ctx.closePath(); ctx.fill();
+      break;
+    case 1: // waves
+      for (const wy of [-4, 2]) { ctx.moveTo(-8, wy); for (let k = 0; k < 4; k++) ctx.quadraticCurveTo(-6 + k * 4, wy - 3, -4 + k * 4, wy); }
+      ctx.stroke(); ctx.beginPath(); ctx.moveTo(-8, 7); ctx.lineTo(8, 7); ctx.stroke();
+      break;
+    case 2: // stairs
+      ctx.moveTo(-8, 8); ctx.lineTo(-8, 4); ctx.lineTo(-3, 4); ctx.lineTo(-3, -1); ctx.lineTo(2, -1); ctx.lineTo(2, -6); ctx.lineTo(8, -6); ctx.lineTo(8, 8); ctx.closePath(); ctx.fill();
+      break;
+    case 3: // platforms
+      ctx.fillRect(-9, 3, 8, 3); ctx.fillRect(-3, -2, 8, 3); ctx.fillRect(3, -7, 7, 3); ctx.fillRect(-9, 8, 18, 1.6);
+      break;
+    case 4: // snowflake
+      for (let k = 0; k < 3; k++) { const a = k * Math.PI / 3; ctx.moveTo(Math.cos(a) * 8, Math.sin(a) * 8); ctx.lineTo(-Math.cos(a) * 8, -Math.sin(a) * 8); }
+      for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3, px1 = Math.cos(a) * 5, py1 = Math.sin(a) * 5; ctx.moveTo(px1, py1); ctx.lineTo(px1 + Math.cos(a + 0.8) * 2.5, py1 + Math.sin(a + 0.8) * 2.5); ctx.moveTo(px1, py1); ctx.lineTo(px1 + Math.cos(a - 0.8) * 2.5, py1 + Math.sin(a - 0.8) * 2.5); }
+      ctx.stroke();
+      break;
+  }
+  ctx.restore();
+}
+
+// A small painted picture of a map: room, lamp light, blocks, water, ice and people.
 function drawMapPreview(i, x, y, w, h) {
   const m = MAPS[i], t = m.theme, sx = w / W, sy = h / H, b = m.build();
   ctx.save();
@@ -2944,50 +3023,298 @@ function drawMapPreview(i, x, y, w, h) {
   const g = ctx.createLinearGradient(0, y, 0, y + FLOOR_Y * sy);
   g.addColorStop(0, t.wall[0]); g.addColorStop(1, t.wall[1]);
   ctx.fillStyle = g; ctx.fillRect(x, y, w, FLOOR_Y * sy);
-  ctx.fillStyle = t.floor[0]; ctx.fillRect(x, y + FLOOR_Y * sy, w, h - FLOOR_Y * sy);
-  ctx.fillStyle = "#5c5c66";
-  for (const r of b.walls) ctx.fillRect(x + r[0] * sx, y + r[1] * sy, r[2] * sx, r[3] * sy);
-  ctx.fillStyle = "rgba(60,130,230,0.85)";
-  for (const r of b.water) ctx.fillRect(x + r[0] * sx, y + r[1] * sy, r[2] * sx, r[3] * sy);
-  ctx.fillStyle = "#bfe4fa";
-  for (const r of b.ice) ctx.fillRect(x + r[0] * sx, y + r[1] * sy, r[2] * sx, r[3] * sy);
-  // Doll markers
-  ctx.fillStyle = "#f2f2ec";
-  for (const dx of b.dolls) {
-    let gy = FLOOR_Y;
-    for (const r of b.walls.concat(b.ice)) if (dx >= r[0] && dx <= r[0] + r[2] && r[1] < gy) gy = r[1];
-    ctx.beginPath(); ctx.arc(x + dx * sx, y + (gy - 66) * sy, 3, 0, Math.PI * 2); ctx.fill();
-    ctx.fillRect(x + dx * sx - 2, y + (gy - 60) * sy, 4, 60 * sy);
+  // wall panels and the ceiling strip
+  ctx.fillStyle = t.line;
+  for (let px1 = 0; px1 < W; px1 += 96) ctx.fillRect(x + px1 * sx, y, 1, FLOOR_Y * sy);
+  ctx.fillRect(x, y + 150 * sy, w, 1.6);
+  ctx.fillStyle = "#0e0e11"; ctx.fillRect(x, y, w, 16 * sy);
+  // lamp and its cone of light
+  const lx = x + w / 2, ly = y + 42 * sy;
+  const cone = ctx.createLinearGradient(0, ly, 0, y + FLOOR_Y * sy);
+  cone.addColorStop(0, "rgba(255,240,204,0.32)"); cone.addColorStop(1, "rgba(255,240,204,0.04)");
+  ctx.fillStyle = cone;
+  ctx.beginPath(); ctx.moveTo(lx - 4, ly); ctx.lineTo(lx + 4, ly); ctx.lineTo(lx + 150 * sx, y + FLOOR_Y * sy); ctx.lineTo(lx - 150 * sx, y + FLOOR_Y * sy); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#d8d8d0"; ctx.fillRect(lx - 4, ly - 3, 8, 3);
+  ctx.fillStyle = "#fff6d8"; ctx.beginPath(); ctx.arc(lx, ly + 1, 1.6, 0, Math.PI * 2); ctx.fill();
+  // floor
+  const fl = ctx.createLinearGradient(0, y + FLOOR_Y * sy, 0, y + h);
+  fl.addColorStop(0, t.floor[0]); fl.addColorStop(1, t.floor[1]);
+  ctx.fillStyle = fl; ctx.fillRect(x, y + FLOOR_Y * sy, w, h - FLOOR_Y * sy);
+  ctx.fillStyle = t.edge; ctx.fillRect(x, y + FLOOR_Y * sy, w, 1.2);
+  ctx.fillStyle = "rgba(0,0,0,0.18)";
+  for (let px1 = 0; px1 < W; px1 += 48) ctx.fillRect(x + px1 * sx, y + FLOOR_Y * sy, 0.8, h);
+  // concrete blocks
+  for (const r of b.walls) {
+    const rx = x + r[0] * sx, ry = y + r[1] * sy, rw = r[2] * sx, rh = r[3] * sy;
+    ctx.fillStyle = "#4c4c56"; ctx.fillRect(rx, ry, rw, rh);
+    ctx.fillStyle = "#8a8a94"; ctx.fillRect(rx, ry, rw, 1.2);
+    ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.fillRect(rx, ry + rh - 1, rw, 1);
   }
+  // water with a bright surface line
+  for (const r of b.water) {
+    const rx = x + r[0] * sx, ry = y + r[1] * sy, rw = r[2] * sx, rh = r[3] * sy;
+    const wg = ctx.createLinearGradient(0, ry, 0, ry + rh);
+    wg.addColorStop(0, "rgba(70,140,230,0.9)"); wg.addColorStop(1, "rgba(30,70,170,0.95)");
+    ctx.fillStyle = wg; ctx.fillRect(rx, ry, rw, rh);
+    ctx.fillStyle = "#b4dcff"; ctx.fillRect(rx, ry, rw, 1);
+  }
+  // ice with a white top and a shine
+  for (const r of b.ice) {
+    const rx = x + r[0] * sx, ry = y + r[1] * sy, rw = r[2] * sx, rh = r[3] * sy;
+    ctx.fillStyle = "#a6d6f6"; ctx.fillRect(rx, ry, rw, rh);
+    ctx.fillStyle = "#f0fbff"; ctx.fillRect(rx, ry, rw, Math.min(1.2, rh));
+    if (rh > 6) { ctx.fillStyle = "rgba(255,255,255,0.45)"; ctx.fillRect(rx + rw * 0.2, ry + 2, Math.max(1, rw * 0.12), rh - 4); }
+  }
+  // people standing where the map puts them
+  b.dolls.forEach((dx, n) => {
+    let gy = FLOOR_Y;
+    for (const r of b.walls.concat(b.ice)) if (dx >= r[0] && dx <= r[0] + r[2] && r[1] < gy && r[1] > 20) gy = r[1];
+    ctx.save(); ctx.translate(x, y);
+    drawBlockPerson(dx * sx, gy * sy, sy, MENU_LOOKS[(n + i) % MENU_LOOKS.length]);
+    ctx.restore();
+  });
+  // soft vignette
+  const v = ctx.createRadialGradient(x + w / 2, y + h / 2, h * 0.3, x + w / 2, y + h / 2, w * 0.7);
+  v.addColorStop(0, "rgba(0,0,0,0)"); v.addColorStop(1, "rgba(0,0,0,0.45)");
+  ctx.fillStyle = v; ctx.fillRect(x, y, w, h);
   ctx.restore();
+  drawMapBadge(i, x + 15, y + 15, 11);
 }
 
-function drawMenu() {
+// ----------------------------------------------------------------- buttons
+
+function menuButton(b, text, primary = false, hot = false) {
+  rr(b.x, b.y, b.w, b.h, 10);
+  if (primary) {
+    const g = ctx.createLinearGradient(0, b.y, 0, b.y + b.h);
+    g.addColorStop(0, hot ? "#e8443a" : "#c8302a"); g.addColorStop(1, hot ? "#a82018" : "#8a1a14");
+    ctx.fillStyle = g;
+  } else ctx.fillStyle = hot ? "#2e2e36" : "rgba(26,26,32,0.92)";
+  ctx.fill();
+  ctx.strokeStyle = primary ? "#ff7a6a" : hot ? "#8e8e98" : "#3a3a42"; ctx.lineWidth = 1.5; ctx.stroke();
+  label(text, b.x + 18, b.y + b.h / 2 + 1, 15, primary ? "#fff4ec" : "#e2e2da");
+  label("›", b.x + b.w - 16, b.y + b.h / 2, 18, primary ? "#fff4ec" : "#6a6a74", "right");
+}
+const hitBox = (b, x, y) => x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h;
+const BACK_BTN = { x: 16, y: 16, w: 120, h: 34 };
+function drawBackButton() {
+  rr(BACK_BTN.x, BACK_BTN.y, BACK_BTN.w, BACK_BTN.h, 9);
+  ctx.fillStyle = "rgba(26,26,32,0.92)"; ctx.fill();
+  ctx.strokeStyle = "#3a3a42"; ctx.lineWidth = 1.5; ctx.stroke();
+  label("‹ ZURÜCK", BACK_BTN.x + BACK_BTN.w / 2, BACK_BTN.y + BACK_BTN.h / 2 + 1, 12, "#cfcfd6", "center");
+}
+
+function screenBackground(top = "#121216", bottom = "#1c1c22") {
   ctx.setTransform(K, 0, 0, K, 0, 0);
   const g = ctx.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, "#121216"); g.addColorStop(1, "#1c1c22");
+  g.addColorStop(0, top); g.addColorStop(1, bottom);
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-  // A faint blood streak under the title
-  ctx.fillStyle = "rgba(142,20,36,0.55)";
-  ctx.fillRect(W / 2 - 150, 92, 300, 4);
-  label("RAGPIT", W / 2, 60, 52, "#e6e6de", "center");
-  label("WÄHLE EINE MAP", W / 2, 112, 13, "#7a7a84", "center");
+}
+
+// ----------------------------------------------------------------- title
+
+const titleFx = { drops: [], dust: [], t: 0 };
+for (let n = 0; n < 26; n++) titleFx.dust.push({ x: rf(-60, 60), y: rf(60, 360), v: rf(3, 9), p: rf(0, 6.28) });
+
+function titleButtons() {
+  const x = 56, w = 250, h = 42, gap = 10, y0 = 196, items = [];
+  if (state.inGame) items.push({ id: "resume", text: "WEITERSPIELEN", primary: true });
+  items.push({ id: "maps", text: state.inGame ? "MAP WÄHLEN" : "SPIELEN", primary: !state.inGame });
+  items.push({ id: "help", text: "ANLEITUNG" });
+  items.push({ id: "settings", text: "EINSTELLUNGEN" });
+  return items.map((it, n) => ({ ...it, x, y: y0 + n * (h + gap), w, h }));
+}
+
+function drawTitle(dt) {
+  const f = titleFx;
+  f.t += dt;
+  screenBackground("#121216", "#121216");
+  // Room on the right: wall panels, floor and a lamp over a waiting person
+  const px1 = Math.max(W * 0.66, 420), floor = 372;
+  ctx.fillStyle = "#16161b"; ctx.fillRect(W * 0.42, 0, W, floor);
+  ctx.fillStyle = "#0c0c0f";
+  for (let x = W * 0.42; x < W; x += 96) ctx.fillRect(x, 0, 1.5, floor);
+  ctx.fillRect(W * 0.42, 150, W, 1.5);
+  const fl = ctx.createLinearGradient(0, floor, 0, H);
+  fl.addColorStop(0, "#5a5a62"); fl.addColorStop(1, "#2a2a30");
+  ctx.fillStyle = fl; ctx.fillRect(W * 0.42, floor, W, H - floor);
+  ctx.fillStyle = "#8a8a92"; ctx.fillRect(W * 0.42, floor, W, 1.5);
+  // fade the room into the menu side
+  const fade = ctx.createLinearGradient(W * 0.42, 0, W * 0.62, 0);
+  fade.addColorStop(0, "#121216"); fade.addColorStop(1, "rgba(18,18,22,0)");
+  ctx.fillStyle = fade; ctx.fillRect(W * 0.42 - 1, 0, W * 0.2 + 2, H);
+  // flickering lamp
+  const flick = Math.sin(f.t * 23) > 0.96 ? 0.4 : 1;
+  const cone = ctx.createLinearGradient(0, 40, 0, floor);
+  cone.addColorStop(0, `rgba(255,240,204,${0.3 * flick})`); cone.addColorStop(1, `rgba(255,240,204,${0.06 * flick})`);
+  ctx.fillStyle = cone;
+  ctx.beginPath(); ctx.moveTo(px1 - 10, 40); ctx.lineTo(px1 + 10, 40); ctx.lineTo(px1 + 140, floor); ctx.lineTo(px1 - 140, floor); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#0a0a0c"; ctx.fillRect(px1 - 1, 0, 2, 30);
+  ctx.fillStyle = "#cfcfc8"; ctx.beginPath(); ctx.moveTo(px1 - 16, 40); ctx.lineTo(px1 - 7, 30); ctx.lineTo(px1 + 7, 30); ctx.lineTo(px1 + 16, 40); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = `rgba(255,246,216,${flick})`; ctx.beginPath(); ctx.arc(px1, 41, 3, 0, Math.PI * 2); ctx.fill();
+  // dust in the light
+  for (const d of f.dust) {
+    d.y -= d.v * dt; if (d.y < 50) d.y = 360;
+    const dx = d.x * (d.y - 40) / 330 + Math.sin(f.t * 0.7 + d.p) * 4;
+    ctx.fillStyle = `rgba(255,240,210,${0.25 + 0.2 * Math.sin(f.t + d.p)})`;
+    ctx.fillRect(px1 + dx, d.y, 1.2, 1.2);
+  }
+  // blood pool and the person
+  ctx.fillStyle = "rgba(110,8,18,0.85)";
+  ctx.beginPath(); ctx.ellipse(px1 + 30, floor + 2, 46, 4, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "rgba(0,0,0,0.35)";
+  ctx.beginPath(); ctx.ellipse(px1, floor + 1, 34, 3, 0, 0, Math.PI * 2); ctx.fill();
+  const breathe = Math.sin(f.t * 2.2) * 1.2;
+  drawBlockPerson(px1, floor, 1, MENU_LOOKS[0], { bob: breathe });
+  // a bandage and a fresh wound on the person
+  ctx.fillStyle = "#e8e4d8"; ctx.fillRect(px1 + 15, floor - 132 + breathe, 11, 5);
+  ctx.fillStyle = "#a8162a"; ctx.fillRect(px1 + 18, floor - 131 + breathe, 4, 3);
+  ctx.fillStyle = "#1a0306"; ctx.fillRect(px1 - 8, floor - 128 + breathe, 4, 4);
+  ctx.fillStyle = "#8e0f1c"; ctx.fillRect(px1 - 7.5, floor - 124 + breathe, 2.5, 10 + Math.sin(f.t) * 2);
+  // AK on the floor
+  drawSprite(SPRITE_AK, px1 - 150, floor - 13 * 2.2 + 4, 2.2);
+  // Title with dripping blood
+  label("RAGPIT", 52, 104, 68, "#ecece4");
+  ctx.fillStyle = "#8e0f1c"; ctx.fillRect(56, 132, 300, 4);
+  if (Math.random() < dt * 2.2) f.drops.push({ x: rf(60, 350), y: 136, v: 0, len: 0, age: 0 });
+  for (const d of f.drops) {
+    d.age += dt;
+    if (d.age < 0.6) d.len = d.age * 14;
+    else { d.v += 420 * dt; d.y += d.v * dt; }
+  }
+  f.drops = f.drops.filter((d) => d.y < H);
+  for (const d of f.drops) {
+    ctx.fillStyle = "#9c0e1c";
+    if (d.age < 0.6) { ctx.fillRect(d.x - 1, 134, 2, d.len); ctx.beginPath(); ctx.arc(d.x, 134 + d.len, 2.2, 0, Math.PI * 2); ctx.fill(); }
+    else { ctx.beginPath(); ctx.ellipse(d.x, d.y, 1.8, 3, 0, 0, Math.PI * 2); ctx.fill(); }
+  }
+  label("PIXEL RAGDOLL SANDBOX", 56, 158, 12, "#7a7a84");
+  for (const b of titleButtons()) menuButton(b, b.text, b.primary, state.pointerSeen && hitBox(b, state.mx, state.my) && state.menuDown);
+  label("v2 · 5 MAPS · 11 WERKZEUGE", 56, H - 16, 9, "#4c4c56");
+}
+
+// ----------------------------------------------------------------- maps
+
+function menuCards() {
+  const cw = 200, ch = 140, gap = 16, cards = [];
+  const rows = [[0, 1, 2], [3, 4]];
+  rows.forEach((row, r) => {
+    const total = row.length * cw + (row.length - 1) * gap;
+    row.forEach((i, c) => cards.push({ i, x: W / 2 - total / 2 + c * (cw + gap), y: 118 + r * (ch + gap), w: cw, h: ch }));
+  });
+  return cards;
+}
+
+function drawMaps() {
+  screenBackground();
+  label("WÄHLE EINE MAP", W / 2, 50, 26, "#e6e6de", "center");
+  label("Tippe auf eine Karte, um zu starten", W / 2, 84, 11, "#7a7a84", "center", 400);
+  drawBackButton();
   for (const c of menuCards()) {
-    const on = c.i === state.map;
+    const on = c.i === state.map && state.inGame;
     rr(c.x, c.y, c.w, c.h, 12);
     ctx.fillStyle = on ? "#26262e" : "#1a1a20"; ctx.fill();
-    ctx.strokeStyle = on ? "#ecece6" : "#34343c"; ctx.lineWidth = on ? 2 : 1.5; ctx.stroke();
-    drawMapPreview(c.i, c.x + 8, c.y + 8, c.w - 16, 76);
-    label(MAPS[c.i].name.toUpperCase(), c.x + 12, c.y + 100, 14, "#e6e6de");
-    label(MAPS[c.i].desc, c.x + 12, c.y + 118, 10, "#7a7a84", "left", 400);
+    ctx.strokeStyle = on ? MAPS[c.i].accent : "#34343c"; ctx.lineWidth = on ? 2 : 1.5; ctx.stroke();
+    drawMapPreview(c.i, c.x + 7, c.y + 7, c.w - 14, 88);
+    label(MAPS[c.i].name.toUpperCase(), c.x + 12, c.y + 110, 14, "#e6e6de");
+    label(MAPS[c.i].desc, c.x + 12, c.y + 127, 10, "#7a7a84", "left", 400);
   }
 }
 
-function menuPress() {
-  for (const c of menuCards()) {
-    if (state.mx >= c.x && state.mx < c.x + c.w && state.my >= c.y && state.my < c.y + c.h) {
-      state.screen = "game";
-      loadMap(c.i);
+// ----------------------------------------------------------------- help
+
+const HELP = [
+  [T_GRAB, "Puppe packen, ziehen und werfen"],
+  [T_WATER, "Wasser gießen, Menge oben links"],
+  [T_BUCKET, "Wasser und Blut aufsaugen"],
+  [T_BLADE, "Schnell ziehen, um zu schneiden"],
+  [T_GUN, "Ziehen = zielen, rot = Feuer"],
+  [T_FIRE, "Puppen anzünden, Wasser löscht"],
+  [T_ICE, "Eis setzen, friert Puppen ein"],
+  [T_BOMB, "Tippen, um zu sprengen"],
+  [T_IV, "Heilt und weckt Bewusstlose"],
+  [T_DOLL, "Tippen, wo sie stehen soll"],
+  [T_RESET, "Baut die Map neu auf"],
+  [-1, "Aufräumen, Zeitlupe und Pause"],
+];
+
+function drawHelp() {
+  screenBackground();
+  label("ANLEITUNG", W / 2, 50, 26, "#e6e6de", "center");
+  drawBackButton();
+  const colW = Math.min(360, (W - 80) / 2), x0 = W / 2 - colW - 8, y0 = 92, rowH = 50;
+  HELP.forEach(([tool, text], n) => {
+    const x = x0 + Math.floor(n / 6) * (colW + 16), y = y0 + (n % 6) * rowH;
+    rr(x, y, colW, rowH - 8, 10); ctx.fillStyle = "rgba(26,26,32,0.92)"; ctx.fill();
+    ctx.strokeStyle = "#2e2e36"; ctx.lineWidth = 1.2; ctx.stroke();
+    rr(x + 5, y + 5, 32, 32, 8); ctx.fillStyle = "#26262c"; ctx.fill();
+    if (tool >= 0) { ctx.save(); ctx.translate(x + 21, y + 21); ctx.scale(0.7, 0.7); drawIcon(tool, 0, 0); ctx.restore(); }
+    else label("+", x + 21, y + 22, 18, "#e6c850", "center");
+    label(tool >= 0 ? TOOL_NAMES[tool].toUpperCase() : "EXTRAS", x + 46, y + 14, 11, "#e2e2da");
+    label(text, x + 46, y + 29, 10, "#8e8e98", "left", 400);
+  });
+  label("Zustände: WACH, K.O. und TOT. Tippe auf die Kopfzeile des Panels, um es zuzuklappen.", W / 2, H - 22, 10, "#6a6a74", "center", 400);
+}
+
+// ----------------------------------------------------------------- settings
+
+function settingRows() {
+  const w = 380, h = 52, x = W / 2 - w / 2, y0 = 110;
+  return [
+    { id: "sound", text: "TON", sub: "Schüsse und Klicks", on: settings.sound },
+    { id: "shake", text: "BILDSCHIRMWACKELN", sub: "Bei Schüssen und Explosionen", on: settings.shake },
+    { id: "panel", text: "SCHADENSPANEL", sub: "Offen oder zugeklappt", on: panelOpen },
+  ].map((r, n) => ({ ...r, x, y: y0 + n * (h + 12), w, h }));
+}
+
+function drawSettings() {
+  screenBackground();
+  label("EINSTELLUNGEN", W / 2, 50, 26, "#e6e6de", "center");
+  drawBackButton();
+  for (const r of settingRows()) {
+    rr(r.x, r.y, r.w, r.h, 12); ctx.fillStyle = "rgba(26,26,32,0.92)"; ctx.fill();
+    ctx.strokeStyle = "#2e2e36"; ctx.lineWidth = 1.2; ctx.stroke();
+    label(r.text, r.x + 16, r.y + 20, 13, "#e2e2da");
+    label(r.sub, r.x + 16, r.y + 37, 10, "#7a7a84", "left", 400);
+    // switch
+    const sx = r.x + r.w - 66, sy = r.y + r.h / 2 - 12;
+    rr(sx, sy, 50, 24, 12); ctx.fillStyle = r.on ? "#3c9a4a" : "#2c2c34"; ctx.fill();
+    ctx.beginPath(); ctx.arc(r.on ? sx + 38 : sx + 12, sy + 12, 9, 0, Math.PI * 2); ctx.fillStyle = "#f2f2ec"; ctx.fill();
+  }
+}
+
+// ----------------------------------------------------------------- input
+
+function drawScreen(dt) {
+  if (state.screen === "title") drawTitle(dt);
+  else if (state.screen === "maps") drawMaps();
+  else if (state.screen === "help") drawHelp();
+  else if (state.screen === "settings") drawSettings();
+}
+
+function screenPress() {
+  const { mx, my } = state;
+  if (state.screen === "title") {
+    for (const b of titleButtons()) {
+      if (!hitBox(b, mx, my)) continue;
+      if (b.id === "resume") state.screen = "game";
+      else state.screen = b.id;
+      clickSound(800, 0.05);
+      return;
+    }
+    return;
+  }
+  if (hitBox(BACK_BTN, mx, my)) { state.screen = "title"; return; }
+  if (state.screen === "maps") {
+    for (const c of menuCards()) {
+      if (hitBox(c, mx, my)) { state.screen = "game"; state.inGame = true; loadMap(c.i); return; }
+    }
+  } else if (state.screen === "settings") {
+    for (const r of settingRows()) {
+      if (!hitBox(r, mx, my)) continue;
+      if (r.id === "panel") togglePanel();
+      else { settings[r.id] = !settings[r.id]; saveSettings(); }
+      if (settings.sound) clickSound(900, 0.05);
       return;
     }
   }
@@ -2997,7 +3324,7 @@ const state = {
   tool: T_GRAB, mx: W / 2, my: H / 2, lastX: W / 2, lastY: H / 2,
   pressing: false, pointerSeen: false, hover: -1, flashBtn: -1, toast: 0, toastText: "",
   dolls: [], selected: null, grabDoll: null, counter: 0, trail: [], shake: 0,
-  waterLevel: 3, weapon: 0, fireCd: 0, map: 0, screen: "menu",
+  waterLevel: 3, weapon: 0, fireCd: 0, map: 0, screen: "title", inGame: false, menuDown: false,
   extrasOpen: false, extrasFlash: -1, extrasFlashT: 0, paused: false, slow: false,
   gunX: W * 0.22, gunY: FLOOR_Y - 130, gunAng: 0, gunDrag: false, aimX: W, aimY: FLOOR_Y - 130,
   ammo: WEAPONS.map((wp) => wp.mag), autoMode: WEAPONS.map((wp) => wp.auto), reloadT: 0,
@@ -3044,7 +3371,7 @@ function placeDoll(x, y) {
 }
 
 function press() {
-  if (state.screen === "menu") { menuPress(); return; }
+  if (state.screen !== "game") { screenPress(); return; }
   if (inFsBtn(state.mx, state.my)) { toggleFullscreen(); return; }
   if (inExtrasBtn(state.mx, state.my)) { state.extrasOpen = !state.extrasOpen; return; }
   if (state.extrasOpen) {
@@ -3054,7 +3381,7 @@ function press() {
     return;
   }
   if (inPanelHead(state.mx, state.my)) { togglePanel(); return; }
-  if (inMenuBtn(state.mx, state.my)) { release(); state.screen = "menu"; state.extrasOpen = false; return; }
+  if (inMenuBtn(state.mx, state.my)) { release(); state.screen = "title"; state.extrasOpen = false; state.triggerDown = false; return; }
   const c = ctxHit(state.mx, state.my);
   if (c) {
     if (c.kind === "water") { state.waterLevel = c.n; state.toast = 1; state.toastText = "Menge " + c.n; }
@@ -3209,6 +3536,7 @@ canvas.addEventListener("pointerdown", (ev) => {
   try { canvas.setPointerCapture(ev.pointerId); } catch (e) { /* pointer capture is optional */ }
   toGame(ev);
   state.lastX = state.mx; state.lastY = state.my;
+  state.menuDown = true;
   press();
 });
 canvas.addEventListener("pointermove", (ev) => {
@@ -3221,6 +3549,7 @@ const endPointer = (ev) => {
   if (ev.pointerId === firePointer) { firePointer = null; state.triggerDown = false; return; }
   if (ev.pointerId !== activePointer) return;
   activePointer = null;
+  state.menuDown = false;
   release();
 };
 canvas.addEventListener("pointerup", endPointer);
@@ -3280,7 +3609,7 @@ function render() {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalCompositeOperation = "source-over";
   ctx.drawImage(bgCan, 0, 0);
-  const sh = state.shake > 0 ? state.shake * 14 : 0;
+  const sh = state.shake > 0 && settings.shake ? state.shake * 14 : 0;
   ctx.setTransform(K, 0, 0, K, rf(-sh, sh) * K, rf(-sh, sh) * K);
   ctx.imageSmoothingEnabled = true;
   ctx.drawImage(decal, 0, 0, W, H);
@@ -3371,9 +3700,9 @@ function loop(now) {
   state.toast = Math.max(0, state.toast - realDt);
   acc += state.paused ? 0 : state.slow ? realDt * 0.3 : realDt;
   let steps = 0;
-  if (state.screen === "menu") {
+  if (state.screen !== "game") {
     acc = 0;
-    drawMenu();
+    drawScreen(realDt);
   } else {
     while (acc >= DT && steps < 4) { physicsStep(); acc -= DT; steps++; }
     if (steps === 4) acc = 0;
@@ -3384,7 +3713,7 @@ function loop(now) {
 
 fit();
 loadMap(0);
-state.screen = "menu";
+state.screen = "title";
 requestAnimationFrame((t) => { lastT = t; loop(t); });
 if (document.fonts && document.fonts.load) document.fonts.load(`700 12px ${FONT}`).catch(() => {});
 </script>
