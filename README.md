@@ -14,9 +14,11 @@ Die Web-Version liegt in `web/`. Sie läuft in Safari ohne App Store und ohne Ma
 
 Die Web-Version zeichnet Puppen und Fleischfetzen als große Pixel-Art mit schwarzer Kontur und weicher Schattierung. Wasser und Blut laufen in feiner Auflösung. Sie hat 11 Werkzeuge: Greifen, Wasser, Eimer, Klinge, Waffe, Feuer, Eis, Bombe, Infusion, Neue Puppe und Reset.
 
-Über der Toolbar erscheint je nach Werkzeug eine Leiste. Beim Wasser stellst du die Menge in 5 Stufen ein. Bei der Waffe wählst du AK-47, Sturmgewehr oder Glock 17. Die Waffe erscheint an deinem Finger und zielt auf die nächste Puppe. AK-47 und Sturmgewehr schießen Dauerfeuer, solange du drückst, die Glock einen Schuss pro Tippen. Der Eimer saugt Wasser und Blut unter deinem Finger auf.
+Oben links unter dem Titel erscheint je nach Werkzeug eine Leiste. Beim Wasser stellst du die Menge in 5 Stufen ein. Bei der Waffe wählst du AK-47, Sturmgewehr oder Glock 17. Die Waffe steht als Objekt im Raum: Zieh sie mit dem Finger an eine neue Stelle, tippe woanders hin und sie schießt genau dorthin. AK-47 und Sturmgewehr schießen Dauerfeuer, solange du drückst, die Glock einen Schuss pro Tippen.
 
-Das Schadenspanel zeigt die Puppe als Pixel-Figur. Jeder Körperteil färbt sich nach seinem Schaden von Weiß über Gelb und Orange bis Rot. Fehlende Teile bleiben dunkel. Oben läuft ein EKG.
+Mit "Neue Puppe" tippst du auf die Stelle, an der die Puppe stehen soll. Sie steht dort sofort aufrecht auf dem Boden. Der Eimer saugt Wasser und Blut unter deinem Finger auf.
+
+Das Schadenspanel zeigt eine Körpertafel von vorn in normalen Proportionen. Jeder Körperteil ist eine eigene Fläche mit schmalem Spalt und färbt sich nach seinem Schaden von Weiß über Gelb und Orange bis Rot. Fehlende Teile erscheinen als gestrichelte Umrisse. Oben läuft ein EKG.
 
 Die Infusion hängt einen Blutbeutel mit Schlauch an die Puppe. Sie füllt Blut auf, schließt Wunden, senkt Schmerz und weckt eine bewusstlose Puppe. Eine tote Puppe rettet sie nicht mehr.
 
