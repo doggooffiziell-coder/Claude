@@ -47,7 +47,7 @@ Jede Puppe hat Organe: Gehirn, Herz, zwei Lungen, Leber, Magen, Nieren und Darm.
 
 Magen und Darm bluten kaum. Die Puppe krümmt sich vor Krämpfen und drückt eine Hand auf den Bauch. Tödlich wird erst die Entzündung, die langsam wächst, wenn Mageninhalt in den Bauch läuft. Ein nur verletzter Magen heilt, bevor es gefährlich wird. Im echten Leben dauert das Stunden bis Tage, das Spiel verkürzt die Zeit.
 
-Verletzte Organe heilen langsam, mit Infusion schneller. Zerstörte Organe heilen nicht, nur "Alle heilen" in den Extras stellt sie wieder her. Die Infusion füllt Blut nach und kann so eine Leberblutung überbrücken, ein stehendes Herz rettet sie nicht. Die Körpertafel zeigt die Organe in Farbe, zerstörte mit einem roten X, und das Herz schlägt mit. Darunter steht das schlimmste Organ mit der Zeit bis zum Tod, nach dem Tod die Ursache.
+Verletzte Organe heilen langsam, mit Infusion schneller. Zerstörte Organe heilen nicht, nur "Alle heilen" in den Extras stellt sie wieder her. Die Infusion füllt Blut nach und kann so eine Leberblutung überbrücken, ein stehendes Herz rettet sie nicht. Die Körpertafel zeigt die Organe als kleine anatomische Bilder: Gehirn mit Windungen, Lungen mit Bronchien und Luftröhre, Herz mit Aorta und Lungenvene, Leber mit Gallenblase, Magen, Nieren mit Harnleitern und den Darm. Verletzte Organe werden dunkler, zerstörte bekommen ein rotes X, und das Herz schlägt mit. Darunter steht das schlimmste Organ mit der Zeit bis zum Tod, nach dem Tod die Ursache.
 
 Die Infusion hängt einen Blutbeutel mit Schlauch an die Puppe. Sie füllt Blut auf, schließt Wunden, senkt Schmerz und weckt eine bewusstlose Puppe. Eine tote Puppe rettet sie nicht mehr.
 
