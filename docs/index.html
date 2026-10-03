@@ -1826,6 +1826,9 @@ function toggleFullscreen() {
 function drawFsButton() {
   if (!FS_OK) return;
   const { x, y, w, h } = FS_BTN;
+  scaled(x + w / 2, y + h / 2, popScale("fs"), () => drawFsFrame(x, y, w, h));
+}
+function drawFsFrame(x, y, w, h) {
   rr(x, y, w, h, 9);
   ctx.fillStyle = "rgba(15,15,19,0.85)"; ctx.fill();
   ctx.strokeStyle = "#3e3e46"; ctx.lineWidth = 1.5; ctx.stroke();
@@ -1884,17 +1887,16 @@ function drawEcg(d, x, y, w, h) {
 }
 
 function drawPanel(d) {
-  const { x: px0, y: py0, w: pw } = PANEL, ph = panelH();
+  const { x: px0, y: py0, w: pw } = PANEL, ph = tween("panelH", panelH(), 16);
   rr(px0, py0, pw, ph, 12);
   ctx.fillStyle = "rgba(14,14,18,0.94)"; ctx.fill();
   ctx.strokeStyle = "#34343c"; ctx.lineWidth = 2; ctx.stroke();
   // Fold arrow on the right of the header: points up when open, down when closed.
-  const ax = px0 + pw - 15, ay = py0 + 19;
+  const ax = px0 + pw - 15, ay = py0 + 19, turn = tween("panelArrow", panelOpen ? 0 : 1, 16) * Math.PI;
+  ctx.save(); ctx.translate(ax, ay); ctx.rotate(turn);
   ctx.strokeStyle = "#8e8e98"; ctx.lineWidth = 2.2; ctx.lineCap = "round"; ctx.lineJoin = "round";
-  ctx.beginPath();
-  if (panelOpen) { ctx.moveTo(ax - 5, ay + 2.5); ctx.lineTo(ax, ay - 2.5); ctx.lineTo(ax + 5, ay + 2.5); }
-  else { ctx.moveTo(ax - 5, ay - 2.5); ctx.lineTo(ax, ay + 2.5); ctx.lineTo(ax + 5, ay - 2.5); }
-  ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-5, 2.5); ctx.lineTo(0, -2.5); ctx.lineTo(5, 2.5); ctx.stroke();
+  ctx.restore();
   if (!d) { label("KEINE PUPPE", px0 + 12, py0 + 20, 11, "#55555e"); return; }
   // Header: name, state, live ECG
   label("P" + d.id, px0 + 12, py0 + 20, 12, "#6a6a74");
@@ -1903,7 +1905,11 @@ function drawPanel(d) {
   rr(px0 + 36, py0 + 11, 52, 18, 9); ctx.fillStyle = stc; ctx.fill();
   label(st, px0 + 62, py0 + 20.5, 10, "#101013", "center");
   drawEcg(d, px0 + 94, py0 + 8, pw - 126, 24);
-  if (!panelOpen) return;
+  if (ph < PANEL_HEAD + 3) return;
+  // The body slides open under the header and fades in with it.
+  ctx.save();
+  ctx.beginPath(); ctx.rect(px0, py0 + PANEL_HEAD - 2, pw, ph - PANEL_HEAD); ctx.clip();
+  ctx.globalAlpha *= clamp((ph - PANEL_HEAD) / 80, 0, 1);
   // Figure with damage per body part
   rr(px0 + 8, py0 + 38, 92, 146, 8); ctx.fillStyle = "#0a0a0d"; ctx.fill();
   drawBodyChart(d, px0 + 8, py0 + 40, 92, 142);
@@ -1939,6 +1945,7 @@ function drawPanel(d) {
       label(name, tx + tw / 2, ty + th / 2 + 1, 9, "#4c4c56", "center");
     }
   }
+  ctx.restore();
 }
 
 function drawIcon(i, cx, cy) {
@@ -2049,25 +2056,35 @@ function drawToolbar() {
   ctx.strokeStyle = "#383840"; ctx.lineWidth = 1.5; ctx.stroke();
   for (let i = 0; i < TOOL_COUNT; i++) {
     const bx = buttonX(i), by = TOOLBAR_Y;
-    let bg = "#26262c", edge = "#3e3e46";
-    if (i === state.tool) { bg = "#3a3a44"; edge = "#ecece6"; }
-    else if (i === state.hover || i === state.flashBtn) { bg = "#303038"; edge = "#6a6a74"; }
-    rr(bx, by, BTN, BTN, 10);
-    ctx.fillStyle = bg; ctx.fill();
-    ctx.strokeStyle = edge; ctx.lineWidth = i === state.tool ? 2 : 1.2; ctx.stroke();
-    drawIcon(i, bx + BTN / 2, by + BTN / 2);
+    const sel = tween("tb" + i, i === state.tool ? 1 : 0, 18), hov = tween("tbh" + i, i === state.hover ? 1 : 0, 20);
+    const bg = mixc(mixc(hex("#26262c"), hex("#303038"), hov), hex("#3a3a44"), sel);
+    const edge = mixc(mixc(hex("#3e3e46"), hex("#6a6a74"), hov), hex("#ecece6"), sel);
+    scaled(bx + BTN / 2, by + BTN / 2, popScale("tb" + i, 0.1), () => {
+      rr(bx, by - 2 * sel, BTN, BTN, 10);
+      ctx.fillStyle = css(bg); ctx.fill();
+      ctx.strokeStyle = css(edge); ctx.lineWidth = 1.2 + 0.8 * sel; ctx.stroke();
+      drawIcon(i, bx + BTN / 2, by + BTN / 2 - 2 * sel);
+    });
   }
-  const text = state.hover >= 0 ? TOOL_NAMES[state.hover] + "  " + (state.hover + 1) : state.toast > 0 ? state.toastText : "";
+  // Toasts fade in with a small rise and fade out at the end.
+  if (state.toast > toastLast + 0.01) toastMax = state.toast;
+  toastLast = state.toast;
+  const hover = state.hover >= 0;
+  const text = hover ? TOOL_NAMES[state.hover] + "  " + (state.hover + 1) : state.toast > 0 ? state.toastText : "";
   if (text) {
+    const a = hover ? 1 : Math.min(easeOut((toastMax - state.toast) / 0.16), clamp(state.toast / 0.25, 0, 1));
+    ctx.save(); ctx.globalAlpha *= a;
     ctx.font = `700 14px ${FONT}`;
     const lw = ctx.measureText(text).width + 24;
-    const ly = TOOLBAR_Y - 38;
+    const ly = TOOLBAR_Y - 38 + (1 - a) * 6;
     rr(W / 2 - lw / 2, ly, lw, 26, 13);
     ctx.fillStyle = "rgba(15,15,19,0.92)"; ctx.fill();
     ctx.strokeStyle = "#383840"; ctx.lineWidth = 1.5; ctx.stroke();
     label(text, W / 2, ly + 13.5, 14, "#e2e2da", "center");
+    ctx.restore();
   }
 }
+let toastMax = 0, toastLast = 0, pillText = "PAUSE";
 
 function drawCursor() {
   const { mx, my } = state;
@@ -2300,6 +2317,7 @@ function pullTrigger() {
 }
 
 function gunButtonPress(b) {
+  pop(b);
   if (b === "fire") pullTrigger();
   else if (b === "reload") startReload();
   else if (b === "mode") {
@@ -2355,25 +2373,34 @@ function drawLaser() {
 
 function drawGunControls() {
   if (!gunUi()) return;
+  const a = easeOut(state.toolT / 0.25);
+  ctx.save(); ctx.globalAlpha *= a; ctx.translate((1 - a) * 16, 0);
+  drawGunControlsBody();
+  ctx.restore();
+}
+function drawGunControlsBody() {
   const wp = WEAPONS[state.weapon], ammo = state.ammo[state.weapon], now = performance.now();
   // Fire button with the magazine as a ring around it
   const f = FIRE_BTN, down = state.triggerDown;
   ctx.beginPath(); ctx.arc(f.x, f.y, f.r + 5, 0, Math.PI * 2);
   ctx.fillStyle = "rgba(15,15,19,0.88)"; ctx.fill();
-  const frac = state.reloadT > 0 ? 1 - state.reloadT / wp.reload : ammo / wp.mag;
+  const frac = tween("ammoRing", state.reloadT > 0 ? 1 - state.reloadT / wp.reload : ammo / wp.mag, 24);
+  const fk = tween("fireDown", down ? 1 : 0, 32);
   ctx.lineCap = "butt"; ctx.lineWidth = 4;
   ctx.strokeStyle = "#2c2c34"; ctx.beginPath(); ctx.arc(f.x, f.y, f.r + 1.5, 0, Math.PI * 2); ctx.stroke();
   ctx.strokeStyle = state.reloadT > 0 ? "#e6c850" : ammo / wp.mag < 0.25 ? "#ff5040" : "#ecece6";
   ctx.beginPath(); ctx.arc(f.x, f.y, f.r + 1.5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac); ctx.stroke();
   const rg = ctx.createRadialGradient(f.x - 8, f.y - 10, 4, f.x, f.y, f.r);
   rg.addColorStop(0, down ? "#ff6a5a" : "#e8443a"); rg.addColorStop(1, down ? "#9a1a14" : "#7c1410");
-  ctx.beginPath(); ctx.arc(f.x, f.y + (down ? 1.5 : 0), f.r - 3, 0, Math.PI * 2); ctx.fillStyle = rg; ctx.fill();
+  ctx.beginPath(); ctx.arc(f.x, f.y + 1.5 * fk, f.r - 3 - 2.5 * fk, 0, Math.PI * 2); ctx.fillStyle = rg; ctx.fill();
   ctx.strokeStyle = "rgba(255,255,255,0.18)"; ctx.lineWidth = 1.2; ctx.stroke();
   // Crosshair mark and the round count
-  const cy = f.y + (down ? 1.5 : 0);
+  const cy = f.y + 1.5 * fk;
   label(state.reloadT > 0 ? "..." : String(ammo), f.x, cy - 3, 22, "#fff4ec", "center");
   label(state.reloadT > 0 ? "LÄDT" : "FEUER", f.x, cy + 17, 9, "rgba(255,240,230,0.85)", "center");
   // Reload button with a magazine icon, pulses when the gun is empty
+  const rs = popScale("reload", 0.12);
+  ctx.save(); ctx.translate(RELOAD_BTN.x, RELOAD_BTN.y); ctx.scale(rs, rs); ctx.translate(-RELOAD_BTN.x, -RELOAD_BTN.y);
   const r = RELOAD_BTN, empty = ammo <= 0 && state.reloadT <= 0;
   const pulse = empty ? 0.5 + 0.5 * Math.sin(now * 0.012) : 0;
   ctx.beginPath(); ctx.arc(r.x, r.y, r.r, 0, Math.PI * 2);
@@ -2389,12 +2416,16 @@ function drawGunControls() {
   ctx.fillStyle = "#26262c"; for (let n = 0; n < 3; n++) ctx.fillRect(-3.5, -5 + n * 4, 7, 1.2);
   ctx.restore();
   label("LADEN", r.x, r.y + 13, 7, "#8e8e98", "center");
+  ctx.restore();
   // Fire mode selector
+  const ms = popScale("mode", 0.1);
+  ctx.save(); ctx.translate(MODE_BTN.x + MODE_BTN.w / 2, MODE_BTN.y + MODE_BTN.h / 2); ctx.scale(ms, ms); ctx.translate(-MODE_BTN.x - MODE_BTN.w / 2, -MODE_BTN.y - MODE_BTN.h / 2);
   const m = MODE_BTN, auto = modeAuto();
   rr(m.x, m.y, m.w, m.h, 13);
   ctx.fillStyle = "rgba(15,15,19,0.88)"; ctx.fill();
   ctx.strokeStyle = wp.auto ? "#4c4c56" : "#2c2c34"; ctx.lineWidth = 1.4; ctx.stroke();
   label(auto ? "AUTO" : "EINZEL", m.x + m.w / 2, m.y + m.h / 2 + 1, 10, wp.auto ? (auto ? "#ff7a5a" : "#ecece6") : "#5a5a64", "center");
+  ctx.restore();
 }
 
 let audio = null;
@@ -2464,7 +2495,8 @@ function ctxHit(x, y) {
 }
 // A weapon sprite drawn as crisp blocks for menus and buttons.
 function drawSprite(rows, x, y, z, alpha = 1) {
-  ctx.globalAlpha = alpha;
+  const prev = ctx.globalAlpha;
+  ctx.globalAlpha = prev * alpha;
   for (let r = 0; r < rows.length; r++) {
     for (let c = 0; c < rows[r].length; c++) {
       const ch = rows[r][c];
@@ -2473,29 +2505,39 @@ function drawSprite(rows, x, y, z, alpha = 1) {
       ctx.fillRect(x + c * z, y + r * z, z + 0.05, z + 0.05);
     }
   }
-  ctx.globalAlpha = 1;
+  ctx.globalAlpha = prev;
 }
 
 function drawContextBar() {
   const l = ctxLayout();
   if (!l) return;
+  const a = easeOut(state.toolT / 0.22);
+  ctx.save(); ctx.globalAlpha *= a; ctx.translate(0, -(1 - a) * 8);
+  drawContextBarBody(l);
+  ctx.restore();
+}
+function drawContextBarBody(l) {
   const y = ctxY(), CTX_H = ctxH();
   rr(l.x0, y, l.total, CTX_H, 12);
   ctx.fillStyle = "rgba(15,15,19,0.92)"; ctx.fill();
   ctx.strokeStyle = "#383840"; ctx.lineWidth = 1.5; ctx.stroke();
   if (l.head) label("MENGE", l.x0 + 12, y + CTX_H / 2 + 1, 12, "#8e8e98");
   for (const it of l.items) {
-    const on = it.kind === "water" ? it.n <= state.waterLevel : it.n === state.weapon;
+    const isOn = it.kind === "water" ? it.n <= state.waterLevel : it.n === state.weapon;
+    const k = tween("cx" + it.kind + it.n, isOn ? 1 : 0, 18), on = k > 0.5;
+    const ps = popScale("cx" + it.kind + it.n, 0.08);
+    ctx.save(); ctx.translate(it.x + it.w / 2, y + CTX_H / 2); ctx.scale(ps, ps); ctx.translate(-(it.x + it.w / 2), -(y + CTX_H / 2));
     rr(it.x, y + 6, it.w, CTX_H - 12, 8);
-    ctx.fillStyle = on ? (it.kind === "water" ? "#3c82e6" : "#3a3a44") : "#24242a"; ctx.fill();
-    ctx.strokeStyle = on && it.kind === "gun" ? "#ecece6" : "#3e3e46"; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.fillStyle = css(mixc(hex("#24242a"), hex(it.kind === "water" ? "#3c82e6" : "#3a3a44"), k)); ctx.fill();
+    ctx.strokeStyle = it.kind === "gun" ? css(mixc(hex("#3e3e46"), hex("#ecece6"), k)) : "#3e3e46"; ctx.lineWidth = 1.5; ctx.stroke();
     if (it.kind === "gun") {
       const sp = WEAPONS[it.n].sprite, z = Math.min(2.2, (it.w - 16) / sp[0].length);
-      drawSprite(sp, it.x + it.w / 2 - sp[0].length * z / 2, y + 30 - sp.length * z / 2 - 4, z, on ? 1 : 0.45);
+      drawSprite(sp, it.x + it.w / 2 - sp[0].length * z / 2, y + 30 - sp.length * z / 2 - 4, z, 0.45 + 0.55 * k);
       label(it.label, it.x + it.w / 2, y + CTX_H - 15, 9, on ? "#f2f2ec" : "#6a6a74", "center");
     } else {
       label(it.label, it.x + it.w / 2, y + CTX_H / 2 + 1, 11, on ? "#f2f2ec" : "#6a6a74", "center");
     }
+    ctx.restore();
   }
 }
 
@@ -2818,6 +2860,9 @@ const inMenuBtn = (x, y) => x >= MENU_BTN.x && x < MENU_BTN.x + MENU_BTN.w && y 
 
 function drawMenuButton() {
   const { x, y, w, h } = MENU_BTN;
+  scaled(x + w / 2, y + h / 2, popScale("menu"), () => drawMenuButtonFrame(x, y, w, h));
+}
+function drawMenuButtonFrame(x, y, w, h) {
   rr(x, y, w, h, 9);
   ctx.fillStyle = "rgba(15,15,19,0.85)"; ctx.fill();
   ctx.strokeStyle = "#3e3e46"; ctx.lineWidth = 1.5; ctx.stroke();
@@ -2909,38 +2954,93 @@ function extrasPress(x, y) {
       state.toastText = EXTRA_ITEMS[n].run();
       state.toast = 1.4;
       state.extrasFlash = n; state.extrasFlashT = 0.15;
+      pop("ex" + n);
       return;
     }
   }
 }
 
 function drawExtrasButton() {
-  const { x, y, w, h } = EXTRAS_BTN;
+  const { x, y, w, h } = EXTRAS_BTN, k = tween("extrasBtn", state.extrasOpen ? 1 : 0, 18);
+  ctx.save(); ctx.translate(x + w / 2, y + h / 2); ctx.scale(popScale("extras"), popScale("extras")); ctx.translate(-x - w / 2, -y - h / 2);
   rr(x, y, w, h, 9);
-  ctx.fillStyle = state.extrasOpen ? "rgba(58,58,68,0.95)" : "rgba(15,15,19,0.85)"; ctx.fill();
-  ctx.strokeStyle = state.extrasOpen ? "#ecece6" : "#3e3e46"; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.fillStyle = css(mixc(hex("#0f0f13"), hex("#3a3a44"), k), 0.85 + 0.1 * k); ctx.fill();
+  ctx.strokeStyle = css(mixc(hex("#3e3e46"), hex("#ecece6"), k)); ctx.lineWidth = 1.5; ctx.stroke();
   label("EXTRAS", x + w / 2, y + h / 2 + 1, 12, "#cfcfd6", "center");
   if (state.paused || state.slow) {
     ctx.fillStyle = state.paused ? "#ecece6" : "#b48cff";
     ctx.beginPath(); ctx.arc(x + w - 6, y + 6, 3.5, 0, Math.PI * 2); ctx.fill();
   }
+  ctx.restore();
 }
 
 function drawExtras() {
-  if (!state.extrasOpen) return;
+  const o = tween("extras", state.extrasOpen ? 1 : 0, 22);
+  if (o <= 0.01) return;
+  ctx.save(); ctx.globalAlpha *= o; ctx.translate(0, -(1 - o) * 8);
+  drawExtrasBody();
+  ctx.restore();
+}
+function drawExtrasBody() {
   const h = extrasH();
   rr(EXTRAS.x, EXTRAS.y, EXTRAS.w, h, 12);
   ctx.fillStyle = "rgba(14,14,18,0.97)"; ctx.fill();
   ctx.strokeStyle = "#44444c"; ctx.lineWidth = 1.5; ctx.stroke();
   EXTRA_ITEMS.forEach((it, n) => {
     const c = extrasCell(n), on = it.toggle && it.toggle(), hit = state.extrasFlash === n && state.extrasFlashT > 0;
+    const ps = popScale("ex" + n, 0.05);
+    ctx.save(); ctx.translate(c.x + c.w / 2, c.y + c.h / 2); ctx.scale(ps, ps); ctx.translate(-c.x - c.w / 2, -c.y - c.h / 2);
     rr(c.x, c.y, c.w, c.h, 8);
     ctx.fillStyle = hit ? "#3a3a44" : on ? "#2e2e36" : "#202026"; ctx.fill();
     ctx.strokeStyle = on ? it.color : "#36363e"; ctx.lineWidth = on ? 2 : 1.2; ctx.stroke();
     rr(c.x + 8, c.y + c.h / 2 - 5, 10, 10, 3);
-    ctx.fillStyle = it.color; ctx.globalAlpha = it.toggle && !on ? 0.35 : 1; ctx.fill(); ctx.globalAlpha = 1;
+    ctx.fillStyle = it.color;
+    if (it.toggle && !on) { ctx.save(); ctx.globalAlpha *= 0.35; ctx.fill(); ctx.restore(); } else ctx.fill();
     label(it.name.toUpperCase(), c.x + 26, c.y + c.h / 2 + 1, 10, "#e2e2da");
+    ctx.restore();
   });
+}
+
+// ======================================================================
+// Animation helpers: short, eased and frame rate independent
+// ======================================================================
+
+let frameDt = 1 / 60;
+const animV = {};
+// Moves a value smoothly toward its target.
+function tween(key, target, rate = 14) {
+  let v = animV[key];
+  if (v === undefined) v = target;
+  v += (target - v) * (1 - Math.exp(-rate * frameDt));
+  if (Math.abs(target - v) < 0.002) v = target;
+  animV[key] = v;
+  return v;
+}
+const easeOut = (t) => 1 - Math.pow(1 - clamp(t, 0, 1), 3);
+// Entry of the n-th element after a screen change: 0 hidden, 1 in place.
+const appear = (n, dur = 0.3, step = 0.05) => easeOut((state.screenT - n * step) / dur);
+// Draws something faded in and lifted while it appears.
+function withAppear(a, fn, lift = 10) {
+  if (a <= 0) return;
+  if (a >= 1) { fn(); return; }
+  ctx.save(); ctx.globalAlpha *= a; ctx.translate(0, (1 - a) * lift); fn(); ctx.restore();
+}
+// Scales a drawing around a point.
+function scaled(cx, cy, k, fn) {
+  if (k === 1) { fn(); return; }
+  ctx.save(); ctx.translate(cx, cy); ctx.scale(k, k); ctx.translate(-cx, -cy); fn(); ctx.restore();
+}
+// A short dip in size after a tap.
+const popAt = {};
+const pop = (key) => { popAt[key] = performance.now(); };
+function popScale(key, depth = 0.08) {
+  const t = (performance.now() - (popAt[key] || -1e9)) / 170;
+  return t >= 1 ? 1 : 1 - depth * Math.sin(Math.PI * t);
+}
+
+function setScreen(name) {
+  if (state.screen === name) return;
+  state.screen = name; state.screenT = 0; state.pressTarget = null;
 }
 
 // ======================================================================
@@ -3098,7 +3198,13 @@ function drawMapPreview(i, x, y, w, h) {
 
 // ----------------------------------------------------------------- buttons
 
-function menuButton(b, text, primary = false, hot = false) {
+// How far a menu target is pressed down: 1 while the finger holds it.
+const pressAmt = (id, box) => tween("press:" + id, state.pressTarget === id && hitBox(box, state.mx, state.my) ? 1 : 0, 30);
+
+function menuButton(b, text, primary = false, press = 0) {
+  scaled(b.x + b.w / 2, b.y + b.h / 2, 1 - 0.035 * press, () => drawMenuButtonBody(b, text, primary, press > 0.5));
+}
+function drawMenuButtonBody(b, text, primary, hot) {
   rr(b.x, b.y, b.w, b.h, 10);
   if (primary) {
     const g = ctx.createLinearGradient(0, b.y, 0, b.y + b.h);
@@ -3113,6 +3219,9 @@ function menuButton(b, text, primary = false, hot = false) {
 const hitBox = (b, x, y) => x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h;
 const BACK_BTN = { x: 16, y: 16, w: 120, h: 34 };
 function drawBackButton() {
+  scaled(BACK_BTN.x + BACK_BTN.w / 2, BACK_BTN.y + BACK_BTN.h / 2, 1 - 0.05 * pressAmt("back", BACK_BTN), drawBackBody);
+}
+function drawBackBody() {
   rr(BACK_BTN.x, BACK_BTN.y, BACK_BTN.w, BACK_BTN.h, 9);
   ctx.fillStyle = "rgba(26,26,32,0.92)"; ctx.fill();
   ctx.strokeStyle = "#3a3a42"; ctx.lineWidth = 1.5; ctx.stroke();
@@ -3144,6 +3253,9 @@ function drawTitle(dt) {
   const f = titleFx;
   f.t += dt;
   screenBackground("#121216", "#121216");
+  // The room fades in slowly behind the menu.
+  ctx.save();
+  ctx.globalAlpha = easeOut(state.screenT / 0.6);
   // Room on the right: wall panels, floor and a lamp over a waiting person
   const px1 = Math.max(W * 0.66, 420), floor = 372;
   ctx.fillStyle = "#16161b"; ctx.fillRect(W * 0.42, 0, W, floor);
@@ -3182,10 +3294,12 @@ function drawTitle(dt) {
   drawTitleDoll(px1, floor, f.t);
   // AK on the floor
   drawSprite(SPRITE_AK, px1 - 150, floor - 13 * 2.2 + 4, 2.2);
-  // Title with dripping blood
-  label("RAGPIT", 52, 104, 68, "#ecece4");
-  ctx.fillStyle = "#8e0f1c"; ctx.fillRect(56, 132, 300, 4);
-  if (Math.random() < dt * 2.2) f.drops.push({ x: rf(60, 350), y: 136, v: 0, len: 0, age: 0 });
+  ctx.restore();
+  // Title with dripping blood; the red line draws itself from the left.
+  withAppear(appear(0, 0.4), () => label("RAGPIT", 52, 104, 68, "#ecece4"), 14);
+  const line = easeOut((state.screenT - 0.15) / 0.45);
+  ctx.fillStyle = "#8e0f1c"; ctx.fillRect(56, 132, 300 * line, 4);
+  if (line >= 1 && Math.random() < dt * 2.2) f.drops.push({ x: rf(60, 350), y: 136, v: 0, len: 0, age: 0 });
   for (const d of f.drops) {
     d.age += dt;
     if (d.age < 0.6) d.len = d.age * 14;
@@ -3197,9 +3311,9 @@ function drawTitle(dt) {
     if (d.age < 0.6) { ctx.fillRect(d.x - 1, 134, 2, d.len); ctx.beginPath(); ctx.arc(d.x, 134 + d.len, 2.2, 0, Math.PI * 2); ctx.fill(); }
     else { ctx.beginPath(); ctx.ellipse(d.x, d.y, 1.8, 3, 0, 0, Math.PI * 2); ctx.fill(); }
   }
-  label("PIXEL RAGDOLL SANDBOX", 56, 158, 12, "#7a7a84");
-  for (const b of titleButtons()) menuButton(b, b.text, b.primary, state.pointerSeen && hitBox(b, state.mx, state.my) && state.menuDown);
-  label("v2 · 5 MAPS · 11 WERKZEUGE", 56, H - 16, 9, "#4c4c56");
+  withAppear(appear(2), () => label("PIXEL RAGDOLL SANDBOX", 56, 158, 12, "#7a7a84"));
+  titleButtons().forEach((b, n) => withAppear(appear(3 + n), () => menuButton(b, b.text, b.primary, pressAmt(b.id, b))));
+  withAppear(appear(8), () => label("v2 · 5 MAPS · 11 WERKZEUGE", 56, H - 16, 9, "#4c4c56"), 0);
 }
 
 // The person on the title screen is a real game doll, drawn with the same
@@ -3249,10 +3363,16 @@ function menuCards() {
 
 function drawMaps() {
   screenBackground();
-  label("WÄHLE EINE MAP", W / 2, 50, 26, "#e6e6de", "center");
-  label("Tippe auf eine Karte, um zu starten", W / 2, 84, 11, "#7a7a84", "center", 400);
-  drawBackButton();
-  for (const c of menuCards()) {
+  withAppear(appear(0), () => {
+    label("WÄHLE EINE MAP", W / 2, 50, 26, "#e6e6de", "center");
+    label("Tippe auf eine Karte, um zu starten", W / 2, 84, 11, "#7a7a84", "center", 400);
+    drawBackButton();
+  });
+  menuCards().forEach((c, n) => withAppear(appear(1 + n), () => scaled(c.x + c.w / 2, c.y + c.h / 2, 1 - 0.03 * pressAmt("map" + c.i, c), () => drawMapCard(c)), 14));
+}
+
+function drawMapCard(c) {
+  {
     const on = c.i === state.map && state.inGame;
     rr(c.x, c.y, c.w, c.h, 12);
     ctx.fillStyle = on ? "#26262e" : "#1a1a20"; ctx.fill();
@@ -3282,11 +3402,13 @@ const HELP = [
 
 function drawHelp() {
   screenBackground();
-  label("ANLEITUNG", W / 2, 50, 26, "#e6e6de", "center");
-  drawBackButton();
+  withAppear(appear(0), () => { label("ANLEITUNG", W / 2, 50, 26, "#e6e6de", "center"); drawBackButton(); });
   const colW = Math.min(360, (W - 80) / 2), x0 = W / 2 - colW - 8, y0 = 92, rowH = 50;
   HELP.forEach(([tool, text], n) => {
     const x = x0 + Math.floor(n / 6) * (colW + 16), y = y0 + (n % 6) * rowH;
+    const a = appear(1 + (n % 6) + Math.floor(n / 6) * 0.5, 0.3, 0.04);
+    if (a <= 0) return;
+    ctx.save(); ctx.globalAlpha *= a; ctx.translate(0, (1 - a) * 8);
     rr(x, y, colW, rowH - 8, 10); ctx.fillStyle = "rgba(26,26,32,0.92)"; ctx.fill();
     ctx.strokeStyle = "#2e2e36"; ctx.lineWidth = 1.2; ctx.stroke();
     rr(x + 5, y + 5, 32, 32, 8); ctx.fillStyle = "#26262c"; ctx.fill();
@@ -3294,8 +3416,9 @@ function drawHelp() {
     else label("+", x + 21, y + 22, 18, "#e6c850", "center");
     label(tool >= 0 ? TOOL_NAMES[tool].toUpperCase() : "EXTRAS", x + 46, y + 14, 11, "#e2e2da");
     label(text, x + 46, y + 29, 10, "#8e8e98", "left", 400);
+    ctx.restore();
   });
-  label("Zustände: WACH, K.O. und TOT. Tippe auf die Kopfzeile des Panels, um es zuzuklappen.", W / 2, H - 22, 10, "#6a6a74", "center", 400);
+  if (appear(8) > 0) label("Zustände: WACH, K.O. und TOT. Tippe auf die Kopfzeile des Panels, um es zuzuklappen.", W / 2, H - 22, 10, "#6a6a74", "center", 400);
 }
 
 // ----------------------------------------------------------------- settings
@@ -3311,17 +3434,20 @@ function settingRows() {
 
 function drawSettings() {
   screenBackground();
-  label("EINSTELLUNGEN", W / 2, 50, 26, "#e6e6de", "center");
-  drawBackButton();
-  for (const r of settingRows()) {
+  withAppear(appear(0), () => { label("EINSTELLUNGEN", W / 2, 50, 26, "#e6e6de", "center"); drawBackButton(); });
+  settingRows().forEach((r, n) => withAppear(appear(1 + n), () => scaled(r.x + r.w / 2, r.y + r.h / 2, 1 - 0.02 * pressAmt(r.id, r), () => drawSettingRow(r))));
+}
+
+function drawSettingRow(r) {
+  {
     rr(r.x, r.y, r.w, r.h, 12); ctx.fillStyle = "rgba(26,26,32,0.92)"; ctx.fill();
     ctx.strokeStyle = "#2e2e36"; ctx.lineWidth = 1.2; ctx.stroke();
     label(r.text, r.x + 16, r.y + 20, 13, "#e2e2da");
     label(r.sub, r.x + 16, r.y + 37, 10, "#7a7a84", "left", 400);
     // switch
-    const sx = r.x + r.w - 66, sy = r.y + r.h / 2 - 12;
-    rr(sx, sy, 50, 24, 12); ctx.fillStyle = r.on ? "#3c9a4a" : "#2c2c34"; ctx.fill();
-    ctx.beginPath(); ctx.arc(r.on ? sx + 38 : sx + 12, sy + 12, 9, 0, Math.PI * 2); ctx.fillStyle = "#f2f2ec"; ctx.fill();
+    const sx = r.x + r.w - 66, sy = r.y + r.h / 2 - 12, k = tween("sw:" + r.id, r.on ? 1 : 0, 16);
+    rr(sx, sy, 50, 24, 12); ctx.fillStyle = css(mixc(hex("#2c2c34"), hex("#3c9a4a"), k)); ctx.fill();
+    ctx.beginPath(); ctx.arc(sx + 12 + 26 * k, sy + 12, 9, 0, Math.PI * 2); ctx.fillStyle = "#f2f2ec"; ctx.fill();
   }
 }
 
@@ -3334,39 +3460,42 @@ function drawScreen(dt) {
   else if (state.screen === "settings") drawSettings();
 }
 
-function screenPress() {
-  const { mx, my } = state;
+// Every tappable thing on the current menu screen and what it does.
+function screenTargets() {
+  const t = [];
   if (state.screen === "title") {
-    for (const b of titleButtons()) {
-      if (!hitBox(b, mx, my)) continue;
-      if (b.id === "resume") state.screen = "game";
-      else state.screen = b.id;
-      clickSound(800, 0.05);
-      return;
-    }
-    return;
+    for (const b of titleButtons()) t.push({ id: b.id, box: b, run: () => setScreen(b.id === "resume" ? "game" : b.id) });
+    return t;
   }
-  if (hitBox(BACK_BTN, mx, my)) { state.screen = "title"; return; }
+  t.push({ id: "back", box: BACK_BTN, run: () => setScreen("title") });
   if (state.screen === "maps") {
-    for (const c of menuCards()) {
-      if (hitBox(c, mx, my)) { state.screen = "game"; state.inGame = true; loadMap(c.i); return; }
-    }
+    for (const c of menuCards()) t.push({ id: "map" + c.i, box: c, run: () => { state.inGame = true; loadMap(c.i); setScreen("game"); } });
   } else if (state.screen === "settings") {
     for (const r of settingRows()) {
-      if (!hitBox(r, mx, my)) continue;
-      if (r.id === "panel") togglePanel();
-      else { settings[r.id] = !settings[r.id]; saveSettings(); }
-      if (settings.sound) clickSound(900, 0.05);
-      return;
+      t.push({ id: r.id, box: r, run: () => { if (r.id === "panel") togglePanel(); else { settings[r.id] = !settings[r.id]; saveSettings(); } } });
     }
   }
+  return t;
+}
+
+// Menus react on release, so the button can show that it is pressed.
+function screenPress() {
+  const hit = screenTargets().find((tg) => hitBox(tg.box, state.mx, state.my));
+  state.pressTarget = hit ? hit.id : null;
+}
+function screenRelease() {
+  const id = state.pressTarget;
+  state.pressTarget = null;
+  if (!id) return;
+  const tg = screenTargets().find((t) => t.id === id);
+  if (tg && hitBox(tg.box, state.mx, state.my)) { clickSound(800, 0.05); tg.run(); }
 }
 
 const state = {
   tool: T_GRAB, mx: W / 2, my: H / 2, lastX: W / 2, lastY: H / 2,
   pressing: false, pointerSeen: false, hover: -1, flashBtn: -1, toast: 0, toastText: "",
   dolls: [], selected: null, grabDoll: null, counter: 0, trail: [], shake: 0,
-  waterLevel: 3, weapon: 0, fireCd: 0, map: 0, screen: "title", inGame: false, menuDown: false,
+  waterLevel: 3, weapon: 0, fireCd: 0, map: 0, screen: "", screenT: 0, toolT: 9, pressTarget: null, inGame: false, menuDown: false,
   extrasOpen: false, extrasFlash: -1, extrasFlashT: 0, paused: false, slow: false,
   gunX: W * 0.22, gunY: FLOOR_Y - 130, gunAng: 0, gunDrag: false, aimX: W, aimY: FLOOR_Y - 130,
   ammo: WEAPONS.map((wp) => wp.mag), autoMode: WEAPONS.map((wp) => wp.auto), reloadT: 0,
@@ -3389,6 +3518,8 @@ function resetScene() {
 }
 
 function useButton(i) {
+  pop("tb" + i);
+  if (i !== T_RESET && i !== state.tool) state.toolT = 0;
   state.flashBtn = i;
   setTimeout(() => { if (state.flashBtn === i) state.flashBtn = -1; }, 150);
   if (i === T_RESET) {
@@ -3414,8 +3545,8 @@ function placeDoll(x, y) {
 
 function press() {
   if (state.screen !== "game") { screenPress(); return; }
-  if (inFsBtn(state.mx, state.my)) { toggleFullscreen(); return; }
-  if (inExtrasBtn(state.mx, state.my)) { state.extrasOpen = !state.extrasOpen; return; }
+  if (inFsBtn(state.mx, state.my)) { pop("fs"); toggleFullscreen(); return; }
+  if (inExtrasBtn(state.mx, state.my)) { pop("extras"); state.extrasOpen = !state.extrasOpen; return; }
   if (state.extrasOpen) {
     // A tap outside the open list only closes it.
     if (inExtras(state.mx, state.my)) extrasPress(state.mx, state.my);
@@ -3423,9 +3554,10 @@ function press() {
     return;
   }
   if (inPanelHead(state.mx, state.my)) { togglePanel(); return; }
-  if (inMenuBtn(state.mx, state.my)) { release(); state.screen = "title"; state.extrasOpen = false; state.triggerDown = false; return; }
+  if (inMenuBtn(state.mx, state.my)) { pop("menu"); release(); setScreen("title"); state.extrasOpen = false; state.triggerDown = false; return; }
   const c = ctxHit(state.mx, state.my);
   if (c) {
+    pop("cx" + c.kind + c.n);
     if (c.kind === "water") { state.waterLevel = c.n; state.toast = 1; state.toastText = "Menge " + c.n; }
     if (c.kind === "gun") { state.weapon = c.n; state.reloadT = 0; state.triggerDown = false; state.climb = 0; state.toast = 1; state.toastText = WEAPONS[c.n].name; }
     return;
@@ -3592,6 +3724,7 @@ const endPointer = (ev) => {
   if (ev.pointerId !== activePointer) return;
   activePointer = null;
   state.menuDown = false;
+  if (state.screen !== "game") screenRelease();
   release();
 };
 canvas.addEventListener("pointerup", endPointer);
@@ -3726,18 +3859,28 @@ function render() {
   drawMenuButton();
   drawExtrasButton();
   drawExtras();
-  if (state.paused || state.slow) {
-    const t = state.paused ? "PAUSE" : "ZEITLUPE", c = state.paused ? "#ecece6" : "#b48cff";
+  const pk = tween("pausePill", state.paused || state.slow ? 1 : 0, 16);
+  if (pk > 0.01) {
+    if (state.paused || state.slow) pillText = state.paused ? "PAUSE" : "ZEITLUPE";
+    const c = pillText === "PAUSE" ? "#ecece6" : "#b48cff";
+    ctx.save(); ctx.globalAlpha *= pk; ctx.translate(0, (1 - pk) * -6);
     rr(W / 2 - 62, 100, 124, 28, 14); ctx.fillStyle = "rgba(15,15,19,0.9)"; ctx.fill();
     ctx.strokeStyle = c; ctx.lineWidth = 1.5; ctx.stroke();
-    label(t, W / 2, 114.5, 13, c, "center");
+    label(pillText, W / 2, 114.5, 13, c, "center");
+    ctx.restore();
   }
+  // Fade in from the menu color when a game starts or resumes.
+  const enter = easeOut(state.screenT / 0.35);
+  if (enter < 1) { ctx.fillStyle = css(hex("#121216"), 1 - enter); ctx.fillRect(0, 0, W, H); }
 }
 
 let acc = 0, lastT = performance.now();
 function loop(now) {
   const realDt = Math.min(0.1, (now - lastT) / 1000);
   lastT = now;
+  frameDt = realDt;
+  state.screenT += realDt;
+  state.toolT += realDt;
   state.extrasFlashT = Math.max(0, state.extrasFlashT - realDt);
   state.toast = Math.max(0, state.toast - realDt);
   acc += state.paused ? 0 : state.slow ? realDt * 0.3 : realDt;
@@ -3755,7 +3898,7 @@ function loop(now) {
 
 fit();
 loadMap(0);
-state.screen = "title";
+setScreen("title");
 requestAnimationFrame((t) => { lastT = t; loop(t); });
 if (document.fonts && document.fonts.load) document.fonts.load(`700 12px ${FONT}`).catch(() => {});
 </script>

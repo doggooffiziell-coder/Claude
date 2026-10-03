@@ -20,6 +20,8 @@ Im Schadenspanel sehen Wunden echt aus: Einschüsse als dunkles Loch mit rotem R
 
 Das Spiel startet mit einem Hauptmenü: Eine verletzte Figur im selben Pixel-Stil wie im Spiel steht unter einer flackernden Lampe, atmet und drückt eine Hand auf ihre Schusswunde. Vom Titel tropft Blut. Von dort kommst du zu SPIELEN, ANLEITUNG und EINSTELLUNGEN. Läuft schon ein Spiel, erscheint WEITERSPIELEN. Die Anleitung erklärt jedes Werkzeug mit seinem Symbol. In den Einstellungen schaltest du Ton, Bildschirmwackeln und das Schadenspanel an oder aus.
 
+Kurze, ruhige Animationen begleiten jeden Klick. Im Menü erscheinen Titel, Knöpfe und Karten nacheinander von unten, die rote Linie unter dem Titel zieht sich auf. Knöpfe geben beim Drücken leicht nach und lösen beim Loslassen aus. Schalter gleiten, das Spiel blendet beim Start weich ein. Im Spiel heben sich gewählte Werkzeuge an, Leisten, Waffenknöpfe, Extras und Hinweise blenden ein und aus, und das Schadenspanel klappt fließend auf und zu.
+
 Es gibt fünf Maps: Labor, Schwimmbad, Treppenhaus, Halle und Eiskeller. Jede Karte zeigt ein gemaltes Bild der Map mit Lampe, Blöcken, Wasser, Eis und den Figuren an ihren Startplätzen, dazu ein eigenes Symbol: Kolben, Wellen, Treppe, Plattformen und Schneeflocke. Der Knopf "MENÜ" im Spiel bringt dich zurück ins Hauptmenü, Reset baut die aktuelle Map neu auf.
 
 Mit "Neue Puppe" tippst du auf die Stelle, an der die Puppe stehen soll. Sie steht dort sofort aufrecht auf dem Boden. Der Eimer saugt Wasser und Blut unter deinem Finger auf.
