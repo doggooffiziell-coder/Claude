@@ -655,7 +655,7 @@ class Doll {
     this.updateCripple();
     // A held doll swings around the finger and settles instead of whirling.
     if (this.grabbed >= 0) this.dampAroundGrab(0.86);
-    else this.dampSpin(0.02);
+    this.dampSpin(0.02, this.grabbed >= 0 ? this.pieces()[this.grabbed] : -1);
     this.behave();
     if (this.getUp <= 0) this.balance();
     for (let it = 0; it < ITERATIONS; it++) {
@@ -666,7 +666,7 @@ class Doll {
     // Muscles hold the posture once per step. They move the limbs without
     // adding speed, so they cannot rock the body into shaking.
     if (!this.frozen && !this.dead && !this.isOut()) {
-      this.solveJoints((this.grabbed >= 0 ? MUSCLE_HELD : 0.08) * clamp(this.ko / 100, 0, 1), true);
+      this.solveJoints((this.holdsBody() ? MUSCLE_HELD : 0.08) * clamp(this.ko / 100, 0, 1), true);
       for (let i = 0; i < this.x.length; i++) this.pushOut(i);
     }
     // Standing feet grip the floor instead of sliding.
@@ -716,11 +716,28 @@ class Doll {
   }
 
   // Damps every point's motion relative to the held point.
+  // Groups the points into pieces that are still joined: the body and every
+  // severed limb are separate pieces and must move on their own.
+  pieces() {
+    if (this.pieceKey === this.x.length) return this.pieceOf;
+    const n = this.x.length, root = Array.from({ length: n }, (_, i) => i);
+    const find = (i) => { while (root[i] !== i) { root[i] = root[root[i]]; i = root[i]; } return i; };
+    for (let k = 0; k < PART_COUNT; k++) root[find(this.pa[k])] = find(this.pb[k]);
+    this.pieceOf = root.map((_, i) => find(i));
+    this.pieceKey = n;
+    return this.pieceOf;
+  }
+
+  // True when the finger holds the main body, not a severed limb.
+  holdsBody() {
+    return this.grabbed >= 0 && this.attached(this.owner[this.grabbed]);
+  }
+
   dampAroundGrab(keep) {
-    const g = this.grabbed;
+    const g = this.grabbed, piece = this.pieces();
     const gvx = this.x[g] - this.ox[g], gvy = this.y[g] - this.oy[g];
     for (let i = 0; i < this.x.length; i++) {
-      if (i === g) continue;
+      if (i === g || piece[i] !== piece[g]) continue;
       const vx = this.x[i] - this.ox[i], vy = this.y[i] - this.oy[i];
       this.ox[i] = this.x[i] - (gvx + (vx - gvx) * keep);
       this.oy[i] = this.y[i] - (gvy + (vy - gvy) * keep);
@@ -728,20 +745,32 @@ class Doll {
   }
 
   // Removes part of the spin around the center of mass.
-  dampSpin(f) {
-    const n = this.x.length;
+  // Calms the spin of every piece around its own center.
+  dampSpin(f, skip = -1) {
+    const piece = this.pieces(), done = new Set([skip]);
+    for (let i = 0; i < this.x.length; i++) {
+      if (done.has(piece[i])) continue;
+      done.add(piece[i]);
+      const ids = [];
+      for (let j = 0; j < this.x.length; j++) if (piece[j] === piece[i]) ids.push(j);
+      if (ids.length > 1) this.dampPieceSpin(ids, f);
+    }
+  }
+
+  dampPieceSpin(ids, f) {
+    const n = ids.length;
     let cx = 0, cy = 0, vx = 0, vy = 0;
-    for (let i = 0; i < n; i++) { cx += this.x[i]; cy += this.y[i]; vx += this.x[i] - this.ox[i]; vy += this.y[i] - this.oy[i]; }
+    for (const i of ids) { cx += this.x[i]; cy += this.y[i]; vx += this.x[i] - this.ox[i]; vy += this.y[i] - this.oy[i]; }
     cx /= n; cy /= n; vx /= n; vy /= n;
     let L = 0, I = 0;
-    for (let i = 0; i < n; i++) {
+    for (const i of ids) {
       const rx = this.x[i] - cx, ry = this.y[i] - cy;
       const ux = this.x[i] - this.ox[i] - vx, uy = this.y[i] - this.oy[i] - vy;
       L += rx * uy - ry * ux; I += rx * rx + ry * ry;
     }
     if (I < 1) return;
     const w = (L / I) * f;
-    for (let i = 0; i < n; i++) {
+    for (const i of ids) {
       if (i === this.grabbed) continue;
       this.ox[i] -= w * (this.y[i] - cy);
       this.oy[i] += w * (this.x[i] - cx);
@@ -793,7 +822,7 @@ class Doll {
       if (this.attached(TORSO)) this.push(this.pa[TORSO], 0, Math.sin(performance.now() * 0.0018 + this.id) * 0.012);
       return;
     }
-    if (this.grabbed >= 0 || this.frozen) { this.getUp = 0; this.stillTime = 0; return; }
+    if (this.holdsBody() || this.frozen) { this.getUp = 0; this.stillTime = 0; return; }
 
     // Stillness is judged on head and trunk, so a hand holding a wound does not count.
     let maxV = 0;
@@ -869,7 +898,7 @@ class Doll {
     this.getUpGrace = Math.max(0, (this.getUpGrace || 0) - DT);
     if (nv > 5 && this.getUpGrace <= 0) this.stagger = Math.max(this.stagger, 1.4);
     if (this.stagger > 0) return;
-    if (this.dead || this.frozen || this.grabbed >= 0 || this.isOut() || this.pn > 90) return;
+    if (this.dead || this.frozen || this.holdsBody() || this.isOut() || this.pn > 90) return;
     if (!this.legsWork()) return;
     let grounded = false, feetX = 0, feet = 0;
     for (const k of [FOOT_L, FOOT_R]) {
