@@ -30,6 +30,8 @@ Tippe auf die Kopfzeile des Schadenspanels, um es zuzuklappen oder aufzuklappen.
 
 Der Knopf "EXTRAS" oben öffnet eine Liste: Blut entfernen, Wasser entfernen, Feuer löschen, Eis entfernen, Reste entfernen, Alle heilen, Puppe entfernen, Alle Puppen weg, Zeitlupe und Pause. "Eis entfernen" lässt das Eis der Map stehen. "Alle heilen" schließt Wunden und füllt alle Werte auf, abgetrennte Glieder bleiben ab.
 
+Das Schadenspanel ist auf Deutsch. Oben stehen der Name der Puppe und ihr Zustand. Rechts neben der Figur stehen fünf Werte mit Zahl und Balken: Bewusstsein, Blut, Schmerz, Sauerstoff und Puls mit laufendem EKG. Kritische Werte werden rot. Ganz unten erscheinen nur die Zustände, die gerade zutreffen, zum Beispiel BLUTET, BRENNT oder GLIED AB, sonst STABIL. Zugeklappt zeigt die Kopfzeile ein kleines EKG.
+
 Das Schadenspanel zeigt eine Körpertafel von vorn in normalen Proportionen. Jeder Körperteil ist eine eigene Fläche mit schmalem Spalt und färbt sich nach seinem Schaden von Weiß über Gelb und Orange bis Rot. Fehlende Teile erscheinen als gestrichelte Umrisse. Oben läuft ein EKG.
 
 Jede Puppe hat Organe: Gehirn, Herz, zwei Lungen, Leber, Magen, Nieren und Darm. Schüsse, Klingen und harte Stürze treffen die Organe an der getroffenen Stelle. Je nach Organ kommt der Tod schneller oder langsamer:

@@ -2025,10 +2025,7 @@ function explode(x, y) {
 const T_GRAB = 0, T_WATER = 1, T_BUCKET = 2, T_BLADE = 3, T_GUN = 4, T_FIRE = 5, T_ICE = 6, T_BOMB = 7, T_IV = 8, T_DOLL = 9, T_RESET = 10;
 const TOOL_NAMES = ["Greifen", "Wasser", "Eimer", "Klinge", "Waffe", "Feuer", "Eis", "Bombe", "Infusion", "Neue Puppe", "Reset"];
 const BTN = 46, BTN_GAP = 6, TOOLBAR_Y = H - 54;
-const PANEL = { x: W - 198, y: 8, w: 190, h: 290 };
-const BARS = [["KO", "#4ccf5a"], ["BL", "#d0283a"], ["PN", "#f08a24"], ["O2", "#2ec8c0"], ["HR", "#ec5f92"]];
-const TAGS = [["OUT", "#a2a2aa"], ["BLEED", "#d6202f"], ["FIRE", "#ff5a1e"], ["CHOKE", "#2ec8c0"],
-  ["AGONY", "#f08a24"], ["HEAL", "#f2da3a"], ["BLADE", "#c8d0dc"], ["TORN", "#f272b8"], ["FROZEN", "#86c4ff"]];
+const PANEL = { x: W - 206, y: 8, w: 198, h: 282 };
 const MINI = [[0, -12], [0, -8], [0, 0], [0, 3], [-5, -3], [-7, 2], [5, -3], [7, 2], [-2, 9], [-3, 15], [-5, 15], [2, 9], [3, 15], [5, 15]];
 const MINI_W = [2, 4.2, 4, 2, 1.8, 2, 1.8, 2.4, 2, 1.4, 2.4, 2, 1.4];
 
@@ -2072,7 +2069,8 @@ function toolbarHit(x, y) {
 const PANEL_HEAD = 38;
 let panelOpen = true;
 try { panelOpen = localStorage.getItem("ragpit.panel") !== "closed"; } catch (e) { /* storage is optional */ }
-const panelH = () => (panelOpen && state.dolls.length ? PANEL.h : PANEL_HEAD);
+// The open panel grows with the number of status rows it shows.
+const panelH = () => (panelOpen && state.dolls.length ? PANEL.full || PANEL.h : PANEL_HEAD);
 const inPanel = (x, y) => x >= PANEL.x && x < PANEL.x + PANEL.w && y >= PANEL.y && y < PANEL.y + panelH();
 const inPanelHead = (x, y) => inPanel(x, y) && y < PANEL.y + PANEL_HEAD;
 function togglePanel() {
@@ -2159,10 +2157,34 @@ function drawEcg(d, x, y, w, h) {
   ctx.stroke();
 }
 
+// Vital rows in the panel: German name, color and how a value reads as critical.
+const VITALS = [
+  { name: "BEWUSSTSEIN", color: "#4ccf5a", get: (d) => d.ko, text: (v) => Math.round(v) + "%", bad: (v) => v < 20 },
+  { name: "BLUT", color: "#d0283a", get: (d) => d.bl, text: (v) => Math.round(v) + "%", bad: (v) => v < 35 },
+  { name: "SCHMERZ", color: "#f08a24", get: (d) => d.pn, text: (v) => Math.round(v) + "%", bad: (v) => v >= 65 },
+  { name: "SAUERSTOFF", color: "#2ec8c0", get: (d) => d.o2, text: (v) => Math.round(v) + "%", bad: (v) => v < 30 },
+  { name: "PULS", color: "#ec5f92", get: (d) => d.hr, text: (v) => Math.round(v), bad: (v) => v < 1 },
+];
+// Status chips in German. Only the ones that apply are shown.
+const STATUS = [
+  ["OUT", "BEWUSSTLOS", "#a2a2aa"], ["BLEED", "BLUTET", "#d6202f"], ["FIRE", "BRENNT", "#ff5a1e"],
+  ["CHOKE", "ERSTICKT", "#2ec8c0"], ["AGONY", "QUALEN", "#f08a24"], ["HEAL", "HEILT", "#f2da3a"],
+  ["BLADE", "SCHNITT", "#c8d0dc"], ["TORN", "GLIED AB", "#f272b8"], ["FROZEN", "GEFROREN", "#86c4ff"],
+];
+
+// Shrinks a label until it fits the width.
+function fitFont(text, maxW, size, weight = 700) {
+  for (; size > 5; size -= 0.5) {
+    ctx.font = `${weight} ${size}px ${FONT}`;
+    if (ctx.measureText(text).width <= maxW) break;
+  }
+  return size;
+}
+
 function drawPanel(d) {
   const { x: px0, y: py0, w: pw } = PANEL, ph = tween("panelH", panelH(), 16);
   rr(px0, py0, pw, ph, 12);
-  ctx.fillStyle = "rgba(14,14,18,0.94)"; ctx.fill();
+  ctx.fillStyle = "rgba(14,14,18,0.95)"; ctx.fill();
   ctx.strokeStyle = "#34343c"; ctx.lineWidth = 2; ctx.stroke();
   // Fold arrow on the right of the header: points up when open, down when closed.
   const ax = px0 + pw - 15, ay = py0 + 19, turn = tween("panelArrow", panelOpen ? 0 : 1, 16) * Math.PI;
@@ -2171,55 +2193,67 @@ function drawPanel(d) {
   ctx.beginPath(); ctx.moveTo(-5, 2.5); ctx.lineTo(0, -2.5); ctx.lineTo(5, 2.5); ctx.stroke();
   ctx.restore();
   if (!d) { label("KEINE PUPPE", px0 + 12, py0 + 20, 11, "#55555e"); return; }
-  // Header: name, state, live ECG
-  label("P" + d.id, px0 + 12, py0 + 20, 12, "#6a6a74");
+  // Header: name and state. Folded, it also shows a small ECG.
+  label("PUPPE " + d.id, px0 + 12, py0 + 20, 11, "#cfcfd6");
   const st = d.stateName();
   const stc = st === "TOT" ? "#e0303f" : st === "K.O." ? "#f0b030" : "#4ccf5a";
-  rr(px0 + 36, py0 + 11, 52, 18, 9); ctx.fillStyle = stc; ctx.fill();
-  label(st, px0 + 62, py0 + 20.5, 10, "#101013", "center");
-  drawEcg(d, px0 + 94, py0 + 8, pw - 126, 24);
+  const pillX = px0 + pw - 32 - 54;
+  rr(pillX, py0 + 11, 54, 18, 9); ctx.fillStyle = stc; ctx.fill();
+  label(st, pillX + 27, py0 + 20.5, 10, "#101013", "center");
+  const folded = clamp(1 - (ph - PANEL_HEAD) / 40, 0, 1);
+  if (folded > 0.01) {
+    ctx.save(); ctx.globalAlpha *= folded;
+    drawEcg(d, px0 + 76, py0 + 9, pillX - px0 - 82, 22);
+    ctx.restore();
+  }
   if (ph < PANEL_HEAD + 3) return;
   // The body slides open under the header and fades in with it.
   ctx.save();
   ctx.beginPath(); ctx.rect(px0, py0 + PANEL_HEAD - 2, pw, ph - PANEL_HEAD); ctx.clip();
   ctx.globalAlpha *= clamp((ph - PANEL_HEAD) / 80, 0, 1);
-  // Figure with damage per body part
-  rr(px0 + 8, py0 + 38, 92, 146, 8); ctx.fillStyle = "#0a0a0d"; ctx.fill();
-  drawBodyChart(d, px0 + 8, py0 + 40, 92, 142);
-  // Vital bars with their short name on the right
-  const values = [d.ko, d.bl, d.pn, d.o2, clamp(d.hr / 1.6, 0, 100)];
-  for (let i = 0; i < BARS.length; i++) {
-    const y = py0 + 44 + i * 28, bx = px0 + 108, bw = 48, bh = 10;
-    rr(bx, y, bw, bh, 5); ctx.fillStyle = dots(); ctx.fill();
-    let c = hex(BARS[i][1]);
-    if (i === 4) c = mixc(c, [255, 255, 255], d.beatFlash * 0.45);
-    const fw = bw * clamp(values[i] / 100, 0, 1);
+  ctx.fillStyle = "#26262e"; ctx.fillRect(px0 + 10, py0 + 36, pw - 20, 1);
+  // Figure with damage per body part, organs and wounds
+  rr(px0 + 8, py0 + 42, 92, 146, 8); ctx.fillStyle = "#0a0a0d"; ctx.fill();
+  drawBodyChart(d, px0 + 8, py0 + 44, 92, 142);
+  // Vital rows: name on the left, value on the right, a bar below.
+  const bx = px0 + 108, bw = pw - 116;
+  VITALS.forEach((v, i) => {
+    const y = py0 + 44 + i * 29, val = v.get(d), txt = String(v.text(val)), bad = !d.dead && v.bad(val);
+    ctx.font = `700 9px ${FONT}`;
+    const vw = ctx.measureText(txt).width;
+    const size = fitFont(v.name, bw - vw - 5, 8);
+    label(v.name, bx, y + 5, size, "#8e8e98");
+    label(txt, bx + bw, y + 5, 9, bad ? "#ff5060" : "#ecece6", "right");
+    if (i === 4) { drawEcg(d, bx, y + 11, bw, 15); return; }
+    rr(bx, y + 12, bw, 7, 3.5); ctx.fillStyle = "#1e1e24"; ctx.fill();
+    const fw = bw * clamp(val / 100, 0, 1);
     if (fw > 1) {
-      rr(bx, y, Math.max(bh, fw), bh, 5); ctx.fillStyle = css(c); ctx.fill();
-      rr(bx + 3, y + 2, Math.max(3, fw - 6), 2.2, 1.1); ctx.fillStyle = css(lighten(c, 0.45), 0.8); ctx.fill();
+      const c = hex(v.color);
+      rr(bx, y + 12, Math.max(7, fw), 7, 3.5); ctx.fillStyle = css(c); ctx.fill();
+      rr(bx + 2, y + 13.3, Math.max(3, fw - 4), 1.8, 0.9); ctx.fillStyle = css(lighten(c, 0.45), 0.7); ctx.fill();
     }
-    label(BARS[i][0], px0 + pw - 10, y + bh / 2 + 0.5, 12, "#e4e4dc", "right");
-    const num = i === 4 ? Math.round(d.hr) : Math.round(values[i]);
-    label(String(num), bx, y + 18, 9, "#5a5a64");
-  }
+  });
   // Organ line: the worst organ and the time left, or the cause of death.
-  drawOrganLine(d, px0 + 8, py0 + 189, pw - 16, 20);
-  // Status tags in three columns
-  const f = d.flags();
-  for (let i = 0; i < TAGS.length; i++) {
-    const tw = 56, th = 19;
-    const tx = px0 + 10 + (i % 3) * (tw + 4), ty = py0 + 214 + Math.floor(i / 3) * 23;
-    const [name, col] = TAGS[i];
-    rr(tx, ty, tw, th, 9.5);
-    if (f[name]) {
-      ctx.save(); ctx.shadowColor = col; ctx.shadowBlur = 8;
-      ctx.fillStyle = col; ctx.fill(); ctx.restore();
-      label(name, tx + tw / 2, ty + th / 2 + 1, 9, "#101013", "center");
+  drawOrganLine(d, px0 + 8, py0 + 193, pw - 16, 20);
+  // Status chips: only what applies right now, wrapped over up to three rows.
+  const f = d.flags(), chips = STATUS.filter(([key]) => f[key]);
+  if (!chips.length) chips.push([null, d.dead ? "KEINE FUNKTION" : "STABIL", d.dead ? "#5a5a64" : "#4ccf5a"]);
+  let cx = px0 + 8, cy = py0 + 220, rows = 1;
+  for (const [key, name, col] of chips) {
+    ctx.font = `700 8px ${FONT}`;
+    const cw = ctx.measureText(name).width + 16;
+    if (cx + cw > px0 + pw - 8) { cx = px0 + 8; cy += 20; rows++; }
+    rr(cx, cy, cw, 16, 8);
+    if (key) {
+      ctx.save(); ctx.shadowColor = col; ctx.shadowBlur = 6; ctx.fillStyle = col; ctx.fill(); ctx.restore();
+      label(name, cx + cw / 2, cy + 8.5, 8, "#101013", "center");
     } else {
-      ctx.fillStyle = dots(); ctx.fill();
-      label(name, tx + tw / 2, ty + th / 2 + 1, 9, "#4c4c56", "center");
+      ctx.strokeStyle = col; ctx.lineWidth = 1.2; ctx.stroke();
+      label(name, cx + cw / 2, cy + 8.5, 8, col, "center");
     }
+    cx += cw + 5;
   }
+  PANEL.full = 220 + rows * 20 + 6;
   ctx.restore();
 }
 
