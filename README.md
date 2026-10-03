@@ -14,11 +14,15 @@ Die Web-Version liegt in `web/`. Sie läuft in Safari ohne App Store und ohne Ma
 
 Die Web-Version zeichnet Menschen aus rechteckigen Körperteilen als Pixel-Art mit schwarzer Kontur: eckiger Kopf mit Haaren, Auge und Mund auf einem echten Hals, Arme an den Schultern, Shirt, Hose und Schuhe. Jede Puppe bekommt zufällige Haut-, Haar- und Kleidungsfarben. Wasser und Blut laufen in feiner Auflösung. Sie hat 11 Werkzeuge: Greifen, Wasser, Eimer, Klinge, Waffe, Feuer, Eis, Bombe, Infusion, Neue Puppe und Reset.
 
-Oben links unter dem Titel erscheint je nach Werkzeug eine Leiste. Beim Wasser stellst du die Menge in 5 Stufen ein. Bei der Waffe wählst du AK-47, Sturmgewehr oder Glock 17. Die Waffe steht als Objekt im Raum: Zieh sie mit dem Finger an eine neue Stelle, tippe woanders hin und sie schießt genau dorthin. AK-47 und Sturmgewehr schießen Dauerfeuer, solange du drückst, die Glock einen Schuss pro Tippen.
+Oben links unter dem Titel erscheint je nach Werkzeug eine Leiste. Beim Wasser stellst du die Menge in 5 Stufen ein. Bei der Waffe wählst du AK-47, Sturmgewehr oder Glock 17. Jede Waffe ist ein detailliertes Pixel-Sprite in echten Proportionen: die AK-47 mit Holzschaft, Gasrohr und gebogenem Magazin, das Sturmgewehr mit Schiene, Rotpunktvisier und Mündungsfeuerdämpfer, die Glock mit Schlitten, Griffwinkel und Abzugsbügel. Die Waffe steht als Objekt im Raum: Zieh sie mit dem Finger an eine neue Stelle, tippe woanders hin und sie schießt genau dorthin. AK-47 und Sturmgewehr schießen Dauerfeuer, solange du drückst, die Glock einen Schuss pro Tippen.
 
 Das Spiel startet mit einem Hauptmenü und fünf Maps: Labor, Schwimmbad, Treppenhaus, Halle und Eiskeller. Der Knopf "MENÜ" oben links bringt dich zurück, Reset baut die aktuelle Map neu auf.
 
 Mit "Neue Puppe" tippst du auf die Stelle, an der die Puppe stehen soll. Sie steht dort sofort aufrecht auf dem Boden. Der Eimer saugt Wasser und Blut unter deinem Finger auf.
+
+Tippe auf die Kopfzeile des Schadenspanels, um es zuzuklappen oder aufzuklappen. Zugeklappt bleiben Name, Zustand und EKG sichtbar. Das Spiel merkt sich deine Wahl.
+
+Der Knopf "EXTRAS" oben öffnet eine Liste: Blut entfernen, Wasser entfernen, Feuer löschen, Eis entfernen, Reste entfernen, Alle heilen, Puppe entfernen, Alle Puppen weg, Zeitlupe und Pause. "Eis entfernen" lässt das Eis der Map stehen. "Alle heilen" schließt Wunden und füllt alle Werte auf, abgetrennte Glieder bleiben ab.
 
 Das Schadenspanel zeigt eine Körpertafel von vorn in normalen Proportionen. Jeder Körperteil ist eine eigene Fläche mit schmalem Spalt und färbt sich nach seinem Schaden von Weiß über Gelb und Orange bis Rot. Fehlende Teile erscheinen als gestrichelte Umrisse. Oben läuft ein EKG.
 
