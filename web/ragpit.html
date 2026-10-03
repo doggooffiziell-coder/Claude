@@ -620,6 +620,11 @@ const JOINTS = [
 const IV_TIME = 12;
 let MUSCLE_HELD = 0.04, LIMIT_SOAK = 0.6;
 const ITERATIONS = 8, HEAD_R = 17, MAX_STEP = 40, DOLL_GRAVITY = 1300;
+// Impact speeds in units per second. A fall from height h lands at about
+// sqrt(2 * 1300 * h): 1.5 m about 620, 2.5 m about 810, the full room 980.
+const SAFE_SPEED = 620, OPEN_SPEED = 1050;
+const IMPACT_MULT = { [HEAD]: 1.6, [TORSO]: 1, [PELVIS]: 0.9, [UARM_L]: 0.7, [UARM_R]: 0.7, [LARM_L]: 0.7, [LARM_R]: 0.7,
+  [THIGH_L]: 0.8, [THIGH_R]: 0.8, [SHIN_L]: 0.8, [SHIN_R]: 0.8, [FOOT_L]: 0.6, [FOOT_R]: 0.6 };
 const WOUND_SPEED = 650, SEVER_SPEED = 1450, GIB_SPEED = 2100, MAX_WOUNDS = 40, OUT_BL = 35, AGONY_PN = 65;
 const COL_SKIN = hex("#ebe7dc"), COL_SKIN_FAR = hex("#c7c2b5"), COL_LINE = hex("#121214");
 const COL_CHAR = hex("#2e2622"), COL_ICE = hex("#a6d6f6"), COL_HURT = hex("#ff6a6a");
@@ -692,6 +697,8 @@ class Doll {
     this.look = randomLook();
     this.organ = ORGANS.map(() => 100);
     this.arrest = false; this.cause = ""; this.organBleed = 0; this.o2Drop = 0; this.sepsis = 0; this.sepsisRate = 0;
+    this.pins = new Map();
+    this.broken = new Array(PART_COUNT).fill(false);
   }
 
   // Damages the organs at height t of part k. A bullet crosses the body at a
@@ -805,6 +812,7 @@ class Doll {
     for (let i = 0; i < this.x.length; i++) {
       this.impactCd[i] = Math.max(0, this.impactCd[i] - DT);
       if (i === this.grabbed) { this.moveGrabbed(i); continue; }
+      if (this.pins.has(i)) { this.holdPin(i); continue; }
       const x = this.x[i], y = this.y[i];
       let vx = x - this.ox[i], vy = y - this.oy[i];
       if (liquidAt(x, y)) {
@@ -835,13 +843,15 @@ class Doll {
     for (let it = 0; it < ITERATIONS; it++) {
       for (let k = 0; k < PART_COUNT; k++) this.solveDistance(this.pa[k], this.pb[k], this.restLen[k]);
       this.solveJoints(this.frozen ? 0.5 : 0, false);
-      if (it % 2 === 1) for (let i = 0; i < this.x.length; i++) this.pushOut(i);
+      if (it % 2 === 1) { for (let i = 0; i < this.x.length; i++) this.pushOut(i); this.pushOutSegments(); }
     }
+    for (const i of this.pins.keys()) this.holdPin(i);
     // Muscles hold the posture once per step. They move the limbs without
     // adding speed, so they cannot rock the body into shaking.
     if (!this.frozen && !this.dead && !this.isOut()) {
       this.solveJoints((this.holdsBody() ? MUSCLE_HELD : 0.08) * clamp(this.ko / 100, 0, 1), true);
       for (let i = 0; i < this.x.length; i++) this.pushOut(i);
+      this.pushOutSegments();
     }
     // Standing feet grip the floor instead of sliding.
     if (this.standing) {
@@ -890,6 +900,21 @@ class Doll {
   }
 
   // Damps every point's motion relative to the held point.
+  // A pinned point stays exactly where it was fixed, like a nail through it.
+  fixed(i) { return i === this.grabbed || this.pins.has(i); }
+  w(i) { return this.fixed(i) ? 0 : this.inv[i]; }
+  holdPin(i) {
+    const [px, py] = this.pins.get(i);
+    this.x[i] = this.ox[i] = px; this.y[i] = this.oy[i] = py;
+  }
+  togglePin(i) {
+    if (this.pins.has(i)) { this.pins.delete(i); return false; }
+    this.pins.set(i, [this.x[i], this.y[i]]);
+    if (this.grabbed === i) this.grabbed = -1;
+    this.holdPin(i);
+    return true;
+  }
+
   // Groups the points into pieces that are still joined: the body and every
   // severed limb are separate pieces and must move on their own.
   pieces() {
@@ -945,7 +970,7 @@ class Doll {
     if (I < 1) return;
     const w = (L / I) * f;
     for (const i of ids) {
-      if (i === this.grabbed) continue;
+      if (this.fixed(i)) continue;
       this.ox[i] -= w * (this.y[i] - cy);
       this.oy[i] += w * (this.x[i] - cx);
     }
@@ -955,7 +980,7 @@ class Doll {
   updateCripple() {
     const bleed = new Array(PART_COUNT).fill(0);
     for (const w of this.wounds) bleed[w.part] += w.bleed;
-    for (let k = 0; k < PART_COUNT; k++) this.crippled[k] = !this.attached(k) || bleed[k] > 0.5 || this.char[k] > 0.7;
+    for (let k = 0; k < PART_COUNT; k++) this.crippled[k] = !this.attached(k) || bleed[k] > 0.5 || this.char[k] > 0.7 || this.broken[k];
   }
 
   legsWork() {
@@ -964,7 +989,7 @@ class Doll {
 
   // Blends a point's velocity toward a target, which moves it smoothly without overshoot.
   steer(i, tx, ty, speed, k) {
-    if (i === this.grabbed) return;
+    if (this.fixed(i)) return;
     const dx = tx - this.x[i], dy = ty - this.y[i], d = Math.hypot(dx, dy) || 1;
     const vx = this.x[i] - this.ox[i], vy = this.y[i] - this.oy[i];
     const nvx = lerp(vx, dx / d * speed, k), nvy = lerp(vy, dy / d * speed, k);
@@ -972,7 +997,7 @@ class Doll {
   }
 
   push(i, ix, iy) {
-    if (i === this.grabbed) return;
+    if (this.fixed(i)) return;
     this.ox[i] -= ix; this.oy[i] -= iy;
   }
 
@@ -1060,7 +1085,7 @@ class Doll {
   poseToward(fx, gy, s, withFeet) {
     for (let i = 0; i < POSE.length; i++) {
       const foot = i === P_ANKLE_L || i === P_ANKLE_R || i === P_TOE_L || i === P_TOE_R;
-      if ((foot && !withFeet) || !this.attached(this.owner[i]) || i === this.grabbed) continue;
+      if ((foot && !withFeet) || !this.attached(this.owner[i]) || this.fixed(i)) continue;
       const keep = withFeet ? 0.7 : 0.88;
       const vx = (this.x[i] - this.ox[i]) * keep, vy = (this.y[i] - this.oy[i]) * keep;
       this.x[i] += (fx + POSE[i][0] - this.x[i]) * s;
@@ -1103,7 +1128,7 @@ class Doll {
     const dx = this.x[b] - this.x[a], dy = this.y[b] - this.y[a];
     const len = Math.hypot(dx, dy);
     if (len < 0.0001) return;
-    const wa = a === this.grabbed ? 0 : this.inv[a], wb = b === this.grabbed ? 0 : this.inv[b];
+    const wa = this.w(a), wb = this.w(b);
     const ws = wa + wb;
     if (ws <= 0) return;
     const f = (len - rest) / len;
@@ -1144,8 +1169,8 @@ class Doll {
       let diff = target - rel;
       if (Math.abs(diff) < 0.0001) continue;
       if (kinematic) diff = clamp(diff * 2, -0.05, 0.05);
-      const wc = cp === this.grabbed ? 0 : this.inv[cp];
-      const wo = op === this.grabbed ? 0 : this.inv[op];
+      const wc = this.w(cp);
+      const wo = this.w(op);
       const ws = wc + wo;
       if (ws <= 0) continue;
       // Small steps keep a tangled joint from flipping between its two limits.
@@ -1165,7 +1190,7 @@ class Doll {
       const dcx = ncx - this.x[cp], dcy = ncy - this.y[cp], dox = nox - this.x[op], doy = noy - this.y[op];
       this.x[cp] = ncx; this.y[cp] = ncy; this.x[op] = nox; this.y[op] = noy;
       // Shift all three points so the rotation adds no linear momentum.
-      const wj = jp === this.grabbed ? 0 : this.inv[jp];
+      const wj = this.w(jp);
       let shx = 0, shy = 0;
       if (wc > 0 && wo > 0 && wj > 0) {
         const mm = 1 / wc + 1 / wo + 1 / wj;
@@ -1187,6 +1212,7 @@ class Doll {
 
   // A point whose circle overlaps a solid cell moves back out and loses most of its speed.
   pushOut(i) {
+    if (this.pins.has(i)) return;
     const r = this.rad[i], r6 = r * 0.6;
     let x = this.x[i], y = this.y[i], moved = false;
     const vx = x - this.ox[i], vy = y - this.oy[i];
@@ -1201,19 +1227,28 @@ class Doll {
   }
 
   // ------------------------------------------------ damage
+  // A hard landing or a blow against a wall. Below SAFE_SPEED (a fall of
+  // about 1.5 m) nothing happens. Above it the harm grows with the square of
+  // the extra speed: legs and feet take a landing best, the head worst.
   onImpact(i, speed) {
     const k = this.owner[i];
-    if (this.gone[k]) return;
-    const force = speed - WOUND_SPEED * 0.75;
-    this.hurtPart(k, force / 18);
-    this.pn = Math.min(100, this.pn + force / 30);
-    this.damaged();
-    if (k === HEAD) this.ko -= force / 9;
-    if (k === HEAD || k === TORSO || k === PELVIS) this.bruiseOrgans(k, force / 30);
-    if (speed > WOUND_SPEED && this.woundCd <= 0) {
+    if (this.gone[k] || speed < SAFE_SPEED) return;
+    const over = (speed - SAFE_SPEED) / 100, dmg = over * over * 3 * (IMPACT_MULT[k] || 1);
+    this.hurtPart(k, dmg);
+    this.pn = Math.min(100, this.pn + dmg * 0.6);
+    if (dmg > 3) this.damaged();
+    if (k === HEAD) { this.ko -= dmg * 1.4; this.bruiseOrgans(HEAD, dmg * 0.3); }
+    else if (k === TORSO || k === PELVIS) this.bruiseOrgans(k, dmg * 0.35);
+    // A badly hurt arm or leg breaks and stops carrying weight.
+    if (k !== HEAD && k !== TORSO && k !== PELVIS && this.dmg[k] >= 85 && !this.broken[k]) {
+      this.broken[k] = true;
+      this.pn = Math.min(100, this.pn + 30);
+      this.stagger = Math.max(this.stagger, 1.5);
+    }
+    if (speed > OPEN_SPEED && this.woundCd <= 0) {
       this.woundCd = 0.12;
       const t = k === HEAD ? Math.random() : (i === this.pa[k] ? 0.15 : 0.85);
-      const sev = 0.5 + (speed - WOUND_SPEED) / 600;
+      const sev = 0.5 + (speed - OPEN_SPEED) / 500;
       this.addWound(k, t, rf(-1, 1), sev);
       this.burst(this.x[i], this.y[i], 8 + Math.floor(sev * 8), 0, -1, 140);
       if (speed > WOUND_SPEED * 1.6) splatAround(this.x[i], this.y[i], 4);
@@ -1482,6 +1517,7 @@ class Doll {
     this.burn = 0; this.freeze = 0; this.frozen = false;
     this.stagger = 0; this.sinceDamage = 10;
     this.organ = ORGANS.map(() => 100); this.arrest = false; this.cause = ""; this.sepsis = 0;
+    this.broken.fill(false);
   }
 
   attachInfusion() {
@@ -1626,12 +1662,46 @@ class Doll {
       OUT: this.isOut(), BLEED: bleeding && this.bl > 0, FIRE: this.burn > 0,
       CHOKE: this.headUnder && !this.dead, AGONY: this.pn >= AGONY_PN && !this.isOut(),
       HEAL: this.healing || this.iv > 0, BLADE: this.bladeTimer > 0, TORN: this.severed.includes(true), FROZEN: this.frozen,
+      BROKEN: this.broken.some((b, k) => b && this.attached(k)), PINNED: this.pins.size > 0,
     };
   }
-  nearestPoint(x, y, r) {
+  // Body parts are more than their end points: samples along each limb push
+  // the limb out of walls, so it cannot slide through a thin platform or a corner.
+  pushOutSegments() {
+    for (let k = 0; k < PART_COUNT; k++) {
+      if (this.gone[k] || k === HEAD) continue;
+      const a = this.pa[k], b = this.pb[k];
+      const ax = this.x[a], ay = this.y[a], bx = this.x[b], by = this.y[b];
+      const len = Math.hypot(bx - ax, by - ay), n = Math.floor(len / 6);
+      if (n < 2) continue;
+      for (let j = 1; j < n; j++) {
+        const t = j / n, sx = lerp(ax, bx, t), sy = lerp(ay, by, t);
+        if (!solidAt(sx, sy)) continue;
+        // Shortest way out: up, down, left or right.
+        let ex = 0, ey = 0, best = 99;
+        for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+          for (let d = 1; d < Math.min(best, 24); d++) {
+            if (!solidAt(sx + dx * d, sy + dy * d)) { best = d; ex = dx * (d + 1); ey = dy * (d + 1); break; }
+          }
+        }
+        if (best === 99) continue;
+        // Move both ends so the sample point leaves the wall.
+        const wa = this.w(a) * (1 - t), wb = this.w(b) * t, norm = wa * (1 - t) + wb * t;
+        if (norm <= 0) continue;
+        const f = 1 / norm;
+        this.x[a] += ex * wa * f; this.y[a] += ey * wa * f;
+        this.x[b] += ex * wb * f; this.y[b] += ey * wb * f;
+        this.ox[a] += ex * wa * f * 0.8; this.oy[a] += ey * wa * f * 0.8;
+        this.ox[b] += ex * wb * f * 0.8; this.oy[b] += ey * wb * f * 0.8;
+        break;
+      }
+    }
+  }
+
+  nearestPoint(x, y, r, skipPins = false) {
     let best = -1, bd = r;
     for (let i = 0; i < this.x.length; i++) {
-      if (this.gone[this.owner[i]]) continue;
+      if (this.gone[this.owner[i]] || (skipPins && this.pins.has(i))) continue;
       const d = Math.hypot(this.x[i] - x, this.y[i] - y);
       if (d < bd) { bd = d; best = i; }
     }
@@ -2007,8 +2077,8 @@ function explode(x, y) {
 // HUD
 // ======================================================================
 
-const T_GRAB = 0, T_WATER = 1, T_BUCKET = 2, T_BLADE = 3, T_GUN = 4, T_FIRE = 5, T_ICE = 6, T_BOMB = 7, T_IV = 8, T_DOLL = 9, T_RESET = 10;
-const TOOL_NAMES = ["Greifen", "Wasser", "Eimer", "Klinge", "Waffe", "Feuer", "Eis", "Bombe", "Infusion", "Neue Puppe", "Reset"];
+const T_GRAB = 0, T_WATER = 1, T_BUCKET = 2, T_BLADE = 3, T_GUN = 4, T_FIRE = 5, T_ICE = 6, T_BOMB = 7, T_IV = 8, T_DOLL = 9, T_RESET = 10, T_PIN = 11;
+const TOOL_NAMES = ["Greifen", "Wasser", "Eimer", "Klinge", "Waffe", "Feuer", "Eis", "Bombe", "Infusion", "Neue Puppe", "Reset", "Fixieren"];
 const BTN = 46, BTN_GAP = 6, TOOLBAR_Y = H - 54;
 const PANEL = { x: W - 206, y: 8, w: 198, h: 282 };
 const MINI = [[0, -12], [0, -8], [0, 0], [0, 3], [-5, -3], [-7, 2], [5, -3], [7, 2], [-2, 9], [-3, 15], [-5, 15], [2, 9], [3, 15], [5, 15]];
@@ -2016,7 +2086,7 @@ const MINI_W = [2, 4.2, 4, 2, 1.8, 2, 1.8, 2.4, 2, 1.4, 2.4, 2, 1.4];
 
 // The dock at the bottom: tools in groups split by thin dividers.
 const DOCK_GROUPS = [
-  { color: "#ecece6", items: [{ tool: T_GRAB }] },
+  { color: "#ecece6", items: [{ tool: T_GRAB }, { tool: T_PIN }] },
   { color: "#5aa0f0", items: [{ tool: T_WATER }, { tool: T_BUCKET }] },
   { color: "#e8443a", items: [{ tool: T_BLADE }, { tool: T_GUN }] },
   { color: "#ff8a2a", items: [{ tool: T_FIRE }, { tool: T_ICE }, { tool: T_BOMB }] },
@@ -2155,6 +2225,7 @@ const STATUS = [
   ["OUT", "BEWUSSTLOS", "#a2a2aa"], ["BLEED", "BLUTET", "#d6202f"], ["FIRE", "BRENNT", "#ff5a1e"],
   ["CHOKE", "ERSTICKT", "#2ec8c0"], ["AGONY", "QUALEN", "#f08a24"], ["HEAL", "HEILT", "#f2da3a"],
   ["BLADE", "SCHNITT", "#c8d0dc"], ["TORN", "GLIED AB", "#f272b8"], ["FROZEN", "GEFROREN", "#86c4ff"],
+  ["BROKEN", "KNOCHENBRUCH", "#e8dcc0"], ["PINNED", "FIXIERT", "#e8443a"],
 ];
 
 // Shrinks a label until it fits the width.
@@ -2270,6 +2341,20 @@ function drawIcon(i, cx, cy) {
       ctx.strokeStyle = "rgba(120,96,72,0.5)"; ctx.lineWidth = 0.6;
       ctx.beginPath(); for (const [fx] of fingers.slice(1)) { ctx.moveTo(fx - 0.2, -2.2); ctx.lineTo(fx - 0.2, 0.4); } ctx.stroke();
       ctx.fillStyle = "rgba(255,255,255,0.35)"; rr(-3.8, 0, 3, 6, 1.5); ctx.fill();
+      break;
+    }
+    case T_PIN: {
+      // Push pin: red head, metal needle and a small shadow
+      ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.beginPath(); ctx.ellipse(-4, 10, 4, 1.4, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = iconGrad(-6, 0, 0, 10, "#e8ecf2", "#7a808c"); ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.moveTo(1, 1); ctx.lineTo(-5, 9.5); ctx.stroke();
+      ctx.save(); ctx.translate(3, -3); ctx.rotate(0.6);
+      ctx.fillStyle = iconGrad(-5, -8, 5, 4, "#ff7a6a", "#a8141e");
+      rr(-3.2, -9, 6.4, 6, 2); ctx.fill();
+      rr(-1.8, -3.5, 3.6, 4, 0.8); ctx.fill();
+      rr(-5, 0, 10, 2.6, 1.3); ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.55)"; rr(-2.2, -8.2, 1.4, 4.4, 0.7); ctx.fill();
+      ctx.restore();
       break;
     }
     case T_WATER: {
@@ -3530,6 +3615,11 @@ const EXTRA_ITEMS = [
     state.dolls = []; state.selected = null; state.grabDoll = null;
     return "Alle Puppen entfernt";
   } },
+  { name: "Pins lösen", color: "#e8443a", run() {
+    let n = 0;
+    for (const d of state.dolls) { n += d.pins.size; d.pins.clear(); }
+    return n ? "Gelöst: " + n : "Keine Pins";
+  } },
   { name: "Zeitlupe", color: "#b48cff", toggle: () => state.slow, run() {
     state.slow = !state.slow;
     return state.slow ? "Zeitlupe an" : "Zeitlupe aus";
@@ -3597,6 +3687,16 @@ function drawExtrasBody() {
     label(it.name.toUpperCase(), c.x + 26, c.y + c.h / 2 + 1, 10, "#e2e2da");
     ctx.restore();
   });
+}
+
+// A red push pin stuck into a body point.
+function drawPin(x, y) {
+  ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.beginPath(); ctx.ellipse(x + 2, y + 2.5, 4.2, 2, 0, 0, Math.PI * 2); ctx.fill();
+  const g = ctx.createRadialGradient(x - 1.4, y - 1.6, 0.4, x, y, 4.4);
+  g.addColorStop(0, "#ff9a8a"); g.addColorStop(0.5, "#e02a30"); g.addColorStop(1, "#8a0c14");
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, 4.2, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = "rgba(0,0,0,0.6)"; ctx.lineWidth = 0.8; ctx.stroke();
+  ctx.fillStyle = "rgba(255,255,255,0.75)"; ctx.beginPath(); ctx.arc(x - 1.4, y - 1.5, 1, 0, Math.PI * 2); ctx.fill();
 }
 
 // ======================================================================
@@ -3985,6 +4085,7 @@ function drawMapCard(c) {
 
 const HELP = [
   [T_GRAB, "Puppe packen, ziehen und werfen"],
+  [T_PIN, "Körperteil festhalten, nochmal = lösen"],
   [T_WATER, "Wasser gießen, Menge oben links"],
   [T_BUCKET, "Wasser und Blut aufsaugen"],
   [T_BLADE, "Schnell ziehen, um zu schneiden"],
@@ -4001,19 +4102,19 @@ const HELP = [
 function drawHelp() {
   screenBackground();
   withAppear(appear(0), () => { label("ANLEITUNG", W / 2, 50, 26, "#e6e6de", "center"); drawBackButton(); });
-  const colW = Math.min(360, (W - 80) / 2), x0 = W / 2 - colW - 8, y0 = 92, rowH = 50;
+  const colW = Math.min(360, (W - 80) / 2), x0 = W / 2 - colW - 8, y0 = 80, rowH = 44, per = Math.ceil(HELP.length / 2);
   HELP.forEach(([tool, text], n) => {
-    const x = x0 + Math.floor(n / 6) * (colW + 16), y = y0 + (n % 6) * rowH;
-    const a = appear(1 + (n % 6) + Math.floor(n / 6) * 0.5, 0.3, 0.04);
+    const x = x0 + Math.floor(n / per) * (colW + 16), y = y0 + (n % per) * rowH;
+    const a = appear(1 + (n % per) + Math.floor(n / per) * 0.5, 0.3, 0.04);
     if (a <= 0) return;
     ctx.save(); ctx.globalAlpha *= a; ctx.translate(0, (1 - a) * 8);
     rr(x, y, colW, rowH - 8, 10); ctx.fillStyle = "rgba(26,26,32,0.92)"; ctx.fill();
     ctx.strokeStyle = "#2e2e36"; ctx.lineWidth = 1.2; ctx.stroke();
-    rr(x + 5, y + 5, 32, 32, 8); ctx.fillStyle = "#26262c"; ctx.fill();
-    if (tool >= 0) { ctx.save(); ctx.translate(x + 21, y + 21); ctx.scale(0.7, 0.7); drawIcon(tool, 0, 0); ctx.restore(); }
-    else label("+", x + 21, y + 22, 18, "#e6c850", "center");
-    label(tool >= 0 ? TOOL_NAMES[tool].toUpperCase() : "EXTRAS", x + 46, y + 14, 11, "#e2e2da");
-    label(text, x + 46, y + 29, 10, "#8e8e98", "left", 400);
+    rr(x + 5, y + 4, 30, 30, 8); ctx.fillStyle = "#26262c"; ctx.fill();
+    if (tool >= 0) { ctx.save(); ctx.translate(x + 20, y + 19); ctx.scale(0.66, 0.66); drawIcon(tool, 0, 0); ctx.restore(); }
+    else label("+", x + 20, y + 20, 18, "#e6c850", "center");
+    label(tool >= 0 ? TOOL_NAMES[tool].toUpperCase() : "EXTRAS", x + 44, y + 12, 11, "#e2e2da");
+    label(text, x + 44, y + 26, 10, "#8e8e98", "left", 400);
     ctx.restore();
   });
   if (appear(8) > 0) label("Zustände: WACH, K.O. und TOT. Tippe auf die Kopfzeile des Panels, um es zuzuklappen.", W / 2, H - 22, 10, "#6a6a74", "center", 400);
@@ -4132,7 +4233,7 @@ function useButton(i) {
     state.tool = i;
   }
   state.toast = 1.4;
-  state.toastText = i === T_DOLL ? "Tippe, wo sie stehen soll" : i === T_GUN ? "Ziehen = zielen, roter Knopf = Feuer" : TOOL_NAMES[i];
+  state.toastText = i === T_DOLL ? "Tippe, wo sie stehen soll" : i === T_PIN ? "Tippe ein Körperteil zum Fixieren" : i === T_GUN ? "Ziehen = zielen, roter Knopf = Feuer" : TOOL_NAMES[i];
 }
 
 // New doll stands upright on the ground below the tap, no fall, no collapse.
@@ -4193,10 +4294,26 @@ function press() {
     else if (best) { best.attachInfusion(); state.selected = best; state.toast = 1.2; state.toastText = "Infusion angelegt"; }
     return;
   }
-  if (state.tool === T_GRAB) {
+  if (state.tool === T_PIN) {
+    // Pin the nearest body point where it is, or free it again.
+    state.pressing = false;
     let bestD = 40, best = null, bestI = -1;
     for (const d of state.dolls) {
       const [i, dist] = d.nearestPoint(state.mx, state.my, bestD);
+      if (i >= 0) { bestD = dist; best = d; bestI = i; }
+    }
+    if (best) {
+      if (state.grabDoll === best && best.grabbed === bestI) state.grabDoll = null;
+      const on = best.togglePin(bestI);
+      state.selected = best; state.toast = 1; state.toastText = on ? "Fixiert" : "Gelöst";
+      clickSound(on ? 700 : 500, 0.06);
+    }
+    return;
+  }
+  if (state.tool === T_GRAB) {
+    let bestD = 40, best = null, bestI = -1;
+    for (const d of state.dolls) {
+      const [i, dist] = d.nearestPoint(state.mx, state.my, bestD, true);
       if (i >= 0) { bestD = dist; best = d; bestI = i; }
     }
     if (best) {
@@ -4265,6 +4382,28 @@ function applyTool() {
   }
 }
 
+// Dolls bump into each other instead of passing through.
+function collideDolls() {
+  const ds = state.dolls;
+  for (let a = 0; a < ds.length; a++) for (let b = a + 1; b < ds.length; b++) {
+    const p = ds[a], q = ds[b];
+    for (let i = 0; i < p.x.length; i++) {
+      if (p.gone[p.owner[i]]) continue;
+      for (let j = 0; j < q.x.length; j++) {
+        if (q.gone[q.owner[j]]) continue;
+        const dx = q.x[j] - p.x[i], dy = q.y[j] - p.y[i], r = (p.rad[i] + q.rad[j]) * 0.8;
+        const d2 = dx * dx + dy * dy;
+        if (d2 >= r * r || d2 < 0.0001) continue;
+        const d = Math.sqrt(d2), push = (r - d) / d;
+        const wa = p.w(i), wb = q.w(j), ws = wa + wb;
+        if (ws <= 0) continue;
+        p.x[i] -= dx * push * wa / ws; p.y[i] -= dy * push * wa / ws;
+        q.x[j] += dx * push * wb / ws; q.y[j] += dy * push * wb / ws;
+      }
+    }
+  }
+}
+
 function physicsStep() {
   if (state.pressing) applyTool();
   gunStep();
@@ -4274,6 +4413,7 @@ function physicsStep() {
     if (d === state.grabDoll) { d.gx = state.mx; d.gy = state.my; }
     d.step();
   }
+  collideDolls();
   for (const s of state.trail) s.age += DT;
   state.trail = state.trail.filter((s) => s.age < 0.25);
   for (const e of effects) e.age += DT;
@@ -4420,6 +4560,11 @@ function render() {
   ctx.beginPath();
   for (const p of particles) if (p.m !== BLOOD && p.m !== WATER) ctx.rect(p.x - 0.8, p.y - 0.8, 1.6, 1.6);
   ctx.fill();
+  // Pins hold body points in place.
+  for (const d of state.dolls) for (const [i] of d.pins) {
+    if (d.gone[d.owner[i]]) continue;
+    drawPin(d.x[i], d.y[i]);
+  }
   // Bullet tracers and ricochet sparks
   ctx.lineCap = "round";
   for (const t of tracers) {
