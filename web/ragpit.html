@@ -608,6 +608,11 @@ const POINT_INV_MASS = [0.8, 0.6, 0.5, 0.6, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
 // Standing pose, facing right. Origin sits on the floor between the feet.
 const POSE = [[0, -162], [0, -144], [0, -92], [0, -74], [-21, -122], [-27, -97], [21, -122], [27, -97],
   [-9, -41], [-11, -8], [-4, -6], [9, -41], [11, -8], [18, -6]];
+// Standing pose for the front view: upright, arms straight down beside the
+// chest, legs straight and parallel. Every segment keeps its length from POSE.
+const FRONT_POSE = [[0, -162], [0, -144], [0, -92], [0, -74], [-21, -122], [-21, -96.3], [21, -122], [21, -96.3],
+  [-9.5, -41.15], [-9.5, -8.09], [-2.5, -6.09], [9.5, -41.15], [9.5, -8.09], [16.5, -6.09]];
+const activePose = () => (settings.front ? FRONT_POSE : POSE);
 // Collision radius of every body point, so the thick limbs rest on the floor.
 const POINT_R = [17, 9, 14, 14, 8, 7, 8, 7, 9, 7, 5, 9, 7, 5];
 // child, parent, joint on parent end A, min and max degrees
@@ -684,7 +689,13 @@ class Doll {
       rest: 0, frozenRel: 0, active: true,
     }));
     this.facing = 1; this.faceCd = 0;
+    // Rest angles for both poses; the doll then takes the one in use.
+    const place = (pose) => { for (let i = 0; i < pose.length; i++) { this.x[i] = this.ox[i] = bx + pose[i][0]; this.y[i] = this.oy[i] = by + pose[i][1]; } };
+    place(FRONT_POSE);
+    for (const j of this.joints) j.restFront = this.jointRel(j);
+    place(POSE);
     for (const j of this.joints) j.rest = this.jointRel(j);
+    place(activePose());
     this.wounds = [];
     this.grabbed = -1; this.gx = 0; this.gy = 0;
     this.ko = 100; this.bl = 100; this.pn = 0; this.o2 = 100; this.hr = 72;
@@ -894,13 +905,23 @@ class Doll {
     // Standing feet grip the floor instead of sliding.
     if (this.standing) {
       const ids = [P_ANKLE_L, P_TOE_L, P_ANKLE_R, P_TOE_R];
+      // A standing doll shuffles its feet back under its hips, a little each
+      // step, so it ends up in its upright stance instead of a crooked one.
+      const pose = activePose(), cx = (feet0[0] + feet0[2]) / 2;
       for (let n = 0; n < 4; n++) {
         const i = ids[n];
-        if (this.attached(this.owner[i])) { this.x[i] = feet0[n]; this.ox[i] = feet0[n]; }
+        if (!this.attached(this.owner[i])) continue;
+        const target = cx + (pose[i][0] - (pose[P_ANKLE_L][0] + pose[P_ANKLE_R][0]) / 2) * this.facing;
+        const fx = moveToward(feet0[n], target, 0.35);
+        this.x[i] = fx; this.ox[i] = fx;
       }
     }
     this.updateEffects();
     this.updateVitals();
+    // How far the picture eases into the clean front pose (see rasterDoll).
+    const calm = settings.front && this.standing && this.grabbed < 0 && !this.dead && !this.isOut() && this.pins.size === 0 &&
+      this.stagger <= 0 && !this.severed.includes(true) && !this.gone.includes(true);
+    this.visW = moveToward(this.visW || 0, calm ? 1 : 0, DT * (calm ? 1.5 : 4));
   }
 
   // The grabbed point follows the finger with a little give instead of snapping to it.
@@ -1126,8 +1147,9 @@ class Doll {
       if ((foot && !withFeet) || !this.attached(this.owner[i]) || this.fixed(i)) continue;
       const keep = withFeet ? 0.7 : 0.88;
       const vx = (this.x[i] - this.ox[i]) * keep, vy = (this.y[i] - this.oy[i]) * keep;
-      this.x[i] += (fx + POSE[i][0] * this.facing - this.x[i]) * s;
-      this.y[i] += (gy + POSE[i][1] - this.y[i]) * s;
+      const pose = activePose();
+      this.x[i] += (fx + pose[i][0] * this.facing - this.x[i]) * s;
+      this.y[i] += (gy + pose[i][1] - this.y[i]) * s;
       this.ox[i] = this.x[i] - vx; this.oy[i] = this.y[i] - vy;
     }
   }
@@ -1226,7 +1248,7 @@ class Doll {
       const over = Math.abs(rel) - j.half;
       if (over > 1.8) continue;
       let target = kinematic ? rel : clamp(rel, -j.half, j.half);
-      if (m > 0) target = lerp(target, this.frozen ? j.frozenRel : j.rest * this.facing, m);
+      if (m > 0) target = lerp(target, this.frozen ? j.frozenRel : (settings.front ? j.restFront : j.rest) * this.facing, m);
       let diff = target - rel;
       if (Math.abs(diff) < 0.0001) continue;
       if (kinematic) diff = clamp(diff * 2, -0.05, 0.05);
@@ -1934,7 +1956,25 @@ function rasterRect(ax, ay, bx, by, hw, e0, e1, order, base, stain) {
   }
 }
 
+// In the front view a calm standing doll is shown in its clean upright pose,
+// breathing a little. Physics stays as it is; only the picture is eased.
 function rasterDoll(d) {
+  const w = easeOut(d.visW || 0);
+  if (w <= 0.01) { rasterDollRaw(d); return; }
+  const cx = (d.x[P_ANKLE_L] + d.x[P_ANKLE_R]) / 2, gy = (d.y[P_ANKLE_L] + d.y[P_ANKLE_R]) / 2 + 8.09;
+  const breath = Math.sin(performance.now() / 1000 * 2.1 + d.id) * 0.7;
+  const vx = d.x.slice(), vy = d.y.slice();
+  for (let i = 0; i < FRONT_POSE.length; i++) {
+    const up = i <= P_HAND_R ? breath * (i === P_HIP ? 0 : 1) : 0;
+    vx[i] = lerp(d.x[i], cx + FRONT_POSE[i][0] * d.facing, w);
+    vy[i] = lerp(d.y[i], gy + FRONT_POSE[i][1] + up, w);
+  }
+  const sx = d.x, sy = d.y;
+  d.x = vx; d.y = vy;
+  try { rasterDollRaw(d); } finally { d.x = sx; d.y = sy; }
+}
+
+function rasterDollRaw(d) {
   // Bounding box of the doll in pixels, with room for the head and outline.
   let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
   for (let i = 0; i < d.x.length; i++) {
@@ -2006,14 +2046,24 @@ function rasterDoll(d) {
         // A severed arm is drawn from its own torn end instead.
         const tx = (wsx - nkx) / tl, ty = (wsy - nky) / tl, nx = -ty, ny = tx;
         const side = Math.sign((bx - shoulder[0]) * nx + (by - shoulder[1]) * ny) || 1;
-        const off = (RECT[TORSO][0] - RECT[k][0] * 0.8) / PIX;
+        const off = (settings.front ? RECT[TORSO][0] + RECT[k][0] - 2 : RECT[TORSO][0] - RECT[k][0] * 0.8) / PIX;
         ax = shoulder[0] + nx * side * off; ay = shoulder[1] + ny * side * off;
+      }
+      if (settings.front && (k === THIGH_L || k === THIGH_R) && !d.severed[k] && d.attached(PELVIS)) {
+        // Front view: each leg leaves the hip on its own side, so both stand parallel.
+        const [wx2, wy2] = P(d.pa[PELVIS]), [hx2, hy2] = P(d.pb[PELVIS]);
+        const pl = Math.hypot(hx2 - wx2, hy2 - wy2) || 1, nx = -(hy2 - wy2) / pl, ny = (hx2 - wx2) / pl;
+        const side = Math.sign((bx - hx2) * nx + (by - hy2) * ny) || (k === THIGH_L ? -1 : 1);
+        const off = (RECT[PELVIS][0] - RECT[k][0]) / PIX;
+        ax = hx2 + nx * side * off; ay = hy2 + ny * side * off;
       }
       const [hw, e0, e1] = RECT[k];
       if (settings.front && (k === FOOT_L || k === FOOT_R)) {
-        // Front view: the shoe points at you, so it shows short and wide.
-        const fx2 = ax + (bx - ax) * 0.3, fy2 = ay + (by - ay) * 0.3 + 1.4;
-        rasterRect(ax, ay + 0.6, fx2, fy2, 6.5 / PIX, 3 / PIX, 2 / PIX, order, base, d.stain[k]);
+        // Front view: the shoe points at you, so it shows as a short wide block
+        // right under the ankle, in line with the shin.
+        const [kx2, ky2] = P(d.pb[k === FOOT_L ? THIGH_L : THIGH_R]);
+        const sl = Math.hypot(ax - kx2, ay - ky2) || 1, ux2 = (ax - kx2) / sl, uy2 = (ay - ky2) / sl;
+        rasterRect(ax - ux2 * 0.4, ay - uy2 * 0.4, ax + ux2 * 2.2, ay + uy2 * 2.2, 6.5 / PIX, 0, 0, order, base, d.stain[k]);
       } else rasterRect(ax, ay, bx, by, hw / PIX, e0 / PIX, e1 / PIX, order, base, d.stain[k]);
       if (k === LARM_L || k === LARM_R) {
         // Square hand
