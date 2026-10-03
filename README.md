@@ -12,7 +12,7 @@ Die Web-Version liegt in `web/`. Sie läuft in Safari ohne App Store und ohne Ma
 2. Tippe auf Teilen und dann auf "Zum Home-Bildschirm".
 3. Starte Ragpit über das neue Symbol und dreh das iPhone quer.
 
-Die Web-Version zeichnet Puppen und Fleischfetzen als große Pixel-Art mit schwarzer Kontur und weicher Schattierung. Wasser und Blut laufen in feiner Auflösung. Sie hat 11 Werkzeuge: Greifen, Wasser, Eimer, Klinge, Waffe, Feuer, Eis, Bombe, Infusion, Neue Puppe und Reset.
+Die Web-Version zeichnet Menschen aus rechteckigen Körperteilen als Pixel-Art mit schwarzer Kontur: eckiger Kopf mit Haaren, Auge und Mund auf einem echten Hals, Arme an den Schultern, Shirt, Hose und Schuhe. Jede Puppe bekommt zufällige Haut-, Haar- und Kleidungsfarben. Wasser und Blut laufen in feiner Auflösung. Sie hat 11 Werkzeuge: Greifen, Wasser, Eimer, Klinge, Waffe, Feuer, Eis, Bombe, Infusion, Neue Puppe und Reset.
 
 Oben links unter dem Titel erscheint je nach Werkzeug eine Leiste. Beim Wasser stellst du die Menge in 5 Stufen ein. Bei der Waffe wählst du AK-47, Sturmgewehr oder Glock 17. Die Waffe steht als Objekt im Raum: Zieh sie mit dem Finger an eine neue Stelle, tippe woanders hin und sie schießt genau dorthin. AK-47 und Sturmgewehr schießen Dauerfeuer, solange du drückst, die Glock einen Schuss pro Tippen.
 

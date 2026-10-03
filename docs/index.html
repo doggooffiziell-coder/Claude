@@ -520,7 +520,7 @@ const PART_COUNT = 13;
 const PART_A = [P_NECK, P_NECK, P_WAIST, P_NECK, P_ELBOW_L, P_NECK, P_ELBOW_R, P_HIP, P_KNEE_L, P_ANKLE_L, P_HIP, P_KNEE_R, P_ANKLE_R];
 const PART_B = [P_HEAD, P_WAIST, P_HIP, P_ELBOW_L, P_HAND_L, P_ELBOW_R, P_HAND_R, P_KNEE_L, P_ANKLE_L, P_TOE_L, P_KNEE_R, P_ANKLE_R, P_TOE_R];
 const PARENT = [TORSO, -1, TORSO, TORSO, UARM_L, TORSO, UARM_R, PELVIS, THIGH_L, SHIN_L, PELVIS, THIGH_R, SHIN_R];
-const WIDTH = [16, 38, 34, 16, 14, 16, 14, 20, 16, 13, 20, 16, 13];
+const WIDTH = [11, 30, 28, 12, 10, 12, 10, 16, 13, 9, 16, 13, 9];
 const FAR_SIDE = [false, false, false, true, true, false, false, true, true, true, false, false, false];
 const DRAW_ORDER = [UARM_L, LARM_L, THIGH_L, SHIN_L, FOOT_L, PELVIS, TORSO, HEAD, THIGH_R, SHIN_R, FOOT_R, UARM_R, LARM_R];
 const POINT_OWNER = [HEAD, TORSO, TORSO, PELVIS, UARM_L, LARM_L, UARM_R, LARM_R, THIGH_L, SHIN_L, FOOT_L, THIGH_R, SHIN_R, FOOT_R];
@@ -541,7 +541,7 @@ const JOINTS = [
 ];
 const IV_TIME = 12;
 let MUSCLE_HELD = 0.04, LIMIT_SOAK = 0.6;
-const ITERATIONS = 8, HEAD_R = 19, MAX_STEP = 40, DOLL_GRAVITY = 1300;
+const ITERATIONS = 8, HEAD_R = 17, MAX_STEP = 40, DOLL_GRAVITY = 1300;
 const WOUND_SPEED = 650, SEVER_SPEED = 1450, GIB_SPEED = 2100, MAX_WOUNDS = 40, OUT_BL = 35, AGONY_PN = 65;
 const COL_SKIN = hex("#ebe7dc"), COL_SKIN_FAR = hex("#c7c2b5"), COL_LINE = hex("#121214");
 const COL_CHAR = hex("#2e2622"), COL_ICE = hex("#a6d6f6"), COL_HURT = hex("#ff6a6a");
@@ -587,6 +587,7 @@ class Doll {
     this.dmg = new Array(PART_COUNT).fill(0);
     this.hits = new Array(PART_COUNT).fill(0);
     this.ecg = new Float32Array(90); this.ecgPos = 0; this.sinceBeat = 9;
+    this.look = randomLook();
   }
 
   hurtPart(k, amount) { if (k >= 0) this.dmg[k] = Math.min(100, this.dmg[k] + amount); }
@@ -616,7 +617,7 @@ class Doll {
     } else if (k === TORSO) {
       this.bl = Math.max(0, this.bl - 4 * wp.dmg);
       if (!this.dead && Math.random() < 0.02 * wp.dmg) this.die();
-    } else if (k !== PELVIS && this.dmg[k] >= 100 && this.hits[k] >= 6 && Math.random() < wp.sever) {
+    } else if (k !== PELVIS && this.dmg[k] >= 100 && this.hits[k] >= 8 && Math.random() < wp.sever) {
       // A limb only comes off after it has taken a lot of hits.
       this.severCd = 0;
       this.sever(k);
@@ -1407,8 +1408,8 @@ class Doll {
 
 // Tapered limb: a quad between two end circles of different radius.
 const OUTLINE = 1.7;
-const TAPER = [[8, 7], [20, 15], [15, 17], [9, 7.5], [7.5, 6.5], [9, 7.5], [7.5, 6.5],
-  [11, 9], [9, 7.5], [7, 6], [11, 9], [9, 7.5], [7, 6]];
+const TAPER = [[5.5, 5.5], [15, 15], [14, 14], [6, 6], [5, 5], [6, 6], [5, 5],
+  [8, 8], [6.5, 6.5], [4.5, 4.5], [8, 8], [6.5, 6.5], [4.5, 4.5]];
 function taperFill(ax, ay, bx, by, ra, rb, c, alpha = 1) {
   const l = Math.hypot(bx - ax, by - ay) || 1, nx = -(by - ay) / l, ny = (bx - ax) / l;
   ctx.fillStyle = css(c, alpha);
@@ -1484,6 +1485,63 @@ function rasterDisc(cx, cy, r, c, order, onlyBody = false) {
   }
 }
 
+// Rectangular body parts in the style of a crash-test sandbox: [half width,
+// extension past the joint end A, extension past end B] in world units.
+const RECT = {
+  [TORSO]: [15, 3, 2], [PELVIS]: [14, 0, 7],
+  [UARM_L]: [6, 3, 2], [UARM_R]: [6, 3, 2], [LARM_L]: [5, 1, 1], [LARM_R]: [5, 1, 1],
+  [THIGH_L]: [8, 1, 2], [THIGH_R]: [8, 1, 2], [SHIN_L]: [6.5, 2, 1], [SHIN_R]: [6.5, 2, 1],
+  [FOOT_L]: [4.5, 5, 4], [FOOT_R]: [4.5, 5, 4],
+};
+const NECK_LEN = 8, HEAD_H = 34, HEAD_HW = 14, SHOULDER_DROP = 8;
+const LOOKS = {
+  skin: ["#ecc8a6", "#d9a87e", "#b47c54", "#7c513a", "#f4d8c0"],
+  shirt: ["#5a6c80", "#6a7a3c", "#8a3a3a", "#c49a3c", "#3c7a74", "#d8d8d0", "#3a3a44", "#7a4a8a"],
+  pants: ["#38425a", "#2e2e34", "#5a4a3a", "#3e4a3a", "#4a4a52"],
+  shoes: ["#2a2420", "#1e1e22", "#4a3a2a", "#3a3a40"],
+  hair: ["#2a1e16", "#4a3020", "#1a1a1a", "#8a6a3a", "#6a6a6a", "#9a4a24"],
+};
+const pick = (a) => hex(a[rnd(a.length)]);
+function randomLook() {
+  return { skin: pick(LOOKS.skin), shirt: pick(LOOKS.shirt), pants: pick(LOOKS.pants), shoes: pick(LOOKS.shoes), hair: pick(LOOKS.hair) };
+}
+const PART_CLOTH = { [HEAD]: "skin", [TORSO]: "shirt", [PELVIS]: "pants", [UARM_L]: "shirt", [UARM_R]: "shirt", [LARM_L]: "skin", [LARM_R]: "skin", [THIGH_L]: "pants", [THIGH_R]: "pants", [SHIN_L]: "pants", [SHIN_R]: "pants", [FOOT_L]: "shoes", [FOOT_R]: "shoes" };
+
+// Color of a surface after the doll's condition: death, burns, ice, fresh pain.
+function tintFor(d, k, c) {
+  if (FAR_SIDE[k]) c = darken(c, 0.16);
+  if (d.dead) c = mixc(c, hex("#9a9a94"), 0.28);
+  if (d.char[k] > 0.02) c = mixc(c, COL_CHAR, clamp(d.char[k], 0, 0.9));
+  if (d.frozen) c = mixc(c, COL_ICE, 0.55);
+  if (d.hurtFlash > 0) c = mixc(c, COL_HURT, d.hurtFlash * 0.3);
+  return c;
+}
+
+// One rotated rectangle from a to b in pixel units, with a lit top edge,
+// a shaded bottom edge and a faint pixel grain.
+function rasterRect(ax, ay, bx, by, hw, e0, e1, order, base, stain) {
+  const l = Math.hypot(bx - ax, by - ay) || 0.001, dx = (bx - ax) / l, dy = (by - ay) / l, nx = -dy, ny = dx;
+  const pts = [[-e0, -hw], [l + e1, -hw], [l + e1, hw], [-e0, hw]].map(([u, v]) => [ax + dx * u + nx * v, ay + dy * u + ny * v]);
+  const x0 = Math.max(bbx0, Math.floor(Math.min(...pts.map((p) => p[0])))), x1 = Math.min(bbx1, Math.ceil(Math.max(...pts.map((p) => p[0]))));
+  const y0 = Math.max(bby0, Math.floor(Math.min(...pts.map((p) => p[1])))), y1 = Math.min(bby1, Math.ceil(Math.max(...pts.map((p) => p[1]))));
+  const light = lighten(base, 0.2), dark = darken(base, 0.24);
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      const px0 = x + 0.5 - ax, py0 = y + 0.5 - ay;
+      const u = px0 * dx + py0 * dy, v = px0 * nx + py0 * ny;
+      if (u < -e0 || u > l + e1 || v < -hw || v > hw) continue;
+      let c = base;
+      if (hw - Math.abs(v) < 1) c = v * ny < 0 ? light : dark;
+      const grain = ((x * 73) ^ (y * 151)) & 7;
+      if (grain === 0) c = darken(c, 0.05); else if (grain === 1) c = lighten(c, 0.04);
+      const i = y * DW + x;
+      if (tmask[i] && tmask[i] !== order && hw - Math.abs(v) < 1.2) c = darken(c, 0.25);
+      if (stain > 0.02) c = mixc(c, COL_GORE, stain * 0.6);
+      tset(i, c, order);
+    }
+  }
+}
+
 function rasterDoll(d) {
   // Bounding box of the doll in pixels, with room for the head and outline.
   let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
@@ -1491,26 +1549,59 @@ function rasterDoll(d) {
     minx = Math.min(minx, d.x[i]); maxx = Math.max(maxx, d.x[i]);
     miny = Math.min(miny, d.y[i]); maxy = Math.max(maxy, d.y[i]);
   }
-  bbx0 = Math.max(0, Math.floor(minx / PIX) - 10); bbx1 = Math.min(DW - 1, Math.ceil(maxx / PIX) + 10);
-  bby0 = Math.max(0, Math.floor(miny / PIX) - 10); bby1 = Math.min(DH - 1, Math.ceil(maxy / PIX) + 10);
+  bbx0 = Math.max(0, Math.floor(minx / PIX) - 16); bbx1 = Math.min(DW - 1, Math.ceil(maxx / PIX) + 16);
+  bby0 = Math.max(0, Math.floor(miny / PIX) - 16); bby1 = Math.min(DH - 1, Math.ceil(maxy / PIX) + 16);
   for (let y = bby0; y <= bby1; y++) tmask.fill(0, y * DW + bbx0, y * DW + bbx1 + 1);
+
+  const P = (i) => [d.x[i] / PIX, d.y[i] / PIX];
+  // Shoulders sit on the top of the torso, a little below the neck.
+  const [nkx, nky] = P(d.pa[TORSO]), [wsx, wsy] = P(d.pb[TORSO]);
+  const tl = Math.hypot(wsx - nkx, wsy - nky) || 1;
+  const shoulder = [nkx + (wsx - nkx) / tl * SHOULDER_DROP / PIX, nky + (wsy - nky) / tl * SHOULDER_DROP / PIX];
 
   let order = 1;
   for (const k of DRAW_ORDER) {
     order++;
     if (d.gone[k]) continue;
-    const [light, dark] = d.colors(k);
-    const ax = d.x[d.pa[k]] / PIX, ay = d.y[d.pa[k]] / PIX, bx = d.x[d.pb[k]] / PIX, by = d.y[d.pb[k]] / PIX;
+    const base = tintFor(d, k, d.look[PART_CLOTH[k]]);
+    let [ax, ay] = P(d.pa[k]);
+    const [bx, by] = P(d.pb[k]);
     if (k === HEAD) {
-      rasterLimb(ax, ay, bx, by, TAPER[HEAD][0] / PIX, TAPER[HEAD][1] / PIX, order, light, dark, d.stain[k]);
-      rasterLimb(bx, by, bx, by, HEAD_R / PIX, HEAD_R / PIX, order, light, dark, d.stain[k]);
+      // Neck, then a square head with hair on top and a face on the front.
+      const l = Math.hypot(bx - ax, by - ay) || 1, ux = (bx - ax) / l, uy = (by - ay) / l;
+      const n0 = NECK_LEN / PIX, h0 = HEAD_H / PIX;
+      rasterRect(ax, ay, ax + ux * (n0 + 1), ay + uy * (n0 + 1), 5.5 / PIX, 1, 0, order, darken(base, 0.06), d.stain[k]);
+      const hx0 = ax + ux * n0, hy0 = ay + uy * n0, hx1 = hx0 + ux * h0, hy1 = hy0 + uy * h0;
+      rasterRect(hx0, hy0, hx1, hy1, HEAD_HW / PIX, 0, 0, order, base, d.stain[k]);
+      const hairBase = tintFor(d, k, d.look.hair), hb = 9 / PIX;
+      rasterRect(hx1 - ux * hb, hy1 - uy * hb, hx1, hy1, HEAD_HW / PIX + 0.3, 0, 0.3, order, hairBase, 0);
+      // Face on the side the doll looks at.
+      const fx = -uy, fy = ux;
+      const put = (x, y, c) => { x = Math.floor(x); y = Math.floor(y); if (x >= bbx0 && x <= bbx1 && y >= bby0 && y <= bby1 && tmask[y * DW + x]) tset(y * DW + x, c, tmask[y * DW + x]); };
+      const ex = hx0 + ux * (h0 * 0.58) + fx * (HEAD_HW / PIX - 1.6), ey = hy0 + uy * (h0 * 0.58) + fy * (HEAD_HW / PIX - 1.6);
+      const mx = hx0 + ux * (h0 * 0.25) + fx * (HEAD_HW / PIX - 1.4), my = hy0 + uy * (h0 * 0.25) + fy * (HEAD_HW / PIX - 1.4);
+      if (d.dead) {
+        put(ex - 1, ey - 1, PX_BLACK); put(ex + 1, ey - 1, PX_BLACK); put(ex, ey, PX_BLACK); put(ex - 1, ey + 1, PX_BLACK); put(ex + 1, ey + 1, PX_BLACK);
+      } else if (d.isOut()) {
+        put(ex - 1, ey, PX_BLACK); put(ex, ey, PX_BLACK);
+      } else {
+        put(ex, ey, PX_BLACK); put(ex - fx, ey - fy, hex("#f4f4f0"));
+      }
+      put(mx, my, darken(base, 0.45)); put(mx - fx, my - fy, darken(base, 0.45));
     } else {
-      rasterLimb(ax, ay, bx, by, TAPER[k][0] / PIX, TAPER[k][1] / PIX, order, light, dark, d.stain[k]);
+      if (k === UARM_L || k === UARM_R) {
+        // Each arm leaves the torso at the shoulder on the side it hangs toward.
+        const tx = (wsx - nkx) / tl, ty = (wsy - nky) / tl, nx = -ty, ny = tx;
+        const side = Math.sign((bx - shoulder[0]) * nx + (by - shoulder[1]) * ny) || 1;
+        const off = (RECT[TORSO][0] - RECT[k][0] * 0.8) / PIX;
+        ax = shoulder[0] + nx * side * off; ay = shoulder[1] + ny * side * off;
+      }
+      const [hw, e0, e1] = RECT[k];
+      rasterRect(ax, ay, bx, by, hw / PIX, e0 / PIX, e1 / PIX, order, base, d.stain[k]);
       if (k === LARM_L || k === LARM_R) {
-        // Round mitten hand
-        const l = Math.hypot(bx - ax, by - ay) || 1;
-        const hx = bx + (bx - ax) / l * 1.2, hy = by + (by - ay) / l * 1.2;
-        rasterLimb(hx, hy, hx, hy, 2.9, 2.9, order, light, dark, d.stain[k]);
+        // Square hand
+        const l = Math.hypot(bx - ax, by - ay) || 1, ux = (bx - ax) / l, uy = (by - ay) / l;
+        rasterRect(bx, by, bx + ux * 8 / PIX, by + uy * 8 / PIX, 5.5 / PIX, 0, 0, order, tintFor(d, k, d.look.skin), d.stain[k]);
       }
     }
     // Wounds sit on top of their own part.
@@ -1529,25 +1620,12 @@ function rasterDoll(d) {
     const [wx, wy] = d.woundPos(w);
     const [ux, uy] = d.stumpDir(w);
     const k = w.part;
-    const end = k === HEAD ? TAPER[HEAD][0] : TAPER[k][w.t < 0.5 ? 0 : 1];
-    const r = end / PIX, cx = wx / PIX, cy = wy / PIX;
+    const r = (k === HEAD ? 5.5 : RECT[k] ? RECT[k][0] : 14) / PIX * 0.95, cx = wx / PIX, cy = wy / PIX;
     rasterDisc(cx, cy, r + 0.4, w.bleed > 0 ? PX_FLESH : hex("#82323a"), 250);
     rasterDisc(cx + ux * 0.4, cy + uy * 0.4, r * 0.6, COL_GORE, 250);
     const bl = Math.max(2, r * 0.9);
     for (let s = 0; s <= bl; s += 0.5) rasterDisc(cx + ux * s, cy + uy * s, Math.max(0.7, r * 0.3), PX_BONE, 250);
     rasterDisc(cx + ux * bl, cy + uy * bl, Math.max(0.9, r * 0.38), PX_BONE, 250);
-  }
-  // Eye on the side the doll faces.
-  if (!d.gone[HEAD]) {
-    const nx = d.x[d.pa[HEAD]], ny = d.y[d.pa[HEAD]], hx = d.x[d.pb[HEAD]], hy = d.y[d.pb[HEAD]];
-    let ux = hx - nx, uy = hy - ny;
-    const l = Math.hypot(ux, uy);
-    if (l > 0) { ux /= l; uy /= l; } else { ux = 0; uy = -1; }
-    const ex = Math.floor((hx - uy * HEAD_R * 0.5 + ux * 3) / PIX), ey = Math.floor((hy + ux * HEAD_R * 0.5 + uy * 3) / PIX);
-    const put = (x, y) => { if (x >= bbx0 && x <= bbx1 && y >= bby0 && y <= bby1 && tmask[y * DW + x]) tset(y * DW + x, PX_BLACK, tmask[y * DW + x]); };
-    if (d.dead) { put(ex - 1, ey - 1); put(ex + 1, ey - 1); put(ex, ey); put(ex - 1, ey + 1); put(ex + 1, ey + 1); }
-    else if (d.isOut()) { put(ex - 1, ey); put(ex, ey); put(ex + 1, ey); }
-    else { put(ex, ey); put(ex, ey - 1); }
   }
   // Copy into the layer with a one pixel outline around the silhouette.
   // A frozen doll gets a pale ice rim instead of black.
@@ -2211,65 +2289,38 @@ function damageColors(v) {
   return [DMG_STOPS[3][1], DMG_STOPS[3][2]];
 }
 
-// Chart shapes in a 0..1 box scale: limbs are tapered capsules [ax, ay, bx, by, ra, rb].
+// Chart shapes as rectangles [x, y, w, h] around the chart center: square head
+// on a neck, shoulders on the torso, arms beside it, legs below the pelvis.
 // The doll's left side sits on the right of the chart, as when facing someone.
 const CHART = {
-  [UARM_R]: [-19, -40, -23, -15, 4.4, 3.7], [LARM_R]: [-23.5, -13, -25.5, 10, 3.6, 2.9],
-  [UARM_L]: [19, -40, 23, -15, 4.4, 3.7], [LARM_L]: [23.5, -13, 25.5, 10, 3.6, 2.9],
-  [THIGH_R]: [-7.5, 7, -8.5, 35, 6, 4.6], [SHIN_R]: [-8.5, 38, -8.5, 62, 4.4, 3.3],
-  [THIGH_L]: [7.5, 7, 8.5, 35, 6, 4.6], [SHIN_L]: [8.5, 38, 8.5, 62, 4.4, 3.3],
-  [FOOT_R]: [-8.5, 66.5, -13, 67.5, 3, 2.6], [FOOT_L]: [8.5, 66.5, 13, 67.5, 3, 2.6],
+  [HEAD]: [-9, -71, 18, 20], [TORSO]: [-15, -45, 30, 34], [PELVIS]: [-14, -10, 28, 15],
+  [UARM_R]: [-24.5, -44, 8.5, 28], [LARM_R]: [-24, -15, 7.5, 24],
+  [UARM_L]: [16, -44, 8.5, 28], [LARM_L]: [16.5, -15, 7.5, 24],
+  [THIGH_R]: [-13.5, 6, 12.5, 31], [SHIN_R]: [-13, 38, 11.5, 26], [FOOT_R]: [-16, 65, 15, 6],
+  [THIGH_L]: [1, 6, 12.5, 31], [SHIN_L]: [1.5, 38, 11.5, 26], [FOOT_L]: [1, 65, 15, 6],
 };
-const HAND_AT = { [LARM_R]: [-26, 16], [LARM_L]: [26, 16] };
 
 function chartPath(k, cx, cy, s) {
-  const X = (v) => cx + v * s, Y = (v) => cy + v * s;
+  const [rx, ry, rw, rh] = CHART[k];
   ctx.beginPath();
-  if (k === HEAD) {
-    ctx.ellipse(X(0), Y(-59), 9 * s, 11 * s, 0, 0, Math.PI * 2);
-    ctx.rect(X(-3.6), Y(-50), 7.2 * s, 6 * s);
-    return;
-  }
-  if (k === TORSO || k === PELVIS) {
-    const pts = k === TORSO ? [[-16.5, -44], [16.5, -44], [12.5, -11], [-12.5, -11]] : [[-12.5, -9], [12.5, -9], [14, 5], [0, 9], [-14, 5]];
-    const r = 4 * s;
-    for (let i = 0; i < pts.length; i++) {
-      const p = pts[i], q = pts[(i + 1) % pts.length], o = pts[(i + pts.length - 1) % pts.length];
-      const mx0 = (o[0] + p[0]) / 2, my0 = (o[1] + p[1]) / 2;
-      if (i === 0) ctx.moveTo(X(mx0), Y(my0));
-      ctx.arcTo(X(p[0]), Y(p[1]), X((p[0] + q[0]) / 2), Y((p[1] + q[1]) / 2), r);
-    }
-    ctx.closePath();
-    return;
-  }
-  const [ax, ay, bx, by, ra, rb] = CHART[k];
-  const l = Math.hypot(bx - ax, by - ay) || 1, nx = -(by - ay) / l, ny = (bx - ax) / l, ang = Math.atan2(by - ay, bx - ax);
-  ctx.moveTo(X(ax + nx * ra), Y(ay + ny * ra));
-  ctx.lineTo(X(bx + nx * rb), Y(by + ny * rb));
-  ctx.arc(X(bx), Y(by), rb * s, ang + Math.PI / 2, ang - Math.PI / 2, true);
-  ctx.lineTo(X(ax - nx * ra), Y(ay - ny * ra));
-  ctx.arc(X(ax), Y(ay), ra * s, ang - Math.PI / 2, ang + Math.PI / 2, true);
-  ctx.closePath();
-  if (HAND_AT[k]) {
-    const [hx, hy] = HAND_AT[k];
-    ctx.moveTo(X(hx) + 3.2 * s, Y(hy));
-    ctx.ellipse(X(hx), Y(hy), 3.2 * s, 4.4 * s, 0, 0, Math.PI * 2);
-  }
+  ctx.roundRect ? ctx.roundRect(cx + rx * s, cy + ry * s, rw * s, rh * s, 2 * s) : ctx.rect(cx + rx * s, cy + ry * s, rw * s, rh * s);
+  if (k === HEAD) ctx.rect(cx - 4 * s, cy - 51.5 * s, 8 * s, 7 * s);
+  if (k === LARM_L || k === LARM_R) ctx.rect(cx + (rx + 0.5) * s, cy + (ry + rh + 0.8) * s, (rw - 1) * s, 6.5 * s);
 }
 
 // Where a wound sits on the chart, from its part and position along it.
 function chartPoint(w) {
-  const k = w.part;
-  if (k === HEAD) return w.stump ? [0, -46] : [Math.cos(w.t * 6.28) * 5, -59 + Math.sin(w.t * 6.28) * 6];
-  if (k === TORSO) return w.stump ? [0, -44] : [w.s * 8, lerp(-42, -13, w.t)];
-  if (k === PELVIS) return w.stump ? [0, -9] : [w.s * 7, lerp(-8, 4, w.t)];
-  const [ax, ay, bx, by] = CHART[k];
-  if (w.stump) return w.t < 0.5 ? [ax, ay] : [bx, by];
-  return [lerp(ax, bx, w.t) + w.s * 1.5, lerp(ay, by, w.t)];
+  const [rx, ry, rw, rh] = CHART[w.part];
+  if (w.stump) {
+    if (w.part === HEAD) return [0, -46];
+    return w.t < 0.5 ? [rx + rw / 2, ry] : [rx + rw / 2, ry + rh];
+  }
+  if (w.part === HEAD) return [rx + rw / 2 + Math.cos(w.t * 6.28) * 5, ry + rh / 2 + Math.sin(w.t * 6.28) * 6];
+  return [rx + rw / 2 + w.s * rw * 0.3, ry + rh * clamp(w.t, 0.08, 0.92)];
 }
 
 function drawBodyChart(d, x, y, w, h) {
-  const s = h / 148, cx = x + w / 2, cy = y + h / 2 - 4 * s;
+  const s = h / 150, cx = x + w / 2, cy = y + h / 2 + 2 * s;
   const order = [TORSO, PELVIS, HEAD, UARM_R, LARM_R, UARM_L, LARM_L, THIGH_R, SHIN_R, FOOT_R, THIGH_L, SHIN_L, FOOT_L];
   ctx.lineJoin = "round";
   for (const k of order) {
@@ -2321,6 +2372,23 @@ function buildStatic() {
   for (let y = 96; y < FLOOR_Y - 20; y += 80) { b.fillStyle = th.line; b.fillRect(0, y, W, 1.5); }
   b.fillStyle = "#111114"; b.fillRect(0, 0, W, 16);
   b.fillStyle = "#0a0a0c"; b.fillRect(0, 16, W, 1.5);
+  // Pipes along the wall, a vent and a door frame give the room some depth.
+  const pipe = (x0, y0, x1, y1, r) => {
+    b.strokeStyle = "rgba(0,0,0,0.45)"; b.lineWidth = r * 2 + 2; b.lineCap = "butt";
+    b.beginPath(); b.moveTo(x0, y0); b.lineTo(x1, y1); b.stroke();
+    b.strokeStyle = th.line; b.lineWidth = r * 2; b.beginPath(); b.moveTo(x0, y0); b.lineTo(x1, y1); b.stroke();
+    b.strokeStyle = "rgba(255,255,255,0.07)"; b.lineWidth = 1.2; b.beginPath(); b.moveTo(x0, y0 - r * 0.5); b.lineTo(x1, y1 - r * 0.5); b.stroke();
+  };
+  pipe(0, 150, W, 150, 4);
+  pipe(W * 0.86, 150, W * 0.86, FLOOR_Y - 12, 4);
+  for (let x = 40; x < W; x += 160) { b.fillStyle = "rgba(0,0,0,0.5)"; b.fillRect(x, 144, 8, 12); }
+  b.fillStyle = "rgba(0,0,0,0.35)"; b.fillRect(W * 0.07, 200, 54, 30);
+  b.fillStyle = "rgba(255,255,255,0.05)";
+  for (let k = 0; k < 6; k++) b.fillRect(W * 0.07 + 4, 204 + k * 4.5, 46, 1.5);
+  b.strokeStyle = "rgba(0,0,0,0.4)"; b.lineWidth = 3;
+  b.strokeRect(W * 0.66, FLOOR_Y - 150, 70, 138);
+  b.fillStyle = "rgba(0,0,0,0.18)"; b.fillRect(W * 0.66 + 2, FLOOR_Y - 148, 66, 134);
+  b.fillStyle = "rgba(255,255,255,0.08)"; b.fillRect(W * 0.66 + 54, FLOOR_Y - 84, 8, 3);
   b.fillStyle = "#2a2a31"; b.fillRect(0, FLOOR_Y - 12, W, 12);
   b.fillStyle = "#3a3a42"; b.fillRect(0, FLOOR_Y - 12, W, 1.2);
   // Floor tiles
