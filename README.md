@@ -61,7 +61,7 @@ Die Puppe kann nicht durch sich selbst gleiten: Kopf, Hals und Bauch halten Abst
 
 Die Organzeile nennt immer den echten Grund für die Zeit: BLUTVERLUST bei offenen Wunden, das blutende Organ, HERZSTILLSTAND, LUNGEN VERSAGEN, ERTRINKT oder BAUCHFELLENTZÜNDUNG.
 
-In den Einstellungen schaltet FRONTANSICHT die Puppen auf Blick nach vorn: zwei Augen, beide Arme und Beine gleich hell nebeneinander, Haare an beiden Seiten und Schuhe, die nach vorn zeigen. Ruhig stehende Puppen stehen dann aufrecht wie in der Vorschau von "Schuss präzisieren": Arme gerade neben dem Körper, Beine gerade und parallel, mit leichtem Atmen. Fallen sie, werden getroffen oder gegriffen, gehen sie fließend in die normale Physik über. Dann öffnet langes Drücken auf eine Puppe mit dem Greifen-Werkzeug ein Menü: SCHUSS PRÄZISIEREN, HEILEN, PINS LÖSEN und ENTFERNEN. "Schuss präzisieren" zeigt die Puppe groß von vorn. Du ziehst den Finger zum Zielen, die Ansicht zeigt Körperteil und getroffene Organe, und beim Loslassen fällt der Schuss genau dort. RÖNTGEN macht die Organe sichtbar. Das Spiel läuft dabei in Zeitlupe weiter.
+In den Einstellungen schaltet FRONTANSICHT die Puppen auf Blick nach vorn: zwei Augen, beide Arme und Beine gleich hell nebeneinander, Haare an beiden Seiten und Schuhe, die nach vorn zeigen. Stehende Puppen halten sich dann mit ihren Muskeln aufrecht wie in der Vorschau von "Schuss präzisieren": Arme gerade neben dem Körper, Beine gerade und parallel. Das passiert in der echten Physik, darum sitzen Treffer, Wunden und Blut genau dort, wo du die Puppe siehst. Ein Schuss in Brust oder Arm lässt sie kurz zucken, sie bleibt aber stehen. Ein Schuss in Kopf oder Bein lässt sie einknicken. Mehrere Treffer machen so viel Schmerz, dass sie zusammensackt. Dann öffnet langes Drücken auf eine Puppe mit dem Greifen-Werkzeug ein Menü: SCHUSS PRÄZISIEREN, HEILEN, PINS LÖSEN und ENTFERNEN. "Schuss präzisieren" zeigt die Puppe groß von vorn. Du ziehst den Finger zum Zielen, die Ansicht zeigt Körperteil und getroffene Organe, und beim Loslassen fällt der Schuss genau dort. RÖNTGEN macht die Organe sichtbar. Das Spiel läuft dabei in Zeitlupe weiter.
 
 Die Infusion hängt einen Blutbeutel mit Schlauch an die Puppe. Sie füllt Blut auf, schließt Wunden, senkt Schmerz und weckt eine bewusstlose Puppe. Eine tote Puppe rettet sie nicht mehr.
 
@@ -72,6 +72,10 @@ Zustände: WACH, K.O. und TOT. Eine K.O.-Puppe atmet, ihr Herz schlägt und sie 
 Mit GitHub Pages läuft das Spiel unter https://doggooffiziell-coder.github.io/Claude/ und startet vom Home-Bildschirm im Vollbild ohne Browserleiste.
 
 Der Raum passt seine Breite an den Bildschirm an, damit links und rechts keine schwarzen Balken bleiben.
+
+## Leistung
+
+Das Spiel spart Rechenzeit, wo es geht. Der Wasserausgleich rechnet nur jeden zweiten Schritt und schläft, solange kein Becken im Raum ist. Die Symbole im Dock, die Waffen-Sprites und die Körpertafel im Panel werden einmal gemalt und danach als fertiges Bild wiederverwendet. Ein langsames Handy rechnet höchstens drei Physikschritte pro Bild und lässt den Rest fallen, damit sich Ruckler nicht aufschaukeln.
 
 ## Starten in Godot
 

@@ -115,7 +115,7 @@ const darken = (c, t) => [c[0] * (1 - t), c[1] * (1 - t), c[2] * (1 - t)];
 const css = (c, a = 1) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`;
 
 const canvas = document.getElementById("screen");
-const ctx = canvas.getContext("2d");
+let ctx = canvas.getContext("2d"); // swapped for a moment while a bitmap is cached
 let K = 1; // device pixels per world unit
 
 // ======================================================================
@@ -279,8 +279,12 @@ function worldStep() {
 
 // Communicating vessels: water from a high surface flows to the lowest
 // connected surface nearby, so a pool levels out within a second or two.
+// It runs every second step with twice the tries, and when the room holds no
+// pool it only looks again a quarter second later.
 const colTop = new Int16Array(W);
+let levelIdle = 0;
 function levelWater() {
+  if ((tick & 1) || tick < levelIdle) return;
   let any = false;
   for (let x = 0; x < W; x++) {
     let y = 0;
@@ -288,8 +292,8 @@ function levelWater() {
     colTop[x] = y;
     if (y < H && mat[y * W + x] === WATER) any = true;
   }
-  if (!any) return;
-  for (let n = 0; n < 400; n++) {
+  if (!any) { levelIdle = tick + 15; return; }
+  for (let n = 0; n < 800; n++) {
     const x = rnd(W), h = colTop[x];
     if (h >= H || mat[h * W + x] !== WATER || h === 0) continue;
     const d = Math.random() < 0.5 ? 1 : -1;
@@ -849,15 +853,22 @@ class Doll {
     this.addWound(k, t, s, 1.1 + wp.dmg * 0.7, false, "shot");
     this.addWound(k, t, s, 1.2 + wp.dmg, false, "shot");
     const [x, y] = this.woundPos({ part: k, t, s, stump: false });
-    const fx = dir || Math.sign(x - state.gunX) || 1;
-    this.burst(x, y, 16 + Math.round(wp.dmg * 12), fx, 0, 340);
-    splatAround(x + fx * 50, y, 7);
-    for (const i of [this.pa[k], this.pb[k]]) this.push(i, fx * wp.push * 0.5, 0);
+    // The bullet flies into the picture: blood sprays out of the hole on all
+    // sides and the exit wound marks the wall right behind the body.
+    const fx = dir || 1;
+    this.burst(x, y, 8 + Math.round(wp.dmg * 6), fx * 0.6, -0.5, 200);
+    this.burst(x, y, 6 + Math.round(wp.dmg * 4), -fx * 0.6, -0.4, 160);
+    splatAround(x + rf(-8, 8), y + rf(-6, 8), 6);
+    for (const i of [this.pa[k], this.pb[k]]) this.push(i, fx * wp.push * 0.08, 0);
     this.pn = Math.min(100, this.pn + 22 * wp.dmg);
     this.hurtPart(k, 18 * wp.dmg);
     this.hits[k]++;
+    const before = this.stagger;
     this.damaged();
-    this.stagger = Math.max(this.stagger, 1.2);
+    // A hit to the head or a leg buckles the doll. Elsewhere it flinches and keeps standing.
+    const leg = k === THIGH_L || k === THIGH_R || k === SHIN_L || k === SHIN_R || k === FOOT_L || k === FOOT_R;
+    if (k === HEAD || leg) this.stagger = Math.max(before, 1.2);
+    else { this.stagger = before; this.flinch = 0.4; }
     for (const id of organs) this.organ[ORGAN[id]] = Math.max(0, this.organ[ORGAN[id]] - 85 * wp.dmg * rf(0.85, 1.15));
     if (k === HEAD) {
       this.ko -= 45 * wp.dmg;
@@ -917,6 +928,17 @@ class Doll {
       for (let i = 0; i < this.x.length; i++) this.pushOut(i);
       this.pushOutSegments();
     }
+    // In the front view a calm standing doll keeps the clean upright stance:
+    // the muscles finish the step by lining the body up over its feet.
+    if (this.standing && settings.front && this.grabbed < 0) {
+      this.flinch = Math.max(0, (this.flinch || 0) - DT);
+      const s = 0.3 * clamp(this.ko / 100, 0, 1) * (1 - this.pn / 130) * (1 - this.flinch * 2);
+      if (s > 0.02) {
+        const cx = (feet0[0] + feet0[2]) / 2, gy = Math.max(this.y[P_ANKLE_L], this.y[P_ANKLE_R]) + 8;
+        this.poseToward(cx - (FRONT_POSE[P_ANKLE_L][0] + FRONT_POSE[P_ANKLE_R][0]) / 2 * this.facing, gy, s, false);
+        for (let it = 0; it < 2; it++) for (let k = 0; k < PART_COUNT; k++) this.solveDistance(this.pa[k], this.pb[k], this.restLen[k]);
+      }
+    }
     // Standing feet grip the floor instead of sliding.
     if (this.standing) {
       const ids = [P_ANKLE_L, P_TOE_L, P_ANKLE_R, P_TOE_R];
@@ -933,10 +955,6 @@ class Doll {
     }
     this.updateEffects();
     this.updateVitals();
-    // How far the picture eases into the clean front pose (see rasterDoll).
-    const calm = settings.front && this.standing && this.grabbed < 0 && !this.dead && !this.isOut() && this.pins.size === 0 &&
-      this.stagger <= 0 && !this.severed.includes(true) && !this.gone.includes(true);
-    this.visW = moveToward(this.visW || 0, calm ? 1 : 0, DT * (calm ? 1.5 : 4));
   }
 
   // The grabbed point follows the finger with a little give instead of snapping to it.
@@ -1640,7 +1658,7 @@ class Doll {
   }
 
   woundPos(w) {
-    const ax = this.x[this.pa[w.part]], ay = this.y[this.pa[w.part]];
+    let ax = this.x[this.pa[w.part]], ay = this.y[this.pa[w.part]];
     const bx = this.x[this.pb[w.part]], by = this.y[this.pb[w.part]];
     if (w.part === HEAD) {
       if (w.stump) return [ax, ay];
@@ -1648,6 +1666,7 @@ class Doll {
       return [bx + Math.cos(a) * HEAD_R * 0.62, by + Math.sin(a) * HEAD_R * 0.62];
     }
     if (w.stump) return w.t < 0.5 ? [ax, ay] : [bx, by];
+    [ax, ay] = limbStart(this, w.part);
     const l = Math.hypot(bx - ax, by - ay) || 1, dx = (bx - ax) / l, dy = (by - ay) / l;
     const off = w.s * Math.max(0, WIDTH[w.part] * 0.5 - 4);
     return [lerp(ax, bx, w.t) - dy * off, lerp(ay, by, w.t) + dx * off];
@@ -1971,25 +1990,32 @@ function rasterRect(ax, ay, bx, by, hw, e0, e1, order, base, stain) {
   }
 }
 
-// In the front view a calm standing doll is shown in its clean upright pose,
-// breathing a little. Physics stays as it is; only the picture is eased.
-function rasterDoll(d) {
-  const w = easeOut(d.visW || 0);
-  if (w <= 0.01) { rasterDollRaw(d); return; }
-  const cx = (d.x[P_ANKLE_L] + d.x[P_ANKLE_R]) / 2, gy = (d.y[P_ANKLE_L] + d.y[P_ANKLE_R]) / 2 + 8.09;
-  const breath = Math.sin(performance.now() / 1000 * 2.1 + d.id) * 0.7;
-  const vx = d.x.slice(), vy = d.y.slice();
-  for (let i = 0; i < FRONT_POSE.length; i++) {
-    const up = i <= P_HAND_R ? breath * (i === P_HIP ? 0 : 1) : 0;
-    vx[i] = lerp(d.x[i], cx + FRONT_POSE[i][0] * d.facing, w);
-    vy[i] = lerp(d.y[i], gy + FRONT_POSE[i][1] + up, w);
+// Where a limb is drawn to start. The arms leave the torso at its edge and,
+// in the front view, the legs leave the hip on their own side. Hits and
+// wounds use the same spot, so they land where the body is drawn.
+function limbStart(d, k) {
+  const ax = d.x[d.pa[k]], ay = d.y[d.pa[k]];
+  if ((k === UARM_L || k === UARM_R) && !d.severed[k]) {
+    const nkx = d.x[d.pa[TORSO]], nky = d.y[d.pa[TORSO]], wsx = d.x[d.pb[TORSO]], wsy = d.y[d.pb[TORSO]];
+    const tl = Math.hypot(wsx - nkx, wsy - nky) || 1, tx = (wsx - nkx) / tl, ty = (wsy - nky) / tl, nx = -ty, ny = tx;
+    const shx = nkx + tx * SHOULDER_DROP, shy = nky + ty * SHOULDER_DROP;
+    const bx = d.x[d.pb[k]], by = d.y[d.pb[k]];
+    const side = Math.sign((bx - shx) * nx + (by - shy) * ny) || 1;
+    const off = settings.front ? RECT[TORSO][0] + RECT[k][0] - 2 : RECT[TORSO][0] - RECT[k][0] * 0.8;
+    return [shx + nx * side * off, shy + ny * side * off];
   }
-  const sx = d.x, sy = d.y;
-  d.x = vx; d.y = vy;
-  try { rasterDollRaw(d); } finally { d.x = sx; d.y = sy; }
+  if (settings.front && (k === THIGH_L || k === THIGH_R) && !d.severed[k] && d.attached(PELVIS)) {
+    const wx = d.x[d.pa[PELVIS]], wy = d.y[d.pa[PELVIS]], hx = d.x[d.pb[PELVIS]], hy = d.y[d.pb[PELVIS]];
+    const pl = Math.hypot(hx - wx, hy - wy) || 1, nx = -(hy - wy) / pl, ny = (hx - wx) / pl;
+    const bx = d.x[d.pb[k]], by = d.y[d.pb[k]];
+    const side = Math.sign((bx - hx) * nx + (by - hy) * ny) || (k === THIGH_L ? -1 : 1);
+    const off = RECT[PELVIS][0] - RECT[k][0];
+    return [hx + nx * side * off, hy + ny * side * off];
+  }
+  return [ax, ay];
 }
 
-function rasterDollRaw(d) {
+function rasterDoll(d) {
   // Bounding box of the doll in pixels, with room for the head and outline.
   let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
   for (let i = 0; i < d.x.length; i++) {
@@ -2001,10 +2027,6 @@ function rasterDollRaw(d) {
   for (let y = bby0; y <= bby1; y++) tmask.fill(0, y * DW + bbx0, y * DW + bbx1 + 1);
 
   const P = (i) => [d.x[i] / PIX, d.y[i] / PIX];
-  // Shoulders sit on the top of the torso, a little below the neck.
-  const [nkx, nky] = P(d.pa[TORSO]), [wsx, wsy] = P(d.pb[TORSO]);
-  const tl = Math.hypot(wsx - nkx, wsy - nky) || 1;
-  const shoulder = [nkx + (wsx - nkx) / tl * SHOULDER_DROP / PIX, nky + (wsy - nky) / tl * SHOULDER_DROP / PIX];
 
   let order = 1;
   for (const k of settings.front ? FRONT_ORDER : DRAW_ORDER) {
@@ -2056,22 +2078,7 @@ function rasterDollRaw(d) {
         put(mx, my, darken(base, 0.45)); put(mx - fx, my - fy, darken(base, 0.45));
       }
     } else {
-      if ((k === UARM_L || k === UARM_R) && !d.severed[k]) {
-        // Each arm leaves the torso at the shoulder on the side it hangs toward.
-        // A severed arm is drawn from its own torn end instead.
-        const tx = (wsx - nkx) / tl, ty = (wsy - nky) / tl, nx = -ty, ny = tx;
-        const side = Math.sign((bx - shoulder[0]) * nx + (by - shoulder[1]) * ny) || 1;
-        const off = (settings.front ? RECT[TORSO][0] + RECT[k][0] - 2 : RECT[TORSO][0] - RECT[k][0] * 0.8) / PIX;
-        ax = shoulder[0] + nx * side * off; ay = shoulder[1] + ny * side * off;
-      }
-      if (settings.front && (k === THIGH_L || k === THIGH_R) && !d.severed[k] && d.attached(PELVIS)) {
-        // Front view: each leg leaves the hip on its own side, so both stand parallel.
-        const [wx2, wy2] = P(d.pa[PELVIS]), [hx2, hy2] = P(d.pb[PELVIS]);
-        const pl = Math.hypot(hx2 - wx2, hy2 - wy2) || 1, nx = -(hy2 - wy2) / pl, ny = (hx2 - wx2) / pl;
-        const side = Math.sign((bx - hx2) * nx + (by - hy2) * ny) || (k === THIGH_L ? -1 : 1);
-        const off = (RECT[PELVIS][0] - RECT[k][0]) / PIX;
-        ax = hx2 + nx * side * off; ay = hy2 + ny * side * off;
-      }
+      if (k !== HEAD) { const st = limbStart(d, k); ax = st[0] / PIX; ay = st[1] / PIX; }
       const [hw, e0, e1] = RECT[k];
       if (settings.front && (k === FOOT_L || k === FOOT_R)) {
         // Front view: the shoe points at you, so it shows as a short wide block
@@ -2491,6 +2498,20 @@ function iconGlow(x, y, r, color) {
   ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
 }
 
+// Tool icons are painted once per size into a small bitmap and reused.
+const iconCache = new Map();
+function drawIconCached(i, cx, cy) {
+  const key = i + ":" + K + (i === T_GUN ? ":" + state.weapon : "");
+  let c = iconCache.get(key);
+  if (!c) {
+    c = document.createElement("canvas"); c.width = c.height = Math.ceil(56 * K);
+    const real = ctx; ctx = c.getContext("2d");
+    try { ctx.setTransform(K, 0, 0, K, 28 * K, 28 * K); drawIcon(i, 0, 0); } finally { ctx = real; }
+    iconCache.set(key, c);
+  }
+  ctx.drawImage(c, cx - 28, cy - 28, 56, 56);
+}
+
 function drawIcon(i, cx, cy) {
   ctx.save();
   ctx.translate(cx, cy);
@@ -2692,7 +2713,7 @@ function drawToolbar() {
       }
       const lift = 2 * sel, cx = it.x + it.w / 2, cy = by + BTN / 2 - 2 - lift;
       if (it.tool !== T_GUN) {
-        ctx.save(); ctx.globalAlpha *= 0.72 + 0.28 * Math.max(sel, hov); drawIcon(it.tool, cx, cy + 1); ctx.restore();
+        ctx.save(); ctx.globalAlpha *= 0.72 + 0.28 * Math.max(sel, hov); drawIconCached(it.tool, cx, cy + 1); ctx.restore();
       } else {
         const sp = WEAPONS[state.weapon].sprite, z = Math.min(1.3, (it.w - 12) / sp[0].length);
         drawSpriteOutlined(sp, cx - sp[0].length * z / 2, cy - sp.length * z / 2 - 2, z, 0.65 + 0.35 * Math.max(sel, hov));
@@ -2933,7 +2954,7 @@ function fingerHit(x, y) {
     const d = state.dolls[n];
     for (let k = 0; k < PART_COUNT; k++) {
       if (d.gone[k]) continue;
-      const ax = d.x[d.pa[k]], ay = d.y[d.pa[k]], bx = d.x[d.pb[k]], by = d.y[d.pb[k]];
+      const [ax, ay] = limbStart(d, k), bx = d.x[d.pb[k]], by = d.y[d.pb[k]];
       let dist, r;
       if (k === HEAD) { dist = Math.hypot(x - bx, y - by); r = HEAD_R + 2; }
       else { const [qx, qy] = closestOnSeg(x, y, ax, ay, bx, by); dist = Math.hypot(x - qx, y - qy); r = (RECT[k] ? RECT[k][0] : WIDTH[k] * 0.5) + 2; }
@@ -2944,7 +2965,7 @@ function fingerHit(x, y) {
   }
   if (!best) return null;
   const { d, k } = best;
-  const ax = d.x[d.pa[k]], ay = d.y[d.pa[k]], bx = d.x[d.pb[k]], by = d.y[d.pb[k]];
+  const [ax, ay] = limbStart(d, k), bx = d.x[d.pb[k]], by = d.y[d.pb[k]];
   let t, s, sv;
   if (k === HEAD) {
     t = (((Math.atan2(y - by, x - bx) / (Math.PI * 2)) % 1) + 1) % 1;
@@ -3237,7 +3258,36 @@ function ctxHit(x, y) {
   return l.items.find((it) => x >= it.x - 3 && x <= it.x + it.w + 3) || { kind: "bar" };
 }
 // A sprite with a thin light rim, for dark guns on dark buttons.
-function drawSpriteOutlined(rows, x, y, z, alpha = 1) {
+// Sprites are painted block by block once per size, then reused as a bitmap.
+const spriteCache = new Map();
+function spriteBitmap(rows, z, outlined) {
+  let m = spriteCache.get(rows);
+  if (!m) spriteCache.set(rows, (m = new Map()));
+  const key = z + ":" + K + ":" + outlined;
+  let c = m.get(key);
+  if (!c) {
+    if (m.size > 8) m.clear();
+    const pad = outlined ? Math.ceil(Math.max(0.8, z * 0.7)) + 1 : 1;
+    const cols = Math.max(...rows.map((r) => r.length));
+    c = document.createElement("canvas");
+    c.lw = cols * z + pad * 2; c.lh = rows.length * z + pad * 2; c.pad = pad;
+    c.width = Math.ceil(c.lw * K); c.height = Math.ceil(c.lh * K);
+    const real = ctx; ctx = c.getContext("2d");
+    try { ctx.setTransform(K, 0, 0, K, pad * K, pad * K); (outlined ? paintSpriteOutlined : paintSprite)(rows, 0, 0, z); } finally { ctx = real; }
+    m.set(key, c);
+  }
+  return c;
+}
+function drawSpriteOutlined(rows, x, y, z, alpha = 1) { blitSprite(spriteBitmap(rows, z, true), x, y, alpha); }
+function drawSprite(rows, x, y, z, alpha = 1) { blitSprite(spriteBitmap(rows, z, false), x, y, alpha); }
+function blitSprite(c, x, y, alpha) {
+  const prev = ctx.globalAlpha;
+  ctx.globalAlpha = prev * alpha;
+  ctx.drawImage(c, x - c.pad, y - c.pad, c.lw, c.lh);
+  ctx.globalAlpha = prev;
+}
+
+function paintSpriteOutlined(rows, x, y, z, alpha = 1) {
   const prev = ctx.globalAlpha, o = Math.max(0.8, z * 0.7);
   ctx.globalAlpha = prev * alpha * 0.55;
   ctx.fillStyle = "#9a9aa6";
@@ -3245,11 +3295,11 @@ function drawSpriteOutlined(rows, x, y, z, alpha = 1) {
     for (let c = 0; c < rows[r].length; c++) if (rows[r][c] !== ".") ctx.fillRect(x + c * z - o, y + r * z - o, z + o * 2, z + o * 2);
   }
   ctx.globalAlpha = prev;
-  drawSprite(rows, x, y, z, alpha);
+  paintSprite(rows, x, y, z, alpha);
 }
 
 // A weapon sprite drawn as crisp blocks for menus and buttons.
-function drawSprite(rows, x, y, z, alpha = 1) {
+function paintSprite(rows, x, y, z, alpha = 1) {
   const prev = ctx.globalAlpha;
   ctx.globalAlpha = prev * alpha;
   for (let r = 0; r < rows.length; r++) {
@@ -3472,12 +3522,14 @@ function drawLung(side, c, dk) {
   ctx.moveTo(x(4), -36.4); ctx.lineTo(x(7.6), -37.4); ctx.moveTo(x(6.5), -32); ctx.lineTo(x(9.4), -30.2); ctx.stroke();
 }
 
-function drawChartOrgans(d, cx, cy, s) {
-  const now = performance.now() / 1000;
+// "still" draws everything that does not move, "live" the beating heart and
+// the pulsing marks. Without a mode it draws both.
+function drawChartOrgans(d, cx, cy, s, mode) {
+  const now = performance.now() / 1000, still = mode !== "live", live = mode !== "still";
   ctx.save();
   ctx.translate(cx, cy); ctx.scale(s, s);
   // Windpipe between the lungs
-  if (d.attached(TORSO)) {
+  if (still && d.attached(TORSO)) {
     ctx.strokeStyle = "rgba(240,220,214,0.85)"; ctx.lineWidth = 1.1; ctx.lineCap = "round";
     ctx.beginPath(); ctx.moveTo(0, -47); ctx.lineTo(0, -40.5); ctx.moveTo(0, -40.5); ctx.lineTo(-1, -40); ctx.moveTo(0, -40.5); ctx.lineTo(1, -40); ctx.stroke();
   }
@@ -3488,6 +3540,8 @@ function drawChartOrgans(d, cx, cy, s) {
     if (!d.attached(o.part)) return;
     const hp = d.organ[n] / 100, base = hex(ORGAN_COLOR[o.id]);
     const c = mixc(hex("#2a1a1e"), base, 0.25 + 0.75 * hp);
+    const beats = o.id === "heart" && !d.arrest && !d.dead;
+    if (beats ? live : still) {
     ctx.save();
     ctx.globalAlpha *= d.dead ? 0.6 : 1;
     // The heart beats on the chart while it works.
@@ -3497,7 +3551,8 @@ function drawChartOrgans(d, cx, cy, s) {
     }
     ORGAN_DRAW[o.id](css(c), css(darken(c, 0.35)));
     ctx.restore();
-    if (hp <= 0) {
+    }
+    if (live && hp <= 0) {
       // Destroyed: a red X that pulses.
       const a = d.dead ? 0.6 : 0.55 + 0.45 * Math.sin(now * 6);
       ctx.strokeStyle = css(hex("#ff3040"), a); ctx.lineWidth = 0.9; ctx.lineCap = "round";
@@ -3554,8 +3609,37 @@ function chartPoint(w) {
   return [rx + rw / 2 + w.s * rw * 0.3, ry + rh * clamp(w.t, 0.08, 0.92)];
 }
 
+// The figure and its organs change only when the doll gets hurt, so they are
+// drawn into a bitmap once and reused until something changes.
+const chartCache = { key: "", can: null };
 function drawBodyChart(d, x, y, w, h) {
   const s = h / 150, cx = x + w / 2, cy = y + h / 2 + 2 * s;
+  let key = K + "|" + w + "|" + h + "|" + (d.frozen ? 1 : 0) + (d.dead ? 1 : 0) + (d.arrest ? 1 : 0) + "|";
+  for (let k = 0; k < PART_COUNT; k++) key += (d.attached(k) ? Math.round(d.dmg[k] / 3) + "." + Math.round(d.char[k] * 20) : "x") + ",";
+  for (let n = 0; n < ORGANS.length; n++) key += Math.round(d.organ[n]) + ",";
+  const m = 6;
+  if (chartCache.key !== key) {
+    const c = chartCache.can || (chartCache.can = document.createElement("canvas"));
+    c.width = Math.ceil((w + m * 2) * K); c.height = Math.ceil((h + m * 2) * K);
+    const real = ctx; ctx = c.getContext("2d");
+    try {
+      ctx.setTransform(K, 0, 0, K, (m - x) * K, (m - y) * K);
+      drawChartBody(d, x, y, w, h, cx, cy, s);
+      drawChartOrgans(d, cx, cy, s, "still");
+    } finally { ctx = real; }
+    chartCache.key = key;
+  }
+  ctx.drawImage(chartCache.can, x - m, y - m, w + m * 2, h + m * 2);
+  drawChartOrgans(d, cx, cy, s, "live");
+  const now = performance.now() / 1000;
+  for (const wd of d.wounds) {
+    if (!d.attached(wd.part)) continue;
+    const [wx, wy] = chartPoint(wd);
+    drawWoundMark(wd, cx + wx * s, cy + wy * s, s * 1.2, now);
+  }
+}
+
+function drawChartBody(d, x, y, w, h, cx, cy, s) {
   const order = [TORSO, PELVIS, HEAD, UARM_R, LARM_R, UARM_L, LARM_L, THIGH_R, SHIN_R, FOOT_R, THIGH_L, SHIN_L, FOOT_L];
   ctx.lineJoin = "round";
   for (const k of order) {
@@ -3573,13 +3657,6 @@ function drawBodyChart(d, x, y, w, h) {
     ctx.fillStyle = g; ctx.fill();
     // A thin gap in the panel color separates every part from its neighbors.
     ctx.strokeStyle = "#0a0a0d"; ctx.lineWidth = 1.8; ctx.stroke();
-  }
-  drawChartOrgans(d, cx, cy, s);
-  const now = performance.now() / 1000;
-  for (const wd of d.wounds) {
-    if (!d.attached(wd.part)) continue;
-    const [wx, wy] = chartPoint(wd);
-    drawWoundMark(wd, cx + wx * s, cy + wy * s, s * 1.2, now);
   }
 }
 
@@ -5227,6 +5304,7 @@ function fit() {
   canvas.width = Math.round(cw * dpr);
   canvas.height = Math.round(ch * dpr);
   K = canvas.width / W;
+  iconCache.clear(); spriteCache.clear(); chartCache.key = "";
   buildStatic();
 }
 let refitTimer = 0;
@@ -5366,8 +5444,10 @@ function loop(now) {
     acc = 0;
     drawScreen(realDt);
   } else {
-    while (acc >= DT && steps < 4) { physicsStep(); acc -= DT; steps++; }
-    if (steps === 4) acc = 0;
+    // A slow phone runs at most three steps per frame and drops the rest,
+    // so one slow frame does not snowball into the next.
+    while (acc >= DT && steps < 3) { physicsStep(); acc -= DT; steps++; }
+    if (steps === 3) acc = 0;
     render();
   }
   requestAnimationFrame(loop);
