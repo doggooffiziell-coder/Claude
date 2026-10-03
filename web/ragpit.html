@@ -1800,23 +1800,23 @@ const TAGS = [["OUT", "#a2a2aa"], ["BLEED", "#d6202f"], ["FIRE", "#ff5a1e"], ["C
 const MINI = [[0, -12], [0, -8], [0, 0], [0, 3], [-5, -3], [-7, 2], [5, -3], [7, 2], [-2, 9], [-3, 15], [-5, 15], [2, 9], [3, 15], [5, 15]];
 const MINI_W = [2, 4.2, 4, 2, 1.8, 2, 1.8, 2.4, 2, 1.4, 2.4, 2, 1.4];
 
-// The dock at the bottom: tools in groups, each weapon with its own button.
+// The dock at the bottom: tools in groups split by thin dividers.
 const DOCK_GROUPS = [
   { color: "#ecece6", items: [{ tool: T_GRAB }] },
   { color: "#5aa0f0", items: [{ tool: T_WATER }, { tool: T_BUCKET }] },
-  { color: "#e8443a", items: [{ tool: T_BLADE }, { tool: T_GUN, weapon: 0 }, { tool: T_GUN, weapon: 1 }, { tool: T_GUN, weapon: 2 }] },
+  { color: "#e8443a", items: [{ tool: T_BLADE }, { tool: T_GUN }] },
   { color: "#ff8a2a", items: [{ tool: T_FIRE }, { tool: T_ICE }, { tool: T_BOMB }] },
   { color: "#4ccf5a", items: [{ tool: T_IV }] },
   { color: "#e6c850", items: [{ tool: T_DOLL }, { tool: T_RESET }] },
 ];
-const DOCK_GAP = 4, DOCK_GROUP_GAP = 16;
+const DOCK_GAP = 5, DOCK_GROUP_GAP = 18;
 const DOCK = (() => {
   const items = [], seps = [];
   let x = 0;
   DOCK_GROUPS.forEach((g, gi) => {
     if (gi) { seps.push(x + DOCK_GROUP_GAP / 2 - DOCK_GAP); x += DOCK_GROUP_GAP - DOCK_GAP; }
     for (const it of g.items) {
-      const w = it.weapon === undefined ? BTN : it.weapon === 2 ? 50 : 62;
+      const w = it.tool === T_GUN ? 58 : BTN;
       items.push({ ...it, color: g.color, x, w });
       x += w + DOCK_GAP;
     }
@@ -1825,8 +1825,8 @@ const DOCK = (() => {
   for (const it of items) it.x += x0;
   return { items, seps: seps.map((s) => s + x0), x0, total };
 })();
-const dockName = (it) => (it.weapon !== undefined ? WEAPONS[it.weapon].name : TOOL_NAMES[it.tool]);
-const dockOn = (it) => state.tool === it.tool && (it.weapon === undefined || state.weapon === it.weapon);
+const dockName = (it) => TOOL_NAMES[it.tool];
+const dockOn = (it) => state.tool === it.tool;
 function toolbarHit(x, y) {
   if (y < TOOLBAR_Y - 6 || y >= TOOLBAR_Y + BTN + 6) return -1;
   for (let i = 0; i < DOCK.items.length; i++) {
@@ -1989,6 +1989,18 @@ function drawPanel(d) {
   ctx.restore();
 }
 
+// Tool icons: small painted shapes with a light from the top left.
+function iconGrad(x0, y0, x1, y1, a, b) {
+  const g = ctx.createLinearGradient(x0, y0, x1, y1);
+  g.addColorStop(0, a); g.addColorStop(1, b);
+  return g;
+}
+function iconGlow(x, y, r, color) {
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+  g.addColorStop(0, color); g.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+}
+
 function drawIcon(i, cx, cy) {
   ctx.save();
   ctx.translate(cx, cy);
@@ -1996,94 +2008,152 @@ function drawIcon(i, cx, cy) {
   ctx.lineCap = "round"; ctx.lineJoin = "round";
   switch (i) {
     case T_GRAB: {
-      ctx.fillStyle = "#ecece6";
-      rr(-6, -1, 12, 9, 3); ctx.fill();
-      for (const fx of [-5, -2, 1, 4]) { rr(fx, -9 + Math.abs(fx + 0.5) * 0.4, 2.6, 10, 1.3); ctx.fill(); }
-      ctx.beginPath(); ctx.ellipse(-7, 2, 2, 4, -0.6, 0, Math.PI * 2); ctx.fill();
+      // Open hand: four fingers, the thumb out to the side and the palm
+      ctx.fillStyle = iconGrad(-6, -10, 6, 9, "#fff4e6", "#c9b49c");
+      const fingers = [[-5.2, -8], [-2, -10.4], [1.2, -10], [4.3, -7.6]];
+      for (const [fx, fy] of fingers) { rr(fx, fy, 2.8, 11, 1.4); ctx.fill(); }
+      ctx.save(); ctx.translate(-5, 3.5); ctx.rotate(-0.85); rr(-1.6, -7.5, 3.2, 8.5, 1.6); ctx.fill(); ctx.restore();
+      rr(-5.4, -1.5, 12.6, 10.5, 3.8); ctx.fill();
+      ctx.strokeStyle = "rgba(120,96,72,0.5)"; ctx.lineWidth = 0.6;
+      ctx.beginPath(); for (const [fx] of fingers.slice(1)) { ctx.moveTo(fx - 0.2, -2.2); ctx.lineTo(fx - 0.2, 0.4); } ctx.stroke();
+      ctx.fillStyle = "rgba(255,255,255,0.35)"; rr(-3.8, 0, 3, 6, 1.5); ctx.fill();
       break;
     }
     case T_WATER: {
-      ctx.fillStyle = "#3c82e6";
-      ctx.beginPath(); ctx.moveTo(0, -10);
-      ctx.bezierCurveTo(5, -3, 8, 1, 8, 4); ctx.arc(0, 4, 8, 0, Math.PI); ctx.bezierCurveTo(-8, 1, -5, -3, 0, -10);
-      ctx.fill();
-      ctx.fillStyle = "#b4d8ff"; ctx.beginPath(); ctx.ellipse(-3, 4, 1.6, 3, 0.3, 0, Math.PI * 2); ctx.fill();
-      break;
-    }
-    case T_BLADE: {
-      ctx.rotate(-Math.PI / 4);
-      ctx.fillStyle = "#d4d9e3";
-      ctx.beginPath(); ctx.moveTo(-3, -12); ctx.lineTo(2.5, -8); ctx.lineTo(2.5, 3); ctx.lineTo(-3, 3); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = "#8c5a32"; rr(-3.5, 4, 7, 9, 2); ctx.fill();
-      ctx.fillStyle = "#5c5c66"; ctx.fillRect(-5, 2.5, 10, 2);
-      break;
-    }
-    case T_FIRE: {
-      ctx.fillStyle = "#f06e1e";
+      // Drop with depth and a shine
       ctx.beginPath(); ctx.moveTo(0, -11);
-      ctx.bezierCurveTo(7, -4, 9, 2, 7, 6); ctx.quadraticCurveTo(0, 13, -7, 6); ctx.bezierCurveTo(-9, 1, -4, -2, 0, -11); ctx.fill();
-      ctx.fillStyle = "#ffdc50";
-      ctx.beginPath(); ctx.moveTo(0, -3); ctx.bezierCurveTo(4, 1, 5, 4, 3, 7); ctx.quadraticCurveTo(0, 10, -3, 7); ctx.bezierCurveTo(-5, 4, -2, 1, 0, -3); ctx.fill();
-      break;
-    }
-    case T_ICE: {
-      ctx.strokeStyle = "#a6e0fc"; ctx.lineWidth = 2;
-      for (let a = 0; a < 3; a++) {
-        ctx.save(); ctx.rotate(a * Math.PI / 3);
-        ctx.beginPath(); ctx.moveTo(0, -10); ctx.lineTo(0, 10);
-        ctx.moveTo(-3, -7); ctx.lineTo(0, -4.5); ctx.lineTo(3, -7);
-        ctx.moveTo(-3, 7); ctx.lineTo(0, 4.5); ctx.lineTo(3, 7);
-        ctx.stroke(); ctx.restore();
-      }
-      break;
-    }
-    case T_BOMB: {
-      ctx.fillStyle = "#3a3a44"; ctx.beginPath(); ctx.arc(-1, 3, 8, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = "#62626e"; ctx.beginPath(); ctx.arc(-4, 0, 2.6, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = "#b08a5a"; ctx.lineWidth = 1.8;
-      ctx.beginPath(); ctx.moveTo(4, -3); ctx.quadraticCurveTo(7, -9, 10, -8); ctx.stroke();
-      ctx.fillStyle = "#ffd050"; ctx.beginPath(); ctx.arc(10, -8.5, 2.4, 0, Math.PI * 2); ctx.fill();
+      ctx.bezierCurveTo(4, -5, 8, -1, 8, 3.5); ctx.arc(0, 3.5, 8, 0, Math.PI); ctx.bezierCurveTo(-8, -1, -4, -5, 0, -11);
+      ctx.fillStyle = iconGrad(-6, -10, 6, 11, "#8cc8ff", "#1f58c8"); ctx.fill();
+      ctx.fillStyle = "rgba(10,40,120,0.35)"; ctx.beginPath(); ctx.ellipse(1.5, 6.5, 5, 3, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.85)"; ctx.beginPath(); ctx.ellipse(-3.2, 2.5, 1.6, 3.2, 0.35, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.6)"; ctx.beginPath(); ctx.arc(-1.2, -2.8, 0.9, 0, Math.PI * 2); ctx.fill();
       break;
     }
     case T_BUCKET: {
-      ctx.fillStyle = "#9aa4b2";
-      ctx.beginPath(); ctx.moveTo(-8, -4); ctx.lineTo(8, -4); ctx.lineTo(6, 10); ctx.lineTo(-6, 10); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = "#3c82e6"; ctx.fillRect(-7, -4, 14, 3);
-      ctx.strokeStyle = "#cfd6e0"; ctx.lineWidth = 1.6;
-      ctx.beginPath(); ctx.arc(0, -4, 8, Math.PI, 0); ctx.stroke();
+      // Metal bucket with water inside
+      ctx.strokeStyle = "#9aa0aa"; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.arc(0, -3, 7.5, Math.PI * 1.05, Math.PI * 1.95); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-8, -3); ctx.lineTo(-6, 10); ctx.quadraticCurveTo(0, 12, 6, 10); ctx.lineTo(8, -3); ctx.closePath();
+      ctx.fillStyle = iconGrad(-8, 0, 8, 0, "#e2e6ec", "#7e8590"); ctx.fill();
+      ctx.fillStyle = "rgba(0,0,0,0.18)"; ctx.fillRect(-7.2, 2, 14.4, 1.2); ctx.fillRect(-6.8, 6.5, 13.6, 1.2);
+      ctx.beginPath(); ctx.ellipse(0, -3, 8, 2.6, 0, 0, Math.PI * 2);
+      ctx.fillStyle = "#5a606a"; ctx.fill();
+      ctx.beginPath(); ctx.ellipse(0, -2.6, 6.6, 1.8, 0, 0, Math.PI * 2);
+      ctx.fillStyle = iconGrad(-6, -3, 6, -2, "#7cc0ff", "#2f6ad8"); ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.7)"; ctx.fillRect(-3.5, -3.2, 3, 0.8);
+      break;
+    }
+    case T_BLADE: {
+      // Kitchen knife at an angle
+      ctx.rotate(-Math.PI / 4);
+      ctx.beginPath(); ctx.moveTo(-0.5, -13); ctx.quadraticCurveTo(3.2, -7, 3, 2); ctx.lineTo(-2.8, 2); ctx.lineTo(-2.8, -9); ctx.closePath();
+      ctx.fillStyle = iconGrad(-3, 0, 3, 0, "#ffffff", "#9ca4b2"); ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.9)"; ctx.lineWidth = 0.6;
+      ctx.beginPath(); ctx.moveTo(2.6, -6); ctx.quadraticCurveTo(3.1, -2, 2.9, 1.5); ctx.stroke();
+      ctx.fillStyle = "#6a707c"; rr(-3.8, 2, 7.6, 2.2, 0.8); ctx.fill();
+      rr(-3, 4.2, 6, 9.5, 2); ctx.fillStyle = iconGrad(-3, 0, 3, 0, "#a8683a", "#5a3218"); ctx.fill();
+      ctx.fillStyle = "#e6d2b0";
+      for (const ry of [6.6, 10.6]) { ctx.beginPath(); ctx.arc(0, ry, 0.8, 0, Math.PI * 2); ctx.fill(); }
       break;
     }
     case T_GUN: {
-      const z = 0.76;
-      drawSprite(SPRITE_AK, -SPRITE_AK[0].length * z / 2, -SPRITE_AK.length * z / 2, z);
+      // The weapon picked in the bar at the top left
+      const sp = WEAPONS[state.weapon].sprite, z = Math.min(0.76, 26 / sp[0].length);
+      drawSpriteOutlined(sp, -sp[0].length * z / 2, -sp.length * z / 2, z);
+      break;
+    }
+    case T_FIRE: {
+      // Three layered flames with a warm glow
+      iconGlow(0, 3, 12, "rgba(255,120,30,0.35)");
+      const flame = (s, y0) => {
+        ctx.beginPath(); ctx.moveTo(0, -11 * s + y0);
+        ctx.bezierCurveTo(5 * s, -5 * s + y0, 8 * s, -1 * s + y0, 7 * s, 4 * s + y0);
+        ctx.bezierCurveTo(6 * s, 9 * s + y0, -6 * s, 9 * s + y0, -7 * s, 4 * s + y0);
+        ctx.bezierCurveTo(-8 * s, -1 * s + y0, -3 * s, -3 * s + y0, -2 * s, -7 * s + y0);
+        ctx.bezierCurveTo(-1 * s, -5 * s + y0, 1 * s, -6 * s + y0, 0, -11 * s + y0);
+        ctx.closePath();
+      };
+      flame(1, 0); ctx.fillStyle = iconGrad(0, -11, 0, 10, "#ff9a3a", "#d8301a"); ctx.fill();
+      flame(0.66, 3); ctx.fillStyle = iconGrad(0, -5, 0, 10, "#ffe27a", "#ff9030"); ctx.fill();
+      flame(0.34, 6); ctx.fillStyle = "#fff8e0"; ctx.fill();
+      break;
+    }
+    case T_ICE: {
+      // Crystal snowflake with a cold glow
+      iconGlow(0, 0, 12, "rgba(120,200,255,0.25)");
+      ctx.strokeStyle = iconGrad(-10, -10, 10, 10, "#e8f8ff", "#6ab8f0"); ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let k = 0; k < 6; k++) {
+        const a = k * Math.PI / 3 - Math.PI / 2, ex = Math.cos(a) * 10, ey = Math.sin(a) * 10;
+        ctx.moveTo(0, 0); ctx.lineTo(ex, ey);
+        const bx = Math.cos(a) * 6, by = Math.sin(a) * 6;
+        ctx.moveTo(bx, by); ctx.lineTo(bx + Math.cos(a + 0.75) * 3.2, by + Math.sin(a + 0.75) * 3.2);
+        ctx.moveTo(bx, by); ctx.lineTo(bx + Math.cos(a - 0.75) * 3.2, by + Math.sin(a - 0.75) * 3.2);
+      }
+      ctx.stroke();
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath(); for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3; ctx.lineTo(Math.cos(a) * 2.6, Math.sin(a) * 2.6); } ctx.closePath(); ctx.fill();
+      break;
+    }
+    case T_BOMB: {
+      // Round bomb, metal cap, fuse and a bright spark
+      const bg = ctx.createRadialGradient(-3.5, -1, 1, 0, 2, 9.5);
+      bg.addColorStop(0, "#6a6a78"); bg.addColorStop(0.5, "#2a2a32"); bg.addColorStop(1, "#0e0e12");
+      ctx.fillStyle = bg; ctx.beginPath(); ctx.arc(-1, 2.5, 8.5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.55)"; ctx.beginPath(); ctx.ellipse(-4.2, -1.5, 1.8, 1.1, -0.6, 0, Math.PI * 2); ctx.fill();
+      ctx.save(); ctx.translate(4, -4.5); ctx.rotate(0.75);
+      rr(-2.4, -2, 4.8, 3.6, 0.8); ctx.fillStyle = iconGrad(-2, 0, 2, 0, "#c8ccd6", "#6a6e78"); ctx.fill();
+      ctx.restore();
+      ctx.strokeStyle = "#b89a6a"; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(5.5, -6); ctx.quadraticCurveTo(7, -10, 9.5, -9.5); ctx.stroke();
+      iconGlow(9.6, -9.6, 4.5, "rgba(255,200,80,0.9)");
+      ctx.fillStyle = "#fff6cc";
+      ctx.beginPath(); for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4, r = k % 2 ? 1 : 2.6; ctx.lineTo(9.6 + Math.cos(a) * r, -9.6 + Math.sin(a) * r); } ctx.closePath(); ctx.fill();
       break;
     }
     case T_IV: {
-      // Blood bag with a tube
-      ctx.strokeStyle = "#8c8c96"; ctx.lineWidth = 1.4;
-      ctx.beginPath(); ctx.moveTo(-1, -12); ctx.lineTo(-1, -9); ctx.stroke();
-      ctx.fillStyle = "#d8dde4"; rr(-7, -9, 12, 15, 3); ctx.fill();
-      ctx.fillStyle = "#c8182a"; rr(-7, -3, 12, 9, 3); ctx.fill();
-      ctx.fillStyle = "#f4f4f4"; ctx.fillRect(-4, -6, 6, 3);
-      ctx.strokeStyle = "#c8182a"; ctx.lineWidth = 1.6;
-      ctx.beginPath(); ctx.moveTo(-1, 6); ctx.quadraticCurveTo(-1, 12, 6, 11); ctx.stroke();
-      ctx.fillStyle = "#6ee66e"; ctx.fillRect(5, 4, 6, 2); ctx.fillRect(7, 2, 2, 6);
+      // Blood bag on a hook with a tube and a drop
+      ctx.strokeStyle = "#8c8c96"; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(-1, -12); ctx.lineTo(-1, -9.5); ctx.stroke();
+      rr(-7, -9.5, 12, 15, 3.5);
+      ctx.fillStyle = "rgba(235,240,245,0.92)"; ctx.fill();
+      ctx.save(); rr(-7, -9.5, 12, 15, 3.5); ctx.clip();
+      ctx.fillStyle = iconGrad(0, -3, 0, 6, "#e0283c", "#8a0c1c"); ctx.fillRect(-7, -3.5, 12, 9);
+      ctx.fillStyle = "rgba(255,255,255,0.35)"; ctx.fillRect(-5.8, -3, 1.2, 7);
+      ctx.restore();
+      ctx.fillStyle = "#ffffff"; rr(-4.5, -7.8, 7, 2.6, 0.8); ctx.fill();
+      ctx.strokeStyle = "#c8222f"; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(-1, 5.5); ctx.quadraticCurveTo(-1, 10, 3, 10.5); ctx.stroke();
+      ctx.fillStyle = "#e0283c"; ctx.beginPath(); ctx.arc(4.5, 10.6, 1.3, 0, Math.PI * 2); ctx.fill();
       break;
     }
     case T_DOLL: {
-      ctx.fillStyle = "#ecece6"; ctx.strokeStyle = "#ecece6"; ctx.lineWidth = 2.6;
-      ctx.beginPath(); ctx.arc(-3, -7, 3.6, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.moveTo(-3, -3); ctx.lineTo(-3, 4); ctx.moveTo(-8, -1); ctx.lineTo(2, -1);
-      ctx.moveTo(-3, 4); ctx.lineTo(-6, 11); ctx.moveTo(-3, 4); ctx.lineTo(0, 11); ctx.stroke();
-      ctx.strokeStyle = "#6ee66e"; ctx.lineWidth = 2.4;
-      ctx.beginPath(); ctx.moveTo(8, -6); ctx.lineTo(8, 2); ctx.moveTo(4, -2); ctx.lineTo(12, -2); ctx.stroke();
+      // A blocky person with a green plus badge
+      ctx.fillStyle = "#0b0b0e";
+      rr(-9.6, -11.6, 9.2, 9.2, 1.5); ctx.fill(); rr(-10.6, -2.6, 11.2, 9.2, 1.5); ctx.fill(); rr(-9.6, 6, 9.2, 6.6, 1); ctx.fill();
+      ctx.fillStyle = iconGrad(0, -11, 0, -3, "#f4d8bc", "#d4a882"); ctx.fillRect(-8.6, -10.6, 7.2, 7.2);
+      ctx.fillStyle = "#5a3a22"; ctx.fillRect(-8.6, -10.6, 7.2, 2.2);
+      ctx.fillStyle = "#16161a"; ctx.fillRect(-3.8, -7.5, 1.2, 1.2);
+      ctx.fillStyle = iconGrad(0, -2, 0, 6, "#5aa49c", "#2e6e68"); ctx.fillRect(-9.6, -1.6, 9.2, 7.2);
+      ctx.fillStyle = "#38425a"; ctx.fillRect(-8.6, 6, 3.2, 5.6); ctx.fillRect(-4.6, 6, 3.2, 5.6);
+      ctx.fillStyle = "#2ea84a"; ctx.beginPath(); ctx.arc(6, 4.5, 5.6, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#5ad070"; ctx.beginPath(); ctx.arc(6, 4.5, 4.6, Math.PI, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#ffffff"; ctx.fillRect(5.1, 1.2, 1.8, 6.6); ctx.fillRect(2.7, 3.6, 6.6, 1.8);
       break;
     }
     case T_RESET: {
-      ctx.strokeStyle = "#e6c850"; ctx.lineWidth = 2.6;
-      ctx.beginPath(); ctx.arc(0, 1, 8, -Math.PI * 0.35, Math.PI * 1.45); ctx.stroke();
-      ctx.fillStyle = "#e6c850";
-      ctx.beginPath(); ctx.moveTo(4, -9); ctx.lineTo(10, -6); ctx.lineTo(4, -2); ctx.closePath(); ctx.fill();
+      // Circular arrow with its head on the open end
+      const r = 8, a0 = Math.PI * 0.15, a1 = Math.PI * 1.78;
+      ctx.lineWidth = 2.8;
+      ctx.strokeStyle = iconGrad(-9, -9, 9, 9, "#ffe680", "#d0a020");
+      ctx.beginPath(); ctx.arc(0, 0, r, a0, a1); ctx.stroke();
+      const ex = Math.cos(a1) * r, ey = Math.sin(a1) * r, tx = Math.cos(a1 + Math.PI / 2), ty = Math.sin(a1 + Math.PI / 2);
+      ctx.fillStyle = "#ffe680";
+      ctx.beginPath();
+      ctx.moveTo(ex + tx * 4.5, ey + ty * 4.5);
+      ctx.lineTo(ex - tx * 1 + ty * 4, ey - ty * 1 - tx * 4);
+      ctx.lineTo(ex - tx * 1 - ty * 4, ey - ty * 1 + tx * 4);
+      ctx.closePath(); ctx.fill();
       break;
     }
   }
@@ -2117,14 +2187,14 @@ function drawToolbar() {
         ctx.restore();
       }
       const lift = 2 * sel, cx = it.x + it.w / 2, cy = by + BTN / 2 - 2 - lift;
-      if (it.weapon === undefined) {
+      if (it.tool !== T_GUN) {
         ctx.save(); ctx.globalAlpha *= 0.72 + 0.28 * Math.max(sel, hov); drawIcon(it.tool, cx, cy + 1); ctx.restore();
       } else {
-        const sp = WEAPONS[it.weapon].sprite, z = Math.min(1.35, (it.w - 12) / sp[0].length);
+        const sp = WEAPONS[state.weapon].sprite, z = Math.min(1.3, (it.w - 12) / sp[0].length);
         drawSpriteOutlined(sp, cx - sp[0].length * z / 2, cy - sp.length * z / 2 - 2, z, 0.65 + 0.35 * Math.max(sel, hov));
-        // Rounds left in this weapon
-        const wp = WEAPONS[it.weapon], ammo = state.ammo[it.weapon];
-        const loading = state.weapon === it.weapon && state.reloadT > 0;
+        // Rounds left in the picked weapon
+        const wp = WEAPONS[state.weapon], ammo = state.ammo[state.weapon];
+        const loading = state.reloadT > 0;
         label(loading ? "LÄDT" : ammo + "/" + wp.mag, cx, by + BTN - 12, 7, loading ? "#e6c850" : ammo / wp.mag < 0.25 ? "#ff6a5a" : "#7a7a84", "center");
       }
     });
@@ -2533,11 +2603,12 @@ function rasterGun() {
 // Context bar above the toolbar: water amount and weapon choice
 // ======================================================================
 
-const ctxH = () => 36;
+const ctxH = () => (state.tool === T_GUN ? 60 : 36);
 // Sits top left under the title, so it never covers the floor where dolls stand.
 const ctxY = () => 66;
 function ctxItems() {
   if (state.tool === T_WATER) return [1, 2, 3, 4, 5].map((n) => ({ kind: "water", n, w: 34, label: String(n) }));
+  if (state.tool === T_GUN) return WEAPONS.map((wp, n) => ({ kind: "gun", n, w: 104, label: wp.name.toUpperCase() }));
   return [];
 }
 function ctxLayout() {
@@ -3591,17 +3662,10 @@ function resetScene() {
   loadMap(state.map);
 }
 
-// A dock button: picks the tool and, for a weapon button, that weapon.
+// A dock button picks its tool with a short pop.
 function useDock(n) {
-  const it = DOCK.items[n];
   pop("tb" + n);
-  const swap = it.weapon !== undefined && (state.weapon !== it.weapon || state.tool !== T_GUN);
-  if (it.weapon !== undefined && state.weapon !== it.weapon) {
-    state.weapon = it.weapon; state.reloadT = 0; state.triggerDown = false; state.climb = 0;
-    if (state.tool === T_GUN) state.toolT = 0;
-  }
-  useButton(it.tool);
-  if (swap) state.toastText = WEAPONS[it.weapon].name + ": ziehen = zielen, rot = Feuer";
+  useButton(DOCK.items[n].tool);
 }
 
 function useButton(i) {
