@@ -32,6 +32,20 @@ Der Knopf "EXTRAS" oben öffnet eine Liste: Blut entfernen, Wasser entfernen, Fe
 
 Das Schadenspanel zeigt eine Körpertafel von vorn in normalen Proportionen. Jeder Körperteil ist eine eigene Fläche mit schmalem Spalt und färbt sich nach seinem Schaden von Weiß über Gelb und Orange bis Rot. Fehlende Teile erscheinen als gestrichelte Umrisse. Oben läuft ein EKG.
 
+Jede Puppe hat Organe: Gehirn, Herz, zwei Lungen, Leber, Magen, Nieren und Darm. Schüsse, Klingen und harte Stürze treffen die Organe an der getroffenen Stelle. Je nach Organ kommt der Tod schneller oder langsamer:
+
+| Organ zerstört | Folge | Tod nach etwa |
+| --- | --- | --- |
+| Gehirn | sofort tot | 0 s |
+| Herz | Herzstillstand, kein Sauerstoff mehr | 14 s |
+| Beide Lungen | Ersticken | 20 s |
+| Leber | starke innere Blutung | 45 s |
+| Nieren | innere Blutung | 100 s |
+| Magen | Blutung und starke Schmerzen | 3 min |
+| Darm | langsame Blutung und Schmerzen | 5 min |
+
+Verletzte Organe heilen langsam, mit Infusion schneller. Zerstörte Organe heilen nicht, nur "Alle heilen" in den Extras stellt sie wieder her. Die Infusion füllt Blut nach und kann so eine Leberblutung überbrücken, ein stehendes Herz rettet sie nicht. Die Körpertafel zeigt die Organe in Farbe, zerstörte mit einem roten X, und das Herz schlägt mit. Darunter steht das schlimmste Organ mit der Zeit bis zum Tod, nach dem Tod die Ursache.
+
 Die Infusion hängt einen Blutbeutel mit Schlauch an die Puppe. Sie füllt Blut auf, schließt Wunden, senkt Schmerz und weckt eine bewusstlose Puppe. Eine tote Puppe rettet sie nicht mehr.
 
 Zustände: WACH, K.O. und TOT. Eine K.O.-Puppe atmet, ihr Herz schlägt und sie wacht nach einigen Sekunden wieder auf. Eine tote Puppe zuckt kurz und bleibt liegen. Verletzungen ändern die Bewegung: ein kaputtes Bein verhindert das Stehen, ein verletzter Arm hängt schlaff, Schmerz lässt die Puppe sich winden und eine Hand auf die Wunde drücken, Feuer und Ertrinken lösen Panik aus. Liegt eine wache Puppe am Boden, versucht sie aufzustehen. Mit einem kaputten Bein schafft sie es nicht und fällt zurück.
