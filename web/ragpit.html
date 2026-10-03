@@ -472,9 +472,9 @@ function splat(x, y, r) {
 
 let gibs = [];
 const COL_MEAT = hex("#8e1424"), COL_MEAT_HI = hex("#c8445a"), COL_BONE = hex("#ece3cf");
-function spawnGib(x, y, vx, vy, bone = false, casing = false) {
+function spawnGib(x, y, vx, vy, bone = false, casing = false, mag = false) {
   if (gibs.length > 260) gibs.shift();
-  gibs.push({ x, y, vx, vy, r: casing ? 3.2 : bone ? rf(4, 6) : rf(4, 8.5), rot: rf(0, 6.28), vr: rf(-12, 12), bone, casing, bleed: casing ? 0 : rf(1, 3), still: 0 });
+  gibs.push({ x, y, vx, vy, r: mag ? 6 : casing ? 3.2 : bone ? rf(4, 6) : rf(4, 8.5), rot: mag ? Math.PI / 2 : rf(0, 6.28), vr: mag ? rf(-3, 3) : rf(-12, 12), bone, casing, mag, bleed: casing ? 0 : rf(1, 3), still: 0 });
 }
 function stepGibs() {
   for (const g of gibs) {
@@ -584,8 +584,8 @@ class Doll {
     const sx = bx - ax, sy = by - ay, l2 = sx * sx + sy * sy || 1;
     const t = k === HEAD ? Math.random() : clamp(((x - ax) * sx + (y - ay) * sy) / l2, 0, 1);
     const side = Math.sign(sx * (y - ay) - sy * (x - ax)) || 1;
-    this.addWound(k, t, side * 0.8, 1.1 + wp.dmg * 0.7);
-    this.addWound(k, clamp(t + rf(-0.12, 0.12), 0, 1), -side * 0.8, 1.2 + wp.dmg);
+    this.addWound(k, t, side * 0.8, 1.1 + wp.dmg * 0.7, false, "shot");
+    this.addWound(k, clamp(t + rf(-0.12, 0.12), 0, 1), -side * 0.8, 1.2 + wp.dmg, false, "shot");
     const w = k === HEAD ? HEAD_R : (TAPER[k][0] + TAPER[k][1]) / 2;
     this.burst(x + dx * w, y + dy * w, 16 + Math.round(wp.dmg * 12), dx, dy, 340);
     this.burst(x, y, 5, -dx, -dy, 120);
@@ -1001,11 +1001,11 @@ class Doll {
     }
   }
 
-  addWound(k, t, s, severity, stump = false) {
+  addWound(k, t, s, severity, stump = false, kind = "hit") {
     if (this.gone[k]) return;
     if (!stump) {
       for (const w of this.wounds) {
-        if (w.part === k && !w.stump && Math.abs(w.t - t) < 0.2) {
+        if (w.part === k && !w.stump && w.kind === kind && Math.abs(w.t - t) < 0.2) {
           w.bleed = Math.min(1, w.bleed + severity * 0.12);
           w.size = Math.min(3.5, w.size + 0.5);
           return;
@@ -1017,7 +1017,7 @@ class Doll {
       this.wounds.splice(idx >= 0 ? idx : 0, 1);
     }
     this.wounds.push({ part: k, t: clamp(t, 0, 1), s: clamp(s, -1, 1), bleed: severity * 0.25,
-      size: severity < 1.5 ? 1.4 : 2.2, stump, rot: rf(-0.6, 0.6) });
+      size: severity < 1.5 ? 1.4 : 2.2, stump, kind, rot: rf(-0.6, 0.6), seed: Math.random() * 6.28 });
   }
 
   sever(k) {
@@ -1088,7 +1088,7 @@ class Doll {
       if (this.bladeCd[k] > 0) continue;
       this.bladeCd[k] = 0.15;
       this.hurtPart(k, 30);
-      this.addWound(k, t, rf(-1, 1), 0.7 + speed / 1600);
+      this.addWound(k, t, rf(-1, 1), 0.7 + speed / 1600, false, "cut");
       this.pn = Math.min(100, this.pn + 14);
       const l = Math.hypot(bx - ax, by - ay) || 1;
       this.burst(cx, cy, 22, (bx - ax) / l, (by - ay) / l, 200);
@@ -1678,15 +1678,16 @@ function rasterGib(g) {
   const cx = g.x / PIX, cy = g.y / PIX, r = g.r / PIX;
   const put = (x, y, c) => { if (x >= 0 && y >= 0 && x < DW && y < DH) { const o = (y * DW + x) * 4; ppx[o] = c[0]; ppx[o + 1] = c[1]; ppx[o + 2] = c[2]; ppx[o + 3] = 255; } };
   const ca = Math.cos(g.rot), sa = Math.sin(g.rot);
-  const rx = g.casing ? 1.2 : g.bone ? r * 1.6 : r * 1.25, ry = g.casing ? 0.5 : g.bone ? Math.max(0.6, r * 0.45) : r * 0.85;
+  const rx = g.mag ? 3.2 : g.casing ? 1.2 : g.bone ? r * 1.6 : r * 1.25, ry = g.mag ? 1.3 : g.casing ? 0.5 : g.bone ? Math.max(0.6, r * 0.45) : r * 0.85;
   for (let pass = 0; pass < 2; pass++) {
     const grow = pass === 0 ? 1 : 0;
     for (let y = Math.floor(cy - rx - 1); y <= Math.ceil(cy + rx + 1); y++) {
       for (let x = Math.floor(cx - rx - 1); x <= Math.ceil(cx + rx + 1); x++) {
         const ex = x + 0.5 - cx, ey = y + 0.5 - cy;
         const u = (ex * ca + ey * sa) / (rx + grow), v = (-ex * sa + ey * ca) / (ry + grow);
-        if (u * u + v * v > 1) continue;
+        if (g.mag ? Math.abs(u) > 1 || Math.abs(v) > 1 : u * u + v * v > 1) continue;
         if (pass === 0) put(x, y, PX_BLACK);
+        else if (g.mag) put(x, y, v < -0.3 ? GUN_COLORS.l : GUN_COLORS.m);
         else if (g.casing) put(x, y, u < -0.2 ? hex("#f0c860") : hex("#c8962c"));
         else if (g.bone) put(x, y, PX_BONE);
         else put(x, y, u * 0.6 + v * 0.8 < -0.35 ? COL_MEAT_HI : COL_MEAT);
@@ -1793,7 +1794,7 @@ function togglePanel() {
 const FS_OK = !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
 const FS_BTN = { x: 170, y: 9, w: 34, h: 34 };
 const inFsBtn = (x, y) => FS_OK && x >= FS_BTN.x && x < FS_BTN.x + FS_BTN.w && y >= FS_BTN.y && y < FS_BTN.y + FS_BTN.h;
-const blocksInput = (x, y) => toolbarHit(x, y) >= 0 || inPanel(x, y) || inFsBtn(x, y) || inMenuBtn(x, y) || inExtrasBtn(x, y) || inExtras(x, y) || !!ctxHit(x, y);
+const blocksInput = (x, y) => toolbarHit(x, y) >= 0 || !!gunButtonAt(x, y) || inPanel(x, y) || inFsBtn(x, y) || inMenuBtn(x, y) || inExtrasBtn(x, y) || inExtras(x, y) || !!ctxHit(x, y);
 
 function toggleFullscreen() {
   const el = document.documentElement;
@@ -2053,14 +2054,7 @@ function drawToolbar() {
   }
 }
 
-function drawGunRing() {
-  if (state.tool !== T_GUN) return;
-  ctx.setLineDash([4, 4]); ctx.strokeStyle = state.gunDrag ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.22)"; ctx.lineWidth = 1.2;
-  ctx.beginPath(); ctx.arc(state.gunX, state.gunY, 42, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
-}
-
 function drawCursor() {
-  drawGunRing();
   const { mx, my } = state;
   if (!state.pointerSeen || blocksInput(mx, my)) return;
   ctx.strokeStyle = "rgba(255,255,255,0.45)"; ctx.lineWidth = 1.2;
@@ -2076,13 +2070,7 @@ function drawCursor() {
     ctx.beginPath(); ctx.arc(mx, my, 18, 0, Math.PI * 2); ctx.stroke();
     ctx.setLineDash([]);
   } else if (state.tool === T_GUN) {
-    if (state.pressing && !state.gunDrag) {
-      ctx.strokeStyle = "rgba(255,90,90,0.9)"; ctx.lineWidth = 1.6;
-      ctx.beginPath(); ctx.arc(mx, my, 7, 0, Math.PI * 2);
-      ctx.moveTo(mx - 12, my); ctx.lineTo(mx - 4, my); ctx.moveTo(mx + 4, my); ctx.lineTo(mx + 12, my);
-      ctx.moveTo(mx, my - 12); ctx.lineTo(mx, my - 4); ctx.moveTo(mx, my + 4); ctx.lineTo(mx, my + 12);
-      ctx.stroke();
-    }
+    // The laser dot is the reticle.
   } else if (state.tool === T_IV) {
     ctx.strokeStyle = "rgba(110,230,110,0.8)"; ctx.lineWidth = 2.4;
     ctx.beginPath(); ctx.moveTo(mx - 6, my); ctx.lineTo(mx + 6, my); ctx.moveTo(mx, my - 6); ctx.lineTo(mx, my + 6); ctx.stroke();
@@ -2152,15 +2140,18 @@ const GUN_COLORS = {
   p: hex("#34352f"), q: hex("#5a5c53"), g: hex("#26272a"), r: hex("#ff3a30"),
 };
 const WEAPONS = [
-  { name: "AK-47", sprite: SPRITE_AK, grip: [12.5, 7], muzzle: [38, 3.5], auto: true, rate: 10, dmg: 1.0, spread: 0.045, push: 6, sever: 0.25, headKill: 0.3, kick: 0.06, snd: 1 },
-  { name: "Sturmgewehr", sprite: SPRITE_AR, grip: [12.5, 7], muzzle: [38, 3.5], auto: true, rate: 13, dmg: 0.85, spread: 0.025, push: 5, sever: 0.15, headKill: 0.22, kick: 0.045, snd: 0.8 },
-  { name: "Glock 17", sprite: SPRITE_GLOCK, grip: [4, 6], muzzle: [18, 2.5], auto: false, rate: 6, dmg: 0.65, spread: 0.015, push: 3.5, sever: 0.05, headKill: 0.12, kick: 0.03, snd: 0.6 },
+  { name: "AK-47", sprite: SPRITE_AK, grip: [12.5, 7], muzzle: [38, 3.5], mag: 30, reload: 2.4, climb: 0.035, auto: true, rate: 10, dmg: 1.0, spread: 0.045, push: 6, sever: 0.25, headKill: 0.3, kick: 0.06, snd: 1 },
+  { name: "Sturmgewehr", sprite: SPRITE_AR, grip: [12.5, 7], muzzle: [38, 3.5], mag: 30, reload: 2.0, climb: 0.022, auto: true, rate: 13, dmg: 0.85, spread: 0.025, push: 5, sever: 0.15, headKill: 0.22, kick: 0.045, snd: 0.8 },
+  { name: "Glock 17", sprite: SPRITE_GLOCK, grip: [4, 6], muzzle: [18, 2.5], mag: 17, reload: 1.4, climb: 0.07, auto: false, rate: 6, dmg: 0.65, spread: 0.015, push: 3.5, sever: 0.05, headKill: 0.12, kick: 0.03, snd: 0.6 },
 ];
 let tracers = [], flashes = [], sparks = [];
 
-// The gun is an object in the room. It always points where you last aimed.
+// The gun is an object in the room. It points where you aim, kicks back on
+// every shot and climbs a little during long bursts.
+const gunFlip = () => (Math.cos(state.gunAng) < 0 ? -1 : 1);
 function gunPose() {
-  return [state.gunX, state.gunY, state.gunAng];
+  const k = state.kick * 5, a = state.gunAng;
+  return [state.gunX - Math.cos(a) * k, state.gunY - Math.sin(a) * k, a - state.climb * gunFlip()];
 }
 
 function aimAt(x, y) {
@@ -2174,15 +2165,9 @@ function muzzlePoint(px0, py0, ang, wp) {
   return [px0 + Math.cos(ang) * u - Math.sin(ang) * v, py0 + Math.sin(ang) * u + Math.cos(ang) * v];
 }
 
-function fire() {
-  const wp = WEAPONS[state.weapon];
-  const [px0, py0, ang] = gunPose();
-  const [ox, oy] = muzzlePoint(px0, py0, ang, wp);
-  // The bullet flies from the muzzle straight at the tapped point.
-  const aim = Math.hypot(state.aimX - ox, state.aimY - oy) > 6 ? Math.atan2(state.aimY - oy, state.aimX - ox) : ang;
-  const a = aim + rf(-wp.spread, wp.spread);
-  const dx = Math.cos(a), dy = Math.sin(a), RANGE = 1100;
-  // First doll part along the ray
+// First doll part along a ray: [doll, part, distance].
+const RANGE = 1100;
+function dollOnRay(ox, oy, dx, dy) {
   let hitD = null, hitK = -1, hitT = RANGE;
   for (const d of state.dolls) {
     for (let k = 0; k < PART_COUNT; k++) {
@@ -2196,6 +2181,23 @@ function fire() {
       if (along > 0 && along < hitT) { hitT = along; hitD = d; hitK = k; }
     }
   }
+  return [hitD, hitK, hitT];
+}
+
+// Direction from the muzzle to the aim point, lifted by the recoil climb.
+function aimDir(ox, oy, ang) {
+  const aim = Math.hypot(state.aimX - ox, state.aimY - oy) > 6 ? Math.atan2(state.aimY - oy, state.aimX - ox) : ang;
+  return aim - state.climb * gunFlip();
+}
+
+function fire() {
+  const wp = WEAPONS[state.weapon];
+  state.ammo[state.weapon]--;
+  const [px0, py0, ang] = gunPose();
+  const [ox, oy] = muzzlePoint(px0, py0, ang, wp);
+  const a = aimDir(ox, oy, ang) + rf(-wp.spread, wp.spread);
+  const dx = Math.cos(a), dy = Math.sin(a);
+  const [hitD, hitK, hitT] = dollOnRay(ox, oy, dx, dy);
   // Walls, ice and water along the ray
   let endT = hitT, wall = false;
   for (let t = 4; t < hitT; t += 2) {
@@ -2221,7 +2223,162 @@ function fire() {
   const back = Math.cos(ang) < 0 ? 1 : -1;
   spawnGib(px0, py0 - 4, back * rf(60, 140), rf(-260, -160), false, true);
   state.shake = Math.max(state.shake, wp.kick);
+  state.kick = 1;
+  state.climb = Math.min(0.3, state.climb + wp.climb);
   gunSound(wp.snd);
+}
+
+// Short metallic clicks for an empty gun and for reloading.
+function clickSound(freq, vol = 0.12) {
+  try {
+    if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
+    if (audio.state === "suspended") audio.resume();
+    const o = audio.createOscillator(), g = audio.createGain(), t = audio.currentTime;
+    o.type = "square"; o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+    o.connect(g); g.connect(audio.destination); o.start(t); o.stop(t + 0.06);
+  } catch (e) { /* sound is optional */ }
+}
+
+// ----------------------------------------------------------- gun controls
+
+// Drag in the room to aim, the red button fires, the round button reloads.
+// The fire button has its own finger, so you can aim and shoot at once.
+const FIRE_BTN = { x: W - 66, y: 318, r: 38 };
+const RELOAD_BTN = { x: W - 150, y: 344, r: 23 };
+const MODE_BTN = { x: W - 182, y: 288, w: 64, h: 26 };
+const inCircle = (b, x, y, pad = 4) => Math.hypot(x - b.x, y - b.y) < b.r + pad;
+const inModeBtn = (x, y) => x >= MODE_BTN.x && x < MODE_BTN.x + MODE_BTN.w && y >= MODE_BTN.y && y < MODE_BTN.y + MODE_BTN.h;
+const gunUi = () => state.screen === "game" && state.tool === T_GUN;
+function gunButtonAt(x, y) {
+  if (!gunUi()) return null;
+  if (inCircle(FIRE_BTN, x, y)) return "fire";
+  if (inCircle(RELOAD_BTN, x, y)) return "reload";
+  if (inModeBtn(x, y)) return "mode";
+  return null;
+}
+const modeAuto = () => WEAPONS[state.weapon].auto && state.autoMode[state.weapon];
+
+function startReload() {
+  const wp = WEAPONS[state.weapon];
+  if (state.reloadT > 0 || state.ammo[state.weapon] >= wp.mag) return;
+  state.reloadT = wp.reload;
+  state.triggerDown = false;
+  clickSound(520);
+  // The empty magazine drops out under the gun.
+  const [px0, py0, ang] = gunPose();
+  spawnGib(px0 + Math.cos(ang) * 14, py0 + 10, rf(-30, 30), rf(-60, 0), false, true, true);
+}
+
+function pullTrigger() {
+  state.triggerDown = true;
+  if (state.reloadT > 0) return;
+  if (state.ammo[state.weapon] <= 0) {
+    clickSound(1400, 0.08);
+    state.toast = 1.2; state.toastText = "Leer. Nachladen!";
+    state.emptyFlash = 1;
+    return;
+  }
+  fire();
+  state.fireCd = 1 / WEAPONS[state.weapon].rate;
+}
+
+function gunButtonPress(b) {
+  if (b === "fire") pullTrigger();
+  else if (b === "reload") startReload();
+  else if (b === "mode") {
+    const wp = WEAPONS[state.weapon];
+    if (!wp.auto) { state.toast = 1; state.toastText = "Nur Einzelfeuer"; return; }
+    state.autoMode[state.weapon] = !state.autoMode[state.weapon];
+    clickSound(900, 0.06);
+    state.toast = 1; state.toastText = state.autoMode[state.weapon] ? "Dauerfeuer" : "Einzelfeuer";
+  }
+}
+
+function gunStep() {
+  const wp = WEAPONS[state.weapon];
+  if (state.tool !== T_GUN) state.triggerDown = false;
+  if (state.reloadT > 0) {
+    state.reloadT -= DT;
+    if (state.reloadT <= 0) { state.reloadT = 0; state.ammo[state.weapon] = wp.mag; clickSound(700); }
+  }
+  if (state.triggerDown && modeAuto() && state.reloadT <= 0) {
+    state.fireCd -= DT;
+    while (state.fireCd <= 0 && state.ammo[state.weapon] > 0) { fire(); state.fireCd += 1 / wp.rate; }
+    if (state.ammo[state.weapon] <= 0 && state.fireCd <= 0) { state.triggerDown = false; clickSound(1400, 0.08); state.emptyFlash = 1; }
+  }
+  state.kick = Math.max(0, state.kick - DT * 14);
+  state.climb = moveToward(state.climb, 0, (state.triggerDown ? 0.15 : 0.9) * DT);
+  state.emptyFlash = Math.max(0, state.emptyFlash - DT * 2);
+}
+
+// Red laser from the muzzle until it meets a wall or a body.
+function drawLaser() {
+  if (state.tool !== T_GUN || state.gunDrag) return;
+  const wp = WEAPONS[state.weapon];
+  const [px0, py0, ang] = gunPose();
+  const [ox, oy] = muzzlePoint(px0, py0, ang, wp);
+  const a = aimDir(ox, oy, ang), dx = Math.cos(a), dy = Math.sin(a);
+  const hitT = dollOnRay(ox, oy, dx, dy)[2];
+  let t = 4;
+  for (; t < hitT; t += 2) {
+    const x = ox + dx * t, y = oy + dy * t;
+    if (x < 0 || x >= W || y < 0 || y >= H || solidAt(x, y)) break;
+  }
+  t = Math.min(t, hitT);
+  const ex = ox + dx * t, ey = oy + dy * t;
+  const g = ctx.createLinearGradient(ox, oy, ex, ey);
+  g.addColorStop(0, "rgba(255,40,40,0.55)"); g.addColorStop(1, "rgba(255,40,40,0.25)");
+  ctx.strokeStyle = g; ctx.lineWidth = 0.9;
+  ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ex, ey); ctx.stroke();
+  const glow = ctx.createRadialGradient(ex, ey, 0, ex, ey, 7);
+  glow.addColorStop(0, "rgba(255,70,60,0.9)"); glow.addColorStop(1, "rgba(255,30,30,0)");
+  ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(ex, ey, 7, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#ffd0c8"; ctx.beginPath(); ctx.arc(ex, ey, 1.3, 0, Math.PI * 2); ctx.fill();
+}
+
+function drawGunControls() {
+  if (!gunUi()) return;
+  const wp = WEAPONS[state.weapon], ammo = state.ammo[state.weapon], now = performance.now();
+  // Fire button with the magazine as a ring around it
+  const f = FIRE_BTN, down = state.triggerDown;
+  ctx.beginPath(); ctx.arc(f.x, f.y, f.r + 5, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(15,15,19,0.88)"; ctx.fill();
+  const frac = state.reloadT > 0 ? 1 - state.reloadT / wp.reload : ammo / wp.mag;
+  ctx.lineCap = "butt"; ctx.lineWidth = 4;
+  ctx.strokeStyle = "#2c2c34"; ctx.beginPath(); ctx.arc(f.x, f.y, f.r + 1.5, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = state.reloadT > 0 ? "#e6c850" : ammo / wp.mag < 0.25 ? "#ff5040" : "#ecece6";
+  ctx.beginPath(); ctx.arc(f.x, f.y, f.r + 1.5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac); ctx.stroke();
+  const rg = ctx.createRadialGradient(f.x - 8, f.y - 10, 4, f.x, f.y, f.r);
+  rg.addColorStop(0, down ? "#ff6a5a" : "#e8443a"); rg.addColorStop(1, down ? "#9a1a14" : "#7c1410");
+  ctx.beginPath(); ctx.arc(f.x, f.y + (down ? 1.5 : 0), f.r - 3, 0, Math.PI * 2); ctx.fillStyle = rg; ctx.fill();
+  ctx.strokeStyle = "rgba(255,255,255,0.18)"; ctx.lineWidth = 1.2; ctx.stroke();
+  // Crosshair mark and the round count
+  const cy = f.y + (down ? 1.5 : 0);
+  label(state.reloadT > 0 ? "..." : String(ammo), f.x, cy - 3, 22, "#fff4ec", "center");
+  label(state.reloadT > 0 ? "LÄDT" : "FEUER", f.x, cy + 17, 9, "rgba(255,240,230,0.85)", "center");
+  // Reload button with a magazine icon, pulses when the gun is empty
+  const r = RELOAD_BTN, empty = ammo <= 0 && state.reloadT <= 0;
+  const pulse = empty ? 0.5 + 0.5 * Math.sin(now * 0.012) : 0;
+  ctx.beginPath(); ctx.arc(r.x, r.y, r.r, 0, Math.PI * 2);
+  ctx.fillStyle = empty ? css(mixc(hex("#26262c"), hex("#8a6a10"), pulse)) : "rgba(15,15,19,0.88)"; ctx.fill();
+  ctx.strokeStyle = empty || state.emptyFlash > 0 ? "#e6c850" : "#3e3e46"; ctx.lineWidth = 1.6; ctx.stroke();
+  if (state.reloadT > 0) {
+    ctx.strokeStyle = "#e6c850"; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(r.x, r.y, r.r - 3, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - state.reloadT / wp.reload)); ctx.stroke();
+  }
+  ctx.save(); ctx.translate(r.x, r.y - 3); ctx.rotate(0.18);
+  ctx.fillStyle = "#cfcfd6"; rr(-5, -9, 10, 15, 2); ctx.fill();
+  ctx.fillStyle = "#e6c850"; rr(-3.5, -12, 7, 4, 1.5); ctx.fill();
+  ctx.fillStyle = "#26262c"; for (let n = 0; n < 3; n++) ctx.fillRect(-3.5, -5 + n * 4, 7, 1.2);
+  ctx.restore();
+  label("LADEN", r.x, r.y + 13, 7, "#8e8e98", "center");
+  // Fire mode selector
+  const m = MODE_BTN, auto = modeAuto();
+  rr(m.x, m.y, m.w, m.h, 13);
+  ctx.fillStyle = "rgba(15,15,19,0.88)"; ctx.fill();
+  ctx.strokeStyle = wp.auto ? "#4c4c56" : "#2c2c34"; ctx.lineWidth = 1.4; ctx.stroke();
+  label(auto ? "AUTO" : "EINZEL", m.x + m.w / 2, m.y + m.h / 2 + 1, 10, wp.auto ? (auto ? "#ff7a5a" : "#ecece6") : "#5a5a64", "center");
 }
 
 let audio = null;
@@ -2394,13 +2551,70 @@ function drawBodyChart(d, x, y, w, h) {
     // A thin gap in the panel color separates every part from its neighbors.
     ctx.strokeStyle = "#0a0a0d"; ctx.lineWidth = 1.8; ctx.stroke();
   }
-  const pulse = 0.5 + 0.5 * Math.sin(performance.now() * 0.012);
+  const now = performance.now() / 1000;
   for (const wd of d.wounds) {
     if (!d.attached(wd.part)) continue;
     const [wx, wy] = chartPoint(wd);
-    ctx.fillStyle = wd.bleed > 0 ? css(mixc(hex("#b0101e"), hex("#ff4050"), pulse)) : "#6a2228";
-    ctx.beginPath(); ctx.arc(cx + wx * s, cy + wy * s, (wd.stump ? 3 : 1.9) * s, 0, Math.PI * 2); ctx.fill();
+    drawWoundMark(wd, cx + wx * s, cy + wy * s, s * 1.2, now);
   }
+}
+
+// Irregular blob around a point, the same shape every frame for one wound.
+function blobPath(x, y, r, seed, n = 7, rough = 0.35) {
+  ctx.beginPath();
+  for (let i = 0; i <= n; i++) {
+    const a = (i / n) * Math.PI * 2, q = r * (1 - rough / 2 + rough * (0.5 + 0.5 * Math.sin(seed * 7 + i * 2.3)));
+    i ? ctx.lineTo(x + Math.cos(a) * q, y + Math.sin(a) * q) : ctx.moveTo(x + Math.cos(a) * q, y + Math.sin(a) * q);
+  }
+  ctx.closePath();
+}
+
+// A thin stream of blood running down from a wound, with a drop that grows and falls.
+function drawDrip(x, y, s, bleed, seed, now) {
+  const len = (3 + bleed * 7) * s, wob = Math.sin(seed * 3) * 0.8 * s;
+  ctx.strokeStyle = "rgba(150,12,24,0.95)"; ctx.lineWidth = Math.max(0.8, 1.1 * s); ctx.lineCap = "round";
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x + wob, y + len * 0.5, x + wob * 0.6, y + len); ctx.stroke();
+  const ph = (now * (0.8 + bleed) + seed) % 1;
+  ctx.fillStyle = "#b3141f";
+  ctx.beginPath(); ctx.arc(x + wob * 0.6, y + len + ph * ph * 4 * s, (0.7 + ph * 0.6) * s, 0, Math.PI * 2); ctx.fill();
+}
+
+function drawWoundMark(w, x, y, s, now) {
+  const seed = w.seed || w.rot * 9, big = w.size > 2 ? 1.25 : 1;
+  if (w.stump) {
+    // Torn flesh with the bone end in the middle
+    blobPath(x, y, 3.6 * s, seed, 9, 0.5); ctx.fillStyle = "#7a0a16"; ctx.fill();
+    blobPath(x, y, 2.6 * s, seed + 1, 8, 0.4); ctx.fillStyle = "#c8344c"; ctx.fill();
+    ctx.fillStyle = "#ece6d4"; ctx.beginPath(); ctx.arc(x, y, 1.2 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#b8ab90"; ctx.beginPath(); ctx.arc(x + 0.3 * s, y + 0.3 * s, 0.5 * s, 0, Math.PI * 2); ctx.fill();
+    if (w.bleed > 0.05) drawDrip(x, y + 2.4 * s, s, w.bleed, seed, now);
+    return;
+  }
+  if (w.kind === "cut") {
+    // Slanted gash: dark core with swollen red edges
+    const a = w.rot + 0.6, l = 3.4 * s * big, ux = Math.cos(a) * l, uy = Math.sin(a) * l;
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "rgba(200,52,76,0.9)"; ctx.lineWidth = 2.2 * s;
+    ctx.beginPath(); ctx.moveTo(x - ux, y - uy); ctx.lineTo(x + ux, y + uy); ctx.stroke();
+    ctx.strokeStyle = "#3a0207"; ctx.lineWidth = 0.9 * s;
+    ctx.beginPath(); ctx.moveTo(x - ux * 0.9, y - uy * 0.9); ctx.lineTo(x + ux * 0.9, y + uy * 0.9); ctx.stroke();
+    if (w.bleed > 0.05) drawDrip(x + ux * 0.4, y + uy * 0.4 + 0.6 * s, s, w.bleed, seed, now);
+    return;
+  }
+  if (w.kind === "shot") {
+    // Bullet hole: bruised ring, red abrasion collar and a dark hole
+    const r = 1.2 * s * big;
+    blobPath(x, y, r * 2.6, seed, 8, 0.3); ctx.fillStyle = "rgba(110,30,60,0.35)"; ctx.fill();
+    blobPath(x, y, r * 1.75, seed + 2, 7, 0.25); ctx.fillStyle = "#a8162a"; ctx.fill();
+    ctx.fillStyle = "#1a0306"; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "rgba(255,140,140,0.35)"; ctx.beginPath(); ctx.arc(x - r * 0.9, y - r * 0.9, r * 0.45, 0, Math.PI * 2); ctx.fill();
+    if (w.bleed > 0.05) drawDrip(x, y + r, s, w.bleed, seed, now);
+    return;
+  }
+  // Blunt hit: torn skin over a bruise
+  blobPath(x, y, 3 * s * big, seed, 8, 0.45); ctx.fillStyle = "rgba(96,30,70,0.45)"; ctx.fill();
+  blobPath(x, y, 1.7 * s * big, seed + 3, 7, 0.5); ctx.fillStyle = "#9c1626"; ctx.fill();
+  if (w.bleed > 0.05) drawDrip(x, y + 1.2 * s, s, w.bleed, seed, now);
 }
 
 // ======================================================================
@@ -2786,6 +3000,8 @@ const state = {
   waterLevel: 3, weapon: 0, fireCd: 0, map: 0, screen: "menu",
   extrasOpen: false, extrasFlash: -1, extrasFlashT: 0, paused: false, slow: false,
   gunX: W * 0.22, gunY: FLOOR_Y - 130, gunAng: 0, gunDrag: false, aimX: W, aimY: FLOOR_Y - 130,
+  ammo: WEAPONS.map((wp) => wp.mag), autoMode: WEAPONS.map((wp) => wp.auto), reloadT: 0,
+  triggerDown: false, kick: 0, climb: 0, emptyFlash: 0,
 };
 
 function spawnDoll(bx, by) {
@@ -2813,7 +3029,7 @@ function useButton(i) {
     state.tool = i;
   }
   state.toast = 1.4;
-  state.toastText = i === T_DOLL ? "Tippe, wo sie stehen soll" : i === T_GUN ? "Waffe ziehen, woanders tippen = Schuss" : TOOL_NAMES[i];
+  state.toastText = i === T_DOLL ? "Tippe, wo sie stehen soll" : i === T_GUN ? "Ziehen = zielen, roter Knopf = Feuer" : TOOL_NAMES[i];
 }
 
 // New doll stands upright on the ground below the tap, no fall, no collapse.
@@ -2842,7 +3058,7 @@ function press() {
   const c = ctxHit(state.mx, state.my);
   if (c) {
     if (c.kind === "water") { state.waterLevel = c.n; state.toast = 1; state.toastText = "Menge " + c.n; }
-    if (c.kind === "gun") { state.weapon = c.n; state.toast = 1; state.toastText = WEAPONS[c.n].name; }
+    if (c.kind === "gun") { state.weapon = c.n; state.reloadT = 0; state.triggerDown = false; state.climb = 0; state.toast = 1; state.toastText = WEAPONS[c.n].name; }
     return;
   }
   const b = toolbarHit(state.mx, state.my);
@@ -2852,9 +3068,9 @@ function press() {
   state.lastX = state.mx; state.lastY = state.my;
   if (state.tool === T_BOMB) { explode(state.mx, Math.min(state.my, FLOOR_Y - 2)); state.pressing = false; return; }
   if (state.tool === T_GUN) {
-    // Grab the gun to move it, tap anywhere else to shoot there.
-    if (Math.hypot(state.mx - state.gunX, state.my - state.gunY) < 42) { state.gunDrag = true; return; }
-    aimAt(state.mx, state.my); fire(); state.fireCd = 1 / WEAPONS[state.weapon].rate;
+    // Touch the gun to move it, touch anywhere else to aim there.
+    if (onGun(state.mx, state.my)) { state.gunDrag = true; return; }
+    aimAt(state.mx, state.my);
     return;
   }
   if (state.tool === T_DOLL) {
@@ -2887,6 +3103,15 @@ function press() {
   }
 }
 
+// True when a point lies on the gun body, from the stock to the muzzle.
+function onGun(x, y) {
+  const wp = WEAPONS[state.weapon], [px0, py0, ang] = gunPose();
+  const cx = Math.cos(ang), sx = Math.sin(ang);
+  const u = (x - px0) * cx + (y - py0) * sx, v = -(x - px0) * sx + (y - py0) * cx;
+  const back = -wp.grip[0] * PIX - 6, front = (wp.sprite[0].length - wp.grip[0]) * PIX + 6;
+  return u > back && u < front && Math.abs(v) < 20;
+}
+
 function release() {
   state.pressing = false;
   state.gunDrag = false;
@@ -2915,10 +3140,6 @@ function applyTool() {
       return;
     }
     aimAt(mx, my);
-    if (wp.auto) {
-      state.fireCd -= DT;
-      while (state.fireCd <= 0) { fire(); state.fireCd += 1 / wp.rate; }
-    }
   } else if (state.tool === T_FIRE) {
     paintDisc(mx, my, 8, FIRE, 0.25);
     for (const d of state.dolls) d.applyHeat(mx, my, 26);
@@ -2937,6 +3158,7 @@ function applyTool() {
 
 function physicsStep() {
   if (state.pressing) applyTool();
+  gunStep();
   worldStep();
   stepGibs();
   for (const d of state.dolls) {
@@ -2964,9 +3186,24 @@ function toGame(ev) {
   state.pointerSeen = true;
 }
 
-let activePointer = null;
+let activePointer = null, firePointer = null;
+function gamePoint(ev) {
+  const r = canvas.getBoundingClientRect();
+  return [(ev.clientX - r.left) / r.width * W, (ev.clientY - r.top) / r.height * H];
+}
 canvas.addEventListener("pointerdown", (ev) => {
   ev.preventDefault();
+  // Gun buttons work with a second finger while the first one aims.
+  const [gx, gy] = gamePoint(ev), gb = state.extrasOpen ? null : gunButtonAt(gx, gy);
+  if (gb) {
+    if (gb === "fire") {
+      if (firePointer !== null) return;
+      firePointer = ev.pointerId;
+      try { canvas.setPointerCapture(ev.pointerId); } catch (e) { /* pointer capture is optional */ }
+    }
+    gunButtonPress(gb);
+    return;
+  }
   if (activePointer !== null) return;
   activePointer = ev.pointerId;
   try { canvas.setPointerCapture(ev.pointerId); } catch (e) { /* pointer capture is optional */ }
@@ -2975,11 +3212,13 @@ canvas.addEventListener("pointerdown", (ev) => {
   press();
 });
 canvas.addEventListener("pointermove", (ev) => {
+  if (ev.pointerId === firePointer) return;
   if (activePointer !== null && ev.pointerId !== activePointer) return;
   toGame(ev);
   state.hover = ev.pointerType === "mouse" ? toolbarHit(state.mx, state.my) : -1;
 });
 const endPointer = (ev) => {
+  if (ev.pointerId === firePointer) { firePointer = null; state.triggerDown = false; return; }
   if (ev.pointerId !== activePointer) return;
   activePointer = null;
   release();
@@ -2996,7 +3235,10 @@ window.addEventListener("keydown", (ev) => {
   else if (ev.key === "r" || ev.key === "R") useButton(T_RESET);
   else if (ev.key === "n" || ev.key === "N") useButton(T_DOLL);
   else if (ev.key === "b" || ev.key === "B") useButton(T_BOMB);
+  else if (ev.key === " " && state.tool === T_GUN && !ev.repeat) { ev.preventDefault(); pullTrigger(); }
+  else if ((ev.key === "l" || ev.key === "L") && state.tool === T_GUN) startReload();
 });
+window.addEventListener("keyup", (ev) => { if (ev.key === " ") state.triggerDown = false; });
 
 // ---------------------------------------------------------------- layout
 
@@ -3101,11 +3343,13 @@ function render() {
   ctx.setTransform(K, 0, 0, K, 0, 0);
   label("RAGPIT", 14, 26, 26, "#8e8e98");
   label(TOOL_NAMES[state.tool].toUpperCase(), 15, 52, 13, "#5a5a64");
+  drawLaser();
   drawCursor();
   let sel = state.selected;
   if (!sel || !state.dolls.includes(sel)) sel = state.selected = state.dolls[state.dolls.length - 1] || null;
   drawPanel(sel);
   drawContextBar();
+  drawGunControls();
   drawToolbar();
   drawFsButton();
   drawMenuButton();
