@@ -3509,7 +3509,7 @@ function buildStatic() {
   b.fillStyle = "rgba(255,255,255,0.05)";
   for (let k = 0; k < 6; k++) b.fillRect(W * 0.07 + 4, 204 + k * 4.5, 46, 1.5);
   b.strokeStyle = "rgba(0,0,0,0.4)"; b.lineWidth = 3;
-  b.strokeRect(W * 0.66, FLOOR_Y - 150, 70, 138);
+  b.strokeRect(W * 0.66, FLOOR_Y - 150, 70, 138); // tap it three times
   b.fillStyle = "rgba(0,0,0,0.18)"; b.fillRect(W * 0.66 + 2, FLOOR_Y - 148, 66, 134);
   b.fillStyle = "rgba(255,255,255,0.08)"; b.fillRect(W * 0.66 + 54, FLOOR_Y - 84, 8, 3);
   b.fillStyle = "#2a2a31"; b.fillRect(0, FLOOR_Y - 12, W, 12);
@@ -4612,6 +4612,135 @@ function drawAimView() {
   ctx.restore();
 }
 
+// ======================================================================
+// Easter egg: tap the door at the back three times. An old lab dog opens
+// it and answers every question with yes, no, a laugh or a disgusted sound.
+// ======================================================================
+
+const DOOR = { x: Math.round(W * 0.66), y: FLOOR_Y - 150, w: 70, h: 138 };
+const egg = { taps: [], open: 0, active: false, idle: 0, say: "", sayT: 0, last: "", anim: "", animT: 0, blink: 0 };
+const EGG_ANSWERS = [["JA.", "nod", 35], ["NEIN.", "shake", 35], ["HO HO HO.", "laugh", 15], ["BÄÄÄH.", "yuck", 15]];
+const dogBox = () => ({ x: DOOR.x + 6, y: DOOR.y + 40, w: DOOR.w - 12, h: DOOR.h - 40 });
+
+// Returns true when the tap belonged to the egg.
+function eggPress() {
+  const { mx, my } = state;
+  if (egg.active && egg.open > 0.8 && hitBox(dogBox(), mx, my)) { eggAnswer(); return true; }
+  if (!hitBox(DOOR, mx, my)) return false;
+  if (egg.active) { egg.active = false; eggVoice("bye"); return true; }
+  const now = performance.now();
+  egg.taps = egg.taps.filter((t) => now - t < 1400);
+  egg.taps.push(now);
+  if (egg.taps.length < 3) return false;
+  egg.taps = []; egg.active = true; egg.idle = 0;
+  egg.say = "HALLO?"; egg.sayT = 2.2; egg.anim = "nod"; egg.animT = 0;
+  eggVoice("hello");
+  return true;
+}
+
+function eggAnswer() {
+  let pick;
+  do {
+    let r = Math.random() * 100;
+    pick = EGG_ANSWERS.find(([, , w]) => (r -= w) < 0) || EGG_ANSWERS[0];
+  } while (pick[0] === egg.last && Math.random() < 0.6);
+  egg.last = pick[0]; egg.say = pick[0]; egg.sayT = 1.8; egg.anim = pick[1]; egg.animT = 0; egg.idle = 0;
+  eggVoice(pick[1]);
+}
+
+function eggStep(dt) {
+  egg.open = moveToward(egg.open, egg.active ? 1 : 0, dt * 2.5);
+  egg.sayT = Math.max(0, egg.sayT - dt);
+  egg.animT += dt;
+  egg.blink -= dt; if (egg.blink < -3.5) egg.blink = 0.15;
+  if (egg.active) { egg.idle += dt; if (egg.idle > 25) { egg.active = false; eggVoice("bye"); } }
+}
+
+// A low, grumpy dog voice made from two detuned waves.
+function eggVoice(kind) {
+  if (!settings.sound) return;
+  try {
+    if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
+    if (audio.state === "suspended") audio.resume();
+    const parts = {
+      nod: [[0, 0.28, 150, 115]], shake: [[0, 0.18, 165, 150], [0.22, 0.26, 150, 110]],
+      laugh: [[0, 0.16, 130, 120], [0.22, 0.16, 130, 120], [0.44, 0.22, 130, 105]],
+      yuck: [[0, 0.6, 240, 200]], hello: [[0, 0.16, 160, 170], [0.2, 0.3, 175, 135]], bye: [[0, 0.35, 140, 95]],
+    }[kind];
+    const t0 = audio.currentTime;
+    for (const [at, len, f0, f1] of parts) {
+      for (const [type, det, vol] of [["sawtooth", 1, 0.07], ["square", 1.007, 0.04]]) {
+        const o = audio.createOscillator(), g = audio.createGain(), lp = audio.createBiquadFilter();
+        o.type = type; lp.type = "lowpass"; lp.frequency.value = kind === "yuck" ? 1600 : 900;
+        o.frequency.setValueAtTime(f0 * det, t0 + at); o.frequency.linearRampToValueAtTime(f1 * det, t0 + at + len);
+        if (kind === "yuck") { const lfo = audio.createOscillator(), lg = audio.createGain(); lfo.frequency.value = 18; lg.gain.value = 18; lfo.connect(lg); lg.connect(o.frequency); lfo.start(t0 + at); lfo.stop(t0 + at + len); }
+        g.gain.setValueAtTime(0, t0 + at); g.gain.linearRampToValueAtTime(vol, t0 + at + 0.03);
+        g.gain.setValueAtTime(vol, t0 + at + len - 0.05); g.gain.linearRampToValueAtTime(0, t0 + at + len);
+        o.connect(lp); lp.connect(g); g.connect(audio.destination); o.start(t0 + at); o.stop(t0 + at + len + 0.02);
+      }
+    }
+  } catch (e) { /* sound is optional */ }
+}
+
+// The open door with the dog in it, drawn in the game's pixel blocks.
+function drawEgg() {
+  if (egg.open <= 0.001) return;
+  const o = easeOut(egg.open), P = 3;
+  // Dark room behind the door and the door leaf swinging open
+  const g = ctx.createLinearGradient(0, DOOR.y, 0, DOOR.y + DOOR.h);
+  g.addColorStop(0, "#07070a"); g.addColorStop(1, "#141418");
+  ctx.fillStyle = g; ctx.fillRect(DOOR.x + 2, DOOR.y + 2, DOOR.w - 4, DOOR.h - 4);
+  const leaf = (DOOR.w - 4) * (1 - o * 0.82);
+  ctx.fillStyle = "#2a2a31"; ctx.fillRect(DOOR.x + 2, DOOR.y + 2, leaf, DOOR.h - 4);
+  ctx.fillStyle = "rgba(255,255,255,0.08)"; ctx.fillRect(DOOR.x + 2 + leaf - 8, DOOR.y + 64, 5, 3);
+  // The dog slides into the doorway.
+  const t = egg.animT, cx = DOOR.x + DOOR.w / 2 + (1 - o) * 30, by = DOOR.y + DOOR.h - 2;
+  let hx = 0, hy = 0, mouth = 0, tongue = false;
+  if (egg.anim === "nod" && t < 0.8) hy = Math.sin(t * 16) * 1.2 + 0.6;
+  if (egg.anim === "shake" && t < 0.9) hx = Math.sin(t * 22) * 1.4;
+  if (egg.anim === "laugh" && t < 1.1) { hy = -Math.abs(Math.sin(t * 14)) * 1.2; mouth = 1; }
+  if (egg.anim === "yuck" && t < 1.2) { mouth = 1; tongue = true; hx = Math.sin(t * 30) * 0.4; }
+  if ((egg.anim === "nod" || egg.anim === "shake") && t < 0.45) mouth = Math.sin(t * 20) > 0 ? 1 : 0;
+  const R = (x, y, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(cx + x * P, by + y * P, w * P, h * P); };
+  const OUT = "#0b0b0e", FUR = "#8a5a32", DARK = "#5a3418", CREAM = "#e8d4b0", COAT = "#e6e6de", COATS = "#b8b8b0";
+  ctx.save(); ctx.globalAlpha *= o;
+  // Body in a lab coat, brown paws, the fur showing between the lapels
+  R(-9.5, -18.5, 19, 18.5, OUT); R(-9, -18, 18, 18, COAT); R(4, -18, 5, 18, COATS);
+  R(-2, -18, 4, 9, FUR); R(-2, -10, 1, 9, COATS); R(1, -10, 1, 9, COATS);
+  R(-8.5, -3.5, 5, 3.5, OUT); R(3.5, -3.5, 5, 3.5, OUT); R(-8, -3, 4, 3, FUR); R(4, -3, 4, 3, FUR);
+  R(-7, -12, 3, 1, COATS); R(5, -12, 3, 1, COATS);
+  // Head with droopy ears, grey brows, glasses and a cream muzzle
+  ctx.save(); ctx.translate(hx * P, hy * P);
+  R(-10.5, -28.5, 4, 13, OUT); R(6.5, -28.5, 4, 13, OUT); R(-10, -28, 3, 12, DARK); R(7, -28, 3, 12, DARK);
+  R(-7.5, -30.5, 15, 14, OUT); R(-7, -30, 14, 13, FUR); R(-7, -30, 14, 2, DARK);
+  R(-4.5, -23, 9, 6.5, OUT); R(-4, -22.5, 8, 6, CREAM);
+  R(-1.5, -23.5, 3, 2, "#121216");
+  // Eyes: sleepy lids, blink now and then, round glasses around them
+  const shut = egg.blink > 0;
+  for (const ex of [-5, 2]) {
+    R(ex - 0.5, -27.5, 4, 4, "#9a9aa6"); R(ex, -27, 3, 3, shut ? FUR : "#f2f2ec");
+    if (!shut) { R(ex + 1, -25.8, 1.2, 1.4, "#121216"); R(ex, -27, 3, 1.1, FUR); }
+    R(ex - 0.2, -28.6, 3.4, 0.8, "#cfcfcf");
+  }
+  R(-1.2, -26.2, 2.4, 0.7, "#9a9aa6");
+  // Mouth: a line, or open with a tongue for the disgusted sound
+  if (mouth) { R(-2.5, -19, 5, 2.4, "#3a0c10"); if (tongue) R(-1.4, -17.4, 2.8, 2.6, "#e86a7a"); }
+  else R(-2, -18.4, 4, 0.7, DARK);
+  ctx.restore();
+  ctx.restore();
+  // Speech bubble
+  if (egg.sayT > 0 && egg.say) {
+    const a = Math.min(1, egg.sayT / 0.25) * o;
+    ctx.save(); ctx.globalAlpha *= a;
+    ctx.font = `700 13px ${FONT}`;
+    const tw = ctx.measureText(egg.say).width + 22, bx = clamp(cx - tw / 2 - 26, 8, W - tw - 8), byy = DOOR.y - 6;
+    rr(bx, byy, tw, 28, 10); ctx.fillStyle = "#f4f4ee"; ctx.fill();
+    ctx.beginPath(); ctx.moveTo(bx + tw * 0.62, byy + 27); ctx.lineTo(bx + tw * 0.62 + 10, byy + 27); ctx.lineTo(bx + tw * 0.62 + 12, byy + 38); ctx.closePath(); ctx.fill();
+    label(egg.say, bx + tw / 2, byy + 15, 13, "#16161a", "center");
+    ctx.restore();
+  }
+}
+
 const state = {
   tool: T_GRAB, mx: W / 2, my: H / 2, lastX: W / 2, lastY: H / 2,
   pressing: false, pointerSeen: false, hover: -1, flashBtn: -1, toast: 0, toastText: "",
@@ -4673,6 +4802,7 @@ function press() {
   if (state.screen !== "game") { screenPress(); return; }
   if (state.aimView) { aimPress(); return; }
   if (state.ctxMenu) { ctxMenuPress(); return; }
+  if (eggPress()) return;
   if (inFsBtn(state.mx, state.my)) { pop("fs"); toggleFullscreen(); return; }
   if (inExtrasBtn(state.mx, state.my)) { pop("extras"); state.extrasOpen = !state.extrasOpen; return; }
   if (state.extrasOpen) {
@@ -4964,6 +5094,8 @@ function render() {
   ctx.setTransform(K, 0, 0, K, rf(-sh, sh) * K, rf(-sh, sh) * K);
   ctx.imageSmoothingEnabled = true;
   ctx.drawImage(decal, 0, 0, W, H);
+  // The door at the back, open when the easter egg is on, sits behind the dolls.
+  drawEgg();
   // Gibs and dolls are pixel art on their own layer.
   ppx.fill(0);
   for (const g of gibs) rasterGib(g);
@@ -5068,7 +5200,7 @@ function loop(now) {
   state.extrasFlashT = Math.max(0, state.extrasFlashT - realDt);
   state.toast = Math.max(0, state.toast - realDt);
   acc += state.paused ? 0 : state.aimView ? realDt * 0.25 : state.slow ? realDt * 0.3 : realDt;
-  if (state.screen === "game") updateLongPress();
+  if (state.screen === "game") { updateLongPress(); eggStep(realDt); }
   let steps = 0;
   if (state.screen !== "game") {
     acc = 0;
