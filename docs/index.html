@@ -1807,7 +1807,6 @@ function explode(x, y) {
 
 const T_GRAB = 0, T_WATER = 1, T_BUCKET = 2, T_BLADE = 3, T_GUN = 4, T_FIRE = 5, T_ICE = 6, T_BOMB = 7, T_IV = 8, T_DOLL = 9, T_RESET = 10;
 const TOOL_NAMES = ["Greifen", "Wasser", "Eimer", "Klinge", "Waffe", "Feuer", "Eis", "Bombe", "Infusion", "Neue Puppe", "Reset"];
-const TOOL_COUNT = 11;
 const BTN = 46, BTN_GAP = 6, TOOLBAR_Y = H - 54;
 const PANEL = { x: W - 198, y: 8, w: 190, h: 266 };
 const BARS = [["KO", "#4ccf5a"], ["BL", "#d0283a"], ["PN", "#f08a24"], ["O2", "#2ec8c0"], ["HR", "#ec5f92"]];
@@ -1816,15 +1815,42 @@ const TAGS = [["OUT", "#a2a2aa"], ["BLEED", "#d6202f"], ["FIRE", "#ff5a1e"], ["C
 const MINI = [[0, -12], [0, -8], [0, 0], [0, 3], [-5, -3], [-7, 2], [5, -3], [7, 2], [-2, 9], [-3, 15], [-5, 15], [2, 9], [3, 15], [5, 15]];
 const MINI_W = [2, 4.2, 4, 2, 1.8, 2, 1.8, 2.4, 2, 1.4, 2.4, 2, 1.4];
 
-const toolbarX = () => (W - (TOOL_COUNT * BTN + (TOOL_COUNT - 1) * BTN_GAP)) / 2;
-const buttonX = (i) => toolbarX() + i * (BTN + BTN_GAP);
+// The dock at the bottom: tools in groups, each weapon with its own button.
+const DOCK_GROUPS = [
+  { color: "#ecece6", items: [{ tool: T_GRAB }] },
+  { color: "#5aa0f0", items: [{ tool: T_WATER }, { tool: T_BUCKET }] },
+  { color: "#e8443a", items: [{ tool: T_BLADE }, { tool: T_GUN, weapon: 0 }, { tool: T_GUN, weapon: 1 }, { tool: T_GUN, weapon: 2 }] },
+  { color: "#ff8a2a", items: [{ tool: T_FIRE }, { tool: T_ICE }, { tool: T_BOMB }] },
+  { color: "#4ccf5a", items: [{ tool: T_IV }] },
+  { color: "#e6c850", items: [{ tool: T_DOLL }, { tool: T_RESET }] },
+];
+const DOCK_GAP = 4, DOCK_GROUP_GAP = 16;
+const DOCK = (() => {
+  const items = [], seps = [];
+  let x = 0;
+  DOCK_GROUPS.forEach((g, gi) => {
+    if (gi) { seps.push(x + DOCK_GROUP_GAP / 2 - DOCK_GAP); x += DOCK_GROUP_GAP - DOCK_GAP; }
+    for (const it of g.items) {
+      const w = it.weapon === undefined ? BTN : it.weapon === 2 ? 50 : 62;
+      items.push({ ...it, color: g.color, x, w });
+      x += w + DOCK_GAP;
+    }
+  });
+  const total = x - DOCK_GAP, x0 = Math.round((W - total) / 2);
+  for (const it of items) it.x += x0;
+  return { items, seps: seps.map((s) => s + x0), x0, total };
+})();
+const dockName = (it) => (it.weapon !== undefined ? WEAPONS[it.weapon].name : TOOL_NAMES[it.tool]);
+const dockOn = (it) => state.tool === it.tool && (it.weapon === undefined || state.weapon === it.weapon);
 function toolbarHit(x, y) {
-  for (let i = 0; i < TOOL_COUNT; i++) {
-    const bx = buttonX(i);
-    if (x >= bx - 3 && x < bx + BTN + 3 && y >= TOOLBAR_Y - 6 && y < TOOLBAR_Y + BTN + 6) return i;
+  if (y < TOOLBAR_Y - 6 || y >= TOOLBAR_Y + BTN + 6) return -1;
+  for (let i = 0; i < DOCK.items.length; i++) {
+    const it = DOCK.items[i];
+    if (x >= it.x - DOCK_GAP / 2 && x < it.x + it.w + DOCK_GAP / 2) return i;
   }
   return -1;
 }
+
 // The damage panel folds up to its header row. The choice is remembered per device.
 const PANEL_HEAD = 38;
 let panelOpen = true;
@@ -2080,27 +2106,49 @@ function drawIcon(i, cx, cy) {
 }
 
 function drawToolbar() {
-  const x0 = toolbarX(), total = TOOL_COUNT * BTN + (TOOL_COUNT - 1) * BTN_GAP;
-  rr(x0 - 8, TOOLBAR_Y - 6, total + 16, BTN + 12, 14);
-  ctx.fillStyle = "rgba(15,15,19,0.92)"; ctx.fill();
-  ctx.strokeStyle = "#383840"; ctx.lineWidth = 1.5; ctx.stroke();
-  for (let i = 0; i < TOOL_COUNT; i++) {
-    const bx = buttonX(i), by = TOOLBAR_Y;
-    const sel = tween("tb" + i, i === state.tool ? 1 : 0, 18), hov = tween("tbh" + i, i === state.hover ? 1 : 0, 20);
-    const bg = mixc(mixc(hex("#26262c"), hex("#303038"), hov), hex("#3a3a44"), sel);
-    const edge = mixc(mixc(hex("#3e3e46"), hex("#6a6a74"), hov), hex("#ecece6"), sel);
-    scaled(bx + BTN / 2, by + BTN / 2, popScale("tb" + i, 0.1), () => {
-      rr(bx, by - 2 * sel, BTN, BTN, 10);
-      ctx.fillStyle = css(bg); ctx.fill();
-      ctx.strokeStyle = css(edge); ctx.lineWidth = 1.2 + 0.8 * sel; ctx.stroke();
-      drawIcon(i, bx + BTN / 2, by + BTN / 2 - 2 * sel);
+  const { x0, total } = DOCK, top = TOOLBAR_Y - 7, h = BTN + 14;
+  // Dock body with a soft top light
+  rr(x0 - 9, top, total + 18, h, 16);
+  const g = ctx.createLinearGradient(0, top, 0, top + h);
+  g.addColorStop(0, "rgba(24,24,30,0.95)"); g.addColorStop(1, "rgba(11,11,14,0.95)");
+  ctx.fillStyle = g; ctx.fill();
+  ctx.strokeStyle = "#2e2e36"; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.fillStyle = "rgba(255,255,255,0.05)"; ctx.fillRect(x0 + 6, top + 1.5, total - 12, 1);
+  // Thin dividers between the groups
+  ctx.fillStyle = "#2a2a32";
+  for (const sx of DOCK.seps) ctx.fillRect(sx - 0.5, TOOLBAR_Y + 8, 1, BTN - 16);
+  DOCK.items.forEach((it, i) => {
+    const by = TOOLBAR_Y, on = dockOn(it);
+    const sel = tween("tb" + i, on ? 1 : 0, 18), hov = tween("tbh" + i, i === state.hover ? 1 : 0, 20);
+    scaled(it.x + it.w / 2, by + BTN / 2, popScale("tb" + i, 0.1), () => {
+      rr(it.x, by, it.w, BTN, 10);
+      ctx.fillStyle = css(mixc(mixc(hex("#1d1d23"), hex("#26262e"), hov), hex("#2e2e37"), sel)); ctx.fill();
+      if (sel > 0.01) {
+        ctx.strokeStyle = css(hex(it.color), 0.35 * sel); ctx.lineWidth = 1.2; ctx.stroke();
+        // Accent bar under the chosen tool
+        const bw = it.w * 0.46 * sel;
+        ctx.save(); ctx.shadowColor = it.color; ctx.shadowBlur = 8 * sel;
+        rr(it.x + it.w / 2 - bw / 2, by + BTN - 5, bw, 3, 1.5); ctx.fillStyle = it.color; ctx.fill();
+        ctx.restore();
+      }
+      const lift = 2 * sel, cx = it.x + it.w / 2, cy = by + BTN / 2 - 2 - lift;
+      if (it.weapon === undefined) {
+        ctx.save(); ctx.globalAlpha *= 0.72 + 0.28 * Math.max(sel, hov); drawIcon(it.tool, cx, cy + 1); ctx.restore();
+      } else {
+        const sp = WEAPONS[it.weapon].sprite, z = Math.min(1.35, (it.w - 12) / sp[0].length);
+        drawSpriteOutlined(sp, cx - sp[0].length * z / 2, cy - sp.length * z / 2 - 2, z, 0.65 + 0.35 * Math.max(sel, hov));
+        // Rounds left in this weapon
+        const wp = WEAPONS[it.weapon], ammo = state.ammo[it.weapon];
+        const loading = state.weapon === it.weapon && state.reloadT > 0;
+        label(loading ? "LÄDT" : ammo + "/" + wp.mag, cx, by + BTN - 12, 7, loading ? "#e6c850" : ammo / wp.mag < 0.25 ? "#ff6a5a" : "#7a7a84", "center");
+      }
     });
-  }
+  });
   // Toasts fade in with a small rise and fade out at the end.
   if (state.toast > toastLast + 0.01) toastMax = state.toast;
   toastLast = state.toast;
   const hover = state.hover >= 0;
-  const text = hover ? TOOL_NAMES[state.hover] + "  " + (state.hover + 1) : state.toast > 0 ? state.toastText : "";
+  const text = hover ? dockName(DOCK.items[state.hover]) : state.toast > 0 ? state.toastText : "";
   if (text) {
     const a = hover ? 1 : Math.min(easeOut((toastMax - state.toast) / 0.16), clamp(state.toast / 0.25, 0, 1));
     ctx.save(); ctx.globalAlpha *= a;
@@ -2500,12 +2548,11 @@ function rasterGun() {
 // Context bar above the toolbar: water amount and weapon choice
 // ======================================================================
 
-const ctxH = () => (state.tool === T_GUN ? 60 : 36);
+const ctxH = () => 36;
 // Sits top left under the title, so it never covers the floor where dolls stand.
 const ctxY = () => 66;
 function ctxItems() {
   if (state.tool === T_WATER) return [1, 2, 3, 4, 5].map((n) => ({ kind: "water", n, w: 34, label: String(n) }));
-  if (state.tool === T_GUN) return WEAPONS.map((wp, n) => ({ kind: "gun", n, w: 104, label: wp.name.toUpperCase() }));
   return [];
 }
 function ctxLayout() {
@@ -2523,6 +2570,18 @@ function ctxHit(x, y) {
   if (x < l.x0 || x > l.x0 + l.total) return null;
   return l.items.find((it) => x >= it.x - 3 && x <= it.x + it.w + 3) || { kind: "bar" };
 }
+// A sprite with a thin light rim, for dark guns on dark buttons.
+function drawSpriteOutlined(rows, x, y, z, alpha = 1) {
+  const prev = ctx.globalAlpha, o = Math.max(0.8, z * 0.7);
+  ctx.globalAlpha = prev * alpha * 0.55;
+  ctx.fillStyle = "#9a9aa6";
+  for (let r = 0; r < rows.length; r++) {
+    for (let c = 0; c < rows[r].length; c++) if (rows[r][c] !== ".") ctx.fillRect(x + c * z - o, y + r * z - o, z + o * 2, z + o * 2);
+  }
+  ctx.globalAlpha = prev;
+  drawSprite(rows, x, y, z, alpha);
+}
+
 // A weapon sprite drawn as crisp blocks for menus and buttons.
 function drawSprite(rows, x, y, z, alpha = 1) {
   const prev = ctx.globalAlpha;
@@ -3547,8 +3606,20 @@ function resetScene() {
   loadMap(state.map);
 }
 
+// A dock button: picks the tool and, for a weapon button, that weapon.
+function useDock(n) {
+  const it = DOCK.items[n];
+  pop("tb" + n);
+  const swap = it.weapon !== undefined && (state.weapon !== it.weapon || state.tool !== T_GUN);
+  if (it.weapon !== undefined && state.weapon !== it.weapon) {
+    state.weapon = it.weapon; state.reloadT = 0; state.triggerDown = false; state.climb = 0;
+    if (state.tool === T_GUN) state.toolT = 0;
+  }
+  useButton(it.tool);
+  if (swap) state.toastText = WEAPONS[it.weapon].name + ": ziehen = zielen, rot = Feuer";
+}
+
 function useButton(i) {
-  pop("tb" + i);
   if (i !== T_RESET && i !== state.tool) state.toolT = 0;
   state.flashBtn = i;
   setTimeout(() => { if (state.flashBtn === i) state.flashBtn = -1; }, 150);
@@ -3593,7 +3664,7 @@ function press() {
     return;
   }
   const b = toolbarHit(state.mx, state.my);
-  if (b >= 0) { useButton(b); return; }
+  if (b >= 0) { useDock(b); return; }
   if (blocksInput(state.mx, state.my)) return;
   state.pressing = true;
   state.lastX = state.mx; state.lastY = state.my;
@@ -3876,7 +3947,7 @@ function render() {
   // HUD
   ctx.setTransform(K, 0, 0, K, 0, 0);
   label("RAGPIT", 14, 26, 26, "#8e8e98");
-  label(TOOL_NAMES[state.tool].toUpperCase(), 15, 52, 13, "#5a5a64");
+  label((state.tool === T_GUN ? WEAPONS[state.weapon].name : TOOL_NAMES[state.tool]).toUpperCase(), 15, 52, 13, "#5a5a64");
   drawLaser();
   drawCursor();
   let sel = state.selected;
