@@ -805,6 +805,31 @@ class Doll {
     }
   }
 
+  // A shot aimed in the front view: the spot and the organs are known exactly.
+  // Returns where it hit in the room.
+  preciseShot(hit, wp) {
+    const { k, t, s, organs } = hit;
+    this.addWound(k, t, s, 1.1 + wp.dmg * 0.7, false, "shot");
+    this.addWound(k, t, s, 1.2 + wp.dmg, false, "shot");
+    const [x, y] = this.woundPos({ part: k, t, s, stump: false });
+    const fx = Math.sign(x - state.gunX) || 1;
+    this.burst(x, y, 16 + Math.round(wp.dmg * 12), fx, 0, 340);
+    splatAround(x + fx * 50, y, 7);
+    for (const i of [this.pa[k], this.pb[k]]) this.push(i, fx * wp.push * 0.5, 0);
+    this.pn = Math.min(100, this.pn + 22 * wp.dmg);
+    this.hurtPart(k, 18 * wp.dmg);
+    this.hits[k]++;
+    this.damaged();
+    this.stagger = Math.max(this.stagger, 1.2);
+    for (const id of organs) this.organ[ORGAN[id]] = Math.max(0, this.organ[ORGAN[id]] - 85 * wp.dmg * rf(0.85, 1.15));
+    if (k === HEAD) {
+      this.ko -= 45 * wp.dmg;
+      if (hit.crit) this.organ[ORGAN.brain] = 0;
+    } else if (k === TORSO) this.bl = Math.max(0, this.bl - 4 * wp.dmg);
+    else if (k !== PELVIS && this.dmg[k] >= 100 && this.hits[k] >= 8 && Math.random() < wp.sever) { this.severCd = 0; this.sever(k); }
+    return [x, y];
+  }
+
   // ------------------------------------------------ physics
   step() {
     const g = DOLL_GRAVITY * DT * DT;
@@ -1895,14 +1920,26 @@ function rasterDoll(d) {
       const put = (x, y, c) => { x = Math.floor(x); y = Math.floor(y); if (x >= bbx0 && x <= bbx1 && y >= bby0 && y <= bby1 && tmask[y * DW + x]) tset(y * DW + x, c, tmask[y * DW + x]); };
       const ex = hx0 + ux * (h0 * 0.58) + fx * (HEAD_HW / PIX - 1.6), ey = hy0 + uy * (h0 * 0.58) + fy * (HEAD_HW / PIX - 1.6);
       const mx = hx0 + ux * (h0 * 0.25) + fx * (HEAD_HW / PIX - 1.4), my = hy0 + uy * (h0 * 0.25) + fy * (HEAD_HW / PIX - 1.4);
-      if (d.dead) {
-        put(ex - 1, ey - 1, PX_BLACK); put(ex + 1, ey - 1, PX_BLACK); put(ex, ey, PX_BLACK); put(ex - 1, ey + 1, PX_BLACK); put(ex + 1, ey + 1, PX_BLACK);
-      } else if (d.isOut()) {
-        put(ex - 1, ey, PX_BLACK); put(ex, ey, PX_BLACK);
+      if (settings.front) {
+        // Front view: two eyes and the mouth in the middle of the face.
+        const cxh = hx0 + ux * (h0 * 0.58), cyh = hy0 + uy * (h0 * 0.58);
+        for (const sd of [-1, 1]) {
+          const qx = cxh + fx * sd * 1.9, qy = cyh + fy * sd * 1.9;
+          if (d.dead) { put(qx - 0.5, qy - 0.5, PX_BLACK); put(qx + 0.5, qy + 0.5, PX_BLACK); }
+          else put(qx, qy, PX_BLACK);
+        }
+        const mcx = hx0 + ux * (h0 * 0.25), mcy = hy0 + uy * (h0 * 0.25);
+        put(mcx - fx * 0.5, mcy - fy * 0.5, darken(base, 0.45)); put(mcx + fx * 0.5, mcy + fy * 0.5, darken(base, 0.45));
       } else {
-        put(ex, ey, PX_BLACK); put(ex - fx, ey - fy, hex("#f4f4f0"));
+        if (d.dead) {
+          put(ex - 1, ey - 1, PX_BLACK); put(ex + 1, ey - 1, PX_BLACK); put(ex, ey, PX_BLACK); put(ex - 1, ey + 1, PX_BLACK); put(ex + 1, ey + 1, PX_BLACK);
+        } else if (d.isOut()) {
+          put(ex - 1, ey, PX_BLACK); put(ex, ey, PX_BLACK);
+        } else {
+          put(ex, ey, PX_BLACK); put(ex - fx, ey - fy, hex("#f4f4f0"));
+        }
+        put(mx, my, darken(base, 0.45)); put(mx - fx, my - fy, darken(base, 0.45));
       }
-      put(mx, my, darken(base, 0.45)); put(mx - fx, my - fy, darken(base, 0.45));
     } else {
       if ((k === UARM_L || k === UARM_R) && !d.severed[k]) {
         // Each arm leaves the torso at the shoulder on the side it hangs toward.
@@ -3745,7 +3782,7 @@ function setScreen(name) {
 // Screens: title, map choice, help and settings
 // ======================================================================
 
-const settings = { sound: true, shake: true };
+const settings = { sound: true, shake: true, front: false };
 try { Object.assign(settings, JSON.parse(localStorage.getItem("ragpit.settings") || "{}")); } catch (e) { /* storage is optional */ }
 function saveSettings() {
   try { localStorage.setItem("ragpit.settings", JSON.stringify(settings)); } catch (e) { /* storage is optional */ }
@@ -4128,6 +4165,7 @@ function settingRows() {
     { id: "sound", text: "TON", sub: "Schüsse und Klicks", on: settings.sound },
     { id: "shake", text: "BILDSCHIRMWACKELN", sub: "Bei Schüssen und Explosionen", on: settings.shake },
     { id: "panel", text: "SCHADENSPANEL", sub: "Offen oder zugeklappt", on: panelOpen },
+    { id: "front", text: "FRONTANSICHT", sub: "Puppen von vorn, gedrückt halten = Menü", on: settings.front },
   ].map((r, n) => ({ ...r, x, y: y0 + n * (h + 12), w, h }));
 }
 
@@ -4190,11 +4228,320 @@ function screenRelease() {
   if (tg && hitBox(tg.box, state.mx, state.my)) { clickSound(800, 0.05); tg.run(); }
 }
 
+// ======================================================================
+// Front view: long press menu and precise shots
+// ======================================================================
+
+// Long press on a doll with the grab tool opens its menu (front view only).
+const LONG_PRESS = 0.55;
+function updateLongPress() {
+  const lp = state.lp;
+  if (!lp) return;
+  if (!state.pressing || !state.dolls.includes(lp.d) || Math.hypot(state.mx - lp.x, state.my - lp.y) > 9) { state.lp = null; return; }
+  if ((performance.now() - lp.t) / 1000 < LONG_PRESS) return;
+  state.lp = null;
+  lp.d.grabbed = -1; state.grabDoll = null; state.pressing = false;
+  state.ctxMenu = { d: lp.d, x: lp.x, y: lp.y, t: performance.now() };
+  state.selected = lp.d;
+  clickSound(660, 0.05);
+}
+function drawLongPress() {
+  const lp = state.lp;
+  if (!lp) return;
+  const p = clamp(((performance.now() - lp.t) / 1000 - 0.12) / (LONG_PRESS - 0.12), 0, 1);
+  if (p <= 0) return;
+  ctx.strokeStyle = "rgba(255,255,255,0.18)"; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(lp.x, lp.y, 16, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = "#ecece6"; ctx.lineCap = "round";
+  ctx.beginPath(); ctx.arc(lp.x, lp.y, 16, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * p); ctx.stroke();
+}
+
+function ctxMenuItems() {
+  const m = state.ctxMenu, items = [{ id: "aim", name: "SCHUSS PRÄZISIEREN", color: "#e8443a" }];
+  if (!m.d.dead) items.push({ id: "heal", name: "HEILEN", color: "#4ccf5a" });
+  if (m.d.pins.size) items.push({ id: "pins", name: "PINS LÖSEN", color: "#f272b8" });
+  items.push({ id: "del", name: "ENTFERNEN", color: "#f0b030" });
+  const w = 196, h = 30 + items.length * 34;
+  const x = clamp(m.x + 16, 8, W - w - 8), y = clamp(m.y - h / 2, 50, TOOLBAR_Y - h - 12);
+  return { items, x, y, w, h };
+}
+function drawCtxMenu() {
+  if (!state.ctxMenu) return;
+  const m = state.ctxMenu, L = ctxMenuItems(), a = easeOut((performance.now() - m.t) / 160);
+  ctx.save(); ctx.globalAlpha *= a;
+  ctx.translate(L.x, L.y + L.h / 2); ctx.scale(0.94 + 0.06 * a, 0.94 + 0.06 * a); ctx.translate(-L.x, -L.y - L.h / 2);
+  rr(L.x, L.y, L.w, L.h, 12); ctx.fillStyle = "rgba(14,14,18,0.97)"; ctx.fill();
+  ctx.strokeStyle = "#44444c"; ctx.lineWidth = 1.5; ctx.stroke();
+  label("PUPPE " + m.d.id + " · " + m.d.stateName(), L.x + 12, L.y + 16, 9, "#8e8e98");
+  L.items.forEach((it, n) => {
+    const y = L.y + 28 + n * 34;
+    rr(L.x + 6, y, L.w - 12, 30, 8); ctx.fillStyle = "#202026"; ctx.fill();
+    rr(L.x + 14, y + 10, 10, 10, 3); ctx.fillStyle = it.color; ctx.fill();
+    label(it.name, L.x + 32, y + 16, 10, "#e2e2da");
+  });
+  ctx.restore();
+}
+function ctxMenuPress() {
+  const m = state.ctxMenu, L = ctxMenuItems();
+  state.ctxMenu = null;
+  if (state.mx < L.x || state.mx > L.x + L.w || state.my < L.y || state.my > L.y + L.h) return;
+  const n = Math.floor((state.my - L.y - 28) / 34), it = L.items[n];
+  if (!it) return;
+  clickSound(800, 0.05);
+  if (it.id === "aim") openAimView(m.d);
+  else if (it.id === "heal") { m.d.fullHeal(); state.toast = 1.2; state.toastText = "Puppe " + m.d.id + " geheilt"; }
+  else if (it.id === "pins") { m.d.pins.clear(); state.toast = 1; state.toastText = "Gelöst"; }
+  else if (it.id === "del") {
+    state.dolls = state.dolls.filter((o) => o !== m.d);
+    if (state.selected === m.d) state.selected = null;
+    state.toast = 1; state.toastText = "Puppe " + m.d.id + " entfernt";
+  }
+}
+
+// ----------------------------------------------------------------- aim view
+
+const AIM_F = 2.35;
+const aimCenter = () => [Math.round(W * 0.32), 240];
+const AIM_BOX = () => ({ x: 14, y: 52, w: Math.round(W * 0.58) - 14, h: H - 66 });
+const AIM_BACK = { x: 16, y: 10, w: 120, h: 34 };
+// Hit areas of the organs on the chart, as ellipses [x, y, rx, ry].
+const ORGAN_HIT = {
+  brain: [[0, -62.5, 7.6, 6.2]], lungL: [[7.5, -34.5, 5.4, 8.8]], lungR: [[-7.5, -34.5, 5.4, 8.8]],
+  heart: [[2.6, -29.5, 4, 4.6]], liver: [[-5, -19.6, 8.8, 4.6]], stomach: [[7, -18.6, 5.2, 4.8]],
+  kidneys: [[-6.5, -6.4, 2.8, 3.6], [6.5, -6.4, 2.8, 3.6]], gut: [[0, 1, 11, 3.8]],
+};
+const PART_NAME = {
+  [HEAD]: "KOPF", [TORSO]: "BRUST", [PELVIS]: "UNTERBAUCH", [UARM_L]: "OBERARM L", [UARM_R]: "OBERARM R",
+  [LARM_L]: "UNTERARM L", [LARM_R]: "UNTERARM R", [THIGH_L]: "OBERSCHENKEL L", [THIGH_R]: "OBERSCHENKEL R",
+  [SHIN_L]: "UNTERSCHENKEL L", [SHIN_R]: "UNTERSCHENKEL R", [FOOT_L]: "FUSS L", [FOOT_R]: "FUSS R",
+};
+
+function openAimView(d) {
+  state.aimView = { d, t: performance.now(), aiming: false, cx: 0, cy: 0, flash: 0, last: null };
+  state.tool = T_GUN; state.toolT = 9;
+}
+function closeAimView() { state.aimView = null; }
+
+// What lies under a point of the front view: part, position and organs.
+function frontHit(d, x, y) {
+  const order = [LARM_L, LARM_R, UARM_L, UARM_R, HEAD, TORSO, PELVIS, FOOT_L, FOOT_R, SHIN_L, SHIN_R, THIGH_L, THIGH_R];
+  for (const k of order) {
+    if (!d.attached(k)) continue;
+    const [rx, ry, rw, rh] = CHART[k];
+    let inside = x >= rx && x <= rx + rw && y >= ry && y <= ry + rh, t;
+    if (k === HEAD && !inside) inside = x >= -4 && x <= 4 && y >= -51.5 && y <= -44.5;
+    if ((k === LARM_L || k === LARM_R) && !inside) inside = x >= rx && x <= rx + rw && y > ry + rh && y <= ry + rh + 7.3;
+    if (!inside) continue;
+    if (k === HEAD) t = (((Math.atan2((y - (ry + rh / 2)) / 6, (x - (rx + rw / 2)) / 5) / (Math.PI * 2)) % 1) + 1) % 1;
+    else if (k === FOOT_L || k === FOOT_R) t = 0.5;
+    else t = clamp((y - ry) / rh, 0.05, 0.95);
+    const s = clamp((x - (rx + rw / 2)) / (rw * 0.3), -1, 1);
+    const organs = [];
+    for (const o of ORGANS) {
+      if (o.part !== k) continue;
+      if (ORGAN_HIT[o.id].some(([ex, ey, ax, ay]) => ((x - ex) / ax) ** 2 + ((y - ey) / ay) ** 2 <= 1)) organs.push(o.id);
+    }
+    let name = PART_NAME[k];
+    if (k === TORSO && t > 0.55) name = "OBERBAUCH";
+    if (k === HEAD && y > -51.5) name = "HALS";
+    if ((k === LARM_L || k === LARM_R) && y > ry + rh) name = k === LARM_L ? "HAND L" : "HAND R";
+    return { k, t, s, organs, name, crit: k === HEAD && Math.hypot(x, y + 62.5) < 3 };
+  }
+  return null;
+}
+
+function aimFire() {
+  const v = state.aimView, d = v.d, wp = WEAPONS[state.weapon];
+  if (state.reloadT > 0) return;
+  if (state.ammo[state.weapon] <= 0) { clickSound(1400, 0.08); state.toast = 1.2; state.toastText = "Leer. Nachladen!"; return; }
+  const [cx, cy] = aimCenter();
+  const hit = frontHit(d, (v.cx - cx) / AIM_F, (v.cy - cy) / AIM_F);
+  state.ammo[state.weapon]--;
+  gunSound(wp.snd);
+  state.shake = Math.max(state.shake, wp.kick);
+  v.flash = 1; v.last = hit;
+  if (!hit) { state.toast = 0.8; state.toastText = "Daneben"; return; }
+  const [wx, wy] = d.preciseShot(hit, wp);
+  // The shot also shows in the room: tracer from the gun and a muzzle flash.
+  const [px0, py0, ang] = gunPose();
+  const [ox, oy] = muzzlePoint(px0, py0, ang, wp);
+  tracers.push({ ax: ox, ay: oy, bx: wx, by: wy, age: 0 });
+  flashes.push({ x: ox, y: oy, ang, age: 0 });
+  state.selected = d;
+}
+
+function aimButtons() {
+  const x0 = Math.round(W * 0.6), w = W - x0 - 16, out = [];
+  WEAPONS.forEach((wp, n) => out.push({ id: "w" + n, n, x: x0 + n * (w / 3), y: 58, w: w / 3 - 6, h: 52 }));
+  out.push({ id: "reload", x: x0, y: 118, w: w / 2 - 3, h: 30 });
+  out.push({ id: "xray", x: x0 + w / 2 + 3, y: 118, w: w / 2 - 3, h: 30 });
+  return out;
+}
+
+function aimPress() {
+  const v = state.aimView, { mx, my } = state;
+  if (hitBox(AIM_BACK, mx, my)) { closeAimView(); return; }
+  for (const b of aimButtons()) {
+    if (!hitBox(b, mx, my)) continue;
+    pop("aim" + b.id);
+    if (b.id === "reload") startReload();
+    else if (b.id === "xray") state.xray = !state.xray;
+    else if (state.weapon !== b.n) { state.weapon = b.n; state.reloadT = 0; state.climb = 0; }
+    clickSound(800, 0.05);
+    return;
+  }
+  if (hitBox(AIM_BOX(), mx, my)) { v.aiming = true; v.cx = mx; v.cy = my; }
+}
+function aimMove() {
+  const v = state.aimView;
+  if (v && v.aiming) { v.cx = state.mx; v.cy = state.my; }
+}
+function aimRelease() {
+  const v = state.aimView;
+  if (!v || !v.aiming) return;
+  v.aiming = false;
+  aimFire();
+}
+
+// The doll seen from the front: blocky parts in its own colors, wounds on top.
+function drawFrontDoll(d, cx, cy, F) {
+  const now = performance.now() / 1000;
+  ctx.save(); ctx.translate(cx, cy); ctx.scale(F, F);
+  const order = [UARM_L, UARM_R, LARM_L, LARM_R, THIGH_L, THIGH_R, SHIN_L, SHIN_R, FOOT_L, FOOT_R, PELVIS, TORSO, HEAD];
+  for (const k of order) {
+    if (!d.attached(k)) continue;
+    const [rx, ry, rw, rh] = CHART[k];
+    let c = tintFor(d, k, d.look[PART_CLOTH[k]]);
+    if (d.stain[k] > 0.02) c = mixc(c, COL_GORE, d.stain[k] * 0.6);
+    c = mixc(c, hex("#6a3a5a"), clamp(d.dmg[k] / 250, 0, 0.35));
+    const box = (x, y, w, h, col) => {
+      ctx.fillStyle = "#0b0b0e"; ctx.fillRect(x - 0.7, y - 0.7, w + 1.4, h + 1.4);
+      ctx.fillStyle = css(col); ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = css(lighten(col, 0.14)); ctx.fillRect(x, y, w, Math.min(1.2, h * 0.2));
+      ctx.fillStyle = css(darken(col, 0.12)); ctx.fillRect(x + w - Math.min(1.6, w * 0.2), y, Math.min(1.6, w * 0.2), h);
+    };
+    if (k === HEAD) {
+      box(-3.6, -51.8, 7.2, 7.6, darken(c, 0.08));
+      box(rx, ry, rw, rh, c);
+      const hair = tintFor(d, k, d.look.hair);
+      ctx.fillStyle = css(hair); ctx.fillRect(rx - 0.3, ry - 0.6, rw + 0.6, 4.6); ctx.fillRect(rx - 0.3, ry, 2, 8); ctx.fillRect(rx + rw - 1.7, ry, 2, 8);
+      // Face: two eyes and a mouth, X eyes when dead, closed when out.
+      ctx.fillStyle = "#121216";
+      for (const ex of [-3.6, 3.6]) {
+        if (d.dead) {
+          ctx.strokeStyle = "#121216"; ctx.lineWidth = 0.7;
+          ctx.beginPath(); ctx.moveTo(ex - 1.2, -63.2); ctx.lineTo(ex + 1.2, -60.8); ctx.moveTo(ex + 1.2, -63.2); ctx.lineTo(ex - 1.2, -60.8); ctx.stroke();
+        } else if (d.isOut()) ctx.fillRect(ex - 1.3, -61.6, 2.6, 0.7);
+        else { ctx.fillStyle = "#f4f4f0"; ctx.fillRect(ex - 1.3, -63, 2.6, 2.2); ctx.fillStyle = "#121216"; ctx.fillRect(ex - 0.6, -62.6, 1.3, 1.6); }
+      }
+      ctx.fillStyle = css(darken(c, 0.45)); ctx.fillRect(-2, -56.4, 4, d.pn > 50 && !d.dead ? 1.4 : 0.8);
+      continue;
+    }
+    box(rx, ry, rw, rh, c);
+    if (k === LARM_L || k === LARM_R) box(rx + 0.4, ry + rh + 0.8, rw - 0.8, 6.2, tintFor(d, k, d.look.skin));
+    if (k === PELVIS) { ctx.fillStyle = css(darken(c, 0.35)); ctx.fillRect(rx, ry + 0.6, rw, 1.4); }
+  }
+  ctx.restore();
+  if (state.xray) {
+    // X-ray: the organs show through the body.
+    ctx.save(); ctx.globalAlpha *= 0.92;
+    drawChartOrgans(d, cx, cy, F);
+    ctx.restore();
+  }
+  for (const w of d.wounds) {
+    if (!d.attached(w.part)) continue;
+    const [wx, wy] = chartPoint(w);
+    drawWoundMark(w, cx + wx * F, cy + wy * F, F * 1.1, now);
+  }
+}
+
+function drawAimView() {
+  const v = state.aimView;
+  if (!v) return;
+  if (!state.dolls.includes(v.d)) { closeAimView(); return; }
+  const d = v.d, a = easeOut((performance.now() - v.t) / 220), wp = WEAPONS[state.weapon];
+  ctx.save(); ctx.globalAlpha *= a;
+  ctx.fillStyle = "rgba(10,10,13,0.985)"; ctx.fillRect(0, 0, W, H);
+  // Back button and title
+  scaled(AIM_BACK.x + AIM_BACK.w / 2, AIM_BACK.y + AIM_BACK.h / 2, popScale("aimback"), () => {
+    rr(AIM_BACK.x, AIM_BACK.y, AIM_BACK.w, AIM_BACK.h, 9); ctx.fillStyle = "rgba(26,26,32,0.95)"; ctx.fill();
+    ctx.strokeStyle = "#3a3a42"; ctx.lineWidth = 1.5; ctx.stroke();
+    label("‹ ZURÜCK", AIM_BACK.x + AIM_BACK.w / 2, AIM_BACK.y + AIM_BACK.h / 2 + 1, 12, "#cfcfd6", "center");
+  });
+  label("SCHUSS PRÄZISIEREN", W * 0.32, 27, 15, "#e6e6de", "center");
+  // Figure box with the doll from the front
+  const B = AIM_BOX();
+  rr(B.x, B.y, B.w, B.h, 14); ctx.fillStyle = "#121216"; ctx.fill();
+  ctx.strokeStyle = "#26262e"; ctx.lineWidth = 1.5; ctx.stroke();
+  const [cx, cy] = aimCenter();
+  ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.beginPath(); ctx.ellipse(cx, cy + 72 * AIM_F, 34, 5, 0, 0, Math.PI * 2); ctx.fill();
+  drawFrontDoll(d, cx, cy, AIM_F);
+  // Crosshair with the target name
+  const hit = v.aiming ? frontHit(d, (v.cx - cx) / AIM_F, (v.cy - cy) / AIM_F) : null;
+  if (v.aiming) {
+    const col = hit ? "#ff4050" : "#cfcfd6";
+    ctx.strokeStyle = col; ctx.lineWidth = 1.6; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.arc(v.cx, v.cy, 9, 0, Math.PI * 2);
+    ctx.moveTo(v.cx - 16, v.cy); ctx.lineTo(v.cx - 5, v.cy); ctx.moveTo(v.cx + 5, v.cy); ctx.lineTo(v.cx + 16, v.cy);
+    ctx.moveTo(v.cx, v.cy - 16); ctx.lineTo(v.cx, v.cy - 5); ctx.moveTo(v.cx, v.cy + 5); ctx.lineTo(v.cx, v.cy + 16); ctx.stroke();
+    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(v.cx, v.cy, 1.4, 0, Math.PI * 2); ctx.fill();
+  }
+  if (v.flash > 0) {
+    v.flash = Math.max(0, v.flash - frameDt * 5);
+    ctx.strokeStyle = `rgba(255,220,160,${v.flash})`; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(v.cx, v.cy, 10 + (1 - v.flash) * 16, 0, Math.PI * 2); ctx.stroke();
+  }
+  // Right column: weapon, ammo, x-ray, target and state
+  for (const b of aimButtons()) {
+    scaled(b.x + b.w / 2, b.y + b.h / 2, popScale("aim" + b.id), () => {
+      const on = b.id === "xray" ? state.xray : b.id[0] === "w" ? state.weapon === b.n : false;
+      rr(b.x, b.y, b.w, b.h, 9); ctx.fillStyle = on ? "#2e2e37" : "#1d1d23"; ctx.fill();
+      ctx.strokeStyle = on ? "#ecece6" : "#34343c"; ctx.lineWidth = on ? 1.8 : 1.2; ctx.stroke();
+      if (b.id[0] === "w") {
+        const sp = WEAPONS[b.n].sprite, z = Math.min(1.5, (b.w - 12) / sp[0].length);
+        drawSpriteOutlined(sp, b.x + b.w / 2 - sp[0].length * z / 2, b.y + 18 - sp.length * z / 2, z, on ? 1 : 0.5);
+        label(WEAPONS[b.n].name.toUpperCase(), b.x + b.w / 2, b.y + b.h - 9, fitFont(WEAPONS[b.n].name.toUpperCase(), b.w - 8, 8), on ? "#f2f2ec" : "#6a6a74", "center");
+      } else if (b.id === "reload") {
+        label(state.reloadT > 0 ? "LÄDT..." : "NACHLADEN", b.x + b.w / 2, b.y + b.h / 2 + 1, 9, state.reloadT > 0 ? "#e6c850" : "#e2e2da", "center");
+      } else label("RÖNTGEN " + (state.xray ? "AN" : "AUS"), b.x + b.w / 2, b.y + b.h / 2 + 1, 9, state.xray ? "#86c4ff" : "#e2e2da", "center");
+    });
+  }
+  const x0 = Math.round(W * 0.6), cw = W - x0 - 16;
+  label("MUNITION", x0, 166, 9, "#8e8e98");
+  label(state.ammo[state.weapon] + " / " + wp.mag, x0 + cw, 166, 11, state.ammo[state.weapon] ? "#ecece6" : "#ff5060", "right");
+  // Target card
+  rr(x0, 180, cw, 74, 10); ctx.fillStyle = "#16161b"; ctx.fill(); ctx.strokeStyle = "#2a2a32"; ctx.lineWidth = 1.2; ctx.stroke();
+  label("ZIEL", x0 + 12, 195, 9, "#8e8e98");
+  const shown = v.aiming ? hit : v.last;
+  if (shown) {
+    label(shown.name, x0 + 12, 214, fitFont(shown.name, cw - 24, 13), "#ff6a6a");
+    const org = shown.organs.map((id) => ORGANS[ORGAN[id]].name).join(", ") || "KEIN ORGAN";
+    label(org, x0 + 12, 234, fitFont(org, cw - 24, 9, 400), shown.organs.length ? "#f0b030" : "#7a7a84", "left", 400);
+    if (shown.crit) label("KOPFTREFFER: TÖDLICH", x0 + 12, 246, 8, "#ff4050");
+  } else label(v.aiming ? "DANEBEN" : "Ziehen = zielen, loslassen = Schuss", x0 + 12, 220, fitFont("Ziehen = zielen, loslassen = Schuss", cw - 24, 9, 400), "#7a7a84", "left", 400);
+  // State of the doll
+  label("PUPPE " + d.id, x0, 274, 10, "#cfcfd6");
+  const st = d.stateName(), stc = st === "TOT" ? "#e0303f" : st === "K.O." ? "#f0b030" : "#4ccf5a";
+  rr(x0 + cw - 54, 265, 54, 18, 9); ctx.fillStyle = stc; ctx.fill();
+  label(st, x0 + cw - 27, 274.5, 10, "#101013", "center");
+  drawOrganLine(d, x0, 290, cw, 20);
+  VITALS.forEach((vt, i) => {
+    const y = 322 + i * 18, val = vt.get(d), txt = String(vt.text(val));
+    label(vt.name, x0, y, fitFont(vt.name, cw * 0.45, 8), "#8e8e98");
+    const bx = x0 + cw * 0.47, bw = cw * 0.53 - 34;
+    rr(bx, y - 3, bw, 6, 3); ctx.fillStyle = "#1e1e24"; ctx.fill();
+    const fw = bw * clamp(i === 4 ? val / 160 : val / 100, 0, 1);
+    if (fw > 1) { rr(bx, y - 3, Math.max(6, fw), 6, 3); ctx.fillStyle = vt.color; ctx.fill(); }
+    label(txt, x0 + cw, y, 9, !d.dead && vt.bad(val) ? "#ff5060" : "#ecece6", "right");
+  });
+  ctx.restore();
+}
+
 const state = {
   tool: T_GRAB, mx: W / 2, my: H / 2, lastX: W / 2, lastY: H / 2,
   pressing: false, pointerSeen: false, hover: -1, flashBtn: -1, toast: 0, toastText: "",
   dolls: [], selected: null, grabDoll: null, counter: 0, trail: [], shake: 0,
-  waterLevel: 3, weapon: 0, fireCd: 0, map: 0, screen: "", screenT: 0, toolT: 9, pressTarget: null, inGame: false, menuDown: false,
+  waterLevel: 3, weapon: 0, fireCd: 0, map: 0, screen: "", screenT: 0, lp: null, ctxMenu: null, aimView: null, xray: false, toolT: 9, pressTarget: null, inGame: false, menuDown: false,
   extrasOpen: false, extrasFlash: -1, extrasFlashT: 0, paused: false, slow: false,
   gunX: W * 0.22, gunY: FLOOR_Y - 130, gunAng: 0, gunDrag: false, aimX: W, aimY: FLOOR_Y - 130,
   ammo: WEAPONS.map((wp) => wp.mag), autoMode: WEAPONS.map((wp) => wp.auto), reloadT: 0,
@@ -4249,6 +4596,8 @@ function placeDoll(x, y) {
 
 function press() {
   if (state.screen !== "game") { screenPress(); return; }
+  if (state.aimView) { aimPress(); return; }
+  if (state.ctxMenu) { ctxMenuPress(); return; }
   if (inFsBtn(state.mx, state.my)) { pop("fs"); toggleFullscreen(); return; }
   if (inExtrasBtn(state.mx, state.my)) { pop("extras"); state.extrasOpen = !state.extrasOpen; return; }
   if (state.extrasOpen) {
@@ -4258,7 +4607,7 @@ function press() {
     return;
   }
   if (inPanelHead(state.mx, state.my)) { togglePanel(); return; }
-  if (inMenuBtn(state.mx, state.my)) { pop("menu"); release(); setScreen("title"); state.extrasOpen = false; state.triggerDown = false; return; }
+  if (inMenuBtn(state.mx, state.my)) { pop("menu"); release(); state.aimView = null; state.ctxMenu = null; setScreen("title"); state.extrasOpen = false; state.triggerDown = false; return; }
   const c = ctxHit(state.mx, state.my);
   if (c) {
     pop("cx" + c.kind + c.n);
@@ -4320,6 +4669,7 @@ function press() {
       for (const d of state.dolls) d.grabbed = -1;
       best.grabbed = bestI; best.gx = state.mx; best.gy = state.my;
       state.grabDoll = best; state.selected = best;
+      if (settings.front) state.lp = { d: best, x: state.mx, y: state.my, t: performance.now() };
     }
   }
 }
@@ -4443,7 +4793,7 @@ function gamePoint(ev) {
 canvas.addEventListener("pointerdown", (ev) => {
   ev.preventDefault();
   // Gun buttons work with a second finger while the first one aims.
-  const [gx, gy] = gamePoint(ev), gb = state.extrasOpen ? null : gunButtonAt(gx, gy);
+  const [gx, gy] = gamePoint(ev), gb = state.extrasOpen || state.aimView || state.ctxMenu ? null : gunButtonAt(gx, gy);
   if (gb) {
     if (gb === "fire") {
       if (firePointer !== null) return;
@@ -4465,6 +4815,7 @@ canvas.addEventListener("pointermove", (ev) => {
   if (ev.pointerId === firePointer) return;
   if (activePointer !== null && ev.pointerId !== activePointer) return;
   toGame(ev);
+  aimMove();
   state.hover = ev.pointerType === "mouse" ? toolbarHit(state.mx, state.my) : -1;
 });
 const endPointer = (ev) => {
@@ -4473,6 +4824,8 @@ const endPointer = (ev) => {
   activePointer = null;
   state.menuDown = false;
   if (state.screen !== "game") screenRelease();
+  aimRelease();
+  state.lp = null;
   release();
 };
 canvas.addEventListener("pointerup", endPointer);
@@ -4612,6 +4965,9 @@ function render() {
   drawMenuButton();
   drawExtrasButton();
   drawExtras();
+  drawLongPress();
+  drawCtxMenu();
+  drawAimView();
   const pk = tween("pausePill", state.paused || state.slow ? 1 : 0, 16);
   if (pk > 0.01) {
     if (state.paused || state.slow) pillText = state.paused ? "PAUSE" : "ZEITLUPE";
@@ -4636,7 +4992,8 @@ function loop(now) {
   state.toolT += realDt;
   state.extrasFlashT = Math.max(0, state.extrasFlashT - realDt);
   state.toast = Math.max(0, state.toast - realDt);
-  acc += state.paused ? 0 : state.slow ? realDt * 0.3 : realDt;
+  acc += state.paused ? 0 : state.aimView ? realDt * 0.25 : state.slow ? realDt * 0.3 : realDt;
+  if (state.screen === "game") updateLongPress();
   let steps = 0;
   if (state.screen !== "game") {
     acc = 0;

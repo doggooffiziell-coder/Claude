@@ -51,6 +51,12 @@ Magen und Darm bluten kaum. Die Puppe krümmt sich vor Krämpfen und drückt ein
 
 Verletzte Organe heilen langsam, mit Infusion schneller. Zerstörte Organe heilen nicht, nur "Alle heilen" in den Extras stellt sie wieder her. Die Infusion füllt Blut nach und kann so eine Leberblutung überbrücken, ein stehendes Herz rettet sie nicht. Die Körpertafel zeigt die Organe als kleine anatomische Bilder: Gehirn mit Windungen, Lungen mit Bronchien und Luftröhre, Herz mit Aorta und Lungenvene, Leber mit Gallenblase, Magen, Nieren mit Harnleitern und den Darm. Verletzte Organe werden dunkler, zerstörte bekommen ein rotes X, und das Herz schlägt mit. Darunter steht das schlimmste Organ mit der Zeit bis zum Tod, nach dem Tod die Ursache.
 
+Mit "Fixieren" tippst du auf ein Körperteil. Es bleibt dann wie mit einer roten Nadel festgesteckt an seiner Stelle, auch in der Luft. Ein zweiter Tipp löst es wieder, "Pins lösen" in den Extras löst alle.
+
+Fallschaden: Ein Sturz bis etwa 1,5 m macht nichts. Darüber wächst der Schaden mit der Geschwindigkeit im Quadrat. Beine und Füße fangen eine Landung am besten ab, der Kopf am schlechtesten. Harte Aufpralle brechen Arme und Beine (KNOCHENBRUCH, die Puppe kann dann nicht mehr stehen), erst sehr harte reißen Wunden auf. Körperteile prallen jetzt auch mit ihrer ganzen Länge an Wänden und Plattformen ab, und Puppen stoßen sich gegenseitig an.
+
+In den Einstellungen schaltet FRONTANSICHT die Puppen auf Blick nach vorn. Dann öffnet langes Drücken auf eine Puppe mit dem Greifen-Werkzeug ein Menü: SCHUSS PRÄZISIEREN, HEILEN, PINS LÖSEN und ENTFERNEN. "Schuss präzisieren" zeigt die Puppe groß von vorn. Du ziehst den Finger zum Zielen, die Ansicht zeigt Körperteil und getroffene Organe, und beim Loslassen fällt der Schuss genau dort. RÖNTGEN macht die Organe sichtbar. Das Spiel läuft dabei in Zeitlupe weiter.
+
 Die Infusion hängt einen Blutbeutel mit Schlauch an die Puppe. Sie füllt Blut auf, schließt Wunden, senkt Schmerz und weckt eine bewusstlose Puppe. Eine tote Puppe rettet sie nicht mehr.
 
 Zustände: WACH, K.O. und TOT. Eine K.O.-Puppe atmet, ihr Herz schlägt und sie wacht nach einigen Sekunden wieder auf. Eine tote Puppe zuckt kurz und bleibt liegen. Verletzungen ändern die Bewegung: ein kaputtes Bein verhindert das Stehen, ein verletzter Arm hängt schlaff, Schmerz lässt die Puppe sich winden und eine Hand auf die Wunde drücken, Feuer und Ertrinken lösen Panik aus. Liegt eine wache Puppe am Boden, versucht sie aufzustehen. Mit einem kaputten Bein schafft sie es nicht und fällt zurück.
