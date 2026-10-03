@@ -635,15 +635,19 @@ const ORGANS = [
   { id: "lungL", name: "LUNGE L", part: TORSO, t: 0.32, r: 0.24, s: 0.55, w: 0.45, bleed: 0.4 },
   { id: "lungR", name: "LUNGE R", part: TORSO, t: 0.32, r: 0.24, s: -0.55, w: 0.45, bleed: 0.4 },
   { id: "liver", name: "LEBER", part: TORSO, t: 0.7, r: 0.16, s: -0.4, w: 0.5, bleed: 2 },
-  { id: "stomach", name: "MAGEN", part: TORSO, t: 0.72, r: 0.15, s: 0.4, w: 0.45, bleed: 0.5 },
+  { id: "stomach", name: "MAGEN", part: TORSO, t: 0.72, r: 0.15, s: 0.4, w: 0.45, bleed: 0.05 },
   { id: "kidneys", name: "NIEREN", part: PELVIS, t: 0.3, r: 0.3, s: 0, w: 0.7, bleed: 0.9 },
-  { id: "gut", name: "DARM", part: PELVIS, t: 0.65, r: 0.35, s: 0, w: 0.9, bleed: 0.3 },
+  { id: "gut", name: "DARM", part: PELVIS, t: 0.65, r: 0.35, s: 0, w: 0.9, bleed: 0.04 },
 ];
 const ORGAN = Object.fromEntries(ORGANS.map((o, n) => [o.id, n]));
+// Stomach and gut barely bleed. What kills is the inflammation that grows
+// when their contents leak into the belly: SEPSIS_RATE points per second
+// per fully destroyed organ, death at 100. One destroyed organ: about 10 min.
+const SEPSIS_RATE = 100 / 600;
 // What a destroyed organ is called as the cause of death.
 const ORGAN_DEATH = {
   brain: "GEHIRN ZERSTÖRT", heart: "HERZSTILLSTAND", lungL: "ERSTICKT", lungR: "ERSTICKT",
-  liver: "LEBERBLUTUNG", stomach: "INNERE BLUTUNG", kidneys: "NIERENBLUTUNG", gut: "INNERE BLUTUNG",
+  liver: "LEBERBLUTUNG", stomach: "BAUCHFELLENTZÜNDUNG", kidneys: "NIERENBLUTUNG", gut: "BAUCHFELLENTZÜNDUNG",
 };
 
 class Doll {
@@ -687,7 +691,7 @@ class Doll {
     this.ecg = new Float32Array(90); this.ecgPos = 0; this.sinceBeat = 9;
     this.look = randomLook();
     this.organ = ORGANS.map(() => 100);
-    this.arrest = false; this.cause = ""; this.organBleed = 0; this.o2Drop = 0;
+    this.arrest = false; this.cause = ""; this.organBleed = 0; this.o2Drop = 0; this.sepsis = 0; this.sepsisRate = 0;
   }
 
   // Damages the organs at height t of part k. A bullet crosses the body at a
@@ -725,9 +729,17 @@ class Doll {
     const breath = (hp("lungL") + hp("lungR")) / 2;
     this.o2Drop = this.arrest ? 12 : Math.pow(1 - breath, 2) * 7;
     if (!this.dead) this.o2 = Math.max(0, this.o2 - this.o2Drop * DT);
-    // Gut and stomach wounds hurt a lot, a bruised brain clouds the mind.
+    // Gut and stomach wounds hurt a lot. A torn stomach or gut lets its
+    // contents into the belly, and the inflammation slowly grows. Mended
+    // organs let it fade again.
     const belly = (1 - hp("stomach")) + (1 - hp("gut"));
     if (belly > 0.1) this.pn = Math.max(this.pn, Math.min(95, belly * 45));
+    let leak = 0;
+    for (const id of ["stomach", "gut"]) if (this.attached(ORGANS[ORGAN[id]].part)) leak += Math.max(0, 0.6 - hp(id)) / 0.6;
+    this.sepsisRate = leak * SEPSIS_RATE;
+    if (!this.dead) this.sepsis = leak > 0 ? Math.min(100, this.sepsis + this.sepsisRate * DT) : Math.max(0, this.sepsis - 0.5 * DT);
+    if (this.sepsis > 50 && !this.dead) this.ko = Math.min(this.ko, 100 - (this.sepsis - 50) * 1.6);
+    if (this.sepsis >= 100 && !this.dead) { this.cause = ORGAN_DEATH.stomach; this.die(); }
     if (!this.dead && hp("brain") < 1) this.ko = Math.min(this.ko, 15 + hp("brain") * 85);
     // Living organs mend slowly, faster with an infusion. Destroyed ones stay.
     const mend = this.iv > 0 ? 3 : this.healing ? 0.6 : 0;
@@ -747,6 +759,7 @@ class Doll {
     const gain = this.headUnder ? -11 : this.arrest ? 0 : 20 * breath;
     const net = gain - this.o2Drop;
     if (net < 0) eta = Math.min(eta, this.o2 / -net + Math.max(0, 6 - this.noAir));
+    if (this.sepsisRate > 0) eta = Math.min(eta, (100 - this.sepsis) / this.sepsisRate);
     return eta;
   }
 
@@ -999,10 +1012,17 @@ class Doll {
       if (!this.crippled[this.owner[i]] || !healthyArm) this.push(i, rf(-1.2, 1.2), rf(-1.6, 0.2));
     }
 
-    // Press a hand onto the worst bleeding wound.
+    // Belly cramps: a hurt stomach or gut makes the doll double over now and then.
+    const belly = (100 - this.organ[ORGAN.stomach]) + (100 - this.organ[ORGAN.gut]);
+    if (belly > 30 && this.standing && Math.random() < 0.012 * belly / 100) {
+      const face = Math.sign(this.x[P_HEAD] - this.x[P_NECK]) || 1;
+      this.push(P_NECK, face * rf(1, 2), rf(0.6, 1.4)); this.push(P_HEAD, face * rf(1.5, 2.5), rf(0.8, 1.6));
+    }
+    // Press a hand onto the worst bleeding wound, or onto a cramping belly.
     if (this.pn > 20) {
       let worst = null;
       for (const w of this.wounds) if (w.bleed > 0.15 && this.attached(w.part) && w.part !== LARM_L && w.part !== LARM_R && (!worst || w.bleed > worst.bleed)) worst = w;
+      if (!worst && belly > 40 && this.attached(TORSO)) worst = { part: TORSO, t: 0.8, s: 0.6, stump: false };
       if (worst) {
         const [wx, wy] = this.woundPos(worst);
         let best = -1, bd = Infinity;
@@ -1461,7 +1481,7 @@ class Doll {
     this.koTimer = 0; this.koLatched = false;
     this.burn = 0; this.freeze = 0; this.frozen = false;
     this.stagger = 0; this.sinceDamage = 10;
-    this.organ = ORGANS.map(() => 100); this.arrest = false; this.cause = "";
+    this.organ = ORGANS.map(() => 100); this.arrest = false; this.cause = ""; this.sepsis = 0;
   }
 
   attachInfusion() {
@@ -2974,7 +2994,10 @@ function drawOrganLine(d, x, y, w, h) {
     else {
       const o = worst >= 0 ? ORGANS[worst] : null, hp = o ? d.organ[worst] : 100;
       const what = d.arrest ? "HERZSTILLSTAND" : o ? o.name + (hp <= 0 ? " ZERSTÖRT" : " " + Math.round(hp) + "%") : "BLUTVERLUST";
-      if (eta < 600) { text = what + " · " + Math.ceil(eta) + "S"; col = eta < 15 ? "#ff4050" : "#f08a24"; }
+      if (eta < 3600) {
+        text = what + " · " + (eta < 120 ? Math.ceil(eta) + "S" : Math.ceil(eta / 60) + " MIN");
+        col = eta < 15 ? "#ff4050" : eta < 120 ? "#f08a24" : "#f2da3a";
+      }
       else { text = what; col = hp <= 0 ? "#f08a24" : "#f2da3a"; }
     }
   }
