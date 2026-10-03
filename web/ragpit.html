@@ -141,6 +141,7 @@ function getMat(x, y) {
 const matAt = (x, y) => getMat(Math.floor(x), Math.floor(y));
 const solidAt = (x, y) => { const m = matAt(x, y); return m === WALL || m === ICE; };
 const liquidAt = (x, y) => { const m = matAt(x, y); return m === WATER || m === BLOOD; };
+const coldIceAt = (x, y) => matAt(x, y) === ICE && life[Math.floor(y) * W + Math.floor(x)] > 0;
 
 function worldReset() {
   mat.fill(EMPTY); mixv.fill(0); life.fill(0); stamp.fill(0); rest.fill(0);
@@ -401,7 +402,16 @@ function paintCell(i) {
   const o = i * 4, m = mat[i];
   let r = 0, g = 0, b = 0, a = 255;
   switch (m) {
-    case EMPTY: case WALL: a = 0; break;
+    case EMPTY: a = 0; break;
+    case WALL: {
+      const y = (i / W) | 0;
+      if (y >= FLOOR_Y) { a = 0; break; }
+      // Concrete blocks with a light top edge
+      const top = i >= W && mat[i - W] !== WALL, s4 = shade[i] >> 2;
+      r = g = 74 + s4; b = 84 + s4;
+      if (top) { r = g = 132; b = 142; }
+      break;
+    }
     case WATER: {
       let li = mixv[i] * 6;
       if (i >= W && isFree(mat[i - W])) li += 3;
@@ -581,18 +591,18 @@ class Doll {
     splatAround(x + dx * 50, y + dy * 50, 7);
     for (const i of [this.pa[k], this.pb[k]]) this.push(i, dx * wp.push * 0.5, dy * wp.push * 0.5);
     this.pn = Math.min(100, this.pn + 22 * wp.dmg);
-    this.hurtPart(k, 26 * wp.dmg);
+    this.hurtPart(k, 18 * wp.dmg);
     this.hits[k]++;
     this.damaged();
     this.stagger = Math.max(this.stagger, 1.2);
     if (k === HEAD) {
-      this.ko -= 70 * wp.dmg;
+      this.ko -= 45 * wp.dmg;
       if (!this.dead && Math.random() < wp.headKill) this.die();
-      if (wp.dmg > 1.4 && Math.random() < 0.12) this.gib(HEAD);
     } else if (k === TORSO) {
       this.bl = Math.max(0, this.bl - 4 * wp.dmg);
-      if (!this.dead && Math.random() < 0.05 * wp.dmg) this.die();
-    } else if (k !== PELVIS && Math.random() < wp.sever * this.hits[k]) {
+      if (!this.dead && Math.random() < 0.02 * wp.dmg) this.die();
+    } else if (k !== PELVIS && this.dmg[k] >= 100 && this.hits[k] >= 6 && Math.random() < wp.sever) {
+      // A limb only comes off after it has taken a lot of hits.
       this.severCd = 0;
       this.sever(k);
     }
@@ -616,7 +626,8 @@ class Doll {
         vx *= drag; vy *= drag;
         // Static friction: slow points resting on the ground settle down.
         if (vx * vx + vy * vy < 2.5) {
-          const f = solidAt(x, y + this.rad[i] + 1.2) ? 0.6 : 0.9;
+          const below = matAt(x, y + this.rad[i] + 1.2);
+          const f = below === ICE ? 0.97 : below === WALL ? 0.6 : 0.9;
           vx *= f; vy *= f;
         }
         vy += g;
@@ -798,20 +809,24 @@ class Doll {
       }
     }
 
-    // Get back up after lying still for a moment, if the legs still work.
+    // An awake doll on the floor keeps trying to get up. With a bad leg it
+    // struggles halfway and falls back down.
     this.getUpCd = Math.max(0, this.getUpCd - DT);
-    this.stillTime = maxV < 2 ? this.stillTime + DT : 0;
-    const able = this.legsWork() && this.pn < 70 && this.bl > 45 && this.burn <= 0 && !this.headUnder;
-    if (this.getUp <= 0 && !this.standing && able && this.stillTime > 1.2 && this.getUpCd <= 0) { this.getUp = 1.6; this.getUpCd = 5; }
+    this.stillTime = maxV < 2.5 ? this.stillTime + DT : 0;
+    const hasLeg = this.attached(PELVIS) && ((this.attached(THIGH_L) && this.attached(SHIN_L)) || (this.attached(THIGH_R) && this.attached(SHIN_R)));
+    const able = hasLeg && this.pn < 90 && this.bl > 38 && this.burn <= 0 && !this.headUnder;
+    if (this.getUp <= 0 && !this.standing && able && this.stillTime > 0.8 && this.getUpCd <= 0) { this.getUp = 1.6; this.getUpCd = 3.2; }
     if (this.getUp > 0) {
       if (!able) { this.getUp = 0; return; }
       this.getUp -= DT;
-      const p = 1 - this.getUp / 1.6;
+      if (this.getUp <= 0) this.getUpGrace = 0.8;
+      const p = 1 - Math.max(0, this.getUp) / 1.6;
+      if (!this.legsWork() && p > 0.55) { this.getUp = 0; this.stagger = 1; return; }
       let feetX = 0, n = 0, ground = 0;
       for (const k of [FOOT_L, FOOT_R]) if (this.attached(k)) { feetX += this.x[this.pa[k]]; n++; }
       for (let i = 0; i < this.x.length; i++) ground = Math.max(ground, this.y[i] + this.rad[i]);
       if (!n) { this.getUp = 0; return; }
-      this.poseToward(feetX / n, Math.min(ground, FLOOR_Y) - 1, 0.03 + 0.12 * p, true);
+      this.poseToward(feetX / n, Math.min(ground, FLOOR_Y) - 1, 0.03 + 0.15 * p, true);
     }
   }
 
@@ -834,7 +849,9 @@ class Doll {
     this.stagger = Math.max(0, this.stagger - DT);
     // A hard shove to the upper body knocks the doll off its feet for a moment.
     const nv = Math.hypot(this.x[P_NECK] - this.ox[P_NECK], this.y[P_NECK] - this.oy[P_NECK]);
-    if (nv > 5) this.stagger = Math.max(this.stagger, 1.4);
+    // Its own get-up motion does not count as a shove.
+    this.getUpGrace = Math.max(0, (this.getUpGrace || 0) - DT);
+    if (nv > 5 && this.getUpGrace <= 0) this.stagger = Math.max(this.stagger, 1.4);
     if (this.stagger > 0) return;
     if (this.dead || this.frozen || this.grabbed >= 0 || this.isOut() || this.pn > 90) return;
     if (!this.legsWork()) return;
@@ -1146,8 +1163,9 @@ class Doll {
       const x = this.x[i], y = this.y[i], m = matAt(x, y);
       if (m === FIRE && this.burn <= 0 && this.burnImmune <= 0) this.burn = 5;
       else if (m === WATER || m === BLOOD) wet = true;
+      // Only fresh ice from the ice tool is cold enough to freeze a doll.
       const r = this.rad[i] + 3;
-      if (matAt(x, y + r) === ICE || matAt(x + r, y) === ICE || matAt(x - r, y) === ICE) cold++;
+      if (coldIceAt(x, y + r) || coldIceAt(x + r, y) || coldIceAt(x - r, y)) cold++;
     }
     const hx = this.x[this.pb[HEAD]], hy = this.y[this.pb[HEAD]];
     this.headUnder = !this.severed[HEAD] && liquidAt(hx, hy) && liquidAt(hx, hy - 10);
@@ -1173,7 +1191,7 @@ class Doll {
         if (matAt(x, y - 10) === EMPTY) setCell(Math.floor(x) + rnd(9) - 4, Math.floor(y) - 10, FIRE, 0, 30 + rnd(40));
       }
     }
-    if (cold > 0) this.freeze = Math.min(1.6, this.freeze + DT * 0.18 * Math.min(cold, 5));
+    if (cold > 0) this.freeze = Math.min(1.6, this.freeze + DT * 0.06 * Math.min(cold, 5));
     else if (this.burn <= 0) this.freeze = Math.max(0, this.freeze - DT * 0.06);
     if (!this.frozen && this.freeze >= 1) {
       this.frozen = true;
@@ -1295,7 +1313,7 @@ class Doll {
       this.pn = Math.max(0, this.pn - 6 * DT);
       for (const w of this.wounds) if (this.attached(w.part)) w.bleed = Math.max(0, w.bleed - (w.stump ? 0.05 : 0.14) * DT);
     }
-    this.pn = Math.max(0, this.pn - 3 * DT);
+    this.pn = Math.max(0, this.pn - 4.5 * DT);
 
     let cap = 100;
     if (this.bl < 55) cap = (this.bl - 30) * 4;
@@ -1673,7 +1691,7 @@ const inPanel = (x, y) => x >= PANEL.x && x < PANEL.x + PANEL.w && y >= PANEL.y 
 const FS_OK = !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
 const FS_BTN = { x: 170, y: 9, w: 34, h: 34 };
 const inFsBtn = (x, y) => FS_OK && x >= FS_BTN.x && x < FS_BTN.x + FS_BTN.w && y >= FS_BTN.y && y < FS_BTN.y + FS_BTN.h;
-const blocksInput = (x, y) => toolbarHit(x, y) >= 0 || inPanel(x, y) || inFsBtn(x, y) || !!ctxHit(x, y);
+const blocksInput = (x, y) => toolbarHit(x, y) >= 0 || inPanel(x, y) || inFsBtn(x, y) || inMenuBtn(x, y) || !!ctxHit(x, y);
 
 function toggleFullscreen() {
   const el = document.documentElement;
@@ -2006,9 +2024,9 @@ const SPRITE_GLOCK = [
 ];
 const GUN_COLORS = { k: hex("#26262c"), m: hex("#4c4c56"), l: hex("#8c8c98"), w: hex("#8e5a2e"), d: hex("#6a4020") };
 const WEAPONS = [
-  { name: "AK-47", sprite: SPRITE_AK, grip: [6.5, 5], muzzle: [20, 1.5], auto: true, rate: 10, dmg: 1.6, spread: 0.045, push: 10, sever: 0.3, headKill: 0.75, kick: 0.07, snd: 1 },
-  { name: "Sturmgewehr", sprite: SPRITE_AR, grip: [6.5, 5], muzzle: [20, 1.5], auto: true, rate: 13, dmg: 1.25, spread: 0.025, push: 8, sever: 0.18, headKill: 0.6, kick: 0.05, snd: 0.8 },
-  { name: "Glock 17", sprite: SPRITE_GLOCK, grip: [1, 4], muzzle: [11, 0.8], auto: false, rate: 6, dmg: 0.95, spread: 0.015, push: 5, sever: 0.05, headKill: 0.45, kick: 0.035, snd: 0.6 },
+  { name: "AK-47", sprite: SPRITE_AK, grip: [6.5, 5], muzzle: [20, 1.5], auto: true, rate: 10, dmg: 1.0, spread: 0.045, push: 6, sever: 0.25, headKill: 0.3, kick: 0.06, snd: 1 },
+  { name: "Sturmgewehr", sprite: SPRITE_AR, grip: [6.5, 5], muzzle: [20, 1.5], auto: true, rate: 13, dmg: 0.85, spread: 0.025, push: 5, sever: 0.15, headKill: 0.22, kick: 0.045, snd: 0.8 },
+  { name: "Glock 17", sprite: SPRITE_GLOCK, grip: [1, 4], muzzle: [11, 0.8], auto: false, rate: 6, dmg: 0.65, spread: 0.015, push: 3.5, sever: 0.05, headKill: 0.12, kick: 0.03, snd: 0.6 },
 ];
 let tracers = [], flashes = [], sparks = [];
 
@@ -2276,24 +2294,25 @@ function buildStatic() {
   bgCan.height = lightCan.height = canvas.height;
   const b = bgCan.getContext("2d");
   b.setTransform(K, 0, 0, K, 0, 0);
+  const th = MAPS[state.map].theme;
   const wall = b.createLinearGradient(0, 0, 0, FLOOR_Y);
-  wall.addColorStop(0, "#18181c"); wall.addColorStop(1, "#24242a");
+  wall.addColorStop(0, th.wall[0]); wall.addColorStop(1, th.wall[1]);
   b.fillStyle = wall; b.fillRect(0, 0, W, FLOOR_Y);
   for (let x = 0; x < W; x += 96) {
     b.fillStyle = "rgba(255,255,255,0.018)"; b.fillRect(x + 4, 20, 88, FLOOR_Y - 36);
-    b.fillStyle = "#141417"; b.fillRect(x, 16, 1.5, FLOOR_Y - 16);
+    b.fillStyle = th.line; b.fillRect(x, 16, 1.5, FLOOR_Y - 16);
     b.fillStyle = "rgba(255,255,255,0.03)"; b.fillRect(x + 1.5, 16, 1, FLOOR_Y - 16);
   }
-  for (let y = 96; y < FLOOR_Y - 20; y += 80) { b.fillStyle = "#141417"; b.fillRect(0, y, W, 1.5); }
+  for (let y = 96; y < FLOOR_Y - 20; y += 80) { b.fillStyle = th.line; b.fillRect(0, y, W, 1.5); }
   b.fillStyle = "#111114"; b.fillRect(0, 0, W, 16);
   b.fillStyle = "#0a0a0c"; b.fillRect(0, 16, W, 1.5);
   b.fillStyle = "#2a2a31"; b.fillRect(0, FLOOR_Y - 12, W, 12);
   b.fillStyle = "#3a3a42"; b.fillRect(0, FLOOR_Y - 12, W, 1.2);
   // Floor tiles
   const fl = b.createLinearGradient(0, FLOOR_Y, 0, H);
-  fl.addColorStop(0, "#bdbdc2"); fl.addColorStop(1, "#8a8a90");
+  fl.addColorStop(0, th.floor[0]); fl.addColorStop(1, th.floor[1]);
   b.fillStyle = fl; b.fillRect(0, FLOOR_Y, W, H - FLOOR_Y);
-  b.fillStyle = "#dedee2"; b.fillRect(0, FLOOR_Y, W, 2);
+  b.fillStyle = th.edge; b.fillRect(0, FLOOR_Y, W, 2);
   b.fillStyle = "rgba(0,0,0,0.18)";
   for (let x = 0; x < W; x += 64) b.fillRect(x, FLOOR_Y + 2, 1.5, H - FLOOR_Y);
   b.fillRect(0, FLOOR_Y + 26, W, 1.5);
@@ -2346,11 +2365,165 @@ function buildStatic() {
 // Game state, tools and input
 // ======================================================================
 
+// ======================================================================
+// Maps and main menu
+// ======================================================================
+
+// Every map lists solid blocks, water and ice as [x, y, w, h] in world units,
+// the spots where dolls start, and the colors of its room.
+const MAPS = [
+  {
+    name: "Labor", desc: "Der leere Raum",
+    theme: { wall: ["#18181c", "#24242a"], floor: ["#bdbdc2", "#8a8a90"], edge: "#dedee2", line: "#141417" },
+    build: () => ({ walls: [], water: [], ice: [], dolls: [W / 2 - 110] }),
+  },
+  {
+    name: "Schwimmbad", desc: "Ein volles Becken",
+    theme: { wall: ["#0f2c32", "#174048"], floor: ["#d4e6e8", "#98b8bc"], edge: "#f0fafa", line: "#0a2226" },
+    build: () => {
+      const x0 = Math.round(W * 0.36), x1 = Math.round(W * 0.74), h = 74;
+      return {
+        walls: [[x0 - 10, FLOOR_Y - h, 10, h], [x1, FLOOR_Y - h, 10, h]],
+        water: [[x0, FLOOR_Y - h + 14, x1 - x0, h - 14]],
+        ice: [], dolls: [W * 0.18, W * 0.27],
+      };
+    },
+  },
+  {
+    name: "Treppenhaus", desc: "Lange Treppe zum Werfen",
+    theme: { wall: ["#241a16", "#33251e"], floor: ["#8c7c6c", "#5c4e42"], edge: "#a89888", line: "#1a120e" },
+    build: () => {
+      const walls = [], x0 = Math.round(W * 0.2), step = 30, rise = 22;
+      for (let i = 0; i < 7; i++) walls.push([x0 + i * step, FLOOR_Y - (i + 1) * rise, step, (i + 1) * rise]);
+      const top = x0 + 7 * step;
+      walls.push([top, FLOOR_Y - 8 * rise, 150, 8 * rise]);
+      return { walls, water: [], ice: [], dolls: [top + 70] };
+    },
+  },
+  {
+    name: "Halle", desc: "Plattformen in der Höhe",
+    theme: { wall: ["#13161c", "#1e232c"], floor: ["#6c7078", "#46494f"], edge: "#8c9098", line: "#0c0e12" },
+    build: () => ({
+      walls: [[W * 0.08, 300, 150, 12], [W * 0.32, 245, 160, 12], [W * 0.54, 205, 140, 12]],
+      water: [], ice: [], dolls: [W * 0.32 + 80, W * 0.54 + 70],
+    }),
+  },
+  {
+    name: "Eiskeller", desc: "Glatter Boden und Eissäulen",
+    theme: { wall: ["#0c1824", "#152c40"], floor: ["#d2eaf8", "#90b6ce"], edge: "#f4fcff", line: "#08121c" },
+    build: () => ({
+      walls: [],
+      water: [],
+      ice: [[0, FLOOR_Y - 5, W, 5], [W * 0.3, FLOOR_Y - 96, 26, 91], [W * 0.66, FLOOR_Y - 64, 44, 59], [W * 0.48, 150, 70, 14]],
+      dolls: [W * 0.16, W * 0.4],
+    }),
+  },
+];
+
+function fillRect(r, m, mx = 0, lf = 0) {
+  const [rx, ry, rw, rh] = r.map(Math.round);
+  for (let y = ry; y < ry + rh; y++) for (let x = rx; x < rx + rw; x++) setCell(x, y, m, mx, lf);
+}
+
+// Builds the chosen map: room, blocks, water, ice and the starting dolls.
+function loadMap(i) {
+  state.map = i;
+  worldReset();
+  const m = MAPS[i].build();
+  for (const r of m.walls) fillRect(r, WALL);
+  for (const r of m.ice) fillRect(r, ICE, 0, 0);
+  for (const r of m.water) fillRect(r, WATER);
+  gibs = []; effects = []; tracers = []; flashes = []; sparks = [];
+  dctx.clearRect(0, 0, decal.width, decal.height);
+  state.dolls = []; state.selected = null; state.grabDoll = null; state.counter = 0;
+  for (const x of m.dolls) placeDoll(x, 40);
+  state.toast = 0;
+  buildStatic();
+}
+
+const MENU_BTN = { x: 212, y: 9, w: 74, h: 34 };
+const inMenuBtn = (x, y) => x >= MENU_BTN.x && x < MENU_BTN.x + MENU_BTN.w && y >= MENU_BTN.y && y < MENU_BTN.y + MENU_BTN.h;
+
+function drawMenuButton() {
+  const { x, y, w, h } = MENU_BTN;
+  rr(x, y, w, h, 9);
+  ctx.fillStyle = "rgba(15,15,19,0.85)"; ctx.fill();
+  ctx.strokeStyle = "#3e3e46"; ctx.lineWidth = 1.5; ctx.stroke();
+  label("MENÜ", x + w / 2, y + h / 2 + 1, 12, "#cfcfd6", "center");
+}
+
+// Menu cards: three on top, two below.
+function menuCards() {
+  const cw = 196, ch = 132, gap = 16, cards = [];
+  const rows = [[0, 1, 2], [3, 4]];
+  rows.forEach((row, r) => {
+    const total = row.length * cw + (row.length - 1) * gap;
+    row.forEach((i, c) => cards.push({ i, x: W / 2 - total / 2 + c * (cw + gap), y: 136 + r * (ch + gap), w: cw, h: ch }));
+  });
+  return cards;
+}
+
+function drawMapPreview(i, x, y, w, h) {
+  const m = MAPS[i], t = m.theme, sx = w / W, sy = h / H, b = m.build();
+  ctx.save();
+  rr(x, y, w, h, 8); ctx.clip();
+  const g = ctx.createLinearGradient(0, y, 0, y + FLOOR_Y * sy);
+  g.addColorStop(0, t.wall[0]); g.addColorStop(1, t.wall[1]);
+  ctx.fillStyle = g; ctx.fillRect(x, y, w, FLOOR_Y * sy);
+  ctx.fillStyle = t.floor[0]; ctx.fillRect(x, y + FLOOR_Y * sy, w, h - FLOOR_Y * sy);
+  ctx.fillStyle = "#5c5c66";
+  for (const r of b.walls) ctx.fillRect(x + r[0] * sx, y + r[1] * sy, r[2] * sx, r[3] * sy);
+  ctx.fillStyle = "rgba(60,130,230,0.85)";
+  for (const r of b.water) ctx.fillRect(x + r[0] * sx, y + r[1] * sy, r[2] * sx, r[3] * sy);
+  ctx.fillStyle = "#bfe4fa";
+  for (const r of b.ice) ctx.fillRect(x + r[0] * sx, y + r[1] * sy, r[2] * sx, r[3] * sy);
+  // Doll markers
+  ctx.fillStyle = "#f2f2ec";
+  for (const dx of b.dolls) {
+    let gy = FLOOR_Y;
+    for (const r of b.walls.concat(b.ice)) if (dx >= r[0] && dx <= r[0] + r[2] && r[1] < gy) gy = r[1];
+    ctx.beginPath(); ctx.arc(x + dx * sx, y + (gy - 66) * sy, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.fillRect(x + dx * sx - 2, y + (gy - 60) * sy, 4, 60 * sy);
+  }
+  ctx.restore();
+}
+
+function drawMenu() {
+  ctx.setTransform(K, 0, 0, K, 0, 0);
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, "#121216"); g.addColorStop(1, "#1c1c22");
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // A faint blood streak under the title
+  ctx.fillStyle = "rgba(142,20,36,0.55)";
+  ctx.fillRect(W / 2 - 150, 92, 300, 4);
+  label("RAGPIT", W / 2, 60, 52, "#e6e6de", "center");
+  label("WÄHLE EINE MAP", W / 2, 112, 13, "#7a7a84", "center");
+  for (const c of menuCards()) {
+    const on = c.i === state.map;
+    rr(c.x, c.y, c.w, c.h, 12);
+    ctx.fillStyle = on ? "#26262e" : "#1a1a20"; ctx.fill();
+    ctx.strokeStyle = on ? "#ecece6" : "#34343c"; ctx.lineWidth = on ? 2 : 1.5; ctx.stroke();
+    drawMapPreview(c.i, c.x + 8, c.y + 8, c.w - 16, 76);
+    label(MAPS[c.i].name.toUpperCase(), c.x + 12, c.y + 100, 14, "#e6e6de");
+    label(MAPS[c.i].desc, c.x + 12, c.y + 118, 10, "#7a7a84", "left", 400);
+  }
+}
+
+function menuPress() {
+  for (const c of menuCards()) {
+    if (state.mx >= c.x && state.mx < c.x + c.w && state.my >= c.y && state.my < c.y + c.h) {
+      state.screen = "game";
+      loadMap(c.i);
+      return;
+    }
+  }
+}
+
 const state = {
   tool: T_GRAB, mx: W / 2, my: H / 2, lastX: W / 2, lastY: H / 2,
   pressing: false, pointerSeen: false, hover: -1, flashBtn: -1, toast: 0, toastText: "",
   dolls: [], selected: null, grabDoll: null, counter: 0, trail: [], shake: 0,
-  waterLevel: 3, weapon: 0, fireCd: 0,
+  waterLevel: 3, weapon: 0, fireCd: 0, map: 0, screen: "menu",
   gunX: W * 0.22, gunY: FLOOR_Y - 130, gunAng: 0, gunDrag: false, aimX: W, aimY: FLOOR_Y - 130,
 };
 
@@ -2366,11 +2539,7 @@ function spawnDoll(bx, by) {
 }
 
 function resetScene() {
-  worldReset();
-  gibs = []; effects = []; tracers = []; flashes = []; sparks = [];
-  dctx.clearRect(0, 0, decal.width, decal.height);
-  state.dolls = []; state.selected = null; state.grabDoll = null; state.counter = 0;
-  spawnDoll(W / 2 - 110, FLOOR_Y);
+  loadMap(state.map);
 }
 
 function useButton(i) {
@@ -2398,7 +2567,9 @@ function placeDoll(x, y) {
 }
 
 function press() {
+  if (state.screen === "menu") { menuPress(); return; }
   if (inFsBtn(state.mx, state.my)) { toggleFullscreen(); return; }
+  if (inMenuBtn(state.mx, state.my)) { release(); state.screen = "menu"; return; }
   const c = ctxHit(state.mx, state.my);
   if (c) {
     if (c.kind === "water") { state.waterLevel = c.n; state.toast = 1; state.toastText = "Menge " + c.n; }
@@ -2594,6 +2765,7 @@ window.addEventListener("orientationchange", () => setTimeout(fit, 200));
 const COL_P_BLOOD = "#9c0e1c", COL_P_FIRE = "#ffc048";
 function render() {
   flushPaint();
+  ctx.globalCompositeOperation = "source-over";
   if (worldDirty) { wctx.putImageData(wimg, 0, 0); worldDirty = false; }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalCompositeOperation = "source-over";
@@ -2668,6 +2840,7 @@ function render() {
   drawContextBar();
   drawToolbar();
   drawFsButton();
+  drawMenuButton();
 }
 
 let acc = 0, lastT = performance.now();
@@ -2675,14 +2848,20 @@ function loop(now) {
   acc += Math.min(0.1, (now - lastT) / 1000);
   lastT = now;
   let steps = 0;
-  while (acc >= DT && steps < 4) { physicsStep(); acc -= DT; steps++; }
-  if (steps === 4) acc = 0;
-  render();
+  if (state.screen === "menu") {
+    acc = 0;
+    drawMenu();
+  } else {
+    while (acc >= DT && steps < 4) { physicsStep(); acc -= DT; steps++; }
+    if (steps === 4) acc = 0;
+    render();
+  }
   requestAnimationFrame(loop);
 }
 
-resetScene();
 fit();
+loadMap(0);
+state.screen = "menu";
 requestAnimationFrame((t) => { lastT = t; loop(t); });
 if (document.fonts && document.fonts.load) document.fonts.load(`700 12px ${FONT}`).catch(() => {});
 </script>

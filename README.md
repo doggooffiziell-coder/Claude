@@ -16,13 +16,15 @@ Die Web-Version zeichnet Puppen und Fleischfetzen als große Pixel-Art mit schwa
 
 Oben links unter dem Titel erscheint je nach Werkzeug eine Leiste. Beim Wasser stellst du die Menge in 5 Stufen ein. Bei der Waffe wählst du AK-47, Sturmgewehr oder Glock 17. Die Waffe steht als Objekt im Raum: Zieh sie mit dem Finger an eine neue Stelle, tippe woanders hin und sie schießt genau dorthin. AK-47 und Sturmgewehr schießen Dauerfeuer, solange du drückst, die Glock einen Schuss pro Tippen.
 
+Das Spiel startet mit einem Hauptmenü und fünf Maps: Labor, Schwimmbad, Treppenhaus, Halle und Eiskeller. Der Knopf "MENÜ" oben links bringt dich zurück, Reset baut die aktuelle Map neu auf.
+
 Mit "Neue Puppe" tippst du auf die Stelle, an der die Puppe stehen soll. Sie steht dort sofort aufrecht auf dem Boden. Der Eimer saugt Wasser und Blut unter deinem Finger auf.
 
 Das Schadenspanel zeigt eine Körpertafel von vorn in normalen Proportionen. Jeder Körperteil ist eine eigene Fläche mit schmalem Spalt und färbt sich nach seinem Schaden von Weiß über Gelb und Orange bis Rot. Fehlende Teile erscheinen als gestrichelte Umrisse. Oben läuft ein EKG.
 
 Die Infusion hängt einen Blutbeutel mit Schlauch an die Puppe. Sie füllt Blut auf, schließt Wunden, senkt Schmerz und weckt eine bewusstlose Puppe. Eine tote Puppe rettet sie nicht mehr.
 
-Zustände: WACH, K.O. und TOT. Eine K.O.-Puppe atmet, ihr Herz schlägt und sie wacht nach einigen Sekunden wieder auf. Eine tote Puppe zuckt kurz und bleibt liegen. Verletzungen ändern die Bewegung: ein kaputtes Bein verhindert das Stehen, ein verletzter Arm hängt schlaff, Schmerz lässt die Puppe sich winden und eine Hand auf die Wunde drücken, Feuer und Ertrinken lösen Panik aus. Erholt steht die Puppe von selbst wieder auf.
+Zustände: WACH, K.O. und TOT. Eine K.O.-Puppe atmet, ihr Herz schlägt und sie wacht nach einigen Sekunden wieder auf. Eine tote Puppe zuckt kurz und bleibt liegen. Verletzungen ändern die Bewegung: ein kaputtes Bein verhindert das Stehen, ein verletzter Arm hängt schlaff, Schmerz lässt die Puppe sich winden und eine Hand auf die Wunde drücken, Feuer und Ertrinken lösen Panik aus. Liegt eine wache Puppe am Boden, versucht sie aufzustehen. Mit einem kaputten Bein schafft sie es nicht und fällt zurück.
 
 `web/ragpit.html` ist die Seite für die Claude-Artifact-Ansicht. `docs/index.html` ist dieselbe Seite als vollständige HTML-Datei mit App-Symbol für GitHub Pages. Nach jeder Änderung an `web/ragpit.html` baut `web/build.sh` die Datei neu.
 
