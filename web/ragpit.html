@@ -617,6 +617,10 @@ const JOINTS = [
   [SHIN_L, THIGH_L, false, -30, 150], [SHIN_R, THIGH_R, false, -30, 150],
   [FOOT_L, SHIN_L, false, -160, -20], [FOOT_R, SHIN_R, false, -160, -20],
 ];
+// Point pairs that must not pass through each other within one doll.
+const SELF_PAIRS = [];
+for (const a of [P_HEAD, P_NECK]) for (const b of [P_HIP, P_KNEE_L, P_KNEE_R, P_ANKLE_L, P_ANKLE_R, P_TOE_L, P_TOE_R]) SELF_PAIRS.push([a, b]);
+for (const b of [P_KNEE_L, P_KNEE_R, P_ANKLE_L, P_ANKLE_R, P_TOE_L, P_TOE_R]) SELF_PAIRS.push([P_WAIST, b]);
 const IV_TIME = 12;
 let MUSCLE_HELD = 0.04, LIMIT_SOAK = 0.6;
 const ITERATIONS = 8, HEAD_R = 17, MAX_STEP = 40, DOLL_GRAVITY = 1300;
@@ -677,6 +681,7 @@ class Doll {
       center: (d[3] + d[4]) * 0.5 * D2R, half: (d[4] - d[3]) * 0.5 * D2R,
       rest: 0, frozenRel: 0, active: true,
     }));
+    this.facing = 1; this.faceCd = 0;
     for (const j of this.joints) j.rest = this.jointRel(j);
     this.wounds = [];
     this.grabbed = -1; this.gx = 0; this.gy = 0;
@@ -753,20 +758,24 @@ class Doll {
     if (mend && !this.dead) for (let n = 0; n < ORGANS.length; n++) if (this.organ[n] > 0) this.organ[n] = Math.min(100, this.organ[n] + mend * DT);
   }
 
-  // Seconds until death if nothing changes, or Infinity.
+  // Seconds until death if nothing changes, or Infinity. this.etaWhy names
+  // the reason: "blood", "air" or "belly".
   deathEta() {
+    this.etaWhy = "";
     if (this.dead) return 0;
     let eta = Infinity;
-    let loss = this.organBleed;
-    for (const w of this.wounds) if (this.attached(w.part)) loss += w.bleed * 0.8;
+    let wound = 0;
+    for (const w of this.wounds) if (this.attached(w.part)) wound += w.bleed * 0.8;
+    this.woundBleed = wound;
+    let loss = this.organBleed + wound;
     if (this.iv > 0) loss -= 8;
-    if (loss > 0.05) eta = Math.min(eta, Math.max(0, this.bl - 8) / loss);
+    if (loss > 0.05) { eta = Math.max(0, this.bl - 8) / loss; this.etaWhy = "blood"; }
     // Air: what the lungs bring in against what the body loses.
     const breath = (this.organ[ORGAN.lungL] + this.organ[ORGAN.lungR]) / 200;
     const gain = this.headUnder ? -11 : this.arrest ? 0 : 20 * breath;
     const net = gain - this.o2Drop;
-    if (net < 0) eta = Math.min(eta, this.o2 / -net + Math.max(0, 6 - this.noAir));
-    if (this.sepsisRate > 0) eta = Math.min(eta, (100 - this.sepsis) / this.sepsisRate);
+    if (net < 0) { const e = this.o2 / -net + Math.max(0, 6 - this.noAir); if (e < eta) { eta = e; this.etaWhy = "air"; } }
+    if (this.sepsisRate > 0) { const e = (100 - this.sepsis) / this.sepsisRate; if (e < eta) { eta = e; this.etaWhy = "belly"; } }
     return eta;
   }
 
@@ -847,11 +856,12 @@ class Doll {
       } else {
         const drag = 0.998;
         vx *= drag; vy *= drag;
-        // Static friction: slow points resting on the ground settle down.
-        if (vx * vx + vy * vy < 2.5) {
-          const below = matAt(x, y + this.rad[i] + 1.2);
-          const f = below === ICE ? 0.97 : below === WALL ? 0.6 : 0.9;
-          vx *= f; vy *= f;
+        // Friction: points on the ground lose sideways speed, so a body slides
+        // to a stop instead of rolling on. Slow points settle down at once.
+        const below = matAt(x, y + this.rad[i] + 1.2);
+        if (below === WALL || below === ICE) {
+          if (vx * vx + vy * vy < 2.5) { const f = below === ICE ? 0.97 : 0.6; vx *= f; vy *= f; }
+          else if (vy > -2) vx *= below === ICE ? 0.995 : 0.9;
         }
         vy += g;
       }
@@ -860,6 +870,7 @@ class Doll {
       this.integrate(i, vx, vy);
     }
     this.updateCripple();
+    this.updateFacing();
     // A held doll swings around the finger and settles instead of whirling.
     if (this.grabbed >= 0) this.dampAroundGrab(0.86);
     this.dampSpin(0.02, this.grabbed >= 0 ? this.pieces()[this.grabbed] : -1);
@@ -868,7 +879,7 @@ class Doll {
     for (let it = 0; it < ITERATIONS; it++) {
       for (let k = 0; k < PART_COUNT; k++) this.solveDistance(this.pa[k], this.pb[k], this.restLen[k]);
       this.solveJoints(this.frozen ? 0.5 : 0, false);
-      if (it % 2 === 1) { for (let i = 0; i < this.x.length; i++) this.pushOut(i); this.pushOutSegments(); }
+      if (it % 2 === 1) { for (let i = 0; i < this.x.length; i++) this.pushOut(i); this.pushOutSegments(); this.selfCollide(); }
     }
     for (const i of this.pins.keys()) this.holdPin(i);
     // Muscles hold the posture once per step. They move the limbs without
@@ -1113,7 +1124,7 @@ class Doll {
       if ((foot && !withFeet) || !this.attached(this.owner[i]) || this.fixed(i)) continue;
       const keep = withFeet ? 0.7 : 0.88;
       const vx = (this.x[i] - this.ox[i]) * keep, vy = (this.y[i] - this.oy[i]) * keep;
-      this.x[i] += (fx + POSE[i][0] - this.x[i]) * s;
+      this.x[i] += (fx + POSE[i][0] * this.facing - this.x[i]) * s;
       this.y[i] += (gy + POSE[i][1] - this.y[i]) * s;
       this.ox[i] = this.x[i] - vx; this.oy[i] = this.y[i] - vy;
     }
@@ -1167,11 +1178,32 @@ class Doll {
     return [jp, op, this.pb[j.child]];
   }
 
-  jointRel(j) {
+  // Joint angle relative to the middle of its range. A doll facing the other
+  // way (facing -1) bends every joint the mirrored way.
+  jointRel(j, facing = this.facing) {
     const [jp, op, cp] = this.jointIds(j);
     const ap = Math.atan2(this.y[jp] - this.y[op], this.x[jp] - this.x[op]);
     const ac = Math.atan2(this.y[cp] - this.y[jp], this.x[cp] - this.x[jp]);
-    return wrapPi(ac - ap - j.center);
+    return wrapPi(ac - ap - j.center * facing);
+  }
+
+  // The doll is flat, so its knees and hips only bend one way. When the body
+  // is put into a pose that fits the mirrored doll much better, for example
+  // seated against a wall the other way round, it turns to face the other way
+  // instead of folding its joints backwards.
+  updateFacing() {
+    this.faceCd -= DT;
+    if (this.faceCd > 0 || this.standing || this.getUp > 0) return;
+    this.faceCd = 0.2;
+    const bad = (f) => {
+      let v = 0;
+      for (const j of this.joints) if (j.active) v += Math.max(0, Math.abs(this.jointRel(j, f)) - j.half);
+      return v;
+    };
+    if (bad(-this.facing) + 0.35 < bad(this.facing)) {
+      this.facing = -this.facing;
+      for (const j of this.joints) j.frozenRel = -j.frozenRel;
+    }
   }
 
   // Limits pass (kinematic = false) keeps joints inside their range.
@@ -1187,10 +1219,12 @@ class Doll {
       if (cp === this.grabbed) continue;
       const jx = this.x[jp], jy = this.y[jp];
       const rel = this.jointRel(j);
-      // A joint bent far past its limit counts as dislocated and stays loose.
-      if (Math.abs(rel) > j.half + 0.8) continue;
+      // A joint pushed past its limit is led back gently. Only a joint turned
+      // almost the wrong way round counts as dislocated and stays loose.
+      const over = Math.abs(rel) - j.half;
+      if (over > 1.8) continue;
       let target = kinematic ? rel : clamp(rel, -j.half, j.half);
-      if (m > 0) target = lerp(target, this.frozen ? j.frozenRel : j.rest, m);
+      if (m > 0) target = lerp(target, this.frozen ? j.frozenRel : j.rest * this.facing, m);
       let diff = target - rel;
       if (Math.abs(diff) < 0.0001) continue;
       if (kinematic) diff = clamp(diff * 2, -0.05, 0.05);
@@ -1199,7 +1233,7 @@ class Doll {
       const ws = wc + wo;
       if (ws <= 0) continue;
       // Small steps keep a tangled joint from flipping between its two limits.
-      if (!kinematic) diff = clamp(diff * 0.5, -0.12, 0.12);
+      if (!kinematic) { const cap = over > 0.8 ? 0.04 : 0.12; diff = clamp(diff * 0.5, -cap, cap); }
       // Split the turn by moment of inertia (r^2 / inverse mass), so a joint
       // correction conserves angular momentum and cannot set the body spinning.
       const cx = this.x[cp] - jx, cy = this.y[cp] - jy;
@@ -1690,6 +1724,22 @@ class Doll {
       BROKEN: this.broken.some((b, k) => b && this.attached(k)), PINNED: this.pins.size > 0,
     };
   }
+  // The body cannot pass through itself: head, neck and belly keep their
+  // distance from the hips and legs, so pressing a doll down folds it like a
+  // body instead of sinking the head into the legs.
+  selfCollide() {
+    for (const [a, b] of SELF_PAIRS) {
+      if (!this.attached(this.owner[a]) || !this.attached(this.owner[b])) continue;
+      const dx = this.x[b] - this.x[a], dy = this.y[b] - this.y[a], r = (this.rad[a] + this.rad[b]) * 0.9;
+      const d2 = dx * dx + dy * dy;
+      if (d2 >= r * r || d2 < 0.0001) continue;
+      const d = Math.sqrt(d2), push = (r - d) / d, wa = this.w(a), wb = this.w(b), ws = wa + wb;
+      if (ws <= 0) continue;
+      this.x[a] -= dx * push * wa / ws; this.y[a] -= dy * push * wa / ws;
+      this.x[b] += dx * push * wb / ws; this.y[b] += dy * push * wb / ws;
+    }
+  }
+
   // Body parts are more than their end points: samples along each limb push
   // the limb out of walls, so it cannot slide through a thin platform or a corner.
   pushOutSegments() {
@@ -1916,7 +1966,7 @@ function rasterDoll(d) {
       const hairBase = tintFor(d, k, d.look.hair), hb = 9 / PIX;
       rasterRect(hx1 - ux * hb, hy1 - uy * hb, hx1, hy1, HEAD_HW / PIX + 0.3, 0, 0.3, order, hairBase, 0);
       // Face on the side the doll looks at.
-      const fx = -uy, fy = ux;
+      const fx = -uy * d.facing, fy = ux * d.facing;
       const put = (x, y, c) => { x = Math.floor(x); y = Math.floor(y); if (x >= bbx0 && x <= bbx1 && y >= bby0 && y <= bby1 && tmask[y * DW + x]) tset(y * DW + x, c, tmask[y * DW + x]); };
       const ex = hx0 + ux * (h0 * 0.58) + fx * (HEAD_HW / PIX - 1.6), ey = hy0 + uy * (h0 * 0.58) + fy * (HEAD_HW / PIX - 1.6);
       const mx = hx0 + ux * (h0 * 0.25) + fx * (HEAD_HW / PIX - 1.4), my = hy0 + uy * (h0 * 0.25) + fy * (HEAD_HW / PIX - 1.4);
@@ -3286,7 +3336,17 @@ function drawOrganLine(d, x, y, w, h) {
     if (worst < 0 && eta === Infinity) { text = "ORGANE OK"; col = "#4ccf5a"; }
     else {
       const o = worst >= 0 ? ORGANS[worst] : null, hp = o ? d.organ[worst] : 100;
-      const what = d.arrest ? "HERZSTILLSTAND" : o ? o.name + (hp <= 0 ? " ZERSTÖRT" : " " + Math.round(hp) + "%") : "BLUTVERLUST";
+      const organText = (n) => ORGANS[n].name + (d.organ[n] <= 0 ? " ZERSTÖRT" : " " + Math.round(d.organ[n]) + "%");
+      let what = o ? organText(worst) : "BLUTVERLUST";
+      // Name what really sets the time: the stopped heart, the lungs, water,
+      // the bleeding organ, open wounds or the inflamed belly.
+      if (d.etaWhy === "air") what = d.arrest ? "HERZSTILLSTAND" : d.headUnder ? "ERTRINKT" : "LUNGEN VERSAGEN";
+      else if (d.etaWhy === "belly") what = "BAUCHFELLENTZÜNDUNG";
+      else if (d.etaWhy === "blood") {
+        let bleeder = -1;
+        ORGANS.forEach((og, n) => { if (og.bleed > 0.1 && d.attached(og.part) && d.organ[n] < 100 && (bleeder < 0 || og.bleed * (100 - d.organ[n]) > ORGANS[bleeder].bleed * (100 - d.organ[bleeder]))) bleeder = n; });
+        what = bleeder >= 0 && d.organBleed > d.woundBleed ? organText(bleeder) : "BLUTVERLUST";
+      }
       if (eta < 3600) {
         text = what + " · " + (eta < 120 ? Math.ceil(eta) + "S" : Math.ceil(eta / 60) + " MIN");
         col = eta < 15 ? "#ff4050" : eta < 120 ? "#f08a24" : "#f2da3a";

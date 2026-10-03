@@ -55,6 +55,10 @@ Mit "Fixieren" tippst du auf ein Körperteil. Es bleibt dann wie mit einer roten
 
 Fallschaden: Ein Sturz bis etwa 1,5 m macht nichts. Darüber wächst der Schaden mit der Geschwindigkeit im Quadrat. Beine und Füße fangen eine Landung am besten ab, der Kopf am schlechtesten. Harte Aufpralle brechen Arme und Beine (KNOCHENBRUCH, die Puppe kann dann nicht mehr stehen), erst sehr harte reißen Wunden auf. Körperteile prallen jetzt auch mit ihrer ganzen Länge an Wänden und Plattformen ab, und Puppen stoßen sich gegenseitig an.
 
+Die Puppe kann nicht durch sich selbst gleiten: Kopf, Hals und Bauch halten Abstand zu Hüfte und Beinen. Drückst du sie nach unten, knickt sie wie ein Körper ein, statt zu einem Knäuel zu werden. Auf dem Boden bremst Reibung jede Bewegung, damit Puppen nicht weiterrollen. Setzt du eine Puppe so hin, dass ihre Gelenke falsch herum knicken müssten, dreht sie sich von selbst in die andere Blickrichtung.
+
+Die Organzeile nennt immer den echten Grund für die Zeit: BLUTVERLUST bei offenen Wunden, das blutende Organ, HERZSTILLSTAND, LUNGEN VERSAGEN, ERTRINKT oder BAUCHFELLENTZÜNDUNG.
+
 In den Einstellungen schaltet FRONTANSICHT die Puppen auf Blick nach vorn. Dann öffnet langes Drücken auf eine Puppe mit dem Greifen-Werkzeug ein Menü: SCHUSS PRÄZISIEREN, HEILEN, PINS LÖSEN und ENTFERNEN. "Schuss präzisieren" zeigt die Puppe groß von vorn. Du ziehst den Finger zum Zielen, die Ansicht zeigt Körperteil und getroffene Organe, und beim Loslassen fällt der Schuss genau dort. RÖNTGEN macht die Organe sichtbar. Das Spiel läuft dabei in Zeitlupe weiter.
 
 Die Infusion hängt einen Blutbeutel mit Schlauch an die Puppe. Sie füllt Blut auf, schließt Wunden, senkt Schmerz und weckt eine bewusstlose Puppe. Eine tote Puppe rettet sie nicht mehr.
