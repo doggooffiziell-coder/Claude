@@ -68,7 +68,7 @@ body {
 
 <div id="stage">
   <canvas id="screen" aria-label="Ragpit Spielfeld"></canvas>
-  <p id="hint"><strong>Dreh dein iPhone quer</strong><br>Dann wird das Spielfeld groß.</p>
+  <p id="hint"><strong>Ja, ich hab das Spiel wirklich erstellt,</strong><br>mit der Hilfe von Claude AI.<br><br><strong>Dreh dein iPhone quer</strong><br>Dann wird das Spielfeld groß.</p>
 </div>
 
 <script>
@@ -616,6 +616,8 @@ const PARENT = [TORSO, -1, TORSO, TORSO, UARM_L, TORSO, UARM_R, PELVIS, THIGH_L,
 const WIDTH = [11, 30, 28, 12, 10, 12, 10, 16, 13, 9, 16, 13, 9];
 const FAR_SIDE = [false, false, false, true, true, false, false, true, true, true, false, false, false];
 const DRAW_ORDER = [UARM_L, LARM_L, THIGH_L, SHIN_L, FOOT_L, PELVIS, TORSO, HEAD, THIGH_R, SHIN_R, FOOT_R, UARM_R, LARM_R];
+// Facing the viewer: both legs side by side, the arms beside the chest.
+const FRONT_ORDER = [THIGH_L, SHIN_L, FOOT_L, THIGH_R, SHIN_R, FOOT_R, PELVIS, TORSO, UARM_L, LARM_L, UARM_R, LARM_R, HEAD];
 const POINT_OWNER = [HEAD, TORSO, TORSO, PELVIS, UARM_L, LARM_L, UARM_R, LARM_R, THIGH_L, SHIN_L, FOOT_L, THIGH_R, SHIN_R, FOOT_R];
 const POINT_INV_MASS = [0.8, 0.6, 0.5, 0.6, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
 // Standing pose, facing right. Origin sits on the floor between the feet.
@@ -1914,7 +1916,7 @@ const PART_CLOTH = { [HEAD]: "skin", [TORSO]: "shirt", [PELVIS]: "pants", [UARM_
 
 // Color of a surface after the doll's condition: death, burns, ice, fresh pain.
 function tintFor(d, k, c) {
-  if (FAR_SIDE[k]) c = darken(c, 0.16);
+  if (FAR_SIDE[k] && !settings.front) c = darken(c, 0.16);
   if (d.dead) c = mixc(c, hex("#9a9a94"), 0.28);
   if (d.char[k] > 0.02) c = mixc(c, COL_CHAR, clamp(d.char[k], 0, 0.9));
   if (d.frozen) c = mixc(c, COL_ICE, 0.55);
@@ -1965,7 +1967,7 @@ function rasterDoll(d) {
   const shoulder = [nkx + (wsx - nkx) / tl * SHOULDER_DROP / PIX, nky + (wsy - nky) / tl * SHOULDER_DROP / PIX];
 
   let order = 1;
-  for (const k of DRAW_ORDER) {
+  for (const k of settings.front ? FRONT_ORDER : DRAW_ORDER) {
     order++;
     if (d.gone[k]) continue;
     const base = tintFor(d, k, d.look[PART_CLOTH[k]]);
@@ -1980,6 +1982,14 @@ function rasterDoll(d) {
       rasterRect(hx0, hy0, hx1, hy1, HEAD_HW / PIX, 0, 0, order, base, d.stain[k]);
       const hairBase = tintFor(d, k, d.look.hair), hb = 9 / PIX;
       rasterRect(hx1 - ux * hb, hy1 - uy * hb, hx1, hy1, HEAD_HW / PIX + 0.3, 0, 0.3, order, hairBase, 0);
+      if (settings.front) {
+        // Seen from the front, the hair also frames both sides of the face.
+        const sx = -uy, sy = ux, side = HEAD_HW / PIX - 0.6, sl = h0 * 0.42;
+        for (const sd of [-1, 1]) {
+          const px1 = hx1 + sx * sd * side, py1 = hy1 + sy * sd * side;
+          rasterRect(px1 - ux * sl, py1 - uy * sl, px1, py1, 0.9, 0, 0, order, hairBase, 0);
+        }
+      }
       // Face on the side the doll looks at.
       const fx = -uy * d.facing, fy = ux * d.facing;
       const put = (x, y, c) => { x = Math.floor(x); y = Math.floor(y); if (x >= bbx0 && x <= bbx1 && y >= bby0 && y <= bby1 && tmask[y * DW + x]) tset(y * DW + x, c, tmask[y * DW + x]); };
@@ -2015,7 +2025,11 @@ function rasterDoll(d) {
         ax = shoulder[0] + nx * side * off; ay = shoulder[1] + ny * side * off;
       }
       const [hw, e0, e1] = RECT[k];
-      rasterRect(ax, ay, bx, by, hw / PIX, e0 / PIX, e1 / PIX, order, base, d.stain[k]);
+      if (settings.front && (k === FOOT_L || k === FOOT_R)) {
+        // Front view: the shoe points at you, so it shows short and wide.
+        const fx2 = ax + (bx - ax) * 0.3, fy2 = ay + (by - ay) * 0.3 + 1.4;
+        rasterRect(ax, ay + 0.6, fx2, fy2, 6.5 / PIX, 3 / PIX, 2 / PIX, order, base, d.stain[k]);
+      } else rasterRect(ax, ay, bx, by, hw / PIX, e0 / PIX, e1 / PIX, order, base, d.stain[k]);
       if (k === LARM_L || k === LARM_R) {
         // Square hand
         const l = Math.hypot(bx - ax, by - ay) || 1, ux = (bx - ax) / l, uy = (by - ay) / l;
