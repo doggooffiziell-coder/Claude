@@ -827,6 +827,8 @@ class Doll {
     this.arrest = false; this.cause = ""; this.organBleed = 0; this.o2Drop = 0; this.sepsis = 0; this.sepsisRate = 0;
     this.pins = new Map();
     this.broken = new Array(PART_COUNT).fill(false);
+    // Small signs of life: blinking, fear, a startle, what it looks at.
+    this.blinkT = rf(1, 4); this.fear = 0; this.startle = 0; this.lookAt = null; this.lookT = 0; this.seenT = performance.now() / 1000; this.armsBusy = false;
   }
 
   // Damages the organs at height t of part k. A bullet crosses the body at a
@@ -1050,6 +1052,7 @@ class Doll {
       // Held by the finger, an awake doll keeps its posture and its footing
       // instead of going limp; only an unconscious one hangs loose.
       this.solveJoints(0.08 * clamp(this.ko / 100, 0, 1), true);
+
       for (let i = 0; i < this.x.length; i++) this.pushOut(i);
       this.pushOutSegments();
     }
@@ -1060,7 +1063,7 @@ class Doll {
       const s = 0.3 * clamp(this.ko / 100, 0, 1) * (1 - this.pn / 130) * (1 - this.flinch * 2);
       if (s > 0.02) {
         const cx = (feet0[0] + feet0[2]) / 2, gy = Math.max(this.y[P_ANKLE_L], this.y[P_ANKLE_R]) + 8;
-        this.poseToward(cx - (FRONT_POSE[P_ANKLE_L][0] + FRONT_POSE[P_ANKLE_R][0]) / 2 * this.facing, gy, s, false);
+        this.poseToward(cx - (FRONT_POSE[P_ANKLE_L][0] + FRONT_POSE[P_ANKLE_R][0]) / 2 * this.facing, gy, s, false, this.armsBusy);
         for (let it = 0; it < 2; it++) for (let k = 0; k < PART_COUNT; k++) this.solveDistance(this.pa[k], this.pb[k], this.restLen[k]);
       }
     }
@@ -1077,6 +1080,12 @@ class Doll {
         const fx = moveToward(feet0[n] + sh, target, 0.35);
         this.x[i] = fx; this.ox[i] = fx;
       }
+    }
+    // Arms held in a pose are carried by the muscles, so gravity cannot
+    // build up speed in them and drag them down.
+    if (this.armTargets) for (const [ua, la] of [[UARM_L, LARM_L], [UARM_R, LARM_R]]) {
+      if (this.armTargets[ua] === undefined) continue;
+      for (const i of [this.pb[ua], this.pb[la]]) { this.ox[i] += (this.x[i] - this.ox[i]) * 0.75; this.oy[i] += (this.y[i] - this.oy[i]) * 0.75; }
     }
     // Last safety: no point may leave the room, whatever moved it there.
     for (let i = 0; i < this.x.length; i++) {
@@ -1248,6 +1257,34 @@ class Doll {
     this.ox[i] = this.x[i] - nvx; this.oy[i] = this.y[i] - nvy;
   }
 
+  // Sets target angles for both arms, worked by the muscles like any pose.
+  // a: how far the upper arm swings up from hanging down (forward from the
+  // side; outward from the front, inward when negative). bend: elbow bend.
+  armPose(a, bend) {
+    const t = this.armTargets || (this.armTargets = {});
+    for (const [ua, la] of [[UARM_L, LARM_L], [UARM_R, LARM_R]]) {
+      if (!this.attached(la) || this.crippled[la] || this.crippled[ua]) continue;
+      // Swing from the arm's own resting angle: outward (or inward) from the
+      // front, forward from the side.
+      const ju = this.joints.find((j) => j.child === ua), restU = (settings.front ? ju.restFront : ju.rest) * this.facing;
+      // From the side both arms take the same angle, measured from hanging
+      // straight down; from the front each swings out from where it rests.
+      t[ua] = settings.front ? restU + (limbStart(this, ua)[0] < this.x[P_NECK] ? 1 : -1) * a : -this.facing * a;
+      const jl = this.joints.find((j) => j.child === la), rest = settings.front ? jl.restFront : jl.rest;
+      const straight = 0.785, dir = Math.sign(rest - straight) || -1;
+      t[la] = (straight + dir * bend) * this.facing;
+    }
+  }
+
+  // Moves a point part of the way to a spot without giving it speed, so a
+  // deliberate pose does not swing the rest of the body around.
+  reach(i, tx, ty, r) {
+    if (this.fixed(i)) return;
+    const dx = (tx - this.x[i]) * r, dy = (ty - this.y[i]) * r;
+    this.x[i] += dx; this.y[i] += dy;
+    this.ox[i] = this.x[i] - (this.x[i] - dx - this.ox[i]) * 0.6; this.oy[i] = this.y[i] - (this.y[i] - dy - this.oy[i]) * 0.6;
+  }
+
   push(i, ix, iy) {
     if (this.fixed(i)) return;
     this.ox[i] -= ix; this.oy[i] -= iy;
@@ -1268,10 +1305,40 @@ class Doll {
       }
       return;
     }
+    this.armsBusy = false; this.armTargets = null;
     if (this.isOut()) {
       // Slow breathing lifts the chest a little.
       if (this.attached(TORSO)) this.push(this.pa[TORSO], 0, Math.sin(performance.now() * 0.0018 + this.id) * 0.012);
       return;
+    }
+    // Blinking every few seconds, fear and startle fading out again.
+    this.blinkT -= DT; if (this.blinkT < -0.13) this.blinkT = rf(2, 5.5);
+    this.fear = Math.max(0, this.fear - DT * 0.22); this.startle = Math.max(0, this.startle - DT); this.lookT = Math.max(0, this.lookT - DT);
+    // What happened nearby since the last look: it turns its eyes there,
+    // gets scared, and a bang makes it flinch.
+    const tNow = performance.now() / 1000;
+    for (const e of EVENTS) {
+      if (e.t <= this.seenT || e.self === this) continue;
+      const R = e.kind === "boom" ? 420 : e.kind === "shot" ? 320 : e.kind === "death" ? 280 : 220;
+      const dist = Math.hypot(e.x - this.x[P_NECK], e.y - this.y[P_NECK]);
+      if (dist > R) continue;
+      const k = 1 - dist / R;
+      this.lookAt = [e.x, e.y]; this.lookT = 2.5;
+      this.fear = Math.min(1, this.fear + (e.kind === "boom" ? 0.9 : e.kind === "shot" ? 0.55 : 0.45) * (0.4 + k));
+      if (e.kind === "boom" || e.kind === "shot") this.startle = Math.max(this.startle, 0.3 + 0.45 * k);
+    }
+    this.seenT = tNow;
+    // The finger close by draws the eyes.
+    if (this.lookT <= 0 && state.pressing && Math.hypot(state.mx - this.x[P_HEAD], state.my - this.y[P_HEAD]) < 220) { this.lookAt = [state.mx, state.my]; this.lookT = 0.3; }
+    // Held up in the air while awake: it kicks and flails to get free.
+    if (this.holdsBody() && !this.frozen && !(this.taseT > 0)) {
+      const lifted = [P_ANKLE_L, P_ANKLE_R].every((i) => !this.attached(this.owner[i]) || !solidAt(this.x[i], this.y[i] + this.rad[i] + 6));
+      if (lifted) {
+        const t = tNow * 9 + this.id;
+        this.fear = Math.min(1, this.fear + DT * 0.6);
+        [SHIN_L, SHIN_R].forEach((k, n) => { if (this.attached(k) && !this.broken[k]) this.push(this.pb[k], Math.sin(t + n * Math.PI) * 0.9, Math.cos(t * 0.7 + n) * 0.5); });
+        [LARM_L, LARM_R].forEach((k, n) => { const h = this.pb[k]; if (this.attached(k) && h !== this.grabbed && !this.crippled[k]) this.push(h, Math.sin(t * 1.3 + n * 2) * 0.8, Math.cos(t * 1.1 + n) * 0.8); });
+      }
     }
     if (this.holdsBody() || this.frozen || this.taseT > 0) { this.getUp = 0; this.stillTime = 0; return; }
 
@@ -1329,6 +1396,57 @@ class Doll {
       busyHands = true;
     }
 
+    // A gun pointed at it: hands up and shaking. From the side the laser has
+    // to pass close by, in the front view the drawn gun is enough.
+    const wpn = WEAPONS[state.weapon];
+    let threat = false;
+    this.retreatX = null;
+    if (state.tool === T_GUN && state.screen === "game" && !state.aimView) {
+      if (settings.front) threat = true;
+      else {
+        const dx = Math.cos(state.gunAng), dy = Math.sin(state.gunAng);
+        for (const i of [P_HEAD, P_NECK, P_WAIST]) {
+          const vx = this.x[i] - state.gunX, vy = this.y[i] - state.gunY, t = vx * dx + vy * dy;
+          if (t > 0 && Math.abs(vx * dy - vy * dx) < 34) threat = true;
+        }
+      }
+    }
+    if (threat) { this.fear = Math.max(this.fear, wpn.taser ? 0.5 : 0.7); if (!settings.front) { this.lookAt = [state.gunX, state.gunY]; this.lookT = 0.3; } }
+    if (threat && this.standing && !busyHands && hands.length) {
+      // Hands up, trembling a little.
+      this.armPose(2.6, 0.2);
+      busyHands = true;
+    } else if (this.startle > 0 && !busyHands && hands.length) {
+      // Flinch: the arms come up in front of the face.
+      this.armPose(settings.front ? -2.2 : 2.0, 1.9);
+      busyHands = true;
+    }
+    // Fire close by: it shies away from the heat and shields its face.
+    if (this.burn <= 0) {
+      let fxs = null, fd = 110;
+      for (const f of state.fires) { const dd = Math.hypot(f.x - this.x[P_WAIST], f.y - this.y[P_WAIST]) - f.r; if (dd < fd) { fd = dd; fxs = [f.x, f.y]; } }
+      for (const o of state.dolls) if (o !== this && o.burn > 0) { const dd = Math.hypot(o.x[P_WAIST] - this.x[P_WAIST], o.y[P_WAIST] - this.y[P_WAIST]) - 20; if (dd < fd) { fd = dd; fxs = [o.x[P_WAIST], o.y[P_WAIST]]; } }
+      if (fxs) {
+        const away = Math.sign(this.x[P_WAIST] - fxs[0]) || 1, k = 1 - fd / 110;
+        this.fear = Math.min(1, this.fear + DT * 0.8 * k); this.lookAt = fxs; this.lookT = 0.3;
+        // It steps back from the heat (balance walks it there).
+        if (this.standing) this.retreatX = this.x[P_WAIST] + away * 60;
+        if (!busyHands && hands.length) { this.armPose(settings.front ? -2.2 : 2.0, 1.9); busyHands = true; }
+      }
+    }
+    // Cold or soaking wet: it shivers and hugs itself.
+    const wet = liquidAt(this.x[P_WAIST], this.y[P_WAIST]);
+    if ((this.freeze > 0.12 || wet) && !this.headUnder) {
+      const sh = Math.min(1, this.freeze + (wet ? 0.4 : 0));
+      for (const i of [P_NECK, P_ELBOW_L, P_ELBOW_R]) this.push(i, rf(-0.3, 0.3) * sh, rf(-0.15, 0.15) * sh);
+      if (!busyHands && hands.length && this.standing) { this.armPose(settings.front ? -0.5 : 0.5, 1.8); busyHands = true; }
+    }
+    // Standing calm: breathing and a slow shift of weight from foot to foot.
+    if (this.standing && !busyHands && this.pn < 30) {
+      const br = 0.03 + 0.05 * clamp((this.hr - 72) / 60, 0, 1);
+      this.push(P_NECK, Math.sin(now * 0.45) * 0.05, Math.sin(now * (1.6 + this.hr / 90)) * br);
+    }
+
     // Hurt on the floor: curled up, knees toward the chest, rocking slowly,
     // now and then one leg stretches out.
     if (!this.standing && this.pn > 35 && this.burn <= 0 && !this.headUnder) {
@@ -1369,8 +1487,10 @@ class Doll {
           if (dd < bd) { bd = dd; best = h; }
         }
         if (best >= 0 && bd > 6) this.steer(best, wx, wy, Math.min(2.5, bd * 0.08), 0.15);
+        if (best >= 0) busyHands = true;
       }
     }
+    this.armsBusy = busyHands;
 
     // An awake doll on the floor keeps trying to get up. With a bad leg it
     // struggles halfway and falls back down.
@@ -1394,16 +1514,25 @@ class Doll {
   }
 
   // Pulls the attached body points toward the standing pose above (fx, gy).
-  poseToward(fx, gy, s, withFeet) {
+  poseToward(fx, gy, s, withFeet, skipArms = false) {
+    let ndx = 0, ndy = 0;
     for (let i = 0; i < POSE.length; i++) {
       const foot = i === P_ANKLE_L || i === P_ANKLE_R || i === P_TOE_L || i === P_TOE_R;
       if ((foot && !withFeet) || !this.attached(this.owner[i]) || this.fixed(i)) continue;
+      // Arms busy with something (a wound, hands up, shielding) keep their
+      // pose and only ride along with the shoulders.
+      if (skipArms && (i === P_ELBOW_L || i === P_HAND_L || i === P_ELBOW_R || i === P_HAND_R)) {
+        this.x[i] += ndx; this.y[i] += ndy; this.ox[i] += ndx; this.oy[i] += ndy;
+        continue;
+      }
+      const bx = this.x[i], by = this.y[i];
       const keep = withFeet ? 0.7 : 0.88;
       const vx = (this.x[i] - this.ox[i]) * keep, vy = (this.y[i] - this.oy[i]) * keep;
       const pose = activePose();
       this.x[i] += (fx + pose[i][0] * this.facing - this.x[i]) * s;
       this.y[i] += (gy + pose[i][1] - this.y[i]) * s;
       this.ox[i] = this.x[i] - vx; this.oy[i] = this.y[i] - vy;
+      if (i === P_NECK) { ndx = this.x[i] - bx; ndy = this.y[i] - by; }
     }
   }
 
@@ -1432,9 +1561,9 @@ class Doll {
     // Pulled by the finger, the doll steps along under the held point at
     // walking speed instead of being dragged over.
     this.footShift = 0;
-    if (this.holdsBody()) {
-      const g = this.grabbed, want = this.x[g] - activePose()[g][0] * this.facing;
-      const nf = moveToward(feetX, want, 1.2), dx = nf - feetX;
+    if (this.holdsBody() || this.retreatX != null) {
+      const g = this.grabbed, want = g >= 0 ? this.x[g] - activePose()[g][0] * this.facing : this.retreatX;
+      const nf = moveToward(feetX, want, g >= 0 ? 1.2 : 0.4), dx = nf - feetX;
       // No stepping into a wall or out of the room.
       const blocked = [P_ANKLE_L, P_TOE_L, P_ANKLE_R, P_TOE_R].some((i) => {
         const x = this.x[i] + dx + Math.sign(dx) * this.rad[i];
@@ -1447,7 +1576,7 @@ class Doll {
     this.standing = true;
     // Pain weakens the stance, so a hurt doll sways and wobbles.
     const s = 0.15 * clamp(this.ko / 100, 0, 1) * (1 - this.pn / 160);
-    this.poseToward(feetX, groundY, s, false);
+    this.poseToward(feetX, groundY, s, false, this.armsBusy);
     if (this.pn > 40 && Math.random() < 0.08) this.push(P_NECK, rf(-1, 1) * this.pn / 60, 0);
   }
 
@@ -1509,6 +1638,10 @@ class Doll {
       // The finger or a pin holds the outer end of this joint: leave the joint
       // loose instead of twisting the whole body around it against gravity.
       if (cp === this.grabbed || this.pins.has(cp)) continue;
+      // Arms with a pose of their own (hands up, shielding) turn toward it;
+      // arms doing something else on purpose are not pulled back down.
+      const armT = kinematic && this.armTargets ? this.armTargets[j.child] : undefined;
+      if (kinematic && armT === undefined && this.armsBusy && (j.child === UARM_L || j.child === UARM_R || j.child === LARM_L || j.child === LARM_R)) continue;
       const jx = this.x[jp], jy = this.y[jp];
       const rel = this.jointRel(j);
       // A joint pushed past its limit is led back gently. Only a joint turned
@@ -1516,10 +1649,11 @@ class Doll {
       const over = Math.abs(rel) - j.half;
       if (over > 1.8) continue;
       let target = kinematic ? rel : clamp(rel, -j.half, j.half);
-      if (m > 0) target = lerp(target, this.frozen ? j.frozenRel : this.taseT > 0 ? j.taseRel : this.rigorOn ? j.rigorRel : (settings.front ? j.restFront : j.rest) * this.facing, m);
+      if (armT !== undefined) target = m > 0 ? rel + wrapPi(armT - rel) : rel;
+      else if (m > 0) target = lerp(target, this.frozen ? j.frozenRel : this.taseT > 0 ? j.taseRel : this.rigorOn ? j.rigorRel : (settings.front ? j.restFront : j.rest) * this.facing, m);
       let diff = target - rel;
       if (Math.abs(diff) < 0.0001) continue;
-      if (kinematic) diff = clamp(diff * 2, -0.05, 0.05);
+      if (kinematic) diff = armT !== undefined ? clamp(diff * 0.35, -0.16, 0.16) : clamp(diff * 2, -0.05, 0.05);
       const wc = this.w(cp);
       const wo = this.w(op);
       const ws = wc + wo;
@@ -1532,7 +1666,9 @@ class Doll {
       const ic = wc > 0 ? (cx * cx + cy * cy) / wc : Infinity;
       const io = wo > 0 ? ((this.x[op] - jx) ** 2 + (this.y[op] - jy) ** 2) / wo : Infinity;
       let rc, ro;
-      if (ic === Infinity) { rc = 0; ro = -diff; }
+      // A posed arm turns on its own: the body does not twist back against it.
+      if (armT !== undefined && wc > 0) { rc = diff; ro = 0; }
+      else if (ic === Infinity) { rc = 0; ro = -diff; }
       else if (io === Infinity) { rc = diff; ro = 0; }
       else { rc = diff * io / (ic + io); ro = -diff * ic / (ic + io); }
       const ncx = jx + cx * Math.cos(rc) - cy * Math.sin(rc), ncy = jy + cx * Math.sin(rc) + cy * Math.cos(rc);
@@ -1543,7 +1679,7 @@ class Doll {
       // Shift all three points so the rotation adds no linear momentum.
       const wj = this.w(jp);
       let shx = 0, shy = 0;
-      if (wc > 0 && wo > 0 && wj > 0) {
+      if (wc > 0 && wo > 0 && wj > 0 && armT === undefined) {
         const mm = 1 / wc + 1 / wo + 1 / wj;
         shx = -(dcx / wc + dox / wo) / mm; shy = -(dcy / wc + doy / wo) / mm;
         this.x[cp] += shx; this.y[cp] += shy;
@@ -1793,7 +1929,7 @@ class Doll {
     if (!this.dead) this.dyingTimer = 2.4;
     if (!this.dead && !this.cause) this.cause = "TOT";
     // The report is written at the moment of death, before anything changes.
-    if (!this.dead) { this.dead = true; this.report = deathReport(this); }
+    if (!this.dead) { this.dead = true; this.report = deathReport(this); worldEvent("death", this.x[P_NECK], this.y[P_NECK], this); }
     this.dead = true; this.ko = 0; this.getUp = 0;
   }
 
@@ -2709,25 +2845,51 @@ function rasterDoll(d) {
         const tcx = settings.front ? hx0 + ux * (h0 * 0.2) : mx, tcy = settings.front ? hy0 + uy * (h0 * 0.2) : my;
         const sx2 = -uy, sy2 = ux;
         for (let n = -2; n <= 2; n++) put(tcx + sx2 * n, tcy + sy2 * n, n & 1 ? sock : tooth);
-      } else if (settings.front) {
-        // Front view: two eyes and the mouth in the middle of the face.
-        const cxh = hx0 + ux * (h0 * 0.58), cyh = hy0 + uy * (h0 * 0.58);
-        for (const sd of [-1, 1]) {
-          const qx = cxh + fx * sd * 1.9, qy = cyh + fy * sd * 1.9;
-          if (d.dead) { put(qx - 0.5, qy - 0.5, PX_BLACK); put(qx + 0.5, qy + 0.5, PX_BLACK); }
-          else put(qx, qy, PX_BLACK);
-        }
-        const mcx = hx0 + ux * (h0 * 0.25), mcy = hy0 + uy * (h0 * 0.25);
-        put(mcx - fx * 0.5, mcy - fy * 0.5, darken(base, 0.45)); put(mcx + fx * 0.5, mcy + fy * 0.5, darken(base, 0.45));
       } else {
-        if (d.dead) {
-          put(ex - 1, ey - 1, PX_BLACK); put(ex + 1, ey - 1, PX_BLACK); put(ex, ey, PX_BLACK); put(ex - 1, ey + 1, PX_BLACK); put(ex + 1, ey + 1, PX_BLACK);
-        } else if (d.isOut()) {
-          put(ex - 1, ey, PX_BLACK); put(ex, ey, PX_BLACK);
-        } else {
-          put(ex, ey, PX_BLACK); put(ex - fx, ey - fy, hex("#f4f4f0"));
+        // Expression: blinking, wide eyes in fear, a pinched face in pain,
+        // the eyes turned toward what it looks at.
+        const live = !d.dead && !d.isOut(), shut = live && d.blinkT < 0, scared = live && d.fear > 0.45, hurt = live && d.pn > 55;
+        const lid = darken(base, 0.4), lip = darken(base, 0.45), white = hex("#f4f4f0");
+        let lookH = 0, lookV = 0;
+        if (live && d.lookT > 0 && d.lookAt) {
+          const hx = d.x[d.pb[HEAD]], hy = d.y[d.pb[HEAD]];
+          lookH = Math.abs(d.lookAt[0] - hx) > 25 ? Math.sign(d.lookAt[0] - hx) : 0;
+          lookV = d.lookAt[1] < hy - 50 ? 1 : d.lookAt[1] > hy + 80 ? -1 : 0;
         }
-        put(mx, my, darken(base, 0.45)); put(mx - fx, my - fy, darken(base, 0.45));
+        if (settings.front) {
+          // Front view: two eyes and the mouth in the middle of the face.
+          const cxh = hx0 + ux * (h0 * 0.58), cyh = hy0 + uy * (h0 * 0.58);
+          for (const sd of [-1, 1]) {
+            const qx = cxh + fx * sd * 1.9, qy = cyh + fy * sd * 1.9;
+            if (d.dead) { put(qx - 0.5, qy - 0.5, PX_BLACK); put(qx + 0.5, qy + 0.5, PX_BLACK); }
+            else if (shut || !live) put(qx, qy, lid);
+            else {
+              if (scared) { put(qx + ux, qy + uy, white); }
+              put(qx + lookH * 0.9 + ux * lookV * 0.6, qy + uy * lookV * 0.6, PX_BLACK);
+              // Pain pulls the brows down toward the nose.
+              if (hurt) put(qx - fx * sd * 0.6 + ux * 1.2, qy - fy * sd * 0.6 + uy * 1.2, lid);
+            }
+          }
+          const mcx = hx0 + ux * (h0 * 0.25), mcy = hy0 + uy * (h0 * 0.25);
+          put(mcx - fx * 0.5, mcy - fy * 0.5, lip); put(mcx + fx * 0.5, mcy + fy * 0.5, lip);
+          if (scared || hurt) { put(mcx - fx * 0.5 - ux, mcy - fy * 0.5 - uy, PX_BLACK); put(mcx + fx * 0.5 - ux, mcy + fy * 0.5 - uy, PX_BLACK); }
+        } else {
+          if (d.dead) {
+            put(ex - 1, ey - 1, PX_BLACK); put(ex + 1, ey - 1, PX_BLACK); put(ex, ey, PX_BLACK); put(ex - 1, ey + 1, PX_BLACK); put(ex + 1, ey + 1, PX_BLACK);
+          } else if (d.isOut() || shut) {
+            put(ex - 1, ey, PX_BLACK); put(ex, ey, PX_BLACK);
+          } else {
+            // Looking back over the shoulder turns the pupil to the back of the eye.
+            const back = lookH !== 0 && lookH !== d.facing;
+            put(ex - fx, ey - fy, white); put(ex, ey, white);
+            if (scared) put(ex - fx + ux, ey - fy + uy, white);
+            put(back ? ex - fx : ex, (back ? ey - fy : ey) + 0, PX_BLACK);
+            if (lookV) put((back ? ex - fx : ex) + ux * lookV, (back ? ey - fy : ey) + uy * lookV, PX_BLACK);
+            if (hurt) put(ex + ux * 1.2, ey + uy * 1.2, lid);
+          }
+          put(mx, my, lip); put(mx - fx, my - fy, lip);
+          if (scared || hurt) put(mx - ux, my - uy, PX_BLACK);
+        }
       }
     } else {
       if (k !== HEAD) { const st = limbStart(d, k); ax = st[0] / PIX; ay = st[1] / PIX; }
@@ -2882,8 +3044,16 @@ function segSeg(ax, ay, bx, by, p0x, p0y, p1x, p1y) {
 // ======================================================================
 
 let effects = [];
+// Things that happen in the room, so the dolls can react to them: shots,
+// blasts, fire and a death.
+const EVENTS = [];
+function worldEvent(kind, x, y, self = null) {
+  EVENTS.push({ kind, x, y, self, t: performance.now() / 1000 });
+  if (EVENTS.length > 24) EVENTS.shift();
+}
 function explode(x, y) {
   const R = 130;
+  worldEvent("boom", x, y);
   for (const d of state.dolls) if (d.blast(x, y, R)) state.selected = d;
   for (const g of gibs) {
     const dx = g.x - x, dy = g.y - y, dd = Math.hypot(dx, dy) || 1;
@@ -3842,6 +4012,7 @@ function fireAtFinger() {
   if (hit) { hit.d.preciseShot(hit, wp, Math.random() < 0.5 ? 1 : -1); state.selected = hit.d; }
   else wallShot(x, y);
   state.lastShot = [x, y];
+  worldEvent("shot", x, y, hit ? hit.d : null);
   flashes.push({ x, y, ang: 0, age: 0 });
   // The casing jumps out next to the finger and bounces on the floor.
   spawnGib(x + rf(-6, 6), y - 6, rf(-140, 140), rf(-260, -160), false, true);
@@ -3943,6 +4114,7 @@ function fireRanged() {
   if (!wall && hitD) { hitD.shot(hitK, ex, ey, dx, dy, wp); state.selected = hitD; }
   if (wall) for (let n = 0; n < 6; n++) sparks.push({ x: ex - dx * 2, y: ey - dy * 2, vx: -dx * rf(60, 220) + rf(-90, 90), vy: -dy * rf(60, 220) - rf(30, 160), life: rf(0.15, 0.35) });
   tracers.push({ ax: ox, ay: oy, bx: ex, by: ey, age: 0 });
+  worldEvent("shot", ox, oy); worldEvent("shot", ex, ey);
   flashes.push({ x: ox, y: oy, ang, age: 0 });
   // Casing flies out of the side and bounces on the floor.
   const back = Math.cos(ang) < 0 ? 1 : -1;
@@ -6020,6 +6192,7 @@ function drawTitle(dt) {
   fl.addColorStop(0, "#5a5a62"); fl.addColorStop(1, "#2a2a30");
   ctx.fillStyle = fl; ctx.fillRect(W * 0.42, floor, W, H - floor);
   ctx.fillStyle = "#8a8a92"; ctx.fillRect(W * 0.42, floor, W, 1.5);
+  drawTitleProps(px1, floor, dk, f.t, dt);
   // fade the room into the menu side
   const fade = ctx.createLinearGradient(W * 0.42, 0, W * 0.62, 0);
   fade.addColorStop(0, "#121216"); fade.addColorStop(1, "rgba(18,18,22,0)");
@@ -6034,6 +6207,12 @@ function drawTitle(dt) {
   ctx.fillStyle = "#0a0a0c"; ctx.fillRect(px1 - 1, 0, 2, 30);
   ctx.fillStyle = "#cfcfc8"; ctx.beginPath(); ctx.moveTo(px1 - 16, 40); ctx.lineTo(px1 - 7, 30); ctx.lineTo(px1 + 7, 30); ctx.lineTo(px1 + 16, 40); ctx.closePath(); ctx.fill();
   ctx.fillStyle = css(mixc([255, 246, 216], [255, 90, 70], dk), flick); ctx.beginPath(); ctx.arc(px1, 41, 3, 0, Math.PI * 2); ctx.fill();
+  // Moths circling the lamp
+  for (let n = 0; n < 3; n++) {
+    const a = f.t * (2.2 + n * 0.7) + n * 2.1, r = 10 + n * 6 + Math.sin(f.t * 3 + n) * 3;
+    ctx.fillStyle = css(mixc([230, 220, 190], [255, 120, 100], dk), 0.75);
+    ctx.fillRect(px1 + Math.cos(a) * r * 1.6 - 1, 44 + Math.sin(a) * r * 0.7 - 1, 2, Math.sin(f.t * 30 + n) > 0 ? 2 : 1);
+  }
   // dust in the light
   for (const d of f.dust) {
     d.y -= d.v * dt; if (d.y < 50) d.y = 360;
@@ -6081,9 +6260,87 @@ function drawTitle(dt) {
     else menuButton(b, b.text, b.primary, pressAmt(b.id, b));
   }));
   withAppear(appear(8), () => label("v2 · " + MAPS.length + " MAPS · 12 WERKZEUGE", 56, H - 16, 9, "#4c4c56"), 0);
+  // A tip that changes every few seconds, under the buttons
+  const btns = titleButtons(), last = btns[btns.length - 1], ty = last.y + last.h + 22;
+  if (ty < H - 34) withAppear(appear(9), () => {
+    const n = Math.floor(f.t / 5) % TITLE_TIPS.length, ph = (f.t % 5) / 5, a = Math.min(1, ph * 6, (1 - ph) * 6);
+    ctx.save(); ctx.globalAlpha *= a;
+    ctx.fillStyle = "#8e0f1c"; ctx.fillRect(56, ty - 6, 3, 12);
+    label(TITLE_TIPS[n], 66, ty, fitFont(TITLE_TIPS[n], 300, 9, 400), "#8a8590", "left", 400);
+    ctx.restore();
+  });
   drawPlayBullet();
   drawTitleShotOverlay();
   if (playShot && playShot.fade > 0) { ctx.fillStyle = `rgba(0,0,0,${Math.min(1, playShot.fade / 0.4)})`; ctx.fillRect(0, 0, W, H); }
+}
+
+const TITLE_TIPS = [
+  "Halte eine Puppe fest, sie läuft mit.",
+  "Die Pinnadel: ziehen, loslassen, fixiert.",
+  "Ein Verband stoppt jede Blutung.",
+  "Tippe dreimal auf die Tür im Labor.",
+  "Das i im Panel erklärt jeden Tod.",
+  "Zeig mit der Waffe auf eine Puppe.",
+  "Zoome ganz nah, dann siehst du die Organe.",
+  "Wasser löscht Feuer, Eis friert ein.",
+];
+
+// The room behind the person: a pipe that drips, an exit sign, a camera
+// that follows the person, a shelf with jars, a bloody handprint and
+// scratched tally marks on the wall.
+function drawTitleProps(px1, floor, dk, t, dt) {
+  const x0 = W * 0.42, wallC = (a, b) => css(mixc(hex(a), hex(b), dk));
+  // Pipe under the ceiling with brackets, and a drip into a puddle
+  ctx.fillStyle = wallC("#2a2a32", "#2e1a1e"); ctx.fillRect(x0, 14, W - x0, 7);
+  ctx.fillStyle = wallC("#3a3a44", "#3e2428"); ctx.fillRect(x0, 14, W - x0, 2);
+  for (let x = x0 + 40; x < W; x += 110) { ctx.fillStyle = "#121216"; ctx.fillRect(x, 10, 6, 14); }
+  const dripX = Math.round(px1 + 150), cyc = (t * 0.6) % 1;
+  ctx.fillStyle = "rgba(60,70,90,0.55)"; ctx.beginPath(); ctx.ellipse(dripX, floor + 2, 14, 2.5, 0, 0, Math.PI * 2); ctx.fill();
+  if (cyc < 0.3) { ctx.fillStyle = "rgba(150,170,200,0.8)"; ctx.beginPath(); ctx.arc(dripX, 22 + cyc / 0.3 * 2.5, 1.6 * cyc / 0.3, 0, Math.PI * 2); ctx.fill(); }
+  else if (cyc < 0.75) { const u = (cyc - 0.3) / 0.45; ctx.fillStyle = "rgba(150,170,200,0.8)"; ctx.fillRect(dripX - 1, 24 + u * u * (floor - 26), 2, 4); }
+  else { const u = (cyc - 0.75) / 0.25; ctx.strokeStyle = `rgba(150,170,200,${0.6 * (1 - u)})`; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(dripX, floor + 2, 4 + u * 12, 1 + u * 2, 0, 0, Math.PI * 2); ctx.stroke(); }
+  // EXIT sign that flickers now and then
+  const ex = W - 96, ey = 62, on = Math.sin(t * 17) > -0.97 || Math.sin(t * 3.1) > 0.3;
+  ctx.fillStyle = "#101014"; ctx.fillRect(ex - 2, ey - 2, 52, 20);
+  if (on) {
+    const g = ctx.createRadialGradient(ex + 24, ey + 8, 2, ex + 24, ey + 8, 46);
+    g.addColorStop(0, `rgba(60,220,120,${0.22 * (1 - dk * 0.5)})`); g.addColorStop(1, "rgba(60,220,120,0)");
+    ctx.fillStyle = g; ctx.fillRect(ex - 30, ey - 30, 108, 76);
+  }
+  ctx.fillStyle = on ? "#1d6a3a" : "#14301e"; ctx.fillRect(ex, ey, 48, 16);
+  label("EXIT", ex + 24, ey + 8.5, 9, on ? "#b8ffcc" : "#3a5a44", "center");
+  // Security camera in the corner that turns toward the person, red light blinking
+  const cx = W - 34, cy = 34, aim = Math.atan2(floor - 120 - cy, px1 - cx) + Math.sin(t * 0.5) * 0.12;
+  ctx.fillStyle = "#18181c"; ctx.fillRect(cx - 2, 20, 4, 12);
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(aim);
+  ctx.fillStyle = "#3a3a42"; ctx.fillRect(-4, -6, 24, 12); ctx.fillStyle = "#26262c"; ctx.fillRect(18, -5, 6, 10);
+  ctx.fillStyle = "#0b0b0e"; ctx.fillRect(22, -3, 3, 6);
+  ctx.restore();
+  if (Math.sin(t * 4) > 0.3) { ctx.fillStyle = "#ff3040"; ctx.beginPath(); ctx.arc(cx - 6, cy - 9, 1.6, 0, Math.PI * 2); ctx.fill(); }
+  // Shelf with jars of coloured liquid, one bubbling green
+  const sx = Math.round(Math.max(x0 + 8, px1 - 185)), sy = 196;
+  ctx.fillStyle = "#3a2c22"; ctx.fillRect(sx, sy, 92, 4); ctx.fillRect(sx + 4, sy + 4, 3, 8); ctx.fillRect(sx + 85, sy + 4, 3, 8);
+  [["#4ad06a", 14, 18], ["#c84a5a", 12, 14], ["#5a8ad8", 10, 20], ["#d8b04a", 13, 12]].forEach(([c, w, h], n) => {
+    const jx = sx + 6 + n * 22, jy = sy - h;
+    ctx.fillStyle = "rgba(200,210,220,0.18)"; ctx.fillRect(jx, jy, w, h);
+    ctx.fillStyle = c; ctx.globalAlpha *= 0.7; ctx.fillRect(jx + 1, jy + h * 0.35, w - 2, h * 0.65 - 1); ctx.globalAlpha /= 0.7;
+    ctx.fillStyle = "#5a5a62"; ctx.fillRect(jx - 1, jy - 2, w + 2, 2);
+    if (n === 0) for (let b = 0; b < 3; b++) { const u = (t * 0.8 + b * 0.33) % 1; ctx.fillStyle = "rgba(180,255,190,0.8)"; ctx.fillRect(jx + 3 + b * 3, jy + h - 2 - u * h * 0.6, 1.5, 1.5); }
+  });
+  // Bloody handprint and scratched tally marks on the wall
+  const hx = px1 - 74, hy = 236;
+  ctx.fillStyle = "rgba(120,10,20,0.55)";
+  ctx.beginPath(); ctx.ellipse(hx, hy, 6, 7, 0.2, 0, Math.PI * 2); ctx.fill();
+  for (const [fx2, fy2, fl] of [[-5, -9, 7], [-1.5, -11, 9], [2, -10.5, 8], [5, -8, 6], [7, -1, 5]]) { ctx.save(); ctx.translate(hx + fx2, hy + fy2); ctx.rotate(fx2 * 0.06); ctx.fillRect(-1.2, -fl / 2, 2.4, fl); ctx.restore(); }
+  ctx.fillRect(hx - 1, hy + 6, 1.6, 14); ctx.fillRect(hx + 3, hy + 5, 1.2, 9);
+  ctx.strokeStyle = "rgba(200,200,210,0.16)"; ctx.lineWidth = 1;
+  ctx.beginPath();
+  const tx = sx + 10, tyy = 262;
+  for (let g = 0; g < 3; g++) { for (let k = 0; k < 4; k++) { ctx.moveTo(tx + g * 22 + k * 4, tyy); ctx.lineTo(tx + g * 22 + k * 4 + 1, tyy + 14); } ctx.moveTo(tx + g * 22 - 2, tyy + 11); ctx.lineTo(tx + g * 22 + 15, tyy + 3); }
+  ctx.stroke();
+  // Bloody footprints leading off to the right
+  ctx.fillStyle = "rgba(110,8,18,0.45)";
+  for (let n = 0; n < 5; n++) { const fx3 = px1 + 70 + n * 28, fy3 = floor + 5 + (n % 2) * 4; ctx.beginPath(); ctx.ellipse(fx3, fy3, 5 - n * 0.6, 1.8, 0, 0, Math.PI * 2); ctx.fill(); }
 }
 
 // The person on the title screen is a real game doll, drawn with the same
@@ -7675,6 +7932,7 @@ function lighter(x, y) {
   whooshSound(0.4);
 }
 function molotov(x, y) {
+  worldEvent("fire", x, y);
   // The fuel spreads out on the surface below the finger.
   let gy = Math.floor(y);
   while (gy < H - 1 && !solidAt(x, gy + 1)) gy++;
