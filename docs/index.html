@@ -1884,11 +1884,9 @@ class Doll {
       // the skin as a stain and a new one starts downward from the wound.
       const pa = partAngle(this, w.part);
       if (w.runAng === undefined) w.runAng = pa;
-      if (Math.abs(wrapPi(pa - w.runAng)) > 0.45) {
-        w.runAng = pa;
-        this.stain[w.part] = Math.min(0.75, this.stain[w.part] + Math.min(w.drip || 0, 40) * 0.004);
-        w.drip = Math.min(w.drip || 0, 1.5);
-      }
+      // Small turns bend the running blood; it keeps going down from its tip.
+      // Only when the body is turned far over does a new run start at the wound.
+      if (Math.abs(wrapPi(pa - w.runAng)) > 1.2) { w.runAng = pa; w.newStream = true; w.drip = 0; }
       w.drip = Math.min(90, (w.drip || 0) + (0.6 + w.bleed) * f * DT * 5);
       if (f <= 0) continue;
       // Where the run leaves the body, drops fall off to the floor.
@@ -2539,29 +2537,73 @@ function rasterWound(d, w, order) {
 // legs, wandering a little. Where it reaches the edge of the body it drips
 // off; the drops fall to the floor (Doll.updateEffects).
 const partAngle = (d, k) => Math.atan2(d.y[d.pb[k]] - d.y[d.pa[k]], d.x[d.pb[k]] - d.x[d.pa[k]]);
+// Blood on the skin is stored on the body itself: every pixel of a run
+// knows its part and where on that part it sits, so the run moves and
+// turns with the body and hides behind whatever lies in front of that part.
+function partFrame(d, k) {
+  const [ax, ay] = k === HEAD ? [d.x[d.pa[k]], d.y[d.pa[k]]] : limbStart(d, k), bx = d.x[d.pb[k]], by = d.y[d.pb[k]];
+  const l = Math.hypot(bx - ax, by - ay) || 1;
+  return [ax, ay, (bx - ax) / l, (by - ay) / l, l];
+}
+function runToLocal(d, k, x, y) {
+  const [ax, ay, ux, uy, l] = partFrame(d, k);
+  return [k, ((x - ax) * ux + (y - ay) * uy) / l, (x - ax) * -uy + (y - ay) * ux];
+}
+function runToWorld(d, [k, u, v]) {
+  const [ax, ay, ux, uy, l] = partFrame(d, k);
+  return [ax + ux * u * l - uy * v, ay + uy * u * l + ux * v];
+}
+const MAX_STREAMS = 5;
 function rasterRuns(d) {
+  // Which part a pixel belongs to, from the order it was drawn in.
+  const list = settings.front ? FRONT_ORDER : DRAW_ORDER, orderOf = [], partOf = [];
+  list.forEach((k, n) => { orderOf[k] = n + 2; partOf[n + 2] = k; });
   for (const w of d.wounds) {
     const r = w.runFrom;
     w.runFrom = null;
-    if (!r || w.bandaged || d.gone[w.part]) { w.dripOut = false; continue; }
-    const [x0, y0, open, hash] = r, len = Math.floor(w.drip || 0);
-    // Fresh blood runs straight down. A dried run keeps the direction it had
-    // on the body and turns with it.
-    const turn = open || w.runAng === undefined ? 0 : wrapPi(partAngle(d, w.part) - w.runAng);
-    const dx = -Math.sin(turn), dy = Math.cos(turn);
-    let fx = x0 + 0.5, fy = y0 + 0.5, x = x0, y = y0, out = false, side = 0;
-    for (let n = 1; n <= len; n++) {
-      if (n > 1 && hash(n + 30) < 0.22) side += hash(n + 50) < 0.5 ? -1 : 1;
-      fx += dx; fy += dy;
-      const nx = Math.floor(fx + dy * side), ny = Math.floor(fy - dx * side);
-      if (nx === x && ny === y) continue;
-      x = nx; y = ny;
-      const i = y * DW + x;
-      if (y > bby1 || y < bby0 || x < bbx0 || x > bbx1 || !tmask[i]) { out = true; break; }
-      tset(i, open ? (n === len ? WC_DROP : WC_RUN) : WC_DRIED, tmask[i]);
+    if (d.gone[w.part]) { w.dripOut = false; continue; }
+    const open = !!(r && r[2]) && !w.bandaged;
+    if (!w.streams) w.streams = [];
+    // Fresh blood keeps running from the wound: it extends the current run
+    // pixel by pixel straight down, onto whatever part lies below.
+    w.dripOut = false;
+    if (open && r) {
+      if (w.newStream || !w.streams.length) {
+        w.newStream = false;
+        w.streams.push([]);
+        if (w.streams.length > MAX_STREAMS) w.streams.shift();
+      }
+      const cur = w.streams[w.streams.length - 1], hash = r[3], target = Math.min(90, Math.floor(w.drip || 0));
+      for (let step = 0; step < 3 && cur.length < target; step++) {
+        let x, y;
+        if (cur.length) [x, y] = runToWorld(d, cur[cur.length - 1]); else { x = (r[0] + 0.5) * PIX; y = (r[1] + 0.5) * PIX; }
+        const n = cur.length + 1;
+        if (n > 1 && hash(n + 30) < 0.22) x += (hash(n + 50) < 0.5 ? -1 : 1) * PIX;
+        y += PIX;
+        const px = Math.floor(x / PIX), py = Math.floor(y / PIX), i = py * DW + px;
+        const k = px >= bbx0 && px <= bbx1 && py >= bby0 && py <= bby1 ? partOf[tmask[i]] : undefined;
+        if (k === undefined) { w.dripOut = true; w.dripEnd = [x, y]; break; }
+        cur.push(runToLocal(d, k, x, y));
+      }
+      if (cur.length >= target && cur.length) {
+        // The run has reached its length for now; check if it hangs over the edge.
+        const [x, y] = runToWorld(d, cur[cur.length - 1]), px = Math.floor(x / PIX), py = Math.floor((y + PIX) / PIX);
+        if (px < bbx0 || px > bbx1 || py > bby1 || partOf[tmask[py * DW + px]] === undefined) { w.dripOut = true; w.dripEnd = [x, y + PIX]; }
+      }
     }
-    w.dripOut = out && open;
-    if (out) w.dripEnd = [(x + 0.5) * PIX, y * PIX + 0.5];
+    // Draw every run where its own part is visible. Older runs and those of
+    // a wound that stopped bleeding are dark and dry.
+    w.streams.forEach((st, si) => {
+      const live = open && si === w.streams.length - 1;
+      st.forEach((pt, n) => {
+        if (d.gone[pt[0]]) return;
+        const [x, y] = runToWorld(d, pt), px = Math.floor(x / PIX), py = Math.floor(y / PIX);
+        if (px < bbx0 || px > bbx1 || py < bby0 || py > bby1) return;
+        const i = py * DW + px;
+        if (tmask[i] !== orderOf[pt[0]]) return;
+        tset(i, live ? (n === st.length - 1 ? WC_DROP : WC_RUN) : WC_DRIED, tmask[i]);
+      });
+    });
   }
 }
 
