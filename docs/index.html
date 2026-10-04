@@ -3686,131 +3686,167 @@ const ORGAN_MARK = {
   brain: [[0, -62, 4.5]], lungL: [[7.5, -34, 4]], lungR: [[-7.5, -34, 4]], heart: [[2.5, -29.5, 3]],
   liver: [[-5, -19.5, 3.5]], stomach: [[7, -18, 3]], kidneys: [[-6.5, -6, 2.2], [6.5, -6, 2.2]], gut: [[0, 1, 4]],
 };
-const ORGAN_DRAW = {
-  brain(c, dk) {
-    // Two hemispheres seen from the front, folds and the brain stem below.
-    ctx.beginPath();
-    ctx.moveTo(0, -68.5);
-    ctx.bezierCurveTo(4, -69.5, 7.6, -67, 7.4, -62.5);
-    ctx.bezierCurveTo(7.3, -58.5, 5, -56.4, 2, -56.8);
-    ctx.lineTo(-2, -56.8);
-    ctx.bezierCurveTo(-5, -56.4, -7.3, -58.5, -7.4, -62.5);
-    ctx.bezierCurveTo(-7.6, -67, -4, -69.5, 0, -68.5);
-    ctx.closePath();
-    ctx.fillStyle = c; ctx.fill();
-    ctx.fillStyle = dk; rr(-1, -57.4, 2, 3, 0.8); ctx.fill();
-    ctx.strokeStyle = dk; ctx.lineWidth = 0.45; ctx.lineCap = "round";
-    ctx.beginPath(); ctx.moveTo(0, -68.4); ctx.lineTo(0, -57);
-    for (const sx of [-1, 1]) {
-      ctx.moveTo(sx * 1.6, -66.5); ctx.quadraticCurveTo(sx * 4, -67.5, sx * 5.6, -65);
-      ctx.moveTo(sx * 1.4, -63.5); ctx.quadraticCurveTo(sx * 3.5, -61.8, sx * 6.4, -62.6);
-      ctx.moveTo(sx * 1.8, -60); ctx.quadraticCurveTo(sx * 4, -61, sx * 5.4, -58.8);
-    }
-    ctx.stroke();
-  },
-  lungR(c, dk) { drawLung(-1, c, dk); },
-  lungL(c, dk) { drawLung(1, c, dk); },
-  heart(c, dk) {
-    // Vessels on top, then the heart with its apex toward the doll's left.
-    ctx.lineCap = "round";
-    ctx.strokeStyle = "#5a6ec8"; ctx.lineWidth = 1.3;
-    ctx.beginPath(); ctx.moveTo(1, -32.5); ctx.quadraticCurveTo(0.5, -35.5, -1.5, -36); ctx.stroke();
-    ctx.strokeStyle = c; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.moveTo(2.8, -32.5); ctx.bezierCurveTo(2.6, -37.5, 6.4, -37.5, 6, -33.5); ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(-0.8, -32);
-    ctx.bezierCurveTo(1.5, -34.2, 5.5, -33.8, 6.4, -30.5);
-    ctx.bezierCurveTo(7, -28, 6, -26, 4.2, -24.6);
-    ctx.quadraticCurveTo(1, -26.2, -0.8, -28.8);
-    ctx.quadraticCurveTo(-1.6, -30.5, -0.8, -32);
-    ctx.closePath();
-    ctx.fillStyle = c; ctx.fill();
-    ctx.strokeStyle = dk; ctx.lineWidth = 0.4;
-    ctx.beginPath(); ctx.moveTo(2.2, -32.6); ctx.quadraticCurveTo(3.6, -29, 4, -25.4); ctx.stroke();
-    ctx.fillStyle = "rgba(255,255,255,0.28)"; ctx.beginPath(); ctx.ellipse(1.4, -31.4, 1.3, 0.8, -0.4, 0, Math.PI * 2); ctx.fill();
-  },
-  liver(c, dk) {
-    // Big right lobe, thin left lobe, gallbladder underneath.
-    ctx.beginPath();
-    ctx.moveTo(-13, -23.5);
-    ctx.bezierCurveTo(-8, -25.5, 0, -25, 4.5, -22.5);
-    ctx.quadraticCurveTo(5, -21.5, 3.5, -21);
-    ctx.bezierCurveTo(-1, -19.5, -4, -17, -7, -15);
-    ctx.bezierCurveTo(-10.5, -13.5, -13.6, -15.5, -13.6, -19);
-    ctx.quadraticCurveTo(-13.8, -22, -13, -23.5);
-    ctx.closePath();
-    ctx.fillStyle = c; ctx.fill();
-    ctx.strokeStyle = dk; ctx.lineWidth = 0.4;
-    ctx.beginPath(); ctx.moveTo(-3, -24.3); ctx.quadraticCurveTo(-3.6, -21, -5.5, -17.5); ctx.stroke();
-    ctx.fillStyle = "#6e9a46"; ctx.beginPath(); ctx.ellipse(-6.8, -15.6, 1.1, 1.6, 0.3, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = "rgba(255,255,255,0.18)"; ctx.beginPath(); ctx.ellipse(-9, -21.5, 3, 1, -0.2, 0, Math.PI * 2); ctx.fill();
-  },
-  stomach(c, dk) {
-    // J-shaped bag from the gullet down to the exit on the right.
-    ctx.lineCap = "round"; ctx.strokeStyle = c; ctx.lineWidth = 1.1;
-    ctx.beginPath(); ctx.moveTo(3.2, -25); ctx.lineTo(4.4, -22.4); ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(4, -23);
-    ctx.bezierCurveTo(8, -24.5, 12, -22.5, 11.6, -18.5);
-    ctx.bezierCurveTo(11.2, -14.5, 7, -13, 3.6, -14);
-    ctx.quadraticCurveTo(1.2, -14.8, 0.8, -16.2);
-    ctx.lineTo(2.2, -16.8);
-    ctx.quadraticCurveTo(4.5, -16, 6.4, -16.6);
-    ctx.bezierCurveTo(8, -17.4, 7.4, -20, 4.6, -20.5);
-    ctx.quadraticCurveTo(3.4, -21.5, 4, -23);
-    ctx.closePath();
-    ctx.fillStyle = c; ctx.fill();
-    ctx.strokeStyle = dk; ctx.lineWidth = 0.35;
-    ctx.beginPath(); ctx.moveTo(8, -21.6); ctx.quadraticCurveTo(10, -19, 8.6, -15.6); ctx.moveTo(6.4, -22.2); ctx.quadraticCurveTo(9.2, -20, 9.6, -17.4); ctx.stroke();
-  },
-  kidneys(c, dk) {
-    // Two beans with the dent toward the spine and a short ureter.
-    for (const sx of [-1, 1]) {
-      const x = sx * 6.5;
-      ctx.beginPath();
-      ctx.moveTo(x - sx * 0.6, -9.6);
-      ctx.bezierCurveTo(x + sx * 3.2, -10.2, x + sx * 3.4, -2.6, x - sx * 0.6, -3.2);
-      ctx.bezierCurveTo(x - sx * 2.6, -3.4, x - sx * 1.4, -5.4, x - sx * 1, -6.4);
-      ctx.bezierCurveTo(x - sx * 1.4, -7.4, x - sx * 2.6, -9.4, x - sx * 0.6, -9.6);
-      ctx.closePath();
-      ctx.fillStyle = c; ctx.fill();
-      ctx.strokeStyle = "#e8d070"; ctx.lineWidth = 0.4;
-      ctx.beginPath(); ctx.moveTo(x - sx * 1, -6); ctx.quadraticCurveTo(x - sx * 2.5, -3, x - sx * 2.2, 0); ctx.stroke();
-      ctx.fillStyle = "rgba(255,255,255,0.22)"; ctx.beginPath(); ctx.ellipse(x + sx * 0.8, -7.4, 0.9, 0.6, 0, 0, Math.PI * 2); ctx.fill();
-    }
-  },
-  gut(c, dk) {
-    // Large bowel as a frame, small bowel coiled inside.
-    ctx.lineCap = "round"; ctx.lineJoin = "round";
-    ctx.strokeStyle = dk; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(-11, 3.8); ctx.lineTo(-11, -0.8); ctx.quadraticCurveTo(-11, -2, -9.5, -2); ctx.lineTo(9.5, -2); ctx.quadraticCurveTo(11, -2, 11, -0.8); ctx.lineTo(11, 3.2); ctx.quadraticCurveTo(8.5, 4.6, 4.5, 4.2); ctx.stroke();
-    ctx.strokeStyle = c; ctx.lineWidth = 1.2;
-    ctx.beginPath(); ctx.moveTo(-8, 0);
-    for (let k = 0; k < 4; k++) ctx.quadraticCurveTo(-6 + k * 4, -1.2 + (k % 2) * 3.4, -4 + k * 4, 0.3 + (k % 2) * 0.4);
-    ctx.moveTo(-7.6, 2.6);
-    for (let k = 0; k < 4; k++) ctx.quadraticCurveTo(-5.6 + k * 3.8, 3.8 - (k % 2) * 2.8, -3.6 + k * 3.8, 2.6 - (k % 2) * 0.3);
-    ctx.stroke();
-  },
+// Organs as pixel sprites, one pixel per chart unit, placed at their chart
+// position (x, y = top left). Letters: o outline, d shade, m base, l light,
+// h highlight, w pale cartilage, b/v blue vein, g/G gallbladder, y ureter,
+// c/C colon, r bright artery.
+const mirrorRows = (rows) => rows.map((r) => [...r].reverse().join(""));
+const BRAIN_HALF = [
+  "....oooo",
+  "..oollld",
+  ".olhlmdd",
+  "olhmdmld",
+  "olmdllmd",
+  "oldmmdmd",
+  "omlldmld",
+  "omdmlmdd",
+  "oldmmdmd",
+  "omlddmmd",
+  ".odmmlmd",
+  ".oodmmdo",
+  "...ooooo",
+];
+const LUNG_R = [
+  ".......ooo..",
+  ".....oollmo.",
+  "....olhllmo.",
+  "...olhlmlmo.",
+  "...olllwmdo.",
+  "..olmlmwmdo.",
+  "..olmlwmmdo.",
+  ".olmmwmmddo.",
+  ".olmmdmmmdo.",
+  ".olmlmdmmdo.",
+  "olmlmmmdmdo.",
+  "olmmmmmmddo.",
+  "olmmlmmmmdo.",
+  "olmmmmmmmdo.",
+  "odmmmmmmddo.",
+  "oddmmmmddo..",
+  ".oddddddo...",
+  "..oooooo....",
+];
+// The doll's left lung has the notch where the heart lies.
+const LUNG_L = mirrorRows(LUNG_R).map((r, n) => {
+  const notch = { 9: ".odl", 10: "..od", 11: "..od", 12: "..od", 13: ".odm" }[n];
+  return notch ? notch + r.slice(4) : r;
+});
+const KIDNEY_R = [
+  "..ooo..",
+  ".ollmo.",
+  "olhlmdo",
+  "olmmmdo",
+  "olmmdo.",
+  "olmmoyy",
+  "olmmdo.",
+  "olmmmdo",
+  ".olmddo",
+  "..ooo..",
+];
+const ORGAN_SPRITES = {
+  brain: [{ x: -8, y: -70, rows: [...BRAIN_HALF.map((r) => r + [...r].reverse().join("")), "......odmo......", ".......oo......."] }],
+  lungR: [{ x: -13, y: -43, rows: LUNG_R }],
+  lungL: [{ x: 2, y: -43, rows: LUNG_L }],
+  heart: [{ x: -2, y: -38, rows: [
+    "....oooo..",
+    "...omrrmo.",
+    ".oo.mo.mo.",
+    "obvo.o.oo.",
+    "obvoooooo.",
+    "obvmllhmmo",
+    "obmlhlmmdo",
+    ".omlllmmdo",
+    ".omlmmmddo",
+    "..omdmmddo",
+    "..ommdmddo",
+    "...omddddo",
+    "....oddoo.",
+    ".....oo...",
+  ] }],
+  liver: [{ x: -14, y: -26, rows: [
+    "...ooooooo.........",
+    ".oohhlllllooooo....",
+    "olhlllmmmmmmmmmoo..",
+    "olllmmmmdmmmmmmmmo.",
+    "ollmmmmmdmmmmmddoo.",
+    "olmmmmmmdmmmddoo...",
+    "olmmmmmmmdddoo.....",
+    "odmmmmmmmdoo.......",
+    "odmmmmmddoo........",
+    ".oddmmggo..........",
+    "..oodggGo..........",
+    "....ooooo..........",
+  ] }],
+  stomach: [{ x: 0, y: -26, rows: [
+    "...oo........",
+    "...omo.......",
+    "....omoooo...",
+    "...oollllloo.",
+    "..olhllllmmo.",
+    "..ollmmmmmmdo",
+    ".olmmmmmmmmdo",
+    ".olmmddmmmmdo",
+    "olmmmmddmmmdo",
+    "odmmmmmmmmddo",
+    "oodmmmmmmddo.",
+    "..ooddddddo..",
+    "....oooooo...",
+  ] }],
+  kidneys: [{ x: -10, y: -10, rows: KIDNEY_R }, { x: 3, y: -10, rows: mirrorRows(KIDNEY_R) }],
+  gut: [{ x: -12, y: -3, rows: [
+    ".oooooooooooooooooooooo.",
+    "oCcCcCcCcCcCcCcCcCcCcCco",
+    "occoooooooooooooooooocco",
+    "oComlmdmlmdmlmdmlmdmloCo",
+    "ocodmlmdmlmdmlmdmlmdmoco",
+    "oComdmlmdmlmdmlmdmlmdoCo",
+    "ocoooooooooooooooooooco.",
+    ".ooo................ooo.",
+  ] }],
+  trachea: [{ x: -2, y: -47, rows: [
+    ".owo.",
+    ".odo.",
+    ".owo.",
+    ".odo.",
+    ".owo.",
+    "owdwo",
+    "wo.ow",
+    "o...o",
+  ] }],
 };
-function drawLung(side, c, dk) {
-  // side 1: the doll's left lung on the chart's right, with the notch for the heart.
-  const x = (v) => side * v;
-  ctx.beginPath();
-  ctx.moveTo(x(4.5), -43);
-  ctx.bezierCurveTo(x(8.5), -43.2, x(12.8), -37, x(12.6), -29);
-  ctx.quadraticCurveTo(x(12.6), -25.4, x(10.5), -25.2);
-  ctx.quadraticCurveTo(x(6.5), -25.2, x(2.8), -26.6);
-  if (side > 0) { ctx.quadraticCurveTo(x(6.4), -29, x(6.6), -32.4); ctx.quadraticCurveTo(x(3), -33.4, x(2.4), -36.5); }
-  else ctx.quadraticCurveTo(x(1.6), -32, x(2.2), -37);
-  ctx.quadraticCurveTo(x(2.6), -42.4, x(4.5), -43);
-  ctx.closePath();
-  ctx.fillStyle = c; ctx.fill();
-  // Lobe line and bronchi
-  ctx.strokeStyle = dk; ctx.lineWidth = 0.4; ctx.lineCap = "round";
-  ctx.beginPath(); ctx.moveTo(x(4.5), -35); ctx.quadraticCurveTo(x(8.5), -33, x(11.8), -28.4); ctx.stroke();
-  ctx.strokeStyle = "rgba(255,240,240,0.65)"; ctx.lineWidth = 0.5;
-  ctx.beginPath(); ctx.moveTo(x(1), -40); ctx.lineTo(x(4), -36.4); ctx.lineTo(x(6.5), -32);
-  ctx.moveTo(x(4), -36.4); ctx.lineTo(x(7.6), -37.4); ctx.moveTo(x(6.5), -32); ctx.lineTo(x(9.4), -30.2); ctx.stroke();
+const ORGAN_PAL_FIXED = { w: hex("#f4e4e0"), b: hex("#3a4aa0"), v: hex("#7088d8"), g: hex("#7aa850"), G: hex("#4a7030"), y: hex("#e8d070"), r: hex("#e8404e") };
+const COL_ORGAN_DEAD = hex("#2a1a1e"), COL_ORGAN_HURT = hex("#4a0810");
+// Each organ piece is painted once per damage step into a tiny bitmap and
+// drawn pixel sharp. A hurt organ darkens and gets torn, bloody pixels.
+const organCache = new Map();
+function organBitmap(id, n, hp) {
+  const q = Math.round(hp * 20), key = id + n + ":" + q;
+  let c = organCache.get(key);
+  if (c) return c;
+  const p = ORGAN_SPRITES[id][n], base = mixc(COL_ORGAN_DEAD, hex(ORGAN_COLOR[id] || "#e8d0cc"), 0.25 + 0.75 * q / 20);
+  const pal = { o: mixc(base, [30, 6, 12], 0.7), d: darken(base, 0.28), m: base, l: lighten(base, 0.2), h: lighten(base, 0.45),
+    c: darken(base, 0.12), C: darken(base, 0.35), ...ORGAN_PAL_FIXED };
+  const w = p.rows[0].length, h = p.rows.length;
+  c = document.createElement("canvas"); c.width = w; c.height = h;
+  const g = c.getContext("2d"), img = g.createImageData(w, h);
+  p.rows.forEach((row, y) => [...row].forEach((ch, x) => {
+    if (ch === ".") return;
+    let col = pal[ch] || base;
+    // Torn tissue: more dark blood pixels the worse the organ is hurt.
+    const hash = ((x * 73856093) ^ (y * 19349663) ^ (id.length * 83492791)) >>> 0;
+    if ("mlhdc".includes(ch) && (hash % 100) / 100 < (1 - q / 20) * 0.32) col = COL_ORGAN_HURT;
+    const i = (y * w + x) * 4;
+    img.data[i] = col[0]; img.data[i + 1] = col[1]; img.data[i + 2] = col[2]; img.data[i + 3] = 255;
+  }));
+  g.putImageData(img, 0, 0);
+  organCache.set(key, c);
+  return c;
+}
+function drawOrganSprite(id, hp) {
+  const smooth = ctx.imageSmoothingEnabled;
+  ctx.imageSmoothingEnabled = false;
+  ORGAN_SPRITES[id].forEach((p, n) => ctx.drawImage(organBitmap(id, n, hp), p.x, p.y, p.rows[0].length, p.rows.length));
+  ctx.imageSmoothingEnabled = smooth;
 }
 
 // Very close up the head, chest and belly open like a cut-away and show the
@@ -3833,7 +3869,8 @@ function drawDollOrgans(d, a) {
       tx = (bx - ax) / l; ty = (by - ay) / l;
       c0x = ax - tx * e0; c0y = ay - ty * e0; len = l + e0 + e1; hw = h;
     }
-    const f = d.facing || 1, nx = -ty * f, ny = tx * f;
+    // Same side as the body chart: the doll's right (liver) on the left of the screen.
+    const nx = ty, ny = -tx;
     const [rx, ry, rw, rh] = CHART[k], su = (2 * hw - 3) / rw, sv = (len - 3) / rh;
     const ma = nx * su, mb = ny * su, mc = tx * sv, md = ty * sv;
     const mid = rx + rw / 2;
@@ -3859,17 +3896,13 @@ function drawChartOrgans(d, cx, cy, s, mode) {
   ctx.save();
   ctx.translate(cx, cy); ctx.scale(s, s);
   // Windpipe between the lungs
-  if (still && d.attached(TORSO)) {
-    ctx.strokeStyle = "rgba(240,220,214,0.85)"; ctx.lineWidth = 1.1; ctx.lineCap = "round";
-    ctx.beginPath(); ctx.moveTo(0, -47); ctx.lineTo(0, -40.5); ctx.moveTo(0, -40.5); ctx.lineTo(-1, -40); ctx.moveTo(0, -40.5); ctx.lineTo(1, -40); ctx.stroke();
-  }
+  if (still && d.attached(TORSO)) drawOrganSprite("trachea", 1);
   // Back to front: the bowel lies behind the kidneys on this little chart.
   const order = ["brain", "lungR", "lungL", "heart", "liver", "stomach", "gut", "kidneys"];
   order.forEach((id) => {
     const n = ORGAN[id], o = ORGANS[n];
     if (!d.attached(o.part)) return;
-    const hp = d.organ[n] / 100, base = hex(ORGAN_COLOR[o.id]);
-    const c = mixc(hex("#2a1a1e"), base, 0.25 + 0.75 * hp);
+    const hp = d.organ[n] / 100;
     const beats = o.id === "heart" && !d.arrest && !d.dead;
     if (beats ? live : still) {
     ctx.save();
@@ -3879,15 +3912,16 @@ function drawChartOrgans(d, cx, cy, s, mode) {
       const k = 1 + d.beatFlash * 0.16;
       ctx.translate(2.5, -29.5); ctx.scale(k, k); ctx.translate(-2.5, 29.5);
     }
-    ORGAN_DRAW[o.id](css(c), css(darken(c, 0.35)));
+    drawOrganSprite(o.id, hp);
     ctx.restore();
     }
     if (live && hp <= 0) {
-      // Destroyed: a red X that pulses.
+      // Destroyed: a red pixel X that pulses.
       const a = d.dead ? 0.6 : 0.55 + 0.45 * Math.sin(now * 6);
-      ctx.strokeStyle = css(hex("#ff3040"), a); ctx.lineWidth = 0.9; ctx.lineCap = "round";
+      ctx.fillStyle = css(hex("#ff3040"), a);
       for (const [mx, my, k] of ORGAN_MARK[o.id]) {
-        ctx.beginPath(); ctx.moveTo(mx - k, my - k); ctx.lineTo(mx + k, my + k); ctx.moveTo(mx + k, my - k); ctx.lineTo(mx - k, my + k); ctx.stroke();
+        const x0 = Math.round(mx), y0 = Math.round(my), r = Math.round(k);
+        for (let i = -r; i <= r; i++) { ctx.fillRect(x0 + i - 0.5, y0 + i - 0.5, 1, 1); if (i) ctx.fillRect(x0 + i - 0.5, y0 - i - 0.5, 1, 1); }
       }
     }
   });
