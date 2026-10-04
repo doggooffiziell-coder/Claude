@@ -5743,7 +5743,7 @@ function drawTitleDoll(cx, floor, t, scale = TD_SCALE) {
   pixCtx.putImageData(pixImg, 0, 0);
   // The doll is DS times larger than the old title person, so the cut-out
   // grows with it and the picture is drawn smaller again.
-  const L = 75 * DS, R = 225 * DS, T = 200 * DS, B = 14 * DS, z = scale / DS;
+  const L = 75 * DS, R = 225 * DS, T = 222 * DS, B = 14 * DS, z = scale / DS;
   const sx = (TD_X - L) / PIX, sy = (TD_Y - T) / PIX, sw = (L + R) / PIX, shh = (T + B) / PIX;
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(pixCan, sx, sy, sw, shh, cx - L * z, floor - T * z, (L + R) * z, (T + B) * z);
@@ -7501,7 +7501,7 @@ function drawPortrait(dt) {
     ctx.setTransform(k, 0, 0, k, 0, 0);
     // Title, lamp right under it, the person sized to fit between lamp and floor.
     const titleY = Math.max(56, PH * 0.1), lampY = titleY + 78, floor = Math.round(Math.max(lampY + 170, PH * 0.6));
-    const dollScale = clamp((floor - lampY - 18) / 182, 0.7, 1.35);
+    const dollScale = clamp((floor - lampY - 18) / 196, 0.7, 1.35);
     // Room: dark wall with panels, floor, blood on the wall
     const bg = ctx.createLinearGradient(0, 0, 0, PH);
     bg.addColorStop(0, "#141015"); bg.addColorStop(1, "#0b0a0d");
