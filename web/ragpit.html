@@ -965,7 +965,7 @@ class Doll {
     }
     // In the front view a calm standing doll keeps the clean upright stance:
     // the muscles finish the step by lining the body up over its feet.
-    if (this.standing && settings.front && this.grabbed < 0) {
+    if (this.standing && settings.front && !this.holdsBody()) {
       this.flinch = Math.max(0, (this.flinch || 0) - DT);
       const s = 0.3 * clamp(this.ko / 100, 0, 1) * (1 - this.pn / 130) * (1 - this.flinch * 2);
       if (s > 0.02) {
@@ -1386,15 +1386,16 @@ class Doll {
     if (this.gone[k] || speed < SAFE_SPEED) return;
     const over = (speed - SAFE_SPEED) / 100, dmg = over * over * 3 * (IMPACT_MULT[k] || 1);
     this.hurtPart(k, dmg);
-    this.pn = Math.min(100, this.pn + dmg * 0.6);
-    if (dmg > 3) this.damaged();
+    // A limb that came off can be bashed around without the body feeling it.
+    const loose = !this.attached(k);
+    if (!loose) this.pn = Math.min(100, this.pn + dmg * 0.6);
+    if (dmg > 3 && !loose) this.damaged();
     if (k === HEAD) { this.ko -= dmg * 1.4; this.bruiseOrgans(HEAD, dmg * 0.3); }
     else if (k === TORSO || k === PELVIS) this.bruiseOrgans(k, dmg * 0.35);
     // A badly hurt arm or leg breaks and stops carrying weight.
     if (k !== HEAD && k !== TORSO && k !== PELVIS && this.dmg[k] >= 85 && !this.broken[k]) {
       this.broken[k] = true;
-      this.pn = Math.min(100, this.pn + 30);
-      this.stagger = Math.max(this.stagger, 1.5);
+      if (!loose) { this.pn = Math.min(100, this.pn + 30); this.stagger = Math.max(this.stagger, 1.5); }
     }
     if (speed > OPEN_SPEED && this.woundCd <= 0) {
       this.woundCd = 0.12;
@@ -1448,7 +1449,7 @@ class Doll {
     for (const j of this.joints) if (j.child === k) j.active = false;
     let parentT = 0;
     for (const d of JOINTS) if (d[0] === k) parentT = d[2] ? 0 : 1;
-    this.addWound(PARENT[k], parentT, 0, 9, true);
+    this.addWound(PARENT[k], parentT, 0, 9, true, "hit", { child: k });
     this.addWound(k, 0, 0, 3.2, true);
     this.severCd = 0.25;
     if (this.grabbed === jp) this.grabbed = -1;
@@ -2214,15 +2215,16 @@ function limbStart(d, k) {
     const tl = Math.hypot(wsx - nkx, wsy - nky) || 1, tx = (wsx - nkx) / tl, ty = (wsy - nky) / tl, nx = -ty, ny = tx;
     const shx = nkx + tx * SHOULDER_DROP, shy = nky + ty * SHOULDER_DROP;
     const bx = d.x[d.pb[k]], by = d.y[d.pb[k]];
-    const side = Math.sign((bx - shx) * nx + (by - shy) * ny) || 1;
+    // Seen from the front each arm keeps its own shoulder, even when both
+    // hang to the same side. From the side it leaves where it points.
+    const side = settings.front ? (k === UARM_L ? 1 : -1) * (d.facing || 1) : Math.sign((bx - shx) * nx + (by - shy) * ny) || 1;
     const off = settings.front ? RECT[TORSO][0] + RECT[k][0] - 2 : RECT[TORSO][0] - RECT[k][0] * 0.8;
     return [shx + nx * side * off, shy + ny * side * off];
   }
   if (settings.front && (k === THIGH_L || k === THIGH_R) && !d.severed[k] && d.attached(PELVIS)) {
     const wx = d.x[d.pa[PELVIS]], wy = d.y[d.pa[PELVIS]], hx = d.x[d.pb[PELVIS]], hy = d.y[d.pb[PELVIS]];
     const pl = Math.hypot(hx - wx, hy - wy) || 1, nx = -(hy - wy) / pl, ny = (hx - wx) / pl;
-    const bx = d.x[d.pb[k]], by = d.y[d.pb[k]];
-    const side = Math.sign((bx - hx) * nx + (by - hy) * ny) || (k === THIGH_L ? -1 : 1);
+    const side = (k === THIGH_L ? 1 : -1) * (d.facing || 1);
     const off = RECT[PELVIS][0] - RECT[k][0];
     return [hx + nx * side * off, hy + ny * side * off];
   }
@@ -2343,12 +2345,15 @@ function rasterDoll(d) {
     const [wx, wy] = d.woundPos(w);
     const [ux, uy] = d.stumpDir(w);
     const k = w.part;
-    const r = (k === HEAD ? 5.5 : RECT[k] ? RECT[k][0] : 14) / PIX * 0.95, cx = wx / PIX, cy = wy / PIX;
+    // The stump is as wide as the limb that came off, not as the part it hung on.
+    const wk = w.child !== undefined ? w.child : k;
+    const r = (wk === HEAD ? 5.5 : RECT[wk] ? RECT[wk][0] : 14) / PIX * 0.95, cx = wx / PIX, cy = wy / PIX;
     if (w.bandaged) {
-      // A wrapped stump: a cap of gauze with a red spot soaked through.
-      rasterDisc(cx + ux * 0.3, cy + uy * 0.3, r + 0.6, PX_GAUZE_DK, 250);
-      rasterDisc(cx + ux * 0.2, cy + uy * 0.2, r + 0.1, PX_GAUZE, 250);
-      rasterDisc(cx + ux * 0.5, cy + uy * 0.5, Math.max(0.8, r * 0.55 * (0.5 + (w.soak || 0))), w.bleed > 0 ? PX_SOAK : PX_SOAK_DRY, 250);
+      // A wrapped stump: a rounded cap of gauze over the end, a shaded rim
+      // and a small spot of blood soaked through at the tip.
+      rasterDisc(cx + ux * 0.4, cy + uy * 0.4, r + 0.3, PX_GAUZE_DK, 250);
+      rasterDisc(cx + ux * 0.2, cy + uy * 0.2, r - 0.2, PX_GAUZE, 250);
+      rasterDisc(cx + ux * (r * 0.5), cy + uy * (r * 0.5), Math.min(1.2, 0.5 + (w.soak || 0) * 0.7), w.bleed > 0 ? PX_SOAK : PX_SOAK_DRY, 250);
       continue;
     }
     rasterDisc(cx, cy, r + 0.4, w.bleed > 0 ? PX_FLESH : hex("#82323a"), 250);
