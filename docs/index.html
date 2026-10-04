@@ -86,10 +86,23 @@ body {
 // The room grows sideways to match wide phone screens, so nothing gets letterboxed.
 // It measures the free area inside the safe margins, so the notch side does not
 // squeeze the picture into bars at the top and bottom.
+// Opened upright, it works out the room the phone will have once it turns,
+// so turning it does not restart the game: the long side minus the notch on
+// both ends (the notch sits at the top now and on a side later), the short
+// side as the height.
+const safeTop = () => {
+  const p = document.createElement("div");
+  p.style.cssText = "position:fixed;visibility:hidden;padding-top:env(safe-area-inset-top,0px)";
+  document.body.appendChild(p);
+  const v = parseFloat(getComputedStyle(p).paddingTop) || 0;
+  p.remove();
+  return v;
+};
 const idealWidth = () => {
   let w = innerWidth, h = innerHeight;
   const st = document.getElementById("stage");
-  if (st) {
+  if (innerHeight > innerWidth) { w = innerHeight - 2 * Math.max(6, safeTop()); h = innerWidth; }
+  else if (st) {
     const cs = getComputedStyle(st);
     w = st.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
     h = st.clientHeight;
