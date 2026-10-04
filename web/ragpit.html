@@ -2718,6 +2718,275 @@ function explode(x, y) {
 // ======================================================================
 
 const T_GRAB = 0, T_WATER = 1, T_BUCKET = 2, T_BLADE = 3, T_GUN = 4, T_FIRE = 5, T_ICE = 6, T_BOMB = 7, T_IV = 8, T_DOLL = 9, T_RESET = 10, T_PIN = 11, T_BANDAGE = 12;
+
+// Tool icons as pixel sprites, shaded like the guns: a dark outline, light
+// on the upper left edges, shade on the lower right. Made by a small
+// generator from simple shapes, so all icons share one look.
+const TOOL_PIX_COLORS = {a: "#ffe4c8", b: "#f0c8a0", c: "#c08a60", d: "#ff6a6a", e: "#e02a36", f: "#8a1020", g: "#d8dae2", h: "#9a9ca8", i: "#5a5c68", j: "#f2f4f8", l: "#c4c8d2", m: "#7a7e8a", n: "#a8dcff", o: "#3c8ae6", p: "#1e4aa0", q: "#ffffff", r: "#b8e6ff", s: "#5aa8e0", t: "#d08a4a", u: "#9a5626", v: "#5a2c12", w: "#ffd060", x: "#ff8a2a", y: "#c84a12", z: "#ffffff", A: "#ffe46a", B: "#e0a020", C: "#5a5a66", D: "#2a2a32", E: "#121216", F: "#ffffff", G: "#f2eee4", H: "#bcb4a4", I: "#8af08a", J: "#3cc04a", L: "#1e7a2a", M: "#7ac8c0", N: "#3c8a84", O: "#22524e", P: "#6a7aa0", Q: "#3a4a6a", R: "#222c44", S: "#8a5a3a", T: "#5a3a22", U: "#3a2414", V: "#fff0a0", W: "#e6c850", X: "#a8841a", Y: "#ffffff", Z: "#ece6d8", 0: "#b8b0a0", 1: "#f8dcb0", 2: "#dca870", 3: "#a0703e", k: "#0e0e12"};
+const TOOL_PIX = {
+  [T_GRAB]: [
+    "..................",
+    ".......kk.kk......",
+    "....kkkaakaak.....",
+    "...kaakackackkk...",
+    "...kackackackaak..",
+    "...kackackackack..",
+    "...kackackackack..",
+    ".kkkackackackack..",
+    "kaakababbabbabck..",
+    "kababbbbbbbbbbck..",
+    "kcbbbbbbbbbbbbck..",
+    ".kcbbbbbbbbbbbck..",
+    "..kcbbbbbbbbbbck..",
+    "...kabbbbbbbbbck..",
+    "...kccbbbbbbbcck..",
+    "....kkabbbbbckk...",
+    ".....kccccccck....",
+    "......kkkkkkk.....",
+  ],
+  [T_PIN]: [
+    "..........kk......",
+    ".........kddk.....",
+    "........kdeedkk...",
+    "........kdeeeddkk.",
+    ".........kdeeeeddk",
+    "........kdeeeeefk.",
+    ".....kk.kdeeeffk..",
+    "....kddkdeeefkk...",
+    "....kdedeeefk.....",
+    ".....kdfeefk......",
+    "......kkdeedk.....",
+    "......kllffedk....",
+    "......klkkkdfk....",
+    ".....klk...kk.....",
+    ".....klk..........",
+    "....klk...........",
+    ".....k............",
+    "..................",
+  ],
+  [T_WATER]: [
+    "..................",
+    "........kk........",
+    ".......knnk.......",
+    ".......knpk.......",
+    "......knoonk......",
+    "......knoopk......",
+    ".....knoooonk.....",
+    "....knopoooonk....",
+    "...knoprnoooonk...",
+    "...knopnooooopk...",
+    "...knprnooooopk...",
+    "...knprnooooopk...",
+    "...knonoooooopk...",
+    "...kpoooooooopk...",
+    "....kpoooooopk....",
+    ".....kppppppk.....",
+    "......kkkkkk......",
+    "..................",
+  ],
+  [T_BUCKET]: [
+    "..................",
+    "......kkkkkk......",
+    ".....kggggggk.....",
+    "....kgkkkkkkgk....",
+    "...kgk......kgk...",
+    "..kgk........kgk..",
+    "..kikkkkkkkkkkik..",
+    "..kjoooooooooojk..",
+    "..kmoooooooooomk..",
+    "..kmjjjjjjjjjjmk..",
+    "...kjllllllllmk...",
+    "...kmmmmmmmmmmk...",
+    "...khhhhhhhhhhhk..",
+    "...kjjjjjjjjjjk...",
+    "...kjllllllllmk...",
+    "...kmmmmmmmmmmk...",
+    "....kkkkkkkkkk....",
+    "..................",
+  ],
+  [T_BLADE]: [
+    "..................",
+    "...............k..",
+    "..............kjk.",
+    ".............kjmk.",
+    "............kjmk..",
+    "...........kjmk...",
+    "..........kjlmk...",
+    ".........kjlmk....",
+    "........kjlmk.....",
+    "......kkjlmk......",
+    ".....ktjCmmk......",
+    "....ktvmjCk.......",
+    "...ktuvkmkCk......",
+    "..ktlvk.k.k.......",
+    ".ktutk............",
+    ".ktvk.............",
+    ".kvk..............",
+    "..k...............",
+  ],
+  [T_FIRE]: [
+    "..................",
+    "........kk........",
+    ".......kwwk.......",
+    ".......kwyk.......",
+    "......kwxxwk.k....",
+    ".....kwxxxykkwk...",
+    ".....kwxyyxwwyk...",
+    "....kwxyzzwxxyk...",
+    "....kwxyzBwxxxwk..",
+    "...kwxxyzByxxyk...",
+    "...kwxyzAAzyxyk...",
+    "...kwyzAAAAzwyk...",
+    "...kwyzAAAABwyk...",
+    "...kwyzAAAABwyk...",
+    "...kyyBAAAABwyk...",
+    "....kywBBBBwyk....",
+    ".....kywwwwyk.....",
+    "......kkkkkk......",
+  ],
+  [T_ICE]: [
+    "..................",
+    "..................",
+    ".....kkkk.kkk.....",
+    "....kqqqqkqqqk....",
+    ".....kqsk.kqsk....",
+    "....kqssk.kqsqk...",
+    "...k.kkskkkskk.k..",
+    "..kqk..kqqqk..kqk.",
+    "..kqqkkqrrskkkqsk.",
+    ".kqrrqqsrrrqqqrrqk",
+    "..kqskkkqsskkkssk.",
+    "..ksk..ksksk..ksk.",
+    "...k.kkqk.kqkk.k..",
+    "....kqqsk.kqqqk...",
+    ".....kqsk.kqsk....",
+    ".....kssqkqssk....",
+    "......kkk.kkk.....",
+    "..................",
+  ],
+  [T_BOMB]: [
+    "............kAkAk.",
+    ".............kAk..",
+    "............ktxAk.",
+    ".........kkktkkk..",
+    "........kggtk.....",
+    ".....kkkkghgk.....",
+    "....kCCCCiiik.....",
+    "...kCEhCDCCCk.....",
+    "..kCEhCDDDDDCk....",
+    "..kCDCDDDDDDEk....",
+    "..kCDDDDDDDDEk....",
+    "..kCDDDDDDDDEk....",
+    "..kCDDDDDDDDEk....",
+    "..kEDDDDDDDDEk....",
+    "...kEDDDDDDEk.....",
+    "....kEEEEEEk......",
+    ".....kkkkkk.......",
+    "..................",
+  ],
+  [T_BANDAGE]: [
+    "..................",
+    "...........kkkk...",
+    "..........k1111k..",
+    ".........k122221k.",
+    "........k122u223k.",
+    ".......k12222u23k.",
+    "......k1ZZ222223k.",
+    ".....k1ZZZZ2223k..",
+    "....k1ZZZeZZ23k...",
+    "...k12ZZeeZZ3k....",
+    "..k1222ZZZZ3k.....",
+    ".k122222ZZ3k......",
+    ".k12u22223k.......",
+    ".k122u223k........",
+    ".k122223k.........",
+    "..k1333k..........",
+    "...kkkk...........",
+    "..................",
+  ],
+  [T_IV]: [
+    ".......kggk.......",
+    "....kkkkiikkkk....",
+    "...kFFFFFFFFFFk...",
+    "...kFGGGGGGGGHk...",
+    "...kFGGGGGGGGHk...",
+    "...kFHHHHHHHHHk...",
+    "...kHeeeeeeeeHk...",
+    "...kHeeeeeeeeHk...",
+    "...kHeeeeeeeeHk...",
+    "...kHeeeeeeeeHk...",
+    "...kHeeeeeeeeHk...",
+    "...kHeeeeeeeeHk...",
+    "...kHFFFFFFFFHk...",
+    "....kkkkdkkkkk....",
+    ".......kfk........",
+    ".......kfkkkk.....",
+    "........kddddk....",
+    ".........kkkk.....",
+  ],
+  [T_DOLL]: [
+    "...kkkkkk.........",
+    "..kSSSSSSk........",
+    "..kUUUUUUk........",
+    "..kaaaaaak........",
+    "..kabbcDck........",
+    "..kabbback........",
+    "..kcccccck........",
+    ".kMMMMMMMMkkkkk...",
+    ".kMNNNNNNOkIIIIk..",
+    ".kMNNNNNNOIJLLJIk.",
+    ".kMNNNNNOIJLGGIJIk",
+    ".kOOOOOOOILLGGLLLk",
+    "..kPPPPPILGGGGGGII",
+    "..kPQQQQPLGGGGGGLk",
+    "..kPQQQQRLIIGGIILk",
+    "..kPQQQQRkLLGGILk.",
+    "..kRRRRRRkkLIILk..",
+    "...kkkkkk..kkkk...",
+  ],
+  [T_RESET]: [
+    "........kk........",
+    ".......kVVk.......",
+    ".......kVWVkk.....",
+    ".....kkkVWWVVk....",
+    "....kVVVWWWWWVk...",
+    "...kVWWXWWWWXk....",
+    "..kVWWXkVWXXk.....",
+    "..kVWXkkVXkk.kk...",
+    "..kVXk.kXk..kVVk..",
+    ".kVWXk..k...kVWVk.",
+    ".kXWXk......kVWXk.",
+    "..kVXk......kVXk..",
+    "..kVWVk....kVWXk..",
+    "..kXWWVkkkkVWWXk..",
+    "...kXWWVVVVWWXk...",
+    "....kXXXWWXXXk....",
+    ".....kkkXXkkk.....",
+    "........kk........",
+  ],
+};
+
+// Paints a tool sprite centred on the origin, every sprite pixel snapped to
+// whole device pixels so the edges stay crisp at any size.
+function drawToolPix(rows) {
+  const m = ctx.getTransform(), p = Math.max(1, Math.round(1.75 * Math.hypot(m.a, m.b)));
+  const n = rows.length, ox = Math.round(m.e - rows[0].length * p / 2), oy = Math.round(m.f - n * p / 2);
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  for (let y = 0; y < n; y++) {
+    const r = rows[y];
+    for (let x = 0; x < r.length; x++) {
+      const ch = r[x];
+      if (ch === ".") continue;
+      let e = x + 1;
+      while (e < r.length && r[e] === ch) e++;
+      ctx.fillStyle = TOOL_PIX_COLORS[ch];
+      ctx.fillRect(ox + x * p, oy + y * p, (e - x) * p, p);
+      x = e - 1;
+    }
+  }
+  ctx.restore();
+}
 const TOOL_NAMES = ["Greifen", "Wasser", "Eimer", "Klinge", "Waffe", "Feuer", "Eis", "Bombe", "Infusion", "Neue Puppe", "Reset", "Fixieren", "Verband"];
 const BTN = 46, BTN_GAP = 6, TOOLBAR_Y = H - 54;
 const PANEL = { x: W - 206, y: 8, w: 198, h: 282 };
@@ -2983,10 +3252,15 @@ function drawIconCached(i, cx, cy) {
     try { ctx.setTransform(K, 0, 0, K, 28 * K, 28 * K); drawIcon(i, 0, 0); } finally { ctx = real; }
     iconCache.set(key, c);
   }
-  ctx.drawImage(c, cx - 28, cy - 28, 56, 56);
+  // Land on whole device pixels so the pixel icons stay sharp.
+  const sm = ctx.imageSmoothingEnabled;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(c, Math.round((cx - 28) * K) / K, Math.round((cy - 28) * K) / K, c.width / K, c.height / K);
+  ctx.imageSmoothingEnabled = sm;
 }
 
 function drawIcon(i, cx, cy) {
+  if (TOOL_PIX[i]) { ctx.save(); ctx.translate(cx, cy); drawToolPix(TOOL_PIX[i]); ctx.restore(); return; }
   ctx.save();
   ctx.translate(cx, cy);
   ctx.scale(1.35, 1.35);
@@ -5654,7 +5928,7 @@ function drawMapCard(c) {
 
 const HELP = [
   [T_GRAB, "Puppe packen, ziehen und werfen"],
-  [T_PIN, "Körperteil festhalten, nochmal = lösen"],
+  [T_PIN, "Ziehen, loslassen fixiert, tippen löst"],
   [T_WATER, "Wasser gießen, Menge oben links"],
   [T_BUCKET, "Wasser und Blut aufsaugen"],
   [T_BLADE, "Schnell ziehen, um zu schneiden"],
@@ -6389,7 +6663,7 @@ const state = {
   tool: T_GRAB, mx: W / 2, my: H / 2, sx: W / 2, sy: H / 2, lastX: W / 2, lastY: H / 2,
   cam: { z: 1, x: 0, y: 0 }, zoomAnim: null, fireMode: 1, fires: [],
   pressing: false, pointerSeen: false, hover: -1, flashBtn: -1, toast: 0, toastText: "",
-  dolls: [], selected: null, grabDoll: null, counter: 0, trail: [], shake: 0,
+  dolls: [], selected: null, grabDoll: null, pinDrag: null, counter: 0, trail: [], shake: 0,
   waterLevel: 3, weapon: 0, fireCd: 0, map: 0, screen: "", screenT: 0, lp: null, ctxMenu: null, aimView: null, xray: false, toolT: 9, pressTarget: null, inGame: false, menuDown: false,
   extrasOpen: false, extrasFlash: -1, extrasFlashT: 0, paused: false, slow: false,
   gunX: W * 0.22, gunY: FLOOR_Y - 130, gunAng: 0, gunDrag: false, aimX: W, aimY: FLOOR_Y - 130,
@@ -6429,7 +6703,7 @@ function useButton(i) {
     state.tool = i;
   }
   state.toast = 1.4;
-  state.toastText = i === T_DOLL ? "Tippe, wo sie stehen soll" : i === T_PIN ? "Tippe ein Körperteil zum Fixieren" : i === T_GUN ? (settings.front ? "Tippe auf die Puppe, dort trifft der Schuss" : "Ziehen = zielen, roter Knopf = Feuer") : TOOL_NAMES[i];
+  state.toastText = i === T_DOLL ? "Tippe, wo sie stehen soll" : i === T_PIN ? "Körperteil ziehen, loslassen = fixieren" : i === T_GUN ? (settings.front ? "Tippe auf die Puppe, dort trifft der Schuss" : "Ziehen = zielen, roter Knopf = Feuer") : TOOL_NAMES[i];
 }
 
 // New doll stands upright on the ground below the tap, no fall, no collapse.
@@ -6528,7 +6802,8 @@ function press() {
     return;
   }
   if (state.tool === T_PIN) {
-    // Pin the nearest body point where it is, or free it again.
+    // Hold a body point and drag it where it should go. Letting go pins it
+    // there. A short tap on a pinned point frees it again.
     state.pressing = false;
     let bestD = 40, best = null, bestI = -1;
     for (const d of state.dolls) {
@@ -6536,10 +6811,13 @@ function press() {
       if (i >= 0) { bestD = dist; best = d; bestI = i; }
     }
     if (best) {
-      if (state.grabDoll === best && best.grabbed === bestI) state.grabDoll = null;
-      const on = best.togglePin(bestI);
-      state.selected = best; state.toast = 1; state.toastText = on ? "Fixiert" : "Gelöst";
-      clickSound(on ? 700 : 500, 0.06);
+      const was = best.pins.has(bestI);
+      best.pins.delete(bestI);
+      for (const d of state.dolls) d.grabbed = -1;
+      best.grabbed = bestI; best.gx = state.mx; best.gy = state.my;
+      state.grabDoll = best; state.selected = best;
+      state.pinDrag = { d: best, i: bestI, was, x0: state.mx, y0: state.my, t: performance.now() };
+      clickSound(600, 0.04);
     }
     return;
   }
@@ -6563,6 +6841,15 @@ function release() {
   state.gunDrag = false;
   // In the front view the finger itself is the trigger.
   if (settings.front) state.triggerDown = false;
+  const pd = state.pinDrag;
+  state.pinDrag = null;
+  if (pd && state.grabDoll === pd.d && pd.d.grabbed === pd.i && !pd.d.gone[pd.d.owner[pd.i]]) {
+    const tap = Math.hypot(state.mx - pd.x0, state.my - pd.y0) < 6 && performance.now() - pd.t < 400;
+    pd.d.grabbed = -1; state.grabDoll = null;
+    if (pd.was && tap) { state.toast = 1; state.toastText = "Gelöst"; clickSound(500, 0.06); }
+    else { pd.d.togglePin(pd.i); state.toast = 1; state.toastText = "Fixiert"; clickSound(700, 0.06); }
+    return;
+  }
   if (state.grabDoll) state.grabDoll.grabbed = -1;
   state.grabDoll = null;
 }
@@ -7173,6 +7460,9 @@ function render() {
     if (d.gone[d.owner[i]]) continue;
     drawPin(d.x[i], d.y[i]);
   }
+  // The pin rides along with the point being dragged, half see-through.
+  const pd = state.pinDrag;
+  if (pd && pd.d.grabbed === pd.i) { ctx.save(); ctx.globalAlpha *= 0.6 + 0.2 * Math.sin(performance.now() / 120); drawPin(pd.d.x[pd.i], pd.d.y[pd.i]); ctx.restore(); }
   // Bullet tracers and ricochet sparks
   ctx.lineCap = "round";
   for (const t of tracers) {
