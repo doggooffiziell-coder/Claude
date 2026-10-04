@@ -652,6 +652,10 @@ const POSE = dsc([[0, -162], [0, -144], [0, -92], [0, -74], [-21, -122], [-27, -
 const FRONT_POSE = dsc([[0, -162], [0, -144], [0, -92], [0, -74], [-21, -122], [-21, -96.3], [21, -122], [21, -96.3],
   [-9.5, -41.15], [-9.5, -8.09], [-2.5, -6.09], [9.5, -41.15], [9.5, -8.09], [16.5, -6.09]]);
 const activePose = () => (settings.front ? FRONT_POSE : POSE);
+// Halfway up from the floor, seen from the side: down on the back knee, the
+// front foot planted, a hand pushing on the front knee.
+const KNEEL_POSE = dsc([[12, -130], [8, -112], [3, -62], [0, -45], [-2, -84], [4, -60], [18, -84], [30, -62],
+  [-3, -12], [-35, -8], [-41, -4], [33, -41], [33, -8], [40, -6]]);
 // Collision radius of every body point, so the thick limbs rest on the floor.
 const POINT_R = dsc([17, 9, 14, 14, 8, 7, 8, 7, 9, 7, 5, 9, 7, 5]);
 // child, parent, joint on parent end A, min and max degrees
@@ -1087,6 +1091,17 @@ class Doll {
       if (this.armTargets[ua] === undefined) continue;
       for (const i of [this.pb[ua], this.pb[la]]) { this.ox[i] += (this.x[i] - this.ox[i]) * 0.75; this.oy[i] += (this.y[i] - this.oy[i]) * 0.75; }
     }
+    // A body at rest on the ground settles instead of buzzing in place: once
+    // it barely moves, the leftover jitter of joints and floor is damped away.
+    if (!this.standing && this.grabbed < 0 && !(this.getUp > 0) && !(this.taseT > 0) && !this.headUnder && !(this.dyingTimer > 0)) {
+      let sum = 0;
+      for (let i = 0; i < this.x.length; i++) sum += Math.abs(this.x[i] - this.ox[i]) + Math.abs(this.y[i] - this.oy[i]);
+      this.restT = sum / this.x.length < 1.2 ? (this.restT || 0) + DT : 0;
+      if (this.restT > 0.4) {
+        const k = Math.min(0.85, (this.restT - 0.4) * 2);
+        for (let i = 0; i < this.x.length; i++) { this.ox[i] += (this.x[i] - this.ox[i]) * k; this.oy[i] += (this.y[i] - this.oy[i]) * k; }
+      }
+    } else this.restT = 0;
     // Last safety: no point may leave the room, whatever moved it there.
     for (let i = 0; i < this.x.length; i++) {
       const r = this.rad[i], x = clamp(this.x[i], r, W - r), y = Math.max(r, this.y[i]);
@@ -1269,9 +1284,13 @@ class Doll {
       const ju = this.joints.find((j) => j.child === ua), restU = (settings.front ? ju.restFront : ju.rest) * this.facing;
       // From the side both arms take the same angle, measured from hanging
       // straight down; from the front each swings out from where it rests.
-      t[ua] = settings.front ? restU + (limbStart(this, ua)[0] < this.x[P_NECK] ? 1 : -1) * a : -this.facing * a;
-      const jl = this.joints.find((j) => j.child === la), rest = settings.front ? jl.restFront : jl.rest;
-      const straight = 0.785, dir = Math.sign(rest - straight) || -1;
+      // From the front the two arms are mirror images: a swings each one out
+      // to its own side, bend folds the forearm up toward the face.
+      const side = settings.front ? (limbStart(this, ua)[0] < this.x[P_NECK] ? 1 : -1) : 1;
+      t[ua] = settings.front ? restU - side * a : -this.facing * a;
+      // From the side both arms bend the same way as the near one.
+      const jl = this.joints.find((j) => j.child === (settings.front ? la : LARM_R)), rest = settings.front ? jl.restFront : jl.rest;
+      const straight = 0.785, dir = (Math.sign(rest - straight) || -1) * (settings.front ? side : -1);
       t[la] = (straight + dir * bend) * this.facing;
     }
   }
@@ -1399,7 +1418,7 @@ class Doll {
     this.retreatX = null;
     if (this.startle > 0 && !busyHands && hands.length) {
       // Flinch: the arms come up in front of the face.
-      this.armPose(settings.front ? -2.2 : 2.0, 1.9);
+      if (settings.front) this.armPose(1.6, 2.7); else this.armPose(2.0, 1.9);
       busyHands = true;
     }
     // Fire close by: it shies away from the heat and shields its face.
@@ -1412,7 +1431,7 @@ class Doll {
         this.fear = Math.min(1, this.fear + DT * 0.8 * k); this.lookAt = fxs; this.lookT = 0.3;
         // It steps back from the heat (balance walks it there).
         if (this.standing) this.retreatX = this.x[P_WAIST] + away * 60;
-        if (!busyHands && hands.length) { this.armPose(settings.front ? -2.2 : 2.0, 1.9); busyHands = true; }
+        if (!busyHands && hands.length) { if (settings.front) this.armPose(1.6, 2.7); else this.armPose(2.0, 1.9); busyHands = true; }
       }
     }
     // Cold or soaking wet: it shivers and hugs itself.
@@ -1420,7 +1439,7 @@ class Doll {
     if ((this.freeze > 0.12 || wet) && !this.headUnder) {
       const sh = Math.min(1, this.freeze + (wet ? 0.4 : 0));
       for (const i of [P_NECK, P_ELBOW_L, P_ELBOW_R]) this.push(i, rf(-0.3, 0.3) * sh, rf(-0.15, 0.15) * sh);
-      if (!busyHands && hands.length && this.standing) { this.armPose(settings.front ? -0.5 : 0.5, 1.8); busyHands = true; }
+      if (!busyHands && hands.length && this.standing) { if (settings.front) this.armPose(0.9, 2.3); else this.armPose(0.6, 2.2); busyHands = true; }
     }
     // Standing calm: breathing and a slow shift of weight from foot to foot.
     if (this.standing && !busyHands && this.pn < 30) {
@@ -1483,6 +1502,8 @@ class Doll {
     if (this.getUp > 0) {
       if (!able) { this.getUp = 0; return; }
       this.getUp -= DT;
+      // Its own motion while getting up is no shove that knocks it down again.
+      this.stagger = 0;
       if (this.getUp <= 0) this.getUpGrace = 0.8;
       const p = 1 - Math.max(0, this.getUp) / 1.6;
       if (!this.legsWork() && p > 0.55) { this.getUp = 0; this.stagger = 1; return; }
@@ -1490,12 +1511,15 @@ class Doll {
       for (const k of [FOOT_L, FOOT_R]) if (this.attached(k)) { feetX += this.x[this.pa[k]]; n++; }
       for (let i = 0; i < this.x.length; i++) ground = Math.max(ground, this.y[i] + this.rad[i]);
       if (!n) { this.getUp = 0; return; }
-      this.poseToward(feetX / n, Math.min(ground, FLOOR_Y) - 1, 0.03 + 0.15 * p, true);
+      // Getting up in two moves: first onto one knee, then up onto both feet.
+      // From the front the doll comes straight up.
+      if (!settings.front && p < 0.55) this.poseToward(feetX / n, Math.min(ground, FLOOR_Y) - 1, 0.025 + 0.12 * p, true, false, KNEEL_POSE);
+      else this.poseToward(feetX / n, Math.min(ground, FLOOR_Y) - 1, settings.front ? 0.03 + 0.15 * p : 0.06 + 0.3 * (p - 0.55) / 0.45, true);
     }
   }
 
   // Pulls the attached body points toward the standing pose above (fx, gy).
-  poseToward(fx, gy, s, withFeet, skipArms = false) {
+  poseToward(fx, gy, s, withFeet, skipArms = false, pose = activePose()) {
     let ndx = 0, ndy = 0;
     for (let i = 0; i < POSE.length; i++) {
       const foot = i === P_ANKLE_L || i === P_ANKLE_R || i === P_TOE_L || i === P_TOE_R;
@@ -1509,7 +1533,6 @@ class Doll {
       const bx = this.x[i], by = this.y[i];
       const keep = withFeet ? 0.7 : 0.88;
       const vx = (this.x[i] - this.ox[i]) * keep, vy = (this.y[i] - this.oy[i]) * keep;
-      const pose = activePose();
       this.x[i] += (fx + pose[i][0] * this.facing - this.x[i]) * s;
       this.y[i] += (gy + pose[i][1] - this.y[i]) * s;
       this.ox[i] = this.x[i] - vx; this.oy[i] = this.y[i] - vy;
@@ -3368,7 +3391,19 @@ const DOCK = (() => {
 })();
 const dockName = (it) => TOOL_NAMES[it.tool];
 const dockOn = (it) => state.tool === it.tool;
+// The dock folds down under the screen edge with a tap on its tab, so the
+// whole room is free. The choice is remembered per device.
+let dockOpen = true;
+try { dockOpen = localStorage.getItem("ragpit.dock") !== "closed"; } catch (e) { /* storage is optional */ }
+const dockOff = () => (1 - tween("dock", dockOpen ? 1 : 0, 12)) * (BTN + 8);
+const dockTab = () => ({ x: W / 2 - 34, y: TOOLBAR_Y - 7 - 18 + dockOff(), w: 68, h: 18 });
+const inDockTab = (x, y) => { const b = dockTab(); return x >= b.x - 10 && x < b.x + b.w + 10 && y >= b.y - 8 && y < b.y + b.h + 4; };
+function toggleDock() {
+  dockOpen = !dockOpen; pop("dockTab"); clickSound(dockOpen ? 760 : 560, 0.05);
+  try { localStorage.setItem("ragpit.dock", dockOpen ? "open" : "closed"); } catch (e) { /* storage is optional */ }
+}
 function toolbarHit(x, y) {
+  if (!dockOpen) return -1;
   if (y < TOOLBAR_Y - 6 || y >= TOOLBAR_Y + BTN + 6) return -1;
   for (let i = 0; i < DOCK.items.length; i++) {
     const it = DOCK.items[i];
@@ -3392,7 +3427,7 @@ function togglePanel() {
 const FS_OK = !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
 const FS_BTN = { x: 170, y: 9, w: 34, h: 34 };
 const inFsBtn = (x, y) => FS_OK && x >= FS_BTN.x && x < FS_BTN.x + FS_BTN.w && y >= FS_BTN.y && y < FS_BTN.y + FS_BTN.h;
-const blocksInput = (x, y) => toolbarHit(x, y) >= 0 || inZoomBtn(x, y) || !!gunButtonAt(x, y) || inPanel(x, y) || inFsBtn(x, y) || inMenuBtn(x, y) || inExtrasBtn(x, y) || inExtras(x, y) || !!ctxHit(x, y);
+const blocksInput = (x, y) => toolbarHit(x, y) >= 0 || inDockTab(x, y) || inZoomBtn(x, y) || !!gunButtonAt(x, y) || inPanel(x, y) || inFsBtn(x, y) || inMenuBtn(x, y) || inExtrasBtn(x, y) || inExtras(x, y) || !!ctxHit(x, y);
 
 function toggleFullscreen() {
   const el = document.documentElement;
@@ -3800,6 +3835,34 @@ function drawIcon(i, cx, cy) {
 }
 
 function drawToolbar() {
+  const off = dockOff();
+  ctx.save(); ctx.translate(0, off);
+  drawDockTab();
+  if (off < BTN + 6) drawDock();
+  ctx.restore();
+  drawToast(off);
+}
+// The tab on top of the dock: a chevron, and the picked tool while folded.
+function drawDockTab() {
+  const b = dockTab(), y = b.y - dockOff(), k = tween("dock", dockOpen ? 1 : 0, 12);
+  scaled(b.x + b.w / 2, y + b.h / 2, popScale("dockTab", 0.12), () => {
+    ctx.beginPath();
+    ctx.moveTo(b.x, y + b.h); ctx.lineTo(b.x + 8, y + 2); ctx.arcTo(b.x + 10, y, b.x + 14, y, 4);
+    ctx.lineTo(b.x + b.w - 14, y); ctx.arcTo(b.x + b.w - 10, y, b.x + b.w - 8, y + 2, 4); ctx.lineTo(b.x + b.w, y + b.h); ctx.closePath();
+    ctx.fillStyle = "rgba(20,20,25,0.95)"; ctx.fill();
+    ctx.strokeStyle = "#2e2e36"; ctx.lineWidth = 1.5; ctx.stroke();
+    const cx = b.x + b.w / 2 + (1 - k) * 12, cy = y + b.h / 2 + 1, flip = k * 2 - 1;
+    ctx.strokeStyle = "#a8a8b2"; ctx.lineWidth = 2; ctx.lineCap = "round"; ctx.lineJoin = "round";
+    ctx.beginPath(); ctx.moveTo(cx - 6, cy - 2.5 * flip); ctx.lineTo(cx, cy + 2.5 * flip); ctx.lineTo(cx + 6, cy - 2.5 * flip); ctx.stroke();
+    if (k < 0.99) {
+      ctx.save(); ctx.globalAlpha *= 1 - k;
+      ctx.translate(b.x + 18, y + b.h / 2 + 1); ctx.scale(0.3, 0.3);
+      drawIconCached(state.tool, 0, 0);
+      ctx.restore();
+    }
+  });
+}
+function drawDock() {
   const { x0, total } = DOCK, top = TOOLBAR_Y - 7, h = BTN + 14;
   // Dock body with a soft top light
   rr(x0 - 9, top, total + 18, h, 16);
@@ -3838,6 +3901,8 @@ function drawToolbar() {
       }
     });
   });
+}
+function drawToast(off) {
   // Toasts fade in with a small rise and fade out at the end.
   if (state.toast > toastLast + 0.01) toastMax = state.toast;
   toastLast = state.toast;
@@ -3848,7 +3913,7 @@ function drawToolbar() {
     ctx.save(); ctx.globalAlpha *= a;
     ctx.font = `700 14px ${FONT}`;
     const lw = ctx.measureText(text).width + 24;
-    const ly = TOOLBAR_Y - 38 + (1 - a) * 6;
+    const ly = TOOLBAR_Y - 52 + off * 0.8 + (1 - a) * 6;
     rr(W / 2 - lw / 2, ly, lw, 26, 13);
     ctx.fillStyle = "rgba(15,15,19,0.92)"; ctx.fill();
     ctx.strokeStyle = "#383840"; ctx.lineWidth = 1.5; ctx.stroke();
@@ -4296,7 +4361,8 @@ function gunButtonPress(b) {
 
 function gunStep() {
   const wp = WEAPONS[state.weapon];
-  if (state.tool !== T_GUN) state.triggerDown = false;
+  if (state.tool !== T_GUN) { state.triggerDown = false; state.pendingShot = 0; }
+  if (state.pendingShot && performance.now() - state.pendingShot > 110) { state.pendingShot = 0; if (!pinch && state.pressing) pullTrigger(); }
   if (state.reloadT > 0) {
     state.reloadT -= DT;
     if (state.reloadT <= 0) { state.reloadT = 0; state.ammo[state.weapon] = wp.mag; clickSound(700); }
@@ -7725,6 +7791,7 @@ function press() {
     return;
   }
   if (inPanelHead(state.sx, state.sy)) { togglePanel(); return; }
+  if (inDockTab(state.sx, state.sy)) { toggleDock(); return; }
   if (state.infoBtn && hitBox(state.infoBtn, state.sx, state.sy)) {
     const d = state.infoBtn.d;
     if (!d.report) d.report = deathReport(d);
@@ -7753,7 +7820,9 @@ function press() {
   }
   if (state.tool === T_GUN) {
     // Front view: like the blade, the shot lands right under the finger.
-    if (settings.front) { pullTrigger(); return; }
+    // With a finger the shot waits a moment: if a second finger follows,
+    // it was a pinch to zoom and nothing fires.
+    if (settings.front) { if (lastPointerType === "touch") state.pendingShot = performance.now(); else pullTrigger(); return; }
     // Otherwise: touch the gun to move it, touch anywhere else to aim there.
     if (onGun(state.mx, state.my)) { state.gunDrag = true; return; }
     aimAt(state.mx, state.my);
@@ -7836,6 +7905,8 @@ function press() {
 }
 
 function release() {
+  // A quick tap: the waiting shot fires now, as a single shot.
+  if (state.pendingShot) { state.pendingShot = 0; pullTrigger(); state.triggerDown = false; }
   state.pressing = false;
   state.gunDrag = false;
   // In the front view the finger itself is the trigger.
@@ -8183,13 +8254,14 @@ function drawZoomBtn() {
   ctx.restore();
 }
 
-let activePointer = null, firePointer = null;
+let activePointer = null, firePointer = null, lastPointerType = "mouse";
 function gamePoint(ev) {
   const r = canvas.getBoundingClientRect();
   return [(ev.clientX - r.left) / r.width * W, (ev.clientY - r.top) / r.height * H];
 }
 canvas.addEventListener("pointerdown", (ev) => {
   ev.preventDefault();
+  lastPointerType = ev.pointerType || "mouse";
   // A new first finger means every earlier touch has ended, even if its end got lost.
   if (ev.isPrimary && activePointer !== null && ev.pointerId !== activePointer) {
     activePointer = null; touches.clear(); pinch = null; state.lp = null; release();
@@ -8202,7 +8274,7 @@ canvas.addEventListener("pointerdown", (ev) => {
   if (roomTouch && !blocksInput(gx, gy)) touches.set(ev.pointerId, [gx, gy]);
   if (roomTouch && touches.size === 2 && activePointer !== null && !pinch) {
     try { canvas.setPointerCapture(ev.pointerId); } catch (e) { /* pointer capture is optional */ }
-    state.lp = null; release(); state.triggerDown = false;
+    state.lp = null; state.pendingShot = 0; release(); state.triggerDown = false;
     pinchStart();
     return;
   }

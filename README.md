@@ -58,6 +58,12 @@ Die Puppen wirken lebendiger. Sie blinzeln alle paar Sekunden, atmen sichtbar un
 
 Im Hauptmenü ist der Raum voller Details: ein Rohr unter der Decke, aus dem Wasser in eine Pfütze tropft, ein flackerndes grünes EXIT-Schild, eine Überwachungskamera mit blinkendem roten Licht, die der Figur folgt, ein Regal mit Gläsern, in einem blubbert es grün, ein blutiger Handabdruck, Strichlisten in der Wand, blutige Fußspuren und Motten um die Lampe. Unter den Knöpfen wechselt alle fünf Sekunden ein Tipp.
 
+Über dem Dock sitzt ein kleiner Reiter mit Pfeil. Ein Tipp darauf klappt die Werkzeugleiste nach unten weg, dann ist der ganze Raum frei. Der Reiter zeigt dann das gewählte Werkzeug, ein zweiter Tipp klappt die Leiste wieder auf. Die Wahl bleibt gespeichert.
+
+In der Frontansicht wartet ein Schuss mit dem Finger einen Augenblick. Kommt in dieser Zeit ein zweiter Finger dazu, war es ein Zoom, und es fällt kein Schuss. Ein kurzer Tipp schießt sofort beim Loslassen, Halten schießt wie gewohnt.
+
+Liegende Puppen kommen zur Ruhe, statt leicht zu zittern. Sie stehen in zwei Schritten auf: erst auf ein Knie, dann ganz hoch. Beim Zusammenzucken nehmen sie die Arme vors Gesicht, von vorn als Deckung vor der Brust und dem Gesicht.
+
 Hinter der Tür im Labor wohnt Ben, ein alter brauner Hund mit Hängeohren, dicken Lefzen und einem roten Telefonhörer am Ohr. Dreimal auf die Tür tippen, dann nimmt er ab und sagt "Ben?". Tippst du auf ihn, antwortet er auf Englisch: "Yes", "No", "Ho-ho-ho" oder "Blehh", mit passendem Nicken, Kopfschütteln, Lachen oder herausgestreckter Zunge. Wo das Handy sprechen kann, sagt er die Wörter mit tiefer Stimme, sonst brummt er. Nach einer Weile ohne Tippen legt er auf.
 
 Hängt eine Puppe an einer Nadel, bleibt das Gelenk am fixierten Ende locker. Tote Puppen mit Leichenstarre hängen so ruhig, statt zu zittern oder sich zu drehen, und die Starre gibt unter dem Gewicht langsam nach.
