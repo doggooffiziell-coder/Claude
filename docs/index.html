@@ -4304,25 +4304,53 @@ function drawDollOrgans(d, a) {
     const ma = f.nx * u, mb = f.ny * u, mc = f.tx * u, md = f.ty * u;
     ctx.save();
     ctx.transform(ma, mb, mc, md, f.ox - mid * ma - ry * mc, f.oy - mid * mb - ry * md);
-    const open = k === HEAD ? rh * 0.62 : f.depth;
+    const open = k === HEAD ? rh * 0.62 : f.depth, cx = mid, cy = ry + open / 2;
     ctx.beginPath(); ctx.rect(rx, ry, rw, open); ctx.clip();
     ctx.globalAlpha *= a;
-    const g = ctx.createLinearGradient(rx, ry, rx + rw, ry + open);
-    g.addColorStop(0, "rgba(70,14,22,0.95)"); g.addColorStop(1, "rgba(34,6,10,0.95)");
-    ctx.fillStyle = g; ctx.fillRect(rx, ry, rw, open);
+    // No box: the body turns see-through toward the middle and fades into the
+    // skin at its edges, so the organs sit inside the body.
+    ctx.save(); ctx.translate(cx, cy); ctx.scale(rw / 2, open / 2);
+    const g = ctx.createRadialGradient(0, 0, 0.2, 0, 0, 1.08);
+    g.addColorStop(0, "rgba(60,12,18,0.92)"); g.addColorStop(0.7, "rgba(80,18,26,0.7)"); g.addColorStop(1, "rgba(90,24,30,0)");
+    ctx.fillStyle = g; ctx.fillRect(-1.2, -1.2, 2.4, 2.4);
+    ctx.restore();
+    const bone = (x, y, w2, h2, al = 0.9) => { ctx.fillStyle = `rgba(232,220,196,${al})`; ctx.fillRect(x, y, w2, h2); };
+    if (k !== HEAD) {
+      // The spine runs down the back, behind everything else.
+      for (let y = ry + 1; y < ry + open - 1; y += 3) { bone(cx - 1.5, y, 3, 2, 0.75); bone(cx - 2.5, y + 0.5, 1, 1, 0.5); bone(cx + 1.5, y + 0.5, 1, 1, 0.5); }
+    }
+    if (k === PELVIS) {
+      // Hip bones: two wings at the sides and the sacrum in the middle.
+      for (const sd of [-1, 1]) for (let y = 0; y < 9; y++) { const w0 = 6 - Math.abs(y - 3) * 0.8; bone(cx + sd * (7 + y * 0.3) - (sd < 0 ? w0 : 0), ry + 2 + y, w0, 1, 0.55); }
+      bone(cx - 3, ry + 6, 6, 5, 0.6);
+    }
     if (k !== HEAD && open > rh + 1) {
       // Below the chart picture: loops of small bowel, and the bladder low in the pelvis.
       const fh = Math.floor(open - rh), bmp = coilBitmap(rw, fh, d.organ[ORGAN.gut] / 100), smooth = ctx.imageSmoothingEnabled;
       ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(bmp, rx, ry + rh, rw, fh);
+      ctx.save(); ctx.globalAlpha *= 0.92; ctx.drawImage(bmp, rx, ry + rh, rw, fh); ctx.restore();
       ctx.imageSmoothingEnabled = smooth;
       if (k === PELVIS) { const bl = ORGAN_SPRITES.bladder[0]; bl.y = Math.floor(ry + open - 7); drawOrganSprite("bladder", 1); }
     }
     ctx.save(); ctx.beginPath(); ctx.rect(rx, ry, rw, Math.min(rh, open)); ctx.clip();
     drawChartOrgans(d, 0, 0, 1);
     ctx.restore();
-    // A rim of cut flesh around the opening
-    ctx.strokeStyle = "rgba(200,52,76,0.85)"; ctx.lineWidth = 1.2 / u; ctx.strokeRect(rx + 0.3, ry + 0.3, rw - 0.6, open - 0.6);
+    if (k === TORSO) {
+      // Ribs arch over the lungs, the breastbone over the heart. They are
+      // drawn thin and see-through, so the organs behind them stay visible.
+      for (let n = 0; n < 7; n++) {
+        const y0 = -43 + n * 2.6;
+        for (const sd of [-1, 1]) for (let x = 2; x < 13 - Math.abs(n - 3) * 0.4; x++) bone(cx + sd * x - (sd < 0 ? 1 : 0), Math.round(y0 + x * 0.32 + (x * x) * 0.012), 1, 1, 0.42);
+      }
+      bone(cx - 1, -44, 2, 15, 0.38);
+    }
+    if (k === HEAD) {
+      // The skull around the brain.
+      for (let q = 0; q < 64; q++) {
+        const an = q / 64 * Math.PI * 2, x = Math.round(Math.cos(an) * 9.5), y = Math.round(-63 + Math.sin(an) * 8.2);
+        if (y < ry + open) bone(cx + x - 0.5, y - 0.5, 1.2, 1.2, 0.75);
+      }
+    }
     ctx.restore();
   }
 }
@@ -4704,7 +4732,110 @@ const MAPS = [
       dolls: [W * 0.16, W * 0.4],
     }),
   },
+  // Dolls are x positions dropped from the top, or [x, y] to start lower,
+  // under a ceiling.
+  {
+    name: "Hochhaus", accent: "#9ab0d0", desc: "Ganz oben auf dem Dach",
+    theme: { wall: ["#0e1422", "#1a2436"], floor: ["#6a707c", "#3e434c"], edge: "#9aa0aa", line: "#0a0e18" },
+    build: () => ({
+      walls: [[W * 0.2, 236, 150, FLOOR_Y - 236], [W * 0.2 + 150, 236, 30, 6], [W * 0.56, 296, 120, FLOOR_Y - 296]],
+      water: [], ice: [], dolls: [W * 0.2 + 60, W * 0.56 + 60],
+    }),
+  },
+  {
+    name: "Brücke", accent: "#8ab070", desc: "Schmaler Steg über Wasser",
+    theme: { wall: ["#122018", "#1c3024"], floor: ["#5a6a52", "#36402f"], edge: "#7a8a70", line: "#0a140e" },
+    build: () => {
+      const a = Math.round(W * 0.3), b = Math.round(W * 0.7);
+      return {
+        walls: [[0, 232, a, FLOOR_Y - 232], [b, 232, W - b, FLOOR_Y - 232], [a, 232, b - a, 6]],
+        water: [[a, 296, b - a, FLOOR_Y - 296]], ice: [], dolls: [W * 0.14, W * 0.5],
+      };
+    },
+  },
+  {
+    name: "Grube", accent: "#c86a4a", desc: "Kampfgrube in der Mitte",
+    theme: { wall: ["#1e120e", "#2e1c16"], floor: ["#7a5a46", "#4a3428"], edge: "#9a7a62", line: "#140a08" },
+    build: () => ({
+      walls: [[0, 296, W * 0.34, 76], [W * 0.66, 296, W * 0.34, 76]],
+      water: [], ice: [], dolls: [W * 0.17, W * 0.45, W * 0.55, W * 0.69],
+    }),
+  },
+  {
+    name: "Lagerhalle", accent: "#d8b060", desc: "Kisten zum Stapeln und Stürzen",
+    theme: { wall: ["#1a1712", "#28231a"], floor: ["#8a8478", "#5a554c"], edge: "#aaa498", line: "#12100c" },
+    build: () => {
+      const a = W * 0.1, b = W * 0.58;
+      return {
+        walls: [[a, 322, 50, 50], [a + 52, 322, 50, 50], [a + 26, 270, 50, 50], [b, 312, 60, 60], [b, 250, 60, 60], [b + 62, 342, 30, 30], [W * 0.82, 330, 42, 42]],
+        water: [], ice: [], dolls: [a + 51, W * 0.4, b + 30],
+      };
+    },
+  },
+  {
+    name: "Gefängnis", accent: "#a8a8b8", desc: "Zellen unter einer Decke",
+    theme: { wall: ["#16161a", "#222228"], floor: ["#5c5c62", "#38383e"], edge: "#7c7c84", line: "#0e0e12" },
+    build: () => {
+      const x0 = W * 0.06, cw = W * 0.15, walls = [[x0, 166, cw * 4 + 6, 10]];
+      for (let k = 0; k <= 4; k++) walls.push([x0 + k * cw, 176, 6, FLOOR_Y - 176]);
+      return { walls, water: [], ice: [], dolls: [[x0 + cw * 0.5 + 3, 300], [x0 + cw * 1.5 + 3, 300], [x0 + cw * 2.5 + 3, 300], W * 0.7] };
+    },
+  },
+  {
+    name: "Aquarium", accent: "#4ac0d0", desc: "Ein riesiger Wassertank",
+    theme: { wall: ["#08181e", "#0e2a32"], floor: ["#4c6a70", "#2a3e42"], edge: "#6c8a90", line: "#061014" },
+    build: () => {
+      const x0 = Math.round(W * 0.42), tw = Math.round(W * 0.34);
+      return {
+        walls: [[x0, 176, 8, FLOOR_Y - 176], [x0 + tw, 176, 8, FLOOR_Y - 176], [W * 0.22, 236, 120, 8], [W * 0.22 + 112, 244, 8, FLOOR_Y - 244]],
+        water: [[x0 + 8, 214, tw - 8, FLOOR_Y - 214]], ice: [], dolls: [W * 0.22 + 40, W * 0.1],
+      };
+    },
+  },
+  {
+    name: "Parkour", accent: "#e070c0", desc: "Plattformen bis unters Dach",
+    theme: { wall: ["#1a1020", "#281830"], floor: ["#6a5a72", "#40344a"], edge: "#8a7a92", line: "#120a16" },
+    build: () => ({
+      walls: [[W * 0.04, 322, 110, 10], [W * 0.22, 282, 100, 10], [W * 0.4, 250, 100, 10], [W * 0.58, 226, 110, 10], [W * 0.8, 262, 110, 10]],
+      water: [], ice: [], dolls: [W * 0.58 + 55, W * 0.12],
+    }),
+  },
+  {
+    name: "Rampe", accent: "#f08a4a", desc: "Glatte Schräge zum Rutschen",
+    theme: { wall: ["#1e140c", "#2e2014"], floor: ["#8a7460", "#5a4a3c"], edge: "#aa9480", line: "#140c06" },
+    build: () => {
+      const walls = [], ice = [], x0 = Math.round(W * 0.26), y0 = 236, n = 45;
+      walls.push([x0 - 60, y0, 60, FLOOR_Y - y0]);
+      for (let i = 0; i < n; i++) {
+        const y = y0 + i * 3;
+        walls.push([x0 + i * 6, y + 2, 6, FLOOR_Y - y - 2]);
+        ice.push([x0 + i * 6, y, 6, 2]);
+      }
+      return { walls, water: [], ice, dolls: [x0 - 30] };
+    },
+  },
+  {
+    name: "Brunnen", accent: "#7a9ab0", desc: "Tiefer Schacht mit Wasser",
+    theme: { wall: ["#10161c", "#1a222a"], floor: ["#5a646c", "#363e44"], edge: "#7a848c", line: "#0a0e12" },
+    build: () => {
+      const a = Math.round(W * 0.46), sw = 64;
+      return {
+        walls: [[0, 230, a, FLOOR_Y - 230], [a + sw, 230, W - a - sw, FLOOR_Y - 230], [a - 6, 214, 6, 16], [a + sw, 214, 6, 16]],
+        water: [[a, 316, sw, FLOOR_Y - 316]], ice: [], dolls: [W * 0.25, W * 0.67],
+      };
+    },
+  },
+  {
+    name: "Bunker", accent: "#8a9a6a", desc: "Niedrige Decke, enge Räume",
+    theme: { wall: ["#141610", "#20241a"], floor: ["#5a5e50", "#363a30"], edge: "#7a7e70", line: "#0c0e08" },
+    build: () => ({
+      walls: [[W * 0.14, 160, W * 0.72, 14], [W * 0.14, 174, 10, 120], [W * 0.86 - 10, 174, 10, 120], [W * 0.5 - 4, 174, 8, 140]],
+      water: [], ice: [], dolls: [[W * 0.3, 300], [W * 0.66, 300], W * 0.06],
+    }),
+  },
 ];
+// Where a map puts a doll: an x position, or [x, y] to start below a ceiling.
+const mapDollSpot = (e) => (Array.isArray(e) ? e : [e, 40]);
 
 function fillRect(r, m, mx = 0, lf = 0) {
   const [rx, ry, rw, rh] = r.map(Math.round);
@@ -4726,7 +4857,7 @@ function loadMap(i) {
   gibs = []; effects = []; tracers = []; flashes = []; sparks = [];
   dctx.clearRect(0, 0, decal.width, decal.height);
   state.dolls = []; state.selected = null; state.grabDoll = null; state.counter = 0;
-  for (const x of m.dolls) placeDoll(x, 40);
+  for (const e of m.dolls) placeDoll(...mapDollSpot(e));
   state.toast = 0;
   buildStatic();
 }
@@ -4789,9 +4920,19 @@ const EXTRA_ITEMS = [
     for (const d of state.dolls) { d.freeze = 0; d.frozen = false; }
     return "Eis entfernt";
   } },
-  { name: "Reste entfernen", color: "#c8445a", run() {
-    gibs = [];
-    return "Fleisch und Hülsen weg";
+  { name: "Sonstiges entfernen", color: "#c8445a", run() {
+    // Everything lying around: flesh and organs, casings, magazines, taser
+    // wires, and limbs that came off. The dolls keep their stumps.
+    gibs = []; wires = [];
+    let parts = 0;
+    for (const d of state.dolls) for (let k = 0; k < PART_COUNT; k++) {
+      if (d.gone[k] || d.attached(k)) continue;
+      d.gone[k] = true; d.fire[k] = 0; parts++;
+      d.wounds = d.wounds.filter((w) => w.part !== k); d.bands = d.bands.filter((b) => b.part !== k);
+      if (state.grabDoll === d && d.grabbed >= 0 && d.owner[d.grabbed] === k) { d.grabbed = -1; state.grabDoll = null; }
+      for (const [i] of [...d.pins]) if (d.owner[i] === k) d.pins.delete(i);
+    }
+    return parts ? "Aufgeräumt, " + parts + " Körperteile weg" : "Aufgeräumt";
   } },
   { name: "Alle heilen", color: "#4ccf5a", run() {
     let n = 0;
@@ -5019,6 +5160,43 @@ function drawMapBadge(i, x, y, r) {
       for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3, px1 = Math.cos(a) * 5, py1 = Math.sin(a) * 5; ctx.moveTo(px1, py1); ctx.lineTo(px1 + Math.cos(a + 0.8) * 2.5, py1 + Math.sin(a + 0.8) * 2.5); ctx.moveTo(px1, py1); ctx.lineTo(px1 + Math.cos(a - 0.8) * 2.5, py1 + Math.sin(a - 0.8) * 2.5); }
       ctx.stroke();
       break;
+    case 5: // tower with windows
+      ctx.fillRect(-5, -9, 10, 18);
+      ctx.fillStyle = "rgba(10,10,13,0.9)";
+      for (let r = 0; r < 4; r++) for (let c = 0; c < 2; c++) ctx.fillRect(-3 + c * 4, -7 + r * 4, 2, 2);
+      break;
+    case 6: // arch bridge
+      ctx.moveTo(-9, -1); ctx.lineTo(9, -1); ctx.moveTo(-6, -1); ctx.lineTo(-6, 7); ctx.moveTo(6, -1); ctx.lineTo(6, 7);
+      ctx.moveTo(-6, 7); ctx.quadraticCurveTo(0, -1, 6, 7); ctx.stroke();
+      break;
+    case 7: // pit
+      ctx.moveTo(-9, -3); ctx.lineTo(-4, -3); ctx.lineTo(-4, 6); ctx.lineTo(4, 6); ctx.lineTo(4, -3); ctx.lineTo(9, -3); ctx.stroke();
+      ctx.beginPath(); ctx.arc(0, 2, 1.8, 0, Math.PI * 2); ctx.fill();
+      break;
+    case 8: // crate
+      ctx.strokeRect(-7, -7, 14, 14); ctx.moveTo(-7, -7); ctx.lineTo(7, 7); ctx.moveTo(7, -7); ctx.lineTo(-7, 7); ctx.stroke();
+      break;
+    case 9: // bars
+      ctx.strokeRect(-8, -8, 16, 16); for (const x of [-4, 0, 4]) { ctx.moveTo(x, -8); ctx.lineTo(x, 8); } ctx.stroke();
+      break;
+    case 10: // fish
+      ctx.moveTo(-8, 0); ctx.quadraticCurveTo(-1, -7, 5, 0); ctx.quadraticCurveTo(-1, 7, -8, 0); ctx.moveTo(5, 0); ctx.lineTo(9, -4); ctx.lineTo(9, 4); ctx.closePath(); ctx.stroke();
+      ctx.beginPath(); ctx.arc(-3, -1, 1, 0, Math.PI * 2); ctx.fill();
+      break;
+    case 11: // zigzag jump
+      ctx.moveTo(-9, 7); ctx.lineTo(-3, 1); ctx.lineTo(0, 4); ctx.lineTo(7, -4); ctx.moveTo(3, -4); ctx.lineTo(7, -4); ctx.lineTo(7, 0); ctx.stroke();
+      break;
+    case 12: // slope
+      ctx.moveTo(-9, -6); ctx.lineTo(9, 7); ctx.lineTo(-9, 7); ctx.closePath(); ctx.fill();
+      break;
+    case 13: // well shaft with water
+      ctx.moveTo(-9, -6); ctx.lineTo(-4, -6); ctx.lineTo(-4, 8); ctx.moveTo(4, 8); ctx.lineTo(4, -6); ctx.lineTo(9, -6); ctx.stroke();
+      ctx.beginPath(); ctx.fillRect(-3, 3, 6, 4);
+      break;
+    case 14: // bunker dome with a door
+      ctx.moveTo(-9, 7); ctx.lineTo(-9, 1); ctx.quadraticCurveTo(0, -11, 9, 1); ctx.lineTo(9, 7); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = "rgba(10,10,13,0.9)"; ctx.fillRect(-2.5, 1, 5, 6);
+      break;
   }
   ctx.restore();
 }
@@ -5074,9 +5252,10 @@ function drawMapPreview(i, x, y, w, h) {
     if (rh > 6) { ctx.fillStyle = "rgba(255,255,255,0.45)"; ctx.fillRect(rx + rw * 0.2, ry + 2, Math.max(1, rw * 0.12), rh - 4); }
   }
   // people standing where the map puts them
-  b.dolls.forEach((dx, n) => {
+  b.dolls.forEach((e, n) => {
+    const [dx, sy0] = mapDollSpot(e);
     let gy = FLOOR_Y;
-    for (const r of b.walls.concat(b.ice)) if (dx >= r[0] && dx <= r[0] + r[2] && r[1] < gy && r[1] > 20) gy = r[1];
+    for (const r of b.walls.concat(b.ice, b.water)) if (dx >= r[0] && dx <= r[0] + r[2] && r[1] < gy && r[1] > sy0) gy = r[1];
     ctx.save(); ctx.translate(x, y);
     drawBlockPerson(dx * sx, gy * sy, sy, MENU_LOOKS[(n + i) % MENU_LOOKS.length]);
     ctx.restore();
@@ -5086,7 +5265,7 @@ function drawMapPreview(i, x, y, w, h) {
   v.addColorStop(0, "rgba(0,0,0,0)"); v.addColorStop(1, "rgba(0,0,0,0.45)");
   ctx.fillStyle = v; ctx.fillRect(x, y, w, h);
   ctx.restore();
-  drawMapBadge(i, x + 15, y + 15, 11);
+  drawMapBadge(i, x + w - 15, y + 15, 11);
 }
 
 // ----------------------------------------------------------------- buttons
@@ -5223,7 +5402,7 @@ function drawTitle(dt) {
   }
   withAppear(appear(2), () => label("PIXEL RAGDOLL SANDBOX", 56, 158, 12, "#7a7a84"));
   titleButtons().forEach((b, n) => withAppear(appear(3 + n), () => menuButton(b, b.text, b.primary, pressAmt(b.id, b))));
-  withAppear(appear(8), () => label("v2 · 5 MAPS · 12 WERKZEUGE", 56, H - 16, 9, "#4c4c56"), 0);
+  withAppear(appear(8), () => label("v2 · " + MAPS.length + " MAPS · 12 WERKZEUGE", 56, H - 16, 9, "#4c4c56"), 0);
   drawTitleShotOverlay();
 }
 
@@ -5450,12 +5629,15 @@ function titlePressDoll() {
 
 // ----------------------------------------------------------------- maps
 
+// All maps on one screen: five per row.
 function menuCards() {
-  const cw = 200, ch = 140, gap = 16, cards = [];
-  const rows = [[0, 1, 2], [3, 4]];
-  rows.forEach((row, r) => {
-    const total = row.length * cw + (row.length - 1) * gap;
-    row.forEach((i, c) => cards.push({ i, x: W / 2 - total / 2 + c * (cw + gap), y: 118 + r * (ch + gap), w: cw, h: ch }));
+  const cols = 5, gap = 10, rows = Math.ceil(MAPS.length / cols), y0 = 100;
+  const cw = Math.min(210, (W - 48 - gap * (cols - 1)) / cols), ch = Math.min(140, (H - y0 - 12 - gap * (rows - 1)) / rows);
+  const cards = [];
+  MAPS.forEach((m, i) => {
+    const r = Math.floor(i / cols), c = i % cols, inRow = Math.min(cols, MAPS.length - r * cols);
+    const total = inRow * cw + (inRow - 1) * gap;
+    cards.push({ i, x: W / 2 - total / 2 + c * (cw + gap), y: y0 + r * (ch + gap), w: cw, h: ch });
   });
   return cards;
 }
@@ -5463,11 +5645,11 @@ function menuCards() {
 function drawMaps() {
   screenBackground();
   withAppear(appear(0), () => {
-    label("WÄHLE EINE MAP", W / 2, 50, 26, "#e6e6de", "center");
-    label("Tippe auf eine Karte, um zu starten", W / 2, 84, 11, "#7a7a84", "center", 400);
+    label("WÄHLE EINE MAP", W / 2, 42, 24, "#e6e6de", "center");
+    label(MAPS.length + " Maps · tippe auf eine Karte, um zu starten", W / 2, 72, 10.5, "#7a7a84", "center", 400);
     drawBackButton();
   });
-  menuCards().forEach((c, n) => withAppear(appear(1 + n), () => scaled(c.x + c.w / 2, c.y + c.h / 2, 1 - 0.03 * pressAmt("map" + c.i, c), () => drawMapCard(c)), 14));
+  menuCards().forEach((c, n) => withAppear(appear(1 + n * 0.5), () => scaled(c.x + c.w / 2, c.y + c.h / 2, 1 - 0.03 * pressAmt("map" + c.i, c), () => drawMapCard(c)), 14));
 }
 
 function drawMapCard(c) {
@@ -5476,9 +5658,10 @@ function drawMapCard(c) {
     rr(c.x, c.y, c.w, c.h, 12);
     ctx.fillStyle = on ? "#26262e" : "#1a1a20"; ctx.fill();
     ctx.strokeStyle = on ? MAPS[c.i].accent : "#34343c"; ctx.lineWidth = on ? 2 : 1.5; ctx.stroke();
-    drawMapPreview(c.i, c.x + 7, c.y + 7, c.w - 14, 88);
-    label(MAPS[c.i].name.toUpperCase(), c.x + 12, c.y + 110, 14, "#e6e6de");
-    label(MAPS[c.i].desc, c.x + 12, c.y + 127, 10, "#7a7a84", "left", 400);
+    const ph = c.h - 36;
+    drawMapPreview(c.i, c.x + 5, c.y + 5, c.w - 10, ph);
+    label(MAPS[c.i].name.toUpperCase(), c.x + 9, c.y + ph + 16, fitFont(MAPS[c.i].name.toUpperCase(), c.w - 18, 12), "#e6e6de");
+    label(MAPS[c.i].desc, c.x + 9, c.y + ph + 29, fitFont(MAPS[c.i].desc, c.w - 18, 8.5, 400), "#7a7a84", "left", 400);
   }
 }
 
