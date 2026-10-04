@@ -58,7 +58,7 @@ Die Puppen wirken lebendiger. Sie blinzeln alle paar Sekunden, atmen sichtbar un
 
 Im Hauptmenü ist der Raum voller Details: ein Rohr unter der Decke, aus dem Wasser in eine Pfütze tropft, ein flackerndes grünes EXIT-Schild, eine Überwachungskamera mit blinkendem roten Licht, die der Figur folgt, ein Regal mit Gläsern, in einem blubbert es grün, ein blutiger Handabdruck, Strichlisten in der Wand, blutige Fußspuren und Motten um die Lampe. Unter den Knöpfen wechselt alle fünf Sekunden ein Tipp.
 
-Über dem Dock sitzt ein kleiner Reiter mit Pfeil. Ein Tipp darauf klappt die Werkzeugleiste nach unten weg, dann ist der ganze Raum frei. Der Reiter zeigt dann das gewählte Werkzeug, ein zweiter Tipp klappt die Leiste wieder auf. Die Wahl bleibt gespeichert.
+Die Werkzeuge sitzen in einer Leiste am linken Rand: zwei Spalten, jede Gruppe in ihren eigenen Reihen mit einem Farbstreifen daneben, der aufleuchtet, wenn ein Werkzeug der Gruppe gewählt ist. Das gewählte Werkzeug hat einen leuchtenden Rahmen in seiner Gruppenfarbe. Rechts an der Leiste sitzt ein Reiter mit Pfeil. Ein Tipp darauf schiebt die Leiste nach links aus dem Bild, dann ist der ganze Raum frei, und unter dem Reiter zeigt ein kleines Feld das gewählte Werkzeug. Ein zweiter Tipp holt die Leiste zurück. Die Wahl bleibt gespeichert. Die Leiste für Wassermenge, Waffen und Feuerarten rückt rechts neben die Werkzeuge.
 
 In der Frontansicht wartet ein Schuss mit dem Finger einen Augenblick. Kommt in dieser Zeit ein zweiter Finger dazu, war es ein Zoom, und es fällt kein Schuss. Ein kurzer Tipp schießt sofort beim Loslassen, Halten schießt wie gewohnt.
 

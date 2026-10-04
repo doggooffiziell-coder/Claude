@@ -3358,21 +3358,29 @@ const DOCK_GROUPS = [
   { color: "#4ccf5a", items: [{ tool: T_BANDAGE }, { tool: T_IV }] },
   { color: "#e6c850", items: [{ tool: T_DOLL }, { tool: T_RESET }] },
 ];
-const DOCK_GAP = 5, DOCK_GROUP_GAP = 18;
+// The tools sit in a rail on the left edge: two columns, each group on its
+// own rows with a coloured strip beside it.
+const RAIL_BTN = 40, RAIL_GAP = 4, RAIL_GROUP_GAP = 9, RAIL_X = 10, RAIL_PAD = 6;
 const DOCK = (() => {
-  const items = [], seps = [];
-  let x = 0;
+  const items = [], groups = [];
+  let y = 0;
   DOCK_GROUPS.forEach((g, gi) => {
-    if (gi) { seps.push(x + DOCK_GROUP_GAP / 2 - DOCK_GAP); x += DOCK_GROUP_GAP - DOCK_GAP; }
-    for (const it of g.items) {
-      const w = it.tool === T_GUN ? 58 : BTN;
-      items.push({ ...it, color: g.color, x, w });
-      x += w + DOCK_GAP;
-    }
+    if (gi) y += RAIL_GROUP_GAP - RAIL_GAP;
+    const y0 = y;
+    g.items.forEach((it, n) => {
+      const col = n % 2;
+      if (n && !col) y += RAIL_BTN + RAIL_GAP;
+      items.push({ ...it, color: g.color, x: RAIL_X + RAIL_PAD + col * (RAIL_BTN + RAIL_GAP), y, w: RAIL_BTN, h: RAIL_BTN });
+    });
+    y += RAIL_BTN + RAIL_GAP;
+    groups.push({ color: g.color, y0, y1: y - RAIL_GAP });
   });
-  const total = x - DOCK_GAP, x0 = Math.round((W - total) / 2);
-  for (const it of items) it.x += x0;
-  return { items, seps: seps.map((s) => s + x0), x0, total };
+  const total = y - RAIL_GAP, w = RAIL_BTN * 2 + RAIL_GAP + RAIL_PAD * 2;
+  // Centred in the space under the title.
+  const top = Math.round(Math.max(70, (70 + H - total - RAIL_PAD * 2) / 2)) + RAIL_PAD;
+  for (const it of items) it.y += top;
+  for (const g of groups) { g.y0 += top; g.y1 += top; }
+  return { items, groups, x: RAIL_X, y: top - RAIL_PAD, w, h: total + RAIL_PAD * 2 };
 })();
 const dockName = (it) => TOOL_NAMES[it.tool];
 const dockOn = (it) => state.tool === it.tool;
@@ -3380,21 +3388,19 @@ const dockOn = (it) => state.tool === it.tool;
 // whole room is free. The choice is remembered per device.
 let dockOpen = true;
 try { dockOpen = localStorage.getItem("ragpit.dock") !== "closed"; } catch (e) { /* storage is optional */ }
-const dockOff = () => (1 - tween("dock", dockOpen ? 1 : 0, 12)) * (BTN + 8);
-const dockTab = () => ({ x: W / 2 - 34, y: TOOLBAR_Y - 7 - 18 + dockOff(), w: 68, h: 18 });
-const inDockTab = (x, y) => { const b = dockTab(); return x >= b.x - 10 && x < b.x + b.w + 10 && y >= b.y - 8 && y < b.y + b.h + 4; };
+const dockOff = () => (1 - tween("dock", dockOpen ? 1 : 0, 12)) * (DOCK.x + DOCK.w);
+const dockTab = () => ({ x: DOCK.x + DOCK.w - dockOff(), y: DOCK.y + DOCK.h / 2 - 30, w: 16, h: 60 });
+const inDockTab = (x, y) => { const b = dockTab(); return x >= b.x - 4 && x < b.x + b.w + 10 && y >= b.y - 6 && y < b.y + b.h + 6; };
 function toggleDock() {
   dockOpen = !dockOpen; pop("dockTab"); clickSound(dockOpen ? 760 : 560, 0.05);
   try { localStorage.setItem("ragpit.dock", dockOpen ? "open" : "closed"); } catch (e) { /* storage is optional */ }
 }
 function toolbarHit(x, y) {
   if (!dockOpen) return -1;
-  if (y < TOOLBAR_Y - 6 || y >= TOOLBAR_Y + BTN + 6) return -1;
-  for (let i = 0; i < DOCK.items.length; i++) {
-    const it = DOCK.items[i];
-    if (x >= it.x - DOCK_GAP / 2 && x < it.x + it.w + DOCK_GAP / 2) return i;
-  }
-  return -1;
+  if (x < DOCK.x || x >= DOCK.x + DOCK.w || y < DOCK.y || y >= DOCK.y + DOCK.h) return -1;
+  let best = -1, bd = Infinity;
+  DOCK.items.forEach((it, i) => { const d = Math.hypot(x - it.x - it.w / 2, y - it.y - it.h / 2); if (d < bd) { bd = d; best = i; } });
+  return best;
 }
 
 // The damage panel folds up to its header row. The choice is remembered per device.
@@ -3821,68 +3827,72 @@ function drawIcon(i, cx, cy) {
 
 function drawToolbar() {
   const off = dockOff();
-  ctx.save(); ctx.translate(0, off);
-  drawDockTab();
-  if (off < BTN + 6) drawDock();
+  ctx.save(); ctx.translate(-off, 0);
+  if (off < DOCK.x + DOCK.w - 1) drawDock();
   ctx.restore();
+  drawDockTab();
   drawToast(off);
 }
-// The tab on top of the dock: a chevron, and the picked tool while folded.
+// The tab on the right edge of the rail: a chevron, and the picked tool
+// while folded.
 function drawDockTab() {
-  const b = dockTab(), y = b.y - dockOff(), k = tween("dock", dockOpen ? 1 : 0, 12);
-  scaled(b.x + b.w / 2, y + b.h / 2, popScale("dockTab", 0.12), () => {
+  const b = dockTab(), k = tween("dock", dockOpen ? 1 : 0, 12);
+  scaled(b.x + b.w / 2, b.y + b.h / 2, popScale("dockTab", 0.12), () => {
     ctx.beginPath();
-    ctx.moveTo(b.x, y + b.h); ctx.lineTo(b.x + 8, y + 2); ctx.arcTo(b.x + 10, y, b.x + 14, y, 4);
-    ctx.lineTo(b.x + b.w - 14, y); ctx.arcTo(b.x + b.w - 10, y, b.x + b.w - 8, y + 2, 4); ctx.lineTo(b.x + b.w, y + b.h); ctx.closePath();
+    ctx.moveTo(b.x - 2, b.y); ctx.lineTo(b.x + b.w - 5, b.y + 6); ctx.arcTo(b.x + b.w, b.y + 7, b.x + b.w, b.y + 14, 5);
+    ctx.lineTo(b.x + b.w, b.y + b.h - 14); ctx.arcTo(b.x + b.w, b.y + b.h - 7, b.x + b.w - 5, b.y + b.h - 6, 5); ctx.lineTo(b.x - 2, b.y + b.h); ctx.closePath();
     ctx.fillStyle = "rgba(20,20,25,0.95)"; ctx.fill();
     ctx.strokeStyle = "#2e2e36"; ctx.lineWidth = 1.5; ctx.stroke();
-    const cx = b.x + b.w / 2 + (1 - k) * 12, cy = y + b.h / 2 + 1, flip = k * 2 - 1;
+    const cx = b.x + b.w / 2 - 1, cy = b.y + b.h / 2, flip = k * 2 - 1;
     ctx.strokeStyle = "#a8a8b2"; ctx.lineWidth = 2; ctx.lineCap = "round"; ctx.lineJoin = "round";
-    ctx.beginPath(); ctx.moveTo(cx - 6, cy - 2.5 * flip); ctx.lineTo(cx, cy + 2.5 * flip); ctx.lineTo(cx + 6, cy - 2.5 * flip); ctx.stroke();
-    if (k < 0.99) {
-      ctx.save(); ctx.globalAlpha *= 1 - k;
-      ctx.translate(b.x + 18, y + b.h / 2 + 1); ctx.scale(0.3, 0.3);
-      drawIconCached(state.tool, 0, 0);
-      ctx.restore();
-    }
+    ctx.beginPath(); ctx.moveTo(cx + 2 * flip, cy - 6); ctx.lineTo(cx - 2 * flip, cy); ctx.lineTo(cx + 2 * flip, cy + 6); ctx.stroke();
   });
+  if (k < 0.99) {
+    // Folded: the picked tool in a small chip under the tab.
+    ctx.save(); ctx.globalAlpha *= 1 - k;
+    rr(b.x - 4, b.y + b.h + 6, 24, 24, 7); ctx.fillStyle = "rgba(20,20,25,0.95)"; ctx.fill();
+    ctx.strokeStyle = "#2e2e36"; ctx.lineWidth = 1.2; ctx.stroke();
+    ctx.translate(b.x + 8, b.y + b.h + 18); ctx.scale(0.36, 0.36);
+    drawIconCached(state.tool, 0, 0);
+    ctx.restore();
+  }
 }
 function drawDock() {
-  const { x0, total } = DOCK, top = TOOLBAR_Y - 7, h = BTN + 14;
-  // Dock body with a soft top light
-  rr(x0 - 9, top, total + 18, h, 16);
-  const g = ctx.createLinearGradient(0, top, 0, top + h);
-  g.addColorStop(0, "rgba(24,24,30,0.95)"); g.addColorStop(1, "rgba(11,11,14,0.95)");
-  ctx.fillStyle = g; ctx.fill();
-  ctx.strokeStyle = "#2e2e36"; ctx.lineWidth = 1.5; ctx.stroke();
-  ctx.fillStyle = "rgba(255,255,255,0.05)"; ctx.fillRect(x0 + 6, top + 1.5, total - 12, 1);
-  // Thin dividers between the groups
-  ctx.fillStyle = "#2a2a32";
-  for (const sx of DOCK.seps) ctx.fillRect(sx - 0.5, TOOLBAR_Y + 8, 1, BTN - 16);
+  const D = DOCK;
+  // Rail body with a soft light along its left edge
+  ctx.save(); ctx.shadowColor = "rgba(0,0,0,0.55)"; ctx.shadowBlur = 14; ctx.shadowOffsetX = 3;
+  rr(D.x, D.y, D.w, D.h, 14);
+  const g = ctx.createLinearGradient(D.x, 0, D.x + D.w, 0);
+  g.addColorStop(0, "rgba(26,26,32,0.95)"); g.addColorStop(1, "rgba(12,12,15,0.95)");
+  ctx.fillStyle = g; ctx.fill(); ctx.restore();
+  rr(D.x, D.y, D.w, D.h, 14); ctx.strokeStyle = "#2e2e36"; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.fillStyle = "rgba(255,255,255,0.05)"; ctx.fillRect(D.x + 1.5, D.y + 12, 1, D.h - 24);
+  // A thin strip in the group colour on the left of each group
+  for (const gr of D.groups) {
+    const on = DOCK.items.some((it) => it.color === gr.color && dockOn(it));
+    ctx.fillStyle = css(hex(gr.color), on ? 0.9 : 0.28);
+    rr(D.x + 2, gr.y0 + 4, 2.5, gr.y1 - gr.y0 - 8, 1.2); ctx.fill();
+  }
   DOCK.items.forEach((it, i) => {
-    const by = TOOLBAR_Y, on = dockOn(it);
+    const by = it.y, on = dockOn(it), BH = it.h;
     const sel = tween("tb" + i, on ? 1 : 0, 18), hov = tween("tbh" + i, i === state.hover ? 1 : 0, 20);
-    scaled(it.x + it.w / 2, by + BTN / 2, popScale("tb" + i, 0.1), () => {
-      rr(it.x, by, it.w, BTN, 10);
+    scaled(it.x + it.w / 2, by + BH / 2, popScale("tb" + i, 0.1), () => {
+      rr(it.x, by, it.w, BH, 9);
       ctx.fillStyle = css(mixc(mixc(hex("#1d1d23"), hex("#26262e"), hov), hex("#2e2e37"), sel)); ctx.fill();
       if (sel > 0.01) {
-        ctx.strokeStyle = css(hex(it.color), 0.35 * sel); ctx.lineWidth = 1.2; ctx.stroke();
-        // Accent bar under the chosen tool
-        const bw = it.w * 0.46 * sel;
-        ctx.save(); ctx.shadowColor = it.color; ctx.shadowBlur = 8 * sel;
-        rr(it.x + it.w / 2 - bw / 2, by + BTN - 5, bw, 3, 1.5); ctx.fillStyle = it.color; ctx.fill();
+        ctx.save(); ctx.shadowColor = it.color; ctx.shadowBlur = 10 * sel;
+        ctx.strokeStyle = css(hex(it.color), 0.75 * sel); ctx.lineWidth = 1.4; ctx.stroke();
         ctx.restore();
       }
-      const lift = 2 * sel, cx = it.x + it.w / 2, cy = by + BTN / 2 - 2 - lift;
+      const cx = it.x + it.w / 2, cy = by + BH / 2;
       if (it.tool !== T_GUN) {
-        ctx.save(); ctx.globalAlpha *= 0.72 + 0.28 * Math.max(sel, hov); drawIconCached(it.tool, cx, cy + 1); ctx.restore();
+        ctx.save(); ctx.globalAlpha *= 0.72 + 0.28 * Math.max(sel, hov);
+        ctx.translate(cx, cy); ctx.scale(0.82, 0.82); drawIconCached(it.tool, 0, 0); ctx.restore();
       } else {
-        const sp = WEAPONS[state.weapon].sprite, z = Math.min(1.3, (it.w - 12) / sp[0].length);
-        drawSpriteOutlined(sp, cx - sp[0].length * z / 2, cy - sp.length * z / 2 - 2, z, 0.65 + 0.35 * Math.max(sel, hov));
-        // Rounds left in the picked weapon
-        const wp = WEAPONS[state.weapon], ammo = state.ammo[state.weapon];
-        const loading = state.reloadT > 0;
-        label(loading ? "LÄDT" : ammo + "/" + wp.mag, cx, by + BTN - 12, 7, loading ? "#e6c850" : ammo / wp.mag < 0.25 ? "#ff6a5a" : "#7a7a84", "center");
+        const sp = WEAPONS[state.weapon].sprite, z = Math.min(1.1, (it.w - 6) / sp[0].length);
+        drawSpriteOutlined(sp, cx - sp[0].length * z / 2, cy - sp.length * z / 2 - 4, z, 0.65 + 0.35 * Math.max(sel, hov));
+        const wp = WEAPONS[state.weapon], ammo = state.ammo[state.weapon], loading = state.reloadT > 0;
+        label(loading ? "LÄDT" : ammo + "/" + wp.mag, cx, by + BH - 8, 6.5, loading ? "#e6c850" : ammo / wp.mag < 0.25 ? "#ff6a5a" : "#7a7a84", "center");
       }
     });
   });
@@ -3898,7 +3908,7 @@ function drawToast(off) {
     ctx.save(); ctx.globalAlpha *= a;
     ctx.font = `700 14px ${FONT}`;
     const lw = ctx.measureText(text).width + 24;
-    const ly = TOOLBAR_Y - 52 + off * 0.8 + (1 - a) * 6;
+    const ly = H - 40 + (1 - a) * 6;
     rr(W / 2 - lw / 2, ly, lw, 26, 13);
     ctx.fillStyle = "rgba(15,15,19,0.92)"; ctx.fill();
     ctx.strokeStyle = "#383840"; ctx.lineWidth = 1.5; ctx.stroke();
@@ -4579,9 +4589,10 @@ function ctxLayout() {
   if (!items.length) return null;
   const head = state.tool === T_WATER ? 70 : 0, gap = 6;
   const total = head + items.reduce((a, it) => a + it.w, 0) + gap * (items.length - 1) + 16;
-  let x = 14 + 8 + head;
+  const x0 = dockOpen ? DOCK.x + DOCK.w + 10 : 34;
+  let x = x0 + 8 + head;
   for (const it of items) { it.x = x; x += it.w + gap; }
-  return { items, x0: 14, total, head };
+  return { items, x0, total, head };
 }
 function ctxHit(x, y) {
   const l = ctxLayout();
