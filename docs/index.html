@@ -762,7 +762,7 @@ class Doll {
     place(POSE);
     for (const j of this.joints) j.rest = this.jointRel(j);
     place(activePose());
-    this.wounds = [];
+    this.wounds = []; this.bands = [];
     this.grabbed = -1; this.gx = 0; this.gy = 0;
     this.ko = 100; this.bl = 100; this.pn = 0; this.o2 = 100; this.hr = 72;
     this.dead = false; this.headUnder = false; this.deadT = 0; this.dc = null; this.rigorOn = false;
@@ -1668,6 +1668,7 @@ class Doll {
       if (w.bandaged) {
         // Under the bandage the blood soaks in and the bleeding stops.
         w.soak = Math.min(1, (w.soak || 0) + w.bleed * DT * 0.25);
+        if (w.band) w.band.soak = Math.max(w.band.soak, w.soak);
         w.bleed = Math.max(0, w.bleed - DT * (w.stump ? 0.45 : 1.1));
         continue;
       }
@@ -1708,20 +1709,25 @@ class Doll {
   }
 
   // Extras: closes every wound and resets all values. Lost limbs stay lost.
-  // A bandage wraps a wound and the ones right next to it on the same part.
-  // It soaks up blood for a moment and then holds the bleeding shut.
+  // A bandage is one wrap of gauze around a part. Wounds close to an
+  // existing wrap go under it, so many wounds give a few neat wraps. The
+  // head always gets one wrap around the forehead. The gauze soaks up blood
+  // for a moment and then holds the bleeding shut.
   bandage(w) {
+    const k = w.part, near = k === TORSO || k === PELVIS ? 0.3 : 0.25;
+    let band = this.bands.find((b) => b.part === k && b.stump === w.stump && (k === HEAD || w.stump || Math.abs(b.t - w.t) < near));
+    if (!band) { band = { part: k, t: k === HEAD ? 0.8 : w.t, stump: w.stump, soak: 0 }; this.bands.push(band); }
     for (const o of this.wounds) {
-      if (o.bandaged || o.part !== w.part || o.stump !== w.stump) continue;
-      if (o !== w && Math.abs(o.t - w.t) > 0.14) continue;
-      o.bandaged = true; o.soak = clamp(o.bleed * 0.8, 0.12, 0.9);
-      if (o !== w) { o.bandT = w.t; }
+      if (o.bandaged || o.part !== k || o.stump !== w.stump) continue;
+      if (o !== w && k !== HEAD && !w.stump && Math.abs(o.t - band.t) > near) continue;
+      o.bandaged = true; o.band = band; o.soak = clamp(o.bleed * 0.8, 0.12, 0.9);
+      band.soak = Math.max(band.soak, o.soak);
     }
-    w.bandT = w.t;
   }
 
   fullHeal() {
     this.wounds = this.wounds.filter((w) => w.stump);
+    this.bands = this.bands.filter((b) => b.stump);
     for (const w of this.wounds) w.bleed = 0;
     for (let k = 0; k < PART_COUNT; k++) {
       this.char[k] = 0; this.stain[k] = 0;
@@ -2115,31 +2121,47 @@ const WC_LIP = hex("#d4566a"), WC_CORE = hex("#2c0409"), WC_RUN = hex("#860c18")
 // a bullet hole with its dark collar, a torn exit hole, a gaping cut or a
 // bruise, and a thin line of blood running down the skin.
 const PX_GAUZE = hex("#ece8de"), PX_GAUZE_DK = hex("#c4bcac"), PX_SOAK = hex("#a01e2a"), PX_SOAK_DRY = hex("#6e1a20");
+// One wrap of gauze around a part: shaded edges, a hint of the weave, and
+// a small spot of blood that soaked through in the middle.
+function rasterBand(d, b, order) {
+  const k = b.part;
+  let mx, my, ux, uy, half = 1.6;
+  if (k === HEAD) {
+    const nx = d.x[d.pa[HEAD]], ny = d.y[d.pa[HEAD]], hx = d.x[d.pb[HEAD]], hy = d.y[d.pb[HEAD]];
+    const l = Math.hypot(hx - nx, hy - ny) || 1;
+    ux = (hx - nx) / l; uy = (hy - ny) / l;
+    mx = (nx + ux * (NECK_LEN + HEAD_H * b.t)) / PIX; my = (ny + uy * (NECK_LEN + HEAD_H * b.t)) / PIX;
+  } else {
+    const [ax, ay] = limbStart(d, k), bx = d.x[d.pb[k]], by = d.y[d.pb[k]];
+    const l = Math.hypot(bx - ax, by - ay) || 1;
+    ux = (bx - ax) / l; uy = (by - ay) / l;
+    // The wrap is wide enough to cover every wound under it.
+    let t0 = b.t, t1 = b.t;
+    for (const w of d.wounds) if (w.band === b) { t0 = Math.min(t0, w.t); t1 = Math.max(t1, w.t); }
+    const tc = (t0 + t1) / 2;
+    half = Math.min(5, Math.max(1.6, (t1 - t0) * l / PIX / 2 + 1));
+    mx = lerp(ax, bx, tc) / PIX; my = lerp(ay, by, tc) / PIX;
+  }
+  const wet = d.wounds.some((w) => w.band === b && w.bleed > 0);
+  const reach = 10, spot = 0.4 + b.soak * 1.1;
+  for (let y = Math.floor(my - reach); y <= my + reach; y++) for (let x = Math.floor(mx - reach); x <= mx + reach; x++) {
+    if (x < bbx0 || x > bbx1 || y < bby0 || y > bby1 || tmask[y * DW + x] !== order) continue;
+    const u = (x + 0.5 - mx) * ux + (y + 0.5 - my) * uy;
+    if (Math.abs(u) > half) continue;
+    let c = Math.abs(u) > half - 0.7 ? PX_GAUZE_DK : PX_GAUZE;
+    if (((x + y * 3) & 3) === 0) c = mixc(c, PX_GAUZE_DK, 0.4);
+    const v = (x + 0.5 - mx) * -uy + (y + 0.5 - my) * ux;
+    if (Math.hypot(u, v) < spot) c = mixc(c, wet ? PX_SOAK : PX_SOAK_DRY, 0.7);
+    tset(y * DW + x, c, order);
+  }
+}
 function rasterWound(d, w, order) {
   const [wx, wy] = d.woundPos(w);
   const cx = Math.floor(wx / PIX), cy = Math.floor(wy / PIX);
   const at = (x, y) => (x >= bbx0 && x <= bbx1 && y >= bby0 && y <= bby1 && tmask[y * DW + x] === order ? y * DW + x : -1);
   const put = (x, y, c) => { const i = at(x, y); if (i >= 0) tset(i, c, order); };
-  if (w.bandaged) {
-    // A band of gauze around the part, its edges shaded, the weave hinted,
-    // and the blood that soaked through in the middle.
-    const [ax, ay] = limbStart(d, w.part), bx = d.x[d.pb[w.part]], by = d.y[d.pb[w.part]];
-    const l = Math.hypot(bx - ax, by - ay) || 1, ux = (bx - ax) / l, uy = (by - ay) / l;
-    const t = w.bandT !== undefined ? w.bandT : w.t;
-    const mx = (w.part === HEAD ? wx : lerp(ax, bx, t)) / PIX, my = (w.part === HEAD ? wy : lerp(ay, by, t)) / PIX;
-    const half = 1.7, reach = 8;
-    for (let y = Math.floor(my - reach); y <= my + reach; y++) for (let x = Math.floor(mx - reach); x <= mx + reach; x++) {
-      if (at(x, y) < 0) continue;
-      const u = (x + 0.5 - mx) * ux + (y + 0.5 - my) * uy;
-      if (Math.abs(u) > half) continue;
-      let c = Math.abs(u) > half - 0.7 ? PX_GAUZE_DK : PX_GAUZE;
-      if (((x + y * 3) & 3) === 0) c = mixc(c, PX_GAUZE_DK, 0.4);
-      const ds = Math.hypot(x + 0.5 - wx / PIX, y + 0.5 - wy / PIX), soak = w.soak || 0;
-      if (ds < 0.6 + soak * 1.8) c = mixc(c, w.bleed > 0 ? PX_SOAK : PX_SOAK_DRY, 0.55 + 0.35 * soak);
-      put(x, y, c);
-    }
-    return;
-  }
+  // Wrapped wounds are hidden under their bandage (rasterBand).
+  if (w.bandaged) return;
   const tint = (x, y, c, a) => {
     const i = at(x, y); if (i < 0) return;
     tcol[i * 3] += (c[0] - tcol[i * 3]) * a; tcol[i * 3 + 1] += (c[1] - tcol[i * 3 + 1]) * a; tcol[i * 3 + 2] += (c[2] - tcol[i * 3 + 2]) * a;
@@ -2328,6 +2350,7 @@ function rasterDoll(d) {
       if (w.exit && settings.front) continue;
       rasterWound(d, w, order);
     }
+    for (const b of d.bands) if (b.part === k && !b.stump) rasterBand(d, b, order);
   }
   // Stumps: torn flesh with bone sticking out.
   for (const w of d.wounds) {
@@ -4187,6 +4210,8 @@ function drawDrip(x, y, s, bleed, seed, now) {
 
 function drawWoundMark(w, x, y, s, now) {
   const seed = w.seed || w.rot * 9, big = w.size > 2 ? 1.25 : 1;
+  if (w.bandaged && w.band && w.band.drawn === now) return;
+  if (w.bandaged && w.band) w.band.drawn = now;
   if (w.bandaged) {
     // Gauze strip across the part with the blood that soaked through.
     rr(x - 4.2 * s, y - 1.8 * s, 8.4 * s, 3.6 * s, 0.9 * s); ctx.fillStyle = "#ece8de"; ctx.fill();
