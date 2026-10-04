@@ -1665,6 +1665,12 @@ class Doll {
     for (const w of this.wounds) {
       if (w.bleed <= 0) continue;
       const loose = !this.attached(w.part);
+      if (w.bandaged) {
+        // Under the bandage the blood soaks in and the bleeding stops.
+        w.soak = Math.min(1, (w.soak || 0) + w.bleed * DT * 0.25);
+        w.bleed = Math.max(0, w.bleed - DT * (w.stump ? 0.45 : 1.1));
+        continue;
+      }
       if (loose) w.bleed = Math.max(0, w.bleed - 0.07 * DT);
       this.stain[w.part] = Math.min(0.75, this.stain[w.part] + w.bleed * DT * 0.08);
       const f = loose ? 0.6 : flow;
@@ -1702,6 +1708,18 @@ class Doll {
   }
 
   // Extras: closes every wound and resets all values. Lost limbs stay lost.
+  // A bandage wraps a wound and the ones right next to it on the same part.
+  // It soaks up blood for a moment and then holds the bleeding shut.
+  bandage(w) {
+    for (const o of this.wounds) {
+      if (o.bandaged || o.part !== w.part || o.stump !== w.stump) continue;
+      if (o !== w && Math.abs(o.t - w.t) > 0.14) continue;
+      o.bandaged = true; o.soak = clamp(o.bleed * 0.8, 0.12, 0.9);
+      if (o !== w) { o.bandT = w.t; }
+    }
+    w.bandT = w.t;
+  }
+
   fullHeal() {
     this.wounds = this.wounds.filter((w) => w.stump);
     for (const w of this.wounds) w.bleed = 0;
@@ -1861,6 +1879,7 @@ class Doll {
       CHOKE: this.headUnder && !this.dead, AGONY: this.pn >= AGONY_PN && !this.isOut(),
       HEAL: this.healing || this.iv > 0, BLADE: this.bladeTimer > 0, TORN: this.severed.includes(true), FROZEN: this.frozen,
       BROKEN: this.broken.some((b, k) => b && this.attached(k)), PINNED: this.pins.size > 0,
+      BANDAGED: this.wounds.some((w) => w.bandaged && !this.gone[w.part]),
     };
   }
   // The body cannot pass through itself: head, neck and belly keep their
@@ -2095,11 +2114,32 @@ const WC_LIP = hex("#d4566a"), WC_CORE = hex("#2c0409"), WC_RUN = hex("#860c18")
 // One wound in pixel art, only on the pixels of its own body part:
 // a bullet hole with its dark collar, a torn exit hole, a gaping cut or a
 // bruise, and a thin line of blood running down the skin.
+const PX_GAUZE = hex("#ece8de"), PX_GAUZE_DK = hex("#c4bcac"), PX_SOAK = hex("#a01e2a"), PX_SOAK_DRY = hex("#6e1a20");
 function rasterWound(d, w, order) {
   const [wx, wy] = d.woundPos(w);
   const cx = Math.floor(wx / PIX), cy = Math.floor(wy / PIX);
   const at = (x, y) => (x >= bbx0 && x <= bbx1 && y >= bby0 && y <= bby1 && tmask[y * DW + x] === order ? y * DW + x : -1);
   const put = (x, y, c) => { const i = at(x, y); if (i >= 0) tset(i, c, order); };
+  if (w.bandaged) {
+    // A band of gauze around the part, its edges shaded, the weave hinted,
+    // and the blood that soaked through in the middle.
+    const [ax, ay] = limbStart(d, w.part), bx = d.x[d.pb[w.part]], by = d.y[d.pb[w.part]];
+    const l = Math.hypot(bx - ax, by - ay) || 1, ux = (bx - ax) / l, uy = (by - ay) / l;
+    const t = w.bandT !== undefined ? w.bandT : w.t;
+    const mx = (w.part === HEAD ? wx : lerp(ax, bx, t)) / PIX, my = (w.part === HEAD ? wy : lerp(ay, by, t)) / PIX;
+    const half = 1.7, reach = 8;
+    for (let y = Math.floor(my - reach); y <= my + reach; y++) for (let x = Math.floor(mx - reach); x <= mx + reach; x++) {
+      if (at(x, y) < 0) continue;
+      const u = (x + 0.5 - mx) * ux + (y + 0.5 - my) * uy;
+      if (Math.abs(u) > half) continue;
+      let c = Math.abs(u) > half - 0.7 ? PX_GAUZE_DK : PX_GAUZE;
+      if (((x + y * 3) & 3) === 0) c = mixc(c, PX_GAUZE_DK, 0.4);
+      const ds = Math.hypot(x + 0.5 - wx / PIX, y + 0.5 - wy / PIX), soak = w.soak || 0;
+      if (ds < 0.6 + soak * 1.8) c = mixc(c, w.bleed > 0 ? PX_SOAK : PX_SOAK_DRY, 0.55 + 0.35 * soak);
+      put(x, y, c);
+    }
+    return;
+  }
   const tint = (x, y, c, a) => {
     const i = at(x, y); if (i < 0) return;
     tcol[i * 3] += (c[0] - tcol[i * 3]) * a; tcol[i * 3 + 1] += (c[1] - tcol[i * 3 + 1]) * a; tcol[i * 3 + 2] += (c[2] - tcol[i * 3 + 2]) * a;
@@ -2296,6 +2336,13 @@ function rasterDoll(d) {
     const [ux, uy] = d.stumpDir(w);
     const k = w.part;
     const r = (k === HEAD ? 5.5 : RECT[k] ? RECT[k][0] : 14) / PIX * 0.95, cx = wx / PIX, cy = wy / PIX;
+    if (w.bandaged) {
+      // A wrapped stump: a cap of gauze with a red spot soaked through.
+      rasterDisc(cx + ux * 0.3, cy + uy * 0.3, r + 0.6, PX_GAUZE_DK, 250);
+      rasterDisc(cx + ux * 0.2, cy + uy * 0.2, r + 0.1, PX_GAUZE, 250);
+      rasterDisc(cx + ux * 0.5, cy + uy * 0.5, Math.max(0.8, r * 0.55 * (0.5 + (w.soak || 0))), w.bleed > 0 ? PX_SOAK : PX_SOAK_DRY, 250);
+      continue;
+    }
     rasterDisc(cx, cy, r + 0.4, w.bleed > 0 ? PX_FLESH : hex("#82323a"), 250);
     rasterDisc(cx + ux * 0.4, cy + uy * 0.4, r * 0.6, COL_GORE, 250);
     const bl = Math.max(2, r * 0.9);
@@ -2436,8 +2483,8 @@ function explode(x, y) {
 // HUD
 // ======================================================================
 
-const T_GRAB = 0, T_WATER = 1, T_BUCKET = 2, T_BLADE = 3, T_GUN = 4, T_FIRE = 5, T_ICE = 6, T_BOMB = 7, T_IV = 8, T_DOLL = 9, T_RESET = 10, T_PIN = 11;
-const TOOL_NAMES = ["Greifen", "Wasser", "Eimer", "Klinge", "Waffe", "Feuer", "Eis", "Bombe", "Infusion", "Neue Puppe", "Reset", "Fixieren"];
+const T_GRAB = 0, T_WATER = 1, T_BUCKET = 2, T_BLADE = 3, T_GUN = 4, T_FIRE = 5, T_ICE = 6, T_BOMB = 7, T_IV = 8, T_DOLL = 9, T_RESET = 10, T_PIN = 11, T_BANDAGE = 12;
+const TOOL_NAMES = ["Greifen", "Wasser", "Eimer", "Klinge", "Waffe", "Feuer", "Eis", "Bombe", "Infusion", "Neue Puppe", "Reset", "Fixieren", "Verband"];
 const BTN = 46, BTN_GAP = 6, TOOLBAR_Y = H - 54;
 const PANEL = { x: W - 206, y: 8, w: 198, h: 282 };
 const MINI = [[0, -12], [0, -8], [0, 0], [0, 3], [-5, -3], [-7, 2], [5, -3], [7, 2], [-2, 9], [-3, 15], [-5, 15], [2, 9], [3, 15], [5, 15]];
@@ -2449,7 +2496,7 @@ const DOCK_GROUPS = [
   { color: "#5aa0f0", items: [{ tool: T_WATER }, { tool: T_BUCKET }] },
   { color: "#e8443a", items: [{ tool: T_BLADE }, { tool: T_GUN }] },
   { color: "#ff8a2a", items: [{ tool: T_FIRE }, { tool: T_ICE }, { tool: T_BOMB }] },
-  { color: "#4ccf5a", items: [{ tool: T_IV }] },
+  { color: "#4ccf5a", items: [{ tool: T_BANDAGE }, { tool: T_IV }] },
   { color: "#e6c850", items: [{ tool: T_DOLL }, { tool: T_RESET }] },
 ];
 const DOCK_GAP = 5, DOCK_GROUP_GAP = 18;
@@ -2584,7 +2631,7 @@ const STATUS = [
   ["OUT", "BEWUSSTLOS", "#a2a2aa"], ["BLEED", "BLUTET", "#d6202f"], ["FIRE", "BRENNT", "#ff5a1e"],
   ["CHOKE", "ERSTICKT", "#2ec8c0"], ["AGONY", "QUALEN", "#f08a24"], ["HEAL", "HEILT", "#f2da3a"],
   ["BLADE", "SCHNITT", "#c8d0dc"], ["TORN", "GLIED AB", "#f272b8"], ["FROZEN", "GEFROREN", "#86c4ff"],
-  ["BROKEN", "KNOCHENBRUCH", "#e8dcc0"], ["PINNED", "FIXIERT", "#e8443a"],
+  ["BROKEN", "KNOCHENBRUCH", "#e8dcc0"], ["PINNED", "FIXIERT", "#e8443a"], ["BANDAGED", "VERBUNDEN", "#ece6d8"],
 ];
 
 // Shrinks a label until it fits the width.
@@ -2824,6 +2871,23 @@ function drawIcon(i, cx, cy) {
       ctx.beginPath(); for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4, r = k % 2 ? 1 : 2.6; ctx.lineTo(9.6 + Math.cos(a) * r, -9.6 + Math.sin(a) * r); } ctx.closePath(); ctx.fill();
       break;
     }
+    case T_BANDAGE: {
+      // A roll of gauze with the loose end hanging down
+      ctx.fillStyle = "#0b0b0e"; rr(-11, -9.5, 17, 13, 6.5); ctx.fill();
+      ctx.fillStyle = iconGrad(0, -9, 0, 3, "#ffffff", "#c8c2b4"); rr(-10, -8.5, 15, 11, 5.5); ctx.fill();
+      ctx.strokeStyle = "rgba(120,110,96,0.45)"; ctx.lineWidth = 0.6;
+      ctx.beginPath(); for (const x of [-6, -3, 0]) { ctx.moveTo(x, -8); ctx.lineTo(x, 2); } ctx.stroke();
+      // Rolled end with its spiral
+      ctx.fillStyle = iconGrad(2, -8, 8, 2, "#f6f2e8", "#b8b0a0"); ctx.beginPath(); ctx.ellipse(4.5, -3, 3.4, 5.4, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "#9a9284"; ctx.lineWidth = 0.7;
+      ctx.beginPath(); ctx.ellipse(4.5, -3, 2.1, 3.4, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = "#6e665a"; ctx.beginPath(); ctx.ellipse(4.5, -3, 0.9, 1.5, 0, 0, Math.PI * 2); ctx.fill();
+      // Loose strip with a small blood spot
+      ctx.fillStyle = iconGrad(0, 2, 0, 12, "#f2eee4", "#c2bcae");
+      ctx.beginPath(); ctx.moveTo(-7, 1.5); ctx.lineTo(-2, 1.5); ctx.quadraticCurveTo(-1, 7, 3, 11.5); ctx.lineTo(-2, 12); ctx.quadraticCurveTo(-6, 7.5, -7, 1.5); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = "#c8222f"; ctx.beginPath(); ctx.ellipse(-1.8, 8, 1.4, 1.1, 0.4, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
     case T_IV: {
       // Blood bag on a hook with a tube and a drop
       ctx.strokeStyle = "#8c8c96"; ctx.lineWidth = 1.2;
@@ -2954,8 +3018,8 @@ function drawCursor() {
     ctx.moveTo(mx - 11, my); ctx.lineTo(mx - 3, my); ctx.moveTo(mx + 3, my); ctx.lineTo(mx + 11, my);
     ctx.moveTo(mx, my - 11); ctx.lineTo(mx, my - 3); ctx.moveTo(mx, my + 3); ctx.lineTo(mx, my + 11);
     ctx.stroke();
-  } else if (state.tool === T_IV) {
-    ctx.strokeStyle = "rgba(110,230,110,0.8)"; ctx.lineWidth = 2.4;
+  } else if (state.tool === T_IV || state.tool === T_BANDAGE) {
+    ctx.strokeStyle = state.tool === T_IV ? "rgba(110,230,110,0.8)" : "rgba(240,236,226,0.85)"; ctx.lineWidth = 2.4;
     ctx.beginPath(); ctx.moveTo(mx - 6, my); ctx.lineTo(mx + 6, my); ctx.moveTo(mx, my - 6); ctx.lineTo(mx, my + 6); ctx.stroke();
   } else if (state.tool === T_BLADE) {
     ctx.fillStyle = "rgba(255,255,255,0.8)"; ctx.beginPath(); ctx.arc(mx, my, 1.6, 0, Math.PI * 2); ctx.fill();
@@ -3166,9 +3230,13 @@ function fingerHit(x, y) {
     sv = clamp(perp / half, -1, 1);
   }
   // Organs: the spot mapped onto the body chart, the doll's left on its right.
+  // Trunk and head use the same frame as the organs seen in the zoom.
   const [rx, ry, rw, rh] = CHART[k];
-  const cx = rx + rw / 2 + sv * d.facing * rw / 2, cy = k === HEAD ? -62.5 + clamp((y - by) / HEAD_R, -1, 1) * 6 : ry + t * rh;
+  let cx = rx + rw / 2 + sv * d.facing * rw / 2, cy = ry + t * rh;
+  if (k === HEAD || k === TORSO || k === PELVIS) [cx, cy] = chartAt(organFrame(d, k), x, y);
   const organs = ORGANS.filter((o) => o.part === k && ORGAN_HIT[o.id].some(([ex, ey, ex2, ey2]) => ((cx - ex) / ex2) ** 2 + ((cy - ey) / ey2) ** 2 <= 1)).map((o) => o.id);
+  // Low in the belly lie the loops of small bowel.
+  if (k === TORSO && cy > ry + rh) organs.push("gut");
   return { d, k, t, s, organs, name: PART_NAME[k], crit: k === HEAD && Math.hypot(x - bx, y - by) < HEAD_R * 0.35 };
 }
 
@@ -3414,6 +3482,20 @@ function gunSound(power) {
     const src = audio.createBufferSource(); src.buffer = buf;
     const f = audio.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 900 + power * 1400;
     const g = audio.createGain(); g.gain.value = 0.18 + power * 0.18;
+    src.connect(f); f.connect(g); g.connect(audio.destination); src.start();
+  } catch (e) { /* sound is optional */ }
+}
+
+// Gauze torn off the roll.
+function tearSound() {
+  if (!settings.sound) return;
+  try {
+    if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
+    const n = Math.floor(audio.sampleRate * 0.16), buf = audio.createBuffer(1, n, audio.sampleRate), ch = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) ch[i] = (Math.random() * 2 - 1) * (0.5 + 0.5 * Math.sin(i / 90)) * (1 - i / n);
+    const src = audio.createBufferSource(); src.buffer = buf;
+    const f = audio.createBiquadFilter(); f.type = "bandpass"; f.frequency.value = 2600; f.Q.value = 0.8;
+    const g = audio.createGain(); g.gain.value = 0.16;
     src.connect(f); f.connect(g); g.connect(audio.destination); src.start();
   } catch (e) { /* sound is optional */ }
 }
@@ -3679,7 +3761,7 @@ function chartPath(k, cx, cy, s) {
 // The doll's left side is on the right of the chart, as when facing someone.
 const ORGAN_COLOR = {
   brain: "#f0bcc8", lungL: "#f0a2b0", lungR: "#f0a2b0", heart: "#c8283c",
-  liver: "#922c2c", stomach: "#e6ae8e", kidneys: "#a2343a", gut: "#e8aaa6",
+  liver: "#922c2c", stomach: "#e6ae8e", kidneys: "#a2343a", gut: "#e8aaa6", bladder: "#e8c890",
 };
 // Where the red X sits on a destroyed organ: [x, y, size].
 const ORGAN_MARK = {
@@ -3803,6 +3885,8 @@ const ORGAN_SPRITES = {
     "ocoooooooooooooooooooco.",
     ".ooo................ooo.",
   ] }],
+  // Only in the zoom: small bowel loops as a tile and the bladder.
+  bladder: [{ x: -4, y: 0, rows: [".ooooo.", "ollhlmo", "olmmmdo", "olmmmdo", ".oddddo", "..ooo.."] }],
   trachea: [{ x: -2, y: -47, rows: [
     ".owo.",
     ".odo.",
@@ -3842,6 +3926,40 @@ function organBitmap(id, n, hp) {
   organCache.set(key, c);
   return c;
 }
+// Small bowel for the zoom: one tube folded back and forth in tight loops,
+// with a little wiggle, round and lit like the other organ pixels.
+function coilBitmap(w, h, hp) {
+  const q = Math.round(hp * 10), key = "coils:" + w + "x" + h + ":" + q;
+  let c = organCache.get(key);
+  if (c) return c;
+  const base = mixc(COL_ORGAN_DEAD, hex(ORGAN_COLOR.gut), 0.25 + 0.75 * q / 10);
+  const out = mixc(base, [30, 6, 12], 0.7), dk = darken(base, 0.28), lt = lighten(base, 0.2), hi = lighten(base, 0.42);
+  const R = 2.4, gap = 5, x0 = R + 0.4, x1 = w - R - 0.4, rows = Math.max(1, Math.floor((h - 1) / gap));
+  const rowY = (i, x) => R + 0.4 + gap * i + 0.7 * Math.sin(x * 0.55 + i * 1.7);
+  c = document.createElement("canvas"); c.width = w; c.height = h;
+  const g = c.getContext("2d"), img = g.createImageData(w, h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const px = x + 0.5, py = y + 0.5;
+    let best = 9, side = 0;
+    for (let i = 0; i < rows; i++) {
+      if (px >= x0 && px <= x1) { const dd = py - rowY(i, px); if (Math.abs(dd) < best) { best = Math.abs(dd); side = dd; } }
+      // U-turn to the next row, on the right after even rows, on the left after odd ones
+      if (i < rows - 1) {
+        const ex = i % 2 ? x0 : x1, ey = (rowY(i, ex) + rowY(i + 1, ex)) / 2, rr2 = (rowY(i + 1, ex) - rowY(i, ex)) / 2;
+        if (i % 2 ? px < ex : px > ex) { const dd = Math.hypot(px - ex, py - ey) - rr2; if (Math.abs(dd) < best) { best = Math.abs(dd); side = py - ey < 0 ? -1 : 1; } }
+      }
+    }
+    if (best > R) continue;
+    let col = best > R - 0.6 ? out : best > R - 1.2 ? dk : side < -0.4 ? hi : best < 0.7 ? lt : base;
+    const hash = ((x * 73856093) ^ (y * 19349663)) >>> 0;
+    if (col !== out && (hash % 100) / 100 < (1 - q / 10) * 0.3) col = COL_ORGAN_HURT;
+    const i = (y * w + x) * 4;
+    img.data[i] = col[0]; img.data[i + 1] = col[1]; img.data[i + 2] = col[2]; img.data[i + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  organCache.set(key, c);
+  return c;
+}
 function drawOrganSprite(id, hp) {
   const smooth = ctx.imageSmoothingEnabled;
   ctx.imageSmoothingEnabled = false;
@@ -3849,42 +3967,64 @@ function drawOrganSprite(id, hp) {
   ctx.imageSmoothingEnabled = smooth;
 }
 
+// Where the organs of a part sit in the room: the chart picture keeps its
+// shape (one scale both ways), fills the width of the part and starts at
+// its top. The longer trunk of the doll leaves room below, which the
+// small bowel fills. Taps use the same frame, so a shot hits the organ it
+// shows.
+function organFrame(d, k) {
+  let tx, ty, c0x, c0y, len, hw;
+  if (k === HEAD) {
+    // From the top of the skull down toward the face.
+    const nx = d.x[d.pa[HEAD]], ny = d.y[d.pa[HEAD]], hx = d.x[d.pb[HEAD]], hy = d.y[d.pb[HEAD]];
+    const l = Math.hypot(hx - nx, hy - ny) || 1, ux = (hx - nx) / l, uy = (hy - ny) / l;
+    c0x = nx + ux * (NECK_LEN + HEAD_H); c0y = ny + uy * (NECK_LEN + HEAD_H);
+    tx = -ux; ty = -uy; len = HEAD_H; hw = HEAD_HW;
+  } else {
+    const ax = d.x[d.pa[k]], ay = d.y[d.pa[k]], bx = d.x[d.pb[k]], by = d.y[d.pb[k]];
+    const l = Math.hypot(bx - ax, by - ay) || 1, [h, e0, e1] = RECT[k];
+    tx = (bx - ax) / l; ty = (by - ay) / l;
+    c0x = ax - tx * e0; c0y = ay - ty * e0; len = l + e0 + e1; hw = h * swellOf(d, k);
+  }
+  const [rx, ry, rw, rh] = CHART[k], u = Math.min((2 * hw - 3) / rw, (len - 3) / rh);
+  // Same side as the body chart: the doll's right (liver) on the left of the screen.
+  return { tx, ty, nx: ty, ny: -tx, u, rx, ry, rw, rh, mid: rx + rw / 2, ox: c0x + tx * 1.5, oy: c0y + ty * 1.5, depth: (len - 3) / u };
+}
+const chartAt = (f, x, y) => {
+  const px = x - f.ox, py = y - f.oy;
+  return [f.mid + (px * f.nx + py * f.ny) / f.u, f.ry + (px * f.tx + py * f.ty) / f.u];
+};
+
 // Very close up the head, chest and belly open like a cut-away and show the
-// organs, painted with the same pictures as the body chart and laid onto
-// each part. a fades the view in with the zoom.
+// organs, the same pixel pictures as on the body chart. a fades the view in
+// with the zoom.
 function drawDollOrgans(d, a) {
   if (a <= 0.01) return;
   for (const k of [TORSO, PELVIS, HEAD]) {
     if (d.gone[k]) continue;
-    let tx, ty, c0x, c0y, len, hw;
-    if (k === HEAD) {
-      // From the top of the skull down toward the face.
-      const nx = d.x[d.pa[HEAD]], ny = d.y[d.pa[HEAD]], hx = d.x[d.pb[HEAD]], hy = d.y[d.pb[HEAD]];
-      const l = Math.hypot(hx - nx, hy - ny) || 1, ux = (hx - nx) / l, uy = (hy - ny) / l;
-      c0x = nx + ux * (NECK_LEN + HEAD_H); c0y = ny + uy * (NECK_LEN + HEAD_H);
-      tx = -ux; ty = -uy; len = HEAD_H; hw = HEAD_HW;
-    } else {
-      const ax = d.x[d.pa[k]], ay = d.y[d.pa[k]], bx = d.x[d.pb[k]], by = d.y[d.pb[k]];
-      const l = Math.hypot(bx - ax, by - ay) || 1, [h, e0, e1] = RECT[k];
-      tx = (bx - ax) / l; ty = (by - ay) / l;
-      c0x = ax - tx * e0; c0y = ay - ty * e0; len = l + e0 + e1; hw = h;
-    }
-    // Same side as the body chart: the doll's right (liver) on the left of the screen.
-    const nx = ty, ny = -tx;
-    const [rx, ry, rw, rh] = CHART[k], su = (2 * hw - 3) / rw, sv = (len - 3) / rh;
-    const ma = nx * su, mb = ny * su, mc = tx * sv, md = ty * sv;
-    const mid = rx + rw / 2;
+    const f = organFrame(d, k), { rx, ry, rw, rh, u, mid } = f;
+    const ma = f.nx * u, mb = f.ny * u, mc = f.tx * u, md = f.ty * u;
     ctx.save();
-    ctx.transform(ma, mb, mc, md, c0x + tx * 1.5 - mid * ma - ry * mc, c0y + ty * 1.5 - mid * mb - ry * md);
-    const open = k === HEAD ? rh * 0.62 : rh;
+    ctx.transform(ma, mb, mc, md, f.ox - mid * ma - ry * mc, f.oy - mid * mb - ry * md);
+    const open = k === HEAD ? rh * 0.62 : f.depth;
     ctx.beginPath(); ctx.rect(rx, ry, rw, open); ctx.clip();
     ctx.globalAlpha *= a;
     const g = ctx.createLinearGradient(rx, ry, rx + rw, ry + open);
     g.addColorStop(0, "rgba(70,14,22,0.95)"); g.addColorStop(1, "rgba(34,6,10,0.95)");
     ctx.fillStyle = g; ctx.fillRect(rx, ry, rw, open);
+    if (k !== HEAD && open > rh + 1) {
+      // Below the chart picture: loops of small bowel, and the bladder low in the pelvis.
+      const fh = Math.floor(open - rh), bmp = coilBitmap(rw, fh, d.organ[ORGAN.gut] / 100), smooth = ctx.imageSmoothingEnabled;
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(bmp, rx, ry + rh, rw, fh);
+      ctx.imageSmoothingEnabled = smooth;
+      if (k === PELVIS) { const bl = ORGAN_SPRITES.bladder[0]; bl.y = Math.floor(ry + open - 7); drawOrganSprite("bladder", 1); }
+    }
+    ctx.save(); ctx.beginPath(); ctx.rect(rx, ry, rw, Math.min(rh, open)); ctx.clip();
     drawChartOrgans(d, 0, 0, 1);
+    ctx.restore();
     // A rim of cut flesh around the opening
-    ctx.strokeStyle = "rgba(200,52,76,0.85)"; ctx.lineWidth = 1.2; ctx.strokeRect(rx + 0.3, ry + 0.3, rw - 0.6, open - 0.6);
+    ctx.strokeStyle = "rgba(200,52,76,0.85)"; ctx.lineWidth = 1.2 / u; ctx.strokeRect(rx + 0.3, ry + 0.3, rw - 0.6, open - 0.6);
     ctx.restore();
   }
 }
@@ -4047,6 +4187,15 @@ function drawDrip(x, y, s, bleed, seed, now) {
 
 function drawWoundMark(w, x, y, s, now) {
   const seed = w.seed || w.rot * 9, big = w.size > 2 ? 1.25 : 1;
+  if (w.bandaged) {
+    // Gauze strip across the part with the blood that soaked through.
+    rr(x - 4.2 * s, y - 1.8 * s, 8.4 * s, 3.6 * s, 0.9 * s); ctx.fillStyle = "#ece8de"; ctx.fill();
+    ctx.strokeStyle = "rgba(120,110,96,0.6)"; ctx.lineWidth = 0.35 * s; ctx.stroke();
+    ctx.beginPath(); for (let k = -3; k <= 3; k += 1.5) { ctx.moveTo(x + k * s, y - 1.6 * s); ctx.lineTo(x + k * s, y + 1.6 * s); } ctx.stroke();
+    ctx.fillStyle = w.bleed > 0 ? "rgba(170,24,40,0.85)" : "rgba(110,26,32,0.8)";
+    blobPath(x, y, (0.7 + (w.soak || 0) * 1.1) * s, seed, 7, 0.4); ctx.fill();
+    return;
+  }
   if (w.stump) {
     // Torn flesh with the bone end in the middle
     blobPath(x, y, 3.6 * s, seed, 9, 0.5); ctx.fillStyle = "#7a0a16"; ctx.fill();
@@ -5042,6 +5191,7 @@ const HELP = [
   [T_FIRE, "Puppen anzünden, Wasser löscht"],
   [T_ICE, "Eis setzen, friert Puppen ein"],
   [T_BOMB, "Tippen, um zu sprengen"],
+  [T_BANDAGE, "Auf eine Wunde tippen, stoppt die Blutung"],
   [T_IV, "Heilt und weckt Bewusstlose"],
   [T_DOLL, "Tippen, wo sie stehen soll"],
   [T_RESET, "Baut die Map neu auf"],
@@ -5098,20 +5248,55 @@ function settingRows() {
   return tab.rows().map((r, n) => ({ ...r, x, y: y0 + n * (h + 12), w, h }));
 }
 
-function drawSettings() {
-  screenBackground();
-  withAppear(appear(0), () => { label("EINSTELLUNGEN", W / 2, 50, 26, "#e6e6de", "center"); drawBackButton(); });
-  withAppear(appear(1), () => {
-    for (const t of settingTabs()) {
-      const k = tween("tab:" + t.id, t.id === (state.settingsTab || "audio") ? 1 : 0, 16);
-      scaled(t.x + t.w / 2, t.y + t.h / 2, 1 - 0.03 * pressAmt("tab:" + t.id, t), () => {
-        rr(t.x, t.y, t.w, t.h, 9);
-        ctx.fillStyle = css(mixc(hex("#1a1a20"), hex("#2e2e37"), k)); ctx.fill();
-        ctx.strokeStyle = css(mixc(hex("#2e2e36"), hex("#e8443a"), k)); ctx.lineWidth = 1.4; ctx.stroke();
-        label(t.name, t.x + t.w / 2, t.y + t.h / 2 + 1, 12, css(mixc(hex("#8e8e98"), hex("#f2f2ec"), k)), "center");
-      });
+// Settings in the look of the game: a dark room with blood on the walls,
+// a title with a bleeding underline, tabs that drip and switches that fill
+// with blood when they are on.
+const settingsFx = { drops: [], splats: null };
+function settingsSplats() {
+  if (settingsFx.splats) return settingsFx.splats;
+  // Fixed spatter, the same each time: a few big blots with droplets around.
+  let seed = 7;
+  const rnd2 = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  const out = [];
+  for (const [cx, cy, r] of [[40, 380, 26], [W - 60, 90, 22], [W - 30, 360, 14], [90, 120, 10], [W * 0.62, 410, 12]]) {
+    out.push([cx, cy, r, 0.55]);
+    for (let n = 0; n < 14; n++) {
+      const a = rnd2() * Math.PI * 2, d = r * (0.9 + rnd2() * 2.2);
+      out.push([cx + Math.cos(a) * d, cy + Math.sin(a) * d, 1 + rnd2() * r * 0.18, 0.4 + rnd2() * 0.4]);
     }
+  }
+  return (settingsFx.splats = out);
+}
+
+function drawSettings(dt) {
+  screenBackground("#141015", "#0c0b0e");
+  // Wall panels and a red shadow at the edges, like the room on the title.
+  ctx.fillStyle = "rgba(255,255,255,0.025)";
+  for (let x = 0; x < W; x += 96) ctx.fillRect(x, 0, 1.5, H);
+  ctx.fillRect(0, 150, W, 1.5);
+  for (const [x, y, r, a] of settingsSplats()) { ctx.fillStyle = `rgba(110,8,18,${a})`; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); }
+  const v = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, W * 0.7);
+  v.addColorStop(0, "rgba(80,0,8,0)"); v.addColorStop(1, "rgba(80,0,8,0.35)");
+  ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+  withAppear(appear(0), () => {
+    label("EINSTELLUNGEN", W / 2, 46, 26, "#ecece4", "center");
+    // The underline draws itself and bleeds a few drops.
+    const line = easeOut((state.screenT - 0.1) / 0.4), lw = 230;
+    ctx.fillStyle = "#8e0f1c"; ctx.fillRect(W / 2 - lw / 2, 64, lw * line, 3);
+    if (line >= 1 && Math.random() < (dt || 0) * 1.6) settingsFx.drops.push({ x: W / 2 - lw / 2 + 8 + Math.random() * (lw - 16), y: 67, v: 0, len: 0, age: 0 });
+    drawBackButton();
   });
+  for (const d of settingsFx.drops) {
+    d.age += dt || 0;
+    if (d.age < 0.6) d.len = d.age * 10; else { d.v += 420 * (dt || 0); d.y += d.v * (dt || 0); }
+  }
+  settingsFx.drops = settingsFx.drops.filter((d) => d.y < H);
+  ctx.fillStyle = "#9c0e1c";
+  for (const d of settingsFx.drops) {
+    if (d.age < 0.6) { ctx.fillRect(d.x - 0.8, 66, 1.6, d.len); ctx.beginPath(); ctx.arc(d.x, 66 + d.len, 1.8, 0, Math.PI * 2); ctx.fill(); }
+    else { ctx.beginPath(); ctx.ellipse(d.x, d.y, 1.5, 2.6, 0, 0, Math.PI * 2); ctx.fill(); }
+  }
+  withAppear(appear(1), () => { for (const t of settingTabs()) drawSettingTab(t); });
   // The rows of the chosen tab slide in a little when the tab changes.
   const ch = easeOut((performance.now() - (state.settingsTabT || 0)) / 220);
   ctx.save(); ctx.globalAlpha *= ch; ctx.translate(0, (1 - ch) * 8);
@@ -5119,17 +5304,134 @@ function drawSettings() {
   ctx.restore();
 }
 
+function drawSettingTab(t) {
+  const k = tween("tab:" + t.id, t.id === (state.settingsTab || "audio") ? 1 : 0, 16);
+  scaled(t.x + t.w / 2, t.y + t.h / 2, 1 - 0.03 * pressAmt("tab:" + t.id, t), () => {
+    rr(t.x, t.y, t.w, t.h, 8);
+    ctx.fillStyle = "#16141a"; ctx.fill();
+    if (k > 0.01) {
+      // The chosen tab is soaked in blood that runs off its lower edge.
+      ctx.save(); ctx.globalAlpha *= k;
+      const g = ctx.createLinearGradient(0, t.y, 0, t.y + t.h);
+      g.addColorStop(0, "#c8222f"); g.addColorStop(1, "#7a0c16");
+      rr(t.x, t.y, t.w, t.h, 8); ctx.fillStyle = g; ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.14)"; rr(t.x + 4, t.y + 3, t.w - 8, 3, 1.5); ctx.fill();
+      ctx.fillStyle = "#7a0c16";
+      const now = performance.now() / 1000;
+      for (const [fx, len, sp] of [[0.18, 7, 0.9], [0.43, 4, 1.3], [0.71, 9, 0.7], [0.88, 5, 1.1]]) {
+        const grow = len * k * (0.85 + 0.15 * Math.sin(now * sp * 2 + fx * 9)), x = t.x + t.w * fx;
+        ctx.fillRect(x - 1.2, t.y + t.h - 2, 2.4, grow);
+        ctx.beginPath(); ctx.arc(x, t.y + t.h - 1 + grow, 2, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.restore();
+    }
+    rr(t.x, t.y, t.w, t.h, 8); ctx.strokeStyle = css(mixc(hex("#34303a"), hex("#ff6a5a"), k)); ctx.lineWidth = 1.4; ctx.stroke();
+    label(t.name, t.x + t.w / 2, t.y + t.h / 2 + 1, 12, css(mixc(hex("#8e8a96"), hex("#fff4ec"), k)), "center");
+  });
+}
+
 function drawSettingRow(r) {
-  {
-    rr(r.x, r.y, r.w, r.h, 12); ctx.fillStyle = "rgba(26,26,32,0.92)"; ctx.fill();
-    ctx.strokeStyle = "#2e2e36"; ctx.lineWidth = 1.2; ctx.stroke();
-    label(r.text, r.x + 16, r.y + 20, 13, "#e2e2da");
-    label(r.sub, r.x + 16, r.y + 37, 10, "#7a7a84", "left", 400);
-    // switch
-    const sx = r.x + r.w - 66, sy = r.y + r.h / 2 - 12, k = tween("sw:" + r.id, r.on ? 1 : 0, 16);
-    rr(sx, sy, 50, 24, 12); ctx.fillStyle = css(mixc(hex("#2c2c34"), hex("#3c9a4a"), k)); ctx.fill();
-    ctx.beginPath(); ctx.arc(sx + 12 + 26 * k, sy + 12, 9, 0, Math.PI * 2); ctx.fillStyle = "#f2f2ec"; ctx.fill();
+  const k = tween("sw:" + r.id, r.on ? 1 : 0, 14);
+  // Dark slab with a worn inner edge and a red bar on the left while it is on.
+  rr(r.x, r.y, r.w, r.h, 10);
+  const g = ctx.createLinearGradient(0, r.y, 0, r.y + r.h);
+  g.addColorStop(0, "rgba(30,26,32,0.96)"); g.addColorStop(1, "rgba(18,16,20,0.96)");
+  ctx.fillStyle = g; ctx.fill();
+  ctx.strokeStyle = css(mixc(hex("#2e2a32"), hex("#5a1a22"), k)); ctx.lineWidth = 1.3; ctx.stroke();
+  ctx.save(); rr(r.x, r.y, r.w, r.h, 10); ctx.clip();
+  ctx.fillStyle = css(hex("#b01a28"), k); ctx.fillRect(r.x, r.y, 3, r.h);
+  ctx.restore();
+  // Icon tile
+  rr(r.x + 10, r.y + 9, 34, 34, 8); ctx.fillStyle = "#0e0d10"; ctx.fill();
+  ctx.strokeStyle = "#2a2630"; ctx.lineWidth = 1; ctx.stroke();
+  ctx.save(); ctx.globalAlpha *= 0.55 + 0.45 * k; drawSettingIcon(r.id, r.x + 27, r.y + 26); ctx.restore();
+  label(r.text, r.x + 54, r.y + 20, 13, "#ecece4");
+  label(r.sub, r.x + 54, r.y + 37, 9.5, "#86828e", "left", 400);
+  // Switch: a glass tube that fills with blood, a bone white knob.
+  const sx = r.x + r.w - 70, sy = r.y + r.h / 2 - 12, sw = 54;
+  rr(sx, sy, sw, 24, 12); ctx.fillStyle = "#0a090c"; ctx.fill();
+  ctx.save(); rr(sx, sy, sw, 24, 12); ctx.clip();
+  if (k > 0.01) {
+    const bg = ctx.createLinearGradient(0, sy, 0, sy + 24);
+    bg.addColorStop(0, "#d42634"); bg.addColorStop(1, "#6e0a14");
+    ctx.fillStyle = bg; ctx.fillRect(sx, sy, sw * k, 24);
+    // Wavy front of the blood as it fills
+    ctx.beginPath(); ctx.arc(sx + sw * k, sy + 12, 12 * Math.min(1, k * 3), -Math.PI / 2, Math.PI / 2); ctx.fill();
   }
+  ctx.fillStyle = "rgba(255,255,255,0.1)"; rr(sx + 6, sy + 3, sw - 12, 4, 2); ctx.fill();
+  ctx.restore();
+  rr(sx, sy, sw, 24, 12); ctx.strokeStyle = css(mixc(hex("#34303a"), hex("#ff5a4a"), k)); ctx.lineWidth = 1.3; ctx.stroke();
+  label(k > 0.5 ? "AN" : "AUS", sx + (k > 0.5 ? 16 : sw - 17), sy + 12.5, 8.5, k > 0.5 ? "#ffe2dc" : "#6e6a76", "center");
+  const kx = sx + 12 + (sw - 24) * k;
+  ctx.fillStyle = "rgba(0,0,0,0.45)"; rr(kx - 8, sy + 5, 18, 16, 5); ctx.fill();
+  const kg = ctx.createLinearGradient(0, sy + 3, 0, sy + 21);
+  kg.addColorStop(0, "#f6f0e2"); kg.addColorStop(1, "#c8bea8");
+  ctx.fillStyle = kg; rr(kx - 9, sy + 3, 18, 18, 5); ctx.fill();
+  ctx.fillStyle = "rgba(120,104,84,0.5)"; ctx.fillRect(kx - 3, sy + 8, 1.2, 8); ctx.fillRect(kx + 1.8, sy + 8, 1.2, 8);
+}
+
+// Small painted icons for the settings, lit from the upper left like the dock.
+function drawSettingIcon(id, cx, cy) {
+  ctx.save(); ctx.translate(cx, cy); ctx.lineCap = "round"; ctx.lineJoin = "round";
+  const red = iconGrad(0, -9, 0, 9, "#ff5a5a", "#a8141f"), bone = iconGrad(0, -9, 0, 9, "#fbf6ea", "#c8bea8");
+  switch (id) {
+    case "sound":
+      ctx.fillStyle = bone; ctx.beginPath(); ctx.moveTo(-9, -3.5); ctx.lineTo(-5, -3.5); ctx.lineTo(0, -8.5); ctx.lineTo(0, 8.5); ctx.lineTo(-5, 3.5); ctx.lineTo(-9, 3.5); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = "#ff5a5a"; ctx.lineWidth = 1.6;
+      for (const r of [4, 7.5]) { ctx.beginPath(); ctx.arc(1, 0, r, -0.8, 0.8); ctx.stroke(); }
+      break;
+    case "music":
+      ctx.fillStyle = bone; ctx.strokeStyle = "#f2ece0"; ctx.lineWidth = 1.8;
+      ctx.beginPath(); ctx.moveTo(-3, 6); ctx.lineTo(-3, -7); ctx.lineTo(7, -9); ctx.lineTo(7, 4); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(-5.5, 6.5, 3.2, 2.4, -0.4, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(4.5, 4.5, 3.2, 2.4, -0.4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#c8222f"; ctx.beginPath(); ctx.ellipse(-5.5, 6.5, 1.2, 0.9, -0.4, 0, Math.PI * 2); ctx.fill();
+      break;
+    case "front":
+      // A blocky face looking at you
+      ctx.fillStyle = iconGrad(0, -9, 0, 9, "#f4d8bc", "#c89a72"); rr(-8, -9, 16, 18, 2); ctx.fill();
+      ctx.fillStyle = "#4a3020"; rr(-8, -9, 16, 5, 2); ctx.fill();
+      ctx.fillStyle = "#16161a"; ctx.fillRect(-4.5, -1.5, 2.4, 2.4); ctx.fillRect(2.1, -1.5, 2.4, 2.4);
+      ctx.fillStyle = "#8a4a3a"; ctx.fillRect(-2.5, 4.5, 5, 1.4);
+      break;
+    case "organs":
+      // A heart with its vessels
+      ctx.strokeStyle = "#6a7ed0"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-4, -4); ctx.lineTo(-5, -9); ctx.stroke();
+      ctx.strokeStyle = "#e8404e"; ctx.beginPath(); ctx.moveTo(1, -5); ctx.quadraticCurveTo(1, -10, 6, -9); ctx.stroke();
+      ctx.fillStyle = red; ctx.beginPath(); ctx.moveTo(-7, -3); ctx.bezierCurveTo(-3, -8, 6, -7, 7, -1); ctx.bezierCurveTo(7.5, 4, 3, 7, 1, 9); ctx.bezierCurveTo(-3, 6, -8, 2, -7, -3); ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.35)"; ctx.beginPath(); ctx.ellipse(-3, -3, 2, 1.2, -0.5, 0, Math.PI * 2); ctx.fill();
+      break;
+    case "decay":
+      // Skull
+      ctx.fillStyle = bone; rr(-8, -9, 16, 13, 6); ctx.fill(); rr(-5, 2, 10, 6, 2); ctx.fill();
+      ctx.fillStyle = "#16120c"; ctx.beginPath(); ctx.ellipse(-3.5, -2.5, 2.4, 2.8, 0, 0, Math.PI * 2); ctx.ellipse(3.5, -2.5, 2.4, 2.8, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(0, 0.5); ctx.lineTo(-1.2, 3); ctx.lineTo(1.2, 3); ctx.closePath(); ctx.fill();
+      for (const x of [-3, -0.6, 1.8]) ctx.fillRect(x, 5, 1, 3);
+      break;
+    case "decayFast":
+      // Hourglass with red sand
+      ctx.fillStyle = "#8a7a62"; ctx.fillRect(-7, -9.5, 14, 2); ctx.fillRect(-7, 7.5, 14, 2);
+      ctx.strokeStyle = "#f2ece0"; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(-5.5, -7.5); ctx.lineTo(5.5, -7.5); ctx.lineTo(0.8, 0); ctx.lineTo(5.5, 7.5); ctx.lineTo(-5.5, 7.5); ctx.lineTo(-0.8, 0); ctx.closePath(); ctx.stroke();
+      ctx.fillStyle = "#d42634"; ctx.beginPath(); ctx.moveTo(-3.5, -5); ctx.lineTo(3.5, -5); ctx.lineTo(0, -1); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(-4.5, 7); ctx.lineTo(4.5, 7); ctx.lineTo(0, 3.5); ctx.closePath(); ctx.fill();
+      ctx.fillRect(-0.4, -1, 0.8, 5);
+      break;
+    case "panel":
+      // Little body chart with a red part
+      ctx.fillStyle = "#e8e4dc"; rr(-2.5, -9.5, 5, 4.5, 1); ctx.fill(); rr(-4.5, -4.5, 9, 8, 1); ctx.fill();
+      rr(-7.5, -4.5, 2.4, 7, 1); ctx.fill(); rr(5.1, -4.5, 2.4, 7, 1); ctx.fill();
+      rr(-4.5, 4, 3.8, 6, 1); ctx.fill(); ctx.fillStyle = "#e8323f"; rr(0.7, 4, 3.8, 6, 1); ctx.fill();
+      break;
+    case "shake":
+      // A screen with shake lines
+      ctx.fillStyle = "#1a1820"; ctx.strokeStyle = "#e8e4dc"; ctx.lineWidth = 1.5; rr(-6, -6.5, 12, 13, 2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#c8222f"; ctx.beginPath(); ctx.arc(0, 0, 2.6, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "#ff5a5a"; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(-10, -4); ctx.lineTo(-8.5, -2); ctx.lineTo(-10, 0); ctx.lineTo(-8.5, 2); ctx.moveTo(10, -2); ctx.lineTo(8.5, 0); ctx.lineTo(10, 2); ctx.lineTo(8.5, 4); ctx.stroke();
+      break;
+  }
+  ctx.restore();
 }
 
 // ----------------------------------------------------------------- input
@@ -5138,7 +5440,7 @@ function drawScreen(dt) {
   if (state.screen === "title") drawTitle(dt);
   else if (state.screen === "maps") drawMaps();
   else if (state.screen === "help") drawHelp();
-  else if (state.screen === "settings") drawSettings();
+  else if (state.screen === "settings") drawSettings(dt);
 }
 
 // Every tappable thing on the current menu screen and what it does.
@@ -5719,6 +6021,21 @@ function press() {
     }
     if (best && best.dead) { state.selected = best; state.toast = 1.6; state.toastText = "Tot. Keine Rettung mehr"; }
     else if (best) { best.attachInfusion(); state.selected = best; state.toast = 1.2; state.toastText = "Infusion angelegt"; }
+    return;
+  }
+  if (state.tool === T_BANDAGE) {
+    // Wrap the wound nearest to the finger. The bandage presses it shut.
+    state.pressing = false;
+    let best = null, bd = 34, bdoll = null;
+    for (const d of state.dolls) for (const w of d.wounds) {
+      if (w.bandaged || d.gone[w.part]) continue;
+      const [wx, wy] = d.woundPos(w), dist = Math.hypot(wx - state.mx, wy - state.my);
+      if (dist < bd) { bd = dist; best = w; bdoll = d; }
+    }
+    if (!best) { state.toast = 1.2; state.toastText = "Hier ist keine Wunde"; return; }
+    bdoll.bandage(best);
+    state.selected = bdoll; state.toast = 1.2; state.toastText = bdoll.dead ? "Verband angelegt, zu spät" : "Verband angelegt";
+    tearSound();
     return;
   }
   if (state.tool === T_PIN) {
