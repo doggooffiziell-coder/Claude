@@ -1032,7 +1032,9 @@ class Doll {
     // Muscles hold the posture once per step. They move the limbs without
     // adding speed, so they cannot rock the body into shaking.
     if (!this.frozen && !this.dead && !this.isOut()) {
-      this.solveJoints((this.holdsBody() ? MUSCLE_HELD : 0.08) * clamp(this.ko / 100, 0, 1), true);
+      // Held by the finger, an awake doll keeps its posture and its footing
+      // instead of going limp; only an unconscious one hangs loose.
+      this.solveJoints(0.08 * clamp(this.ko / 100, 0, 1), true);
       for (let i = 0; i < this.x.length; i++) this.pushOut(i);
       this.pushOutSegments();
     }
@@ -1052,12 +1054,12 @@ class Doll {
       const ids = [P_ANKLE_L, P_TOE_L, P_ANKLE_R, P_TOE_R];
       // A standing doll shuffles its feet back under its hips, a little each
       // step, so it ends up in its upright stance instead of a crooked one.
-      const pose = activePose(), cx = (feet0[0] + feet0[2]) / 2;
+      const pose = activePose(), sh = this.footShift || 0, cx = (feet0[0] + feet0[2]) / 2 + sh;
       for (let n = 0; n < 4; n++) {
         const i = ids[n];
         if (!this.attached(this.owner[i])) continue;
         const target = cx + (pose[i][0] - (pose[P_ANKLE_L][0] + pose[P_ANKLE_R][0]) / 2) * this.facing;
-        const fx = moveToward(feet0[n], target, 0.35);
+        const fx = moveToward(feet0[n] + sh, target, 0.35);
         this.x[i] = fx; this.ox[i] = fx;
       }
     }
@@ -1387,6 +1389,7 @@ class Doll {
   // A conscious doll with its feet on the floor keeps its body over its feet.
   balance() {
     this.standing = false;
+    this.footShift = 0;
     this.stagger = Math.max(0, this.stagger - DT);
     // A hard shove to the upper body knocks the doll off its feet for a moment.
     const nv = Math.hypot(this.x[P_NECK] - this.ox[P_NECK], this.y[P_NECK] - this.oy[P_NECK]);
@@ -1394,7 +1397,7 @@ class Doll {
     this.getUpGrace = Math.max(0, (this.getUpGrace || 0) - DT);
     if (nv > 5 && this.getUpGrace <= 0) this.stagger = Math.max(this.stagger, 1.4);
     if (this.stagger > 0) return;
-    if (this.dead || this.frozen || this.holdsBody() || this.isOut() || this.pn > 90) return;
+    if (this.dead || this.frozen || this.isOut() || this.pn > 90) return;
     if (!this.legsWork()) return;
     let grounded = false, feetX = 0, feet = 0;
     for (const k of [FOOT_L, FOOT_R]) {
@@ -1405,6 +1408,14 @@ class Doll {
     }
     if (!grounded || feet === 0) return;
     feetX /= feet;
+    // Pulled by the finger, the doll steps along under the held point at
+    // walking speed instead of being dragged over.
+    this.footShift = 0;
+    if (this.holdsBody()) {
+      const g = this.grabbed, want = this.x[g] - activePose()[g][0] * this.facing;
+      const nf = moveToward(feetX, want, 1.2);
+      this.footShift = nf - feetX; feetX = nf;
+    }
     const groundY = Math.max(this.y[P_ANKLE_L], this.y[P_ANKLE_R]) + 8.09 * DS;
     if (this.y[P_NECK] > this.y[P_HIP] - 30 * DS || this.y[P_HIP] > groundY - 40 * DS || Math.abs(this.x[P_NECK] - feetX) > 36 * DS) return;
     this.standing = true;
@@ -1854,8 +1865,16 @@ class Doll {
       this.stain[w.part] = Math.min(0.75, this.stain[w.part] + w.bleed * DT * 0.08);
       const f = loose ? 0.6 : flow;
       // Blood runs down the body from the wound for as long as it bleeds,
-      // a few pixels a second. The trail stays when it stops.
-      w.drip = Math.min(160, (w.drip || 0) + (0.6 + w.bleed) * f * DT * 5);
+      // a few pixels a second. Turned over or lifted, the old run stays on
+      // the skin as a stain and a new one starts downward from the wound.
+      const pa = partAngle(this, w.part);
+      if (w.runAng === undefined) w.runAng = pa;
+      if (Math.abs(wrapPi(pa - w.runAng)) > 0.45) {
+        w.runAng = pa;
+        this.stain[w.part] = Math.min(0.75, this.stain[w.part] + Math.min(w.drip || 0, 40) * 0.004);
+        w.drip = Math.min(w.drip || 0, 1.5);
+      }
+      w.drip = Math.min(90, (w.drip || 0) + (0.6 + w.bleed) * f * DT * 5);
       if (f <= 0) continue;
       // Where the run leaves the body, drops fall off to the floor.
       if (w.dripOut && w.dripEnd && Math.random() < (0.5 + w.bleed) * f * DT * 4) spawnParticle(w.dripEnd[0] + rf(-0.8, 0.8), w.dripEnd[1], rf(-4, 4), rf(10, 30), BLOOD);
@@ -2504,18 +2523,26 @@ function rasterWound(d, w, order) {
 // Blood runs straight down from every open wound, over shirt, trousers and
 // legs, wandering a little. Where it reaches the edge of the body it drips
 // off; the drops fall to the floor (Doll.updateEffects).
+const partAngle = (d, k) => Math.atan2(d.y[d.pb[k]] - d.y[d.pa[k]], d.x[d.pb[k]] - d.x[d.pa[k]]);
 function rasterRuns(d) {
   for (const w of d.wounds) {
     const r = w.runFrom;
     w.runFrom = null;
     if (!r || w.bandaged || d.gone[w.part]) { w.dripOut = false; continue; }
     const [x0, y0, open, hash] = r, len = Math.floor(w.drip || 0);
-    let x = x0, y = y0, out = false;
+    // Fresh blood runs straight down. A dried run keeps the direction it had
+    // on the body and turns with it.
+    const turn = open || w.runAng === undefined ? 0 : wrapPi(partAngle(d, w.part) - w.runAng);
+    const dx = -Math.sin(turn), dy = Math.cos(turn);
+    let fx = x0 + 0.5, fy = y0 + 0.5, x = x0, y = y0, out = false, side = 0;
     for (let n = 1; n <= len; n++) {
-      if (n > 1 && hash(n + 30) < 0.22) x += hash(n + 50) < 0.5 ? -1 : 1;
-      y++;
+      if (n > 1 && hash(n + 30) < 0.22) side += hash(n + 50) < 0.5 ? -1 : 1;
+      fx += dx; fy += dy;
+      const nx = Math.floor(fx + dy * side), ny = Math.floor(fy - dx * side);
+      if (nx === x && ny === y) continue;
+      x = nx; y = ny;
       const i = y * DW + x;
-      if (y > bby1 || x < bbx0 || x > bbx1 || !tmask[i]) { out = true; break; }
+      if (y > bby1 || y < bby0 || x < bbx0 || x > bbx1 || !tmask[i]) { out = true; break; }
       tset(i, open ? (n === len ? WC_DROP : WC_RUN) : WC_DRIED, tmask[i]);
     }
     w.dripOut = out && open;
@@ -7154,7 +7181,7 @@ function drawAimView() {
 
 const DOOR = { x: Math.round(W * 0.66), y: FLOOR_Y - 150, w: 70, h: 138 };
 const egg = { taps: [], open: 0, active: false, idle: 0, say: "", sayT: 0, last: "", anim: "", animT: 0, blink: 0 };
-const EGG_ANSWERS = [["JA.", "nod", 35], ["NEIN.", "shake", 35], ["HO HO HO.", "laugh", 15], ["BÄÄÄH.", "yuck", 15]];
+const EGG_ANSWERS = [["YES.", "nod", 35], ["NO.", "shake", 35], ["HO-HO-HO!", "laugh", 15], ["BLEHH!", "yuck", 15]];
 const dogBox = () => ({ x: DOOR.x + 6, y: DOOR.y + 40, w: DOOR.w - 12, h: DOOR.h - 40 });
 
 // Returns true when the tap belonged to the egg.
@@ -7168,7 +7195,7 @@ function eggPress() {
   egg.taps.push(now);
   if (egg.taps.length < 3) return false;
   egg.taps = []; egg.active = true; egg.idle = 0;
-  egg.say = "HALLO?"; egg.sayT = 2.2; egg.anim = "nod"; egg.animT = 0;
+  egg.say = "BEN?"; egg.sayT = 2.2; egg.anim = "hello"; egg.animT = 0;
   eggVoice("hello");
   return true;
 }
@@ -7192,15 +7219,34 @@ function eggStep(dt) {
 }
 
 // A low, grumpy dog voice made from two detuned waves.
+// Ben speaks real English words with a deep, slow voice where the phone
+// can speak. Without speech the old growling tones stand in.
+const BEN_WORDS = { hello: "Ben?", nod: "Yes.", shake: "No.", laugh: "Ho, ho, ho!", yuck: "Blehh!" };
+function benSpeak(kind) {
+  const ss = window.speechSynthesis, text = BEN_WORDS[kind];
+  if (!ss || !window.SpeechSynthesisUtterance || !text) return false;
+  try {
+    ss.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    const voices = ss.getVoices(), en = voices.filter((v) => /^en/i.test(v.lang));
+    const v = en.find((v) => /daniel|fred|alex|aaron|arthur|male/i.test(v.name)) || en.find((v) => /en[-_]US/i.test(v.lang)) || en[0];
+    if (v) u.voice = v;
+    u.lang = v ? v.lang : "en-US"; u.pitch = kind === "laugh" ? 0.4 : 0.15; u.rate = kind === "laugh" ? 0.75 : 0.8; u.volume = 1;
+    ss.speak(u);
+    return true;
+  } catch (e) { return false; }
+}
 function eggVoice(kind) {
   if (!settings.sound) return;
+  if (kind === "bye") { clickSound(300, 0.06); setTimeout(() => clickSound(220, 0.05), 90); return; }
+  if (benSpeak(kind)) return;
   try {
     if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
     if (audio.state === "suspended") audio.resume();
     const parts = {
       nod: [[0, 0.28, 150, 115]], shake: [[0, 0.18, 165, 150], [0.22, 0.26, 150, 110]],
       laugh: [[0, 0.16, 130, 120], [0.22, 0.16, 130, 120], [0.44, 0.22, 130, 105]],
-      yuck: [[0, 0.6, 240, 200]], hello: [[0, 0.16, 160, 170], [0.2, 0.3, 175, 135]], bye: [[0, 0.35, 140, 95]],
+      yuck: [[0, 0.6, 240, 200]], hello: [[0, 0.16, 160, 170], [0.2, 0.3, 175, 135]],
     }[kind];
     const t0 = audio.currentTime;
     for (const [at, len, f0, f1] of parts) {
@@ -7220,7 +7266,7 @@ function eggVoice(kind) {
 // The open door with the dog in it, drawn in the game's pixel blocks.
 function drawEgg() {
   if (egg.open <= 0.001) return;
-  const o = easeOut(egg.open), P = 3;
+  const o = easeOut(egg.open);
   // Dark room behind the door and the door leaf swinging open
   const g = ctx.createLinearGradient(0, DOOR.y, 0, DOOR.y + DOOR.h);
   g.addColorStop(0, "#07070a"); g.addColorStop(1, "#141418");
@@ -7228,39 +7274,61 @@ function drawEgg() {
   const leaf = (DOOR.w - 4) * (1 - o * 0.82);
   ctx.fillStyle = "#2a2a31"; ctx.fillRect(DOOR.x + 2, DOOR.y + 2, leaf, DOOR.h - 4);
   ctx.fillStyle = "rgba(255,255,255,0.08)"; ctx.fillRect(DOOR.x + 2 + leaf - 8, DOOR.y + 64, 5, 3);
-  // The dog slides into the doorway.
+  // Ben slides into the doorway, the red phone at his ear.
   const t = egg.animT, cx = DOOR.x + DOOR.w / 2 + (1 - o) * 30, by = DOOR.y + DOOR.h - 2;
-  let hx = 0, hy = 0, mouth = 0, tongue = false;
-  if (egg.anim === "nod" && t < 0.8) hy = Math.sin(t * 16) * 1.2 + 0.6;
-  if (egg.anim === "shake" && t < 0.9) hx = Math.sin(t * 22) * 1.4;
-  if (egg.anim === "laugh" && t < 1.1) { hy = -Math.abs(Math.sin(t * 14)) * 1.2; mouth = 1; }
-  if (egg.anim === "yuck" && t < 1.2) { mouth = 1; tongue = true; hx = Math.sin(t * 30) * 0.4; }
+  let hx = 0, hy = 0, mouth = 0, eyes = egg.blink > 0 ? "shut" : "open";
+  if (egg.anim === "hello" && t < 0.8) { hy = -Math.abs(Math.sin(t * 8)) * 1.2; mouth = t < 0.5 && Math.sin(t * 18) > 0 ? 1 : 0; }
+  if (egg.anim === "nod" && t < 0.8) hy = Math.sin(t * 16) * 1.5 + 0.7;
+  if (egg.anim === "shake" && t < 0.9) hx = Math.sin(t * 22) * 1.8;
+  if (egg.anim === "laugh" && t < 1.2) { hy = -Math.abs(Math.sin(t * 14)) * 1.6; mouth = 2; eyes = "happy"; }
+  if (egg.anim === "yuck" && t < 1.3) { mouth = 3; eyes = "squint"; hx = Math.sin(t * 30) * 0.6; }
   if ((egg.anim === "nod" || egg.anim === "shake") && t < 0.45) mouth = Math.sin(t * 20) > 0 ? 1 : 0;
+  const P = 2;
   const R = (x, y, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(cx + x * P, by + y * P, w * P, h * P); };
-  const OUT = "#0b0b0e", FUR = "#8a5a32", DARK = "#5a3418", CREAM = "#e8d4b0", COAT = "#e6e6de", COATS = "#b8b8b0";
+  const OUT = "#0b0b0e", FUR = "#8b5a2b", FURD = "#5e3a1a", FURL = "#a8743e", CREAM = "#ead7b2", CREAMD = "#c9b08a";
+  const RED = "#d02a30", REDD = "#8a1418", REDL = "#f06a6a";
   ctx.save(); ctx.globalAlpha *= o;
-  // Body in a lab coat, brown paws, the fur showing between the lapels
-  R(-9.5, -18.5, 19, 18.5, OUT); R(-9, -18, 18, 18, COAT); R(4, -18, 5, 18, COATS);
-  R(-2, -18, 4, 9, FUR); R(-2, -10, 1, 9, COATS); R(1, -10, 1, 9, COATS);
-  R(-8.5, -3.5, 5, 3.5, OUT); R(3.5, -3.5, 5, 3.5, OUT); R(-8, -3, 4, 3, FUR); R(4, -3, 4, 3, FUR);
-  R(-7, -12, 3, 1, COATS); R(5, -12, 3, 1, COATS);
-  // Head with droopy ears, grey brows, glasses and a cream muzzle
+  // Sitting body: brown fur, a cream chest, two front paws
+  R(-11, -22, 22, 22, OUT); R(-10, -21, 20, 21, FUR); R(6, -21, 4, 21, FURD); R(-10, -21, 2, 21, FURL);
+  R(-5, -19, 10, 14, CREAM); R(2, -19, 3, 14, CREAMD);
+  R(-10, -5, 8, 5, OUT); R(2, -5, 8, 5, OUT); R(-9, -4, 6, 4, FUR); R(3, -4, 6, 4, FUR);
+  R(-8, -1, 1, 1, FURD); R(-6, -1, 1, 1, FURD); R(4, -1, 1, 1, FURD); R(6, -1, 1, 1, FURD);
+  // The phone cord curls from the receiver down to the chest.
+  ctx.strokeStyle = REDD; ctx.lineWidth = 1.2; ctx.beginPath();
+  for (let n = 0; n <= 14; n++) { const u = n / 14, px = cx + (14 - u * 10) * P + Math.sin(u * 22) * 2.2, py = by + (-26 + u * 16) * P; n ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
+  ctx.stroke();
   ctx.save(); ctx.translate(hx * P, hy * P);
-  R(-10.5, -28.5, 4, 13, OUT); R(6.5, -28.5, 4, 13, OUT); R(-10, -28, 3, 12, DARK); R(7, -28, 3, 12, DARK);
-  R(-7.5, -30.5, 15, 14, OUT); R(-7, -30, 14, 13, FUR); R(-7, -30, 14, 2, DARK);
-  R(-4.5, -23, 9, 6.5, OUT); R(-4, -22.5, 8, 6, CREAM);
-  R(-1.5, -23.5, 3, 2, "#121216");
-  // Eyes: sleepy lids, blink now and then, round glasses around them
-  const shut = egg.blink > 0;
-  for (const ex of [-5, 2]) {
-    R(ex - 0.5, -27.5, 4, 4, "#9a9aa6"); R(ex, -27, 3, 3, shut ? FUR : "#f2f2ec");
-    if (!shut) { R(ex + 1, -25.8, 1.2, 1.4, "#121216"); R(ex, -27, 3, 1.1, FUR); }
-    R(ex - 0.2, -28.6, 3.4, 0.8, "#cfcfcf");
+  // Long droopy ears
+  R(-16, -46, 6, 24, OUT); R(10, -46, 6, 24, OUT); R(-15, -45, 4, 22, FURD); R(11, -45, 4, 22, FURD); R(-15, -45, 1, 20, FUR);
+  // Big round head with a wrinkled brow
+  // Rounded skull: each outline row a little wider down to the cheeks
+  R(-8, -54, 16, 2, OUT); R(-11, -52, 22, 2, OUT); R(-12, -50, 24, 28, OUT); R(-13, -46, 26, 18, OUT);
+  R(-7, -53, 14, 2, FUR); R(-10, -51, 20, 2, FUR); R(-11, -49, 22, 26, FUR); R(-12, -45, 24, 16, FUR);
+  R(-7, -53, 14, 1, FURL); R(-10, -51, 4, 1, FURL); R(7, -49, 4, 22, FURD);
+  for (const [wx, wy, ww] of [[-6, -48, 12], [-4, -46, 8]]) R(wx, wy, ww, 1, FURD);
+  // Eyes under heavy lids
+  for (const ex of [-8, 3]) {
+    if (eyes === "open") {
+      R(ex - 1, -42, 7, 5, OUT); R(ex, -41, 5, 3, "#f4efe4"); R(ex + 2, -40, 2, 2, "#1a1a1a"); R(ex, -41, 5, 1.4, FURD);
+    } else if (eyes === "shut") { R(ex, -40, 5, 1, OUT); R(ex, -41, 5, 1, FURD); }
+    else if (eyes === "happy") { R(ex, -41, 1, 1, OUT); R(ex + 1, -42, 3, 1, OUT); R(ex + 4, -41, 1, 1, OUT); }
+    else { R(ex, -42, 5, 1, OUT); R(ex + 1, -41, 3, 1, OUT); R(ex, -40, 5, 1, OUT); }
   }
-  R(-1.2, -26.2, 2.4, 0.7, "#9a9aa6");
-  // Mouth: a line, or open with a tongue for the disgusted sound
-  if (mouth) { R(-2.5, -19, 5, 2.4, "#3a0c10"); if (tongue) R(-1.4, -17.4, 2.8, 2.6, "#e86a7a"); }
-  else R(-2, -18.4, 4, 0.7, DARK);
+  R(-9, -44, 7, 1, FURD); R(2, -44, 7, 1, FURD);
+  // Cream muzzle with heavy jowls and a big shiny nose
+  R(-9, -36, 18, 13, OUT); R(-8, -35, 16, 11, CREAM); R(-10, -30, 4, 8, OUT); R(6, -30, 4, 8, OUT);
+  R(-9, -29, 3, 6, CREAM); R(6, -29, 3, 6, CREAMD); R(3, -35, 5, 11, CREAMD);
+  R(-4, -37, 8, 5, OUT); R(-3, -36, 6, 3, "#1a1414"); R(-2, -36, 2, 1, "#5a4a4a");
+  R(0, -32, 1, 3, FURD);
+  // Mouth: closed, talking, laughing with the tongue, or tongue out in disgust
+  if (mouth === 0) R(-4, -29, 8, 1, FURD);
+  else if (mouth === 1) { R(-3, -30, 6, 3, OUT); R(-2, -29, 4, 1, "#3a0c10"); }
+  else if (mouth === 2) { R(-5, -31, 10, 5, OUT); R(-4, -30, 8, 3, "#3a0c10"); R(-2, -28, 4, 1, "#e46a7a"); }
+  else { R(-3, -30, 6, 2, OUT); R(-2, -29, 4, 5, OUT); R(-1, -29, 2, 4, "#e46a7a"); }
+  // Red receiver held to the right ear by a paw
+  R(11, -50, 6, 20, OUT); R(12, -49, 4, 18, RED); R(12, -49, 1, 18, REDL); R(15, -49, 1, 18, REDD);
+  R(10, -51, 6, 4, OUT); R(10, -33, 6, 4, OUT); R(11, -50, 4, 2, RED); R(11, -32, 4, 2, RED);
+  R(13, -43, 6, 7, OUT); R(14, -42, 4, 5, FUR); R(14, -42, 4, 1, FURL);
   ctx.restore();
   ctx.restore();
   // Speech bubble
