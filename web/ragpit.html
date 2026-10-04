@@ -773,7 +773,7 @@ class Doll {
     this.wounds = []; this.bands = [];
     this.grabbed = -1; this.gx = 0; this.gy = 0;
     this.ko = 100; this.bl = 100; this.pn = 0; this.o2 = 100; this.hr = 72;
-    this.dead = false; this.headUnder = false; this.deadT = 0; this.dc = null; this.rigorOn = false;
+    this.dead = false; this.headUnder = false; this.taseT = 0; this.hitReact = null; this.deadT = 0; this.dc = null; this.rigorOn = false;
     this.burn = 0; this.bladeTimer = 0; this.freeze = 0; this.frozen = false;
     this.fire = new Array(PART_COUNT).fill(0); this.ember = new Array(PART_COUNT).fill(0);
     this.burnDeg = new Array(PART_COUNT).fill(0); this.cloth = new Array(PART_COUNT).fill(1);
@@ -890,6 +890,7 @@ class Doll {
     this.hits[k]++;
     this.damaged();
     this.stagger = Math.max(this.stagger, 1.2);
+    this.hitReact = { t: 0.7, k, tt: t, s: side * 0.8 };
     // Bullets tear the organs they pass. A clean head shot can end it at once.
     this.hitOrgans(k, t, 75 * wp.dmg, 0.85);
     if (k === HEAD) {
@@ -902,6 +903,23 @@ class Doll {
       this.severCd = 0;
       this.sever(k);
     }
+  }
+
+  // Taser: two barbs hook into the skin and the current locks every muscle
+  // for five seconds. The body goes stiff, falls like a plank and shakes.
+  // When the current stops, the doll is knocked out for a while.
+  tase(k, t, s, ox, oy) {
+    if (this.gone[k]) return;
+    // The second barb lands a hand's width lower on the body.
+    const k2 = k === HEAD ? TORSO : k === TORSO ? (Math.random() < 0.5 ? TORSO : PELVIS) : k;
+    const t2 = k2 === k ? clamp(t + rf(0.25, 0.4), 0, 0.95) : rf(0.1, 0.5);
+    for (const [pk, pt] of [[k, t], [k2, t2]]) { this.addWound(pk, pt, s, 0.3, false, "hit"); this.wounds[this.wounds.length - 1].bleed = 0; }
+    this.taseT = 5;
+    for (const j of this.joints) j.taseRel = this.jointRel(j);
+    this.stagger = Math.max(this.stagger, 5.5);
+    if (!this.dead) this.pn = Math.min(100, this.pn + 45);
+    this.damaged();
+    wires.push({ d: this, k, t, k2, t2, ox, oy, age: 0 });
   }
 
   // A shot aimed in the front view: the spot and the organs are known exactly.
@@ -924,6 +942,7 @@ class Doll {
     this.hits[k]++;
     const before = this.stagger;
     this.damaged();
+    this.hitReact = { t: 0.7, k, tt: t, s };
     // A hit to the head or a leg buckles the doll. Elsewhere it flinches and keeps standing.
     const leg = k === THIGH_L || k === THIGH_R || k === SHIN_L || k === SHIN_R || k === FOOT_L || k === FOOT_R;
     if (k === HEAD || leg) this.stagger = Math.max(before, 1.2);
@@ -978,7 +997,7 @@ class Doll {
     if (this.getUp <= 0) this.balance();
     for (let it = 0; it < ITERATIONS; it++) {
       for (let k = 0; k < PART_COUNT; k++) this.solveDistance(this.pa[k], this.pb[k], this.restLen[k]);
-      this.solveJoints(this.frozen ? 0.5 : this.rigorOn ? 0.45 * this.dc.rigor : 0, false);
+      this.solveJoints(this.frozen ? 0.5 : this.taseT > 0 ? 0.45 : this.rigorOn ? 0.45 * this.dc.rigor : 0, false);
       if (it % 2 === 1) { for (let i = 0; i < this.x.length; i++) this.pushOut(i); this.pushOutSegments(); this.selfCollide(); }
     }
     for (const i of this.pins.keys()) this.holdPin(i);
@@ -1164,7 +1183,7 @@ class Doll {
         this.dyingTimer -= DT;
         if (ends.length && Math.random() < this.dyingTimer * 0.25) {
           const i = ends[rnd(ends.length)];
-          this.push(i, rf(-1.5, 1.5) * this.dyingTimer, rf(-2, 0.5) * this.dyingTimer);
+          this.push(i, rf(-0.5, 0.5) * this.dyingTimer, rf(-0.6, 0.2) * this.dyingTimer);
         }
       }
       return;
@@ -1174,29 +1193,74 @@ class Doll {
       if (this.attached(TORSO)) this.push(this.pa[TORSO], 0, Math.sin(performance.now() * 0.0018 + this.id) * 0.012);
       return;
     }
-    if (this.holdsBody() || this.frozen) { this.getUp = 0; this.stillTime = 0; return; }
+    if (this.holdsBody() || this.frozen || this.taseT > 0) { this.getUp = 0; this.stillTime = 0; return; }
 
     // Stillness is judged on head and trunk, so a hand holding a wound does not count.
     let maxV = 0;
     for (const i of [P_HEAD, P_NECK, P_WAIST, P_HIP]) maxV = Math.max(maxV, Math.hypot(this.x[i] - this.ox[i], this.y[i] - this.oy[i]));
 
+    // A frame on the body for natural movement: up along the trunk,
+    // forward where the face looks.
+    const tl = Math.hypot(this.x[P_NECK] - this.x[P_HIP], this.y[P_NECK] - this.y[P_HIP]) || 1;
+    const ux = (this.x[P_NECK] - this.x[P_HIP]) / tl, uy = (this.y[P_NECK] - this.y[P_HIP]) / tl;
+    const fx = -uy * this.facing, fy = ux * this.facing, now = performance.now() / 1000 + this.id * 1.7;
+    const hands = [LARM_L, LARM_R].filter((k) => this.attached(k) && !this.crippled[k] && !this.crippled[PARENT[k]]).map((k) => this.pb[k]);
+    let busyHands = false;
+
     if (this.burn > 0 && !this.headUnder) {
-      // Stop, drop and roll: a burning doll throws itself down and rolls.
       this.rollT += DT;
-      if (this.standing && this.rollT > 0.6) { this.stagger = Math.max(this.stagger, 1.4); this.push(P_NECK, this.rollDir * 2.2, 0.8); }
-      else if (!this.standing) {
-        if (Math.random() < DT * 0.6) this.rollDir = -this.rollDir;
+      // The hands beat at the flames on the part that burns worst.
+      let bk = -1;
+      for (let k = 0; k < PART_COUNT; k++) if (this.fire[k] > 0 && this.attached(k) && k !== LARM_L && k !== LARM_R && (bk < 0 || this.fire[k] > this.fire[bk])) bk = k;
+      if (this.standing) {
+        if (bk >= 0) {
+          const [bx, by] = barbPos(this, bk, 0.5);
+          hands.forEach((h, n) => { const ph = Math.sin(now * 13 + n * Math.PI); this.steer(h, bx + fx * (5 + 5 * ph), by + fy * (5 + 5 * ph) - 4 * ph, 3.4, 0.3); });
+          busyHands = true;
+        }
+        // Then stop, drop and roll: the doll goes down on its side.
+        if (this.rollT > 0.9) { this.stagger = Math.max(this.stagger, 1.4); this.push(P_NECK, fx * 1.2, 0.6); }
+      } else {
+        // Rolling over and over, the arms shielding the face.
+        if (Math.random() < DT * 0.5) this.rollDir = -this.rollDir;
         this.push(P_NECK, this.rollDir * 1.5, -0.7); this.push(P_WAIST, this.rollDir * 1.1, 0.2); this.push(P_HIP, this.rollDir * 0.9, 0.3);
+        hands.forEach((h) => this.steer(h, this.x[P_HEAD] + fx * 7, this.y[P_HEAD] + fy * 7, 2.4, 0.2));
+        busyHands = true;
       }
     } else this.rollT = 0;
-    if (this.burn > 0 || this.headUnder) {
-      // Panic: flail arms and kick legs.
-      if (ends.length && Math.random() < 0.45) this.push(ends[rnd(ends.length)], rf(-2.4, 2.4), rf(-3, 0.5));
-    } else if (!this.standing && this.pn > 35 && ends.length && Math.random() < this.pn / 100 * 0.28) {
-      // Writhing in pain on the floor.
-      const i = ends[rnd(ends.length)];
-      const healthyArm = this.owner[i] === LARM_L || this.owner[i] === LARM_R;
-      if (!this.crippled[this.owner[i]] || !healthyArm) this.push(i, rf(-1.2, 1.2), rf(-1.6, 0.2));
+
+    if (this.headUnder) {
+      // Fighting for air: the arms reach for the surface in turns, the legs kick.
+      hands.forEach((h, n) => { const ph = Math.sin(now * 5 + n * Math.PI); this.steer(h, this.x[P_HEAD] + (n ? 9 : -9), this.y[P_HEAD] - 24 - 12 * ph, 2.6, 0.22); });
+      [SHIN_L, SHIN_R].forEach((k, n) => { if (this.attached(k)) { const ph = Math.sin(now * 7 + n * Math.PI); this.steer(this.pb[k], this.x[P_HIP] + fx * 8 * ph, this.y[P_HIP] + 34 + 10 * ph, 2, 0.15); } });
+      busyHands = true;
+    }
+
+    // Right after a hit: the body flinches around the wound, the head snaps
+    // back from a head hit, and both hands go to the spot at once.
+    const hr = this.hitReact;
+    if (hr && hr.t > 0 && !busyHands) {
+      hr.t -= DT;
+      const [wx, wy] = this.woundPos({ part: hr.k, t: hr.tt, s: hr.s, stump: false });
+      const f = hr.t / 0.7;
+      if (hr.k === HEAD) this.push(P_HEAD, -fx * 0.35 * f, -0.15 * f);
+      else if (hr.k === TORSO || hr.k === PELVIS) { this.push(P_HEAD, fx * 0.16 * f, 0.1 * f); this.push(P_NECK, fx * 0.1 * f, 0.08 * f); }
+      hands.forEach((h) => this.steer(h, wx, wy, 3.2, 0.3));
+      busyHands = true;
+    }
+
+    // Hurt on the floor: curled up, knees toward the chest, rocking slowly,
+    // now and then one leg stretches out.
+    if (!this.standing && this.pn > 35 && this.burn <= 0 && !this.headUnder) {
+      const w = this.pn / 100, hx = this.x[P_HIP], hy = this.y[P_HIP];
+      [[THIGH_L, P_KNEE_L], [THIGH_R, P_KNEE_R]].forEach(([k, i], n) => {
+        if (!this.attached(k) || this.broken[k]) return;
+        const stretch = Math.sin(now * 0.8 + n * 2.4) > 0.85;
+        if (stretch && this.attached(k + 1)) this.steer(this.pb[k + 1], hx - ux * 40 + fx * 6, hy - uy * 40 + fy * 6, 1.4 * w, 0.06);
+        else this.steer(i, hx + fx * 15 + ux * 5, hy + fy * 15 + uy * 5, 1.4 * w, 0.07);
+      });
+      const rock = Math.sin(now * 1.6) * 0.16 * w;
+      this.push(P_WAIST, fx * rock, fy * rock);
     }
 
     // Belly cramps: a hurt stomach or gut makes the doll double over now and then.
@@ -1206,10 +1270,16 @@ class Doll {
       this.push(P_NECK, face * rf(1, 2), rf(0.6, 1.4)); this.push(P_HEAD, face * rf(1.5, 2.5), rf(0.8, 1.6));
     }
     // Press a hand onto the worst bleeding wound, or onto a cramping belly.
-    if (this.pn > 20) {
+    if (this.pn > 20 && !busyHands) {
       let worst = null;
       for (const w of this.wounds) if (w.bleed > 0.15 && this.attached(w.part) && w.part !== LARM_L && w.part !== LARM_R && (!worst || w.bleed > worst.bleed)) worst = w;
       if (!worst && belly > 40 && this.attached(TORSO)) worst = { part: TORSO, t: 0.8, s: 0.6, stump: false };
+      // Otherwise hold the part that hurts most.
+      if (!worst) {
+        let mk = -1;
+        for (const k of [HEAD, TORSO, PELVIS, THIGH_L, THIGH_R, SHIN_L, SHIN_R, UARM_L, UARM_R]) if (this.attached(k) && this.dmg[k] > 35 && (mk < 0 || this.dmg[k] > this.dmg[mk])) mk = k;
+        if (mk >= 0) worst = { part: mk, t: 0.5, s: 0.4, stump: false };
+      }
       if (worst) {
         const [wx, wy] = this.woundPos(worst);
         let best = -1, bd = Infinity;
@@ -1338,7 +1408,7 @@ class Doll {
   solveJoints(muscle, kinematic) {
     for (const j of this.joints) {
       if (!j.active) continue;
-      const limp = !this.frozen && !this.rigorOn && (this.crippled[j.child] || (j.parent !== TORSO && this.crippled[j.parent]));
+      const limp = !this.frozen && !this.rigorOn && !(this.taseT > 0) && (this.crippled[j.child] || (j.parent !== TORSO && this.crippled[j.parent]));
       const m = limp ? 0 : muscle;
       const [jp, op, cp] = this.jointIds(j);
       // The finger holds the outer end of this joint: leave the joint loose
@@ -1351,7 +1421,7 @@ class Doll {
       const over = Math.abs(rel) - j.half;
       if (over > 1.8) continue;
       let target = kinematic ? rel : clamp(rel, -j.half, j.half);
-      if (m > 0) target = lerp(target, this.frozen ? j.frozenRel : this.rigorOn ? j.rigorRel : (settings.front ? j.restFront : j.rest) * this.facing, m);
+      if (m > 0) target = lerp(target, this.frozen ? j.frozenRel : this.taseT > 0 ? j.taseRel : this.rigorOn ? j.rigorRel : (settings.front ? j.restFront : j.rest) * this.facing, m);
       let diff = target - rel;
       if (Math.abs(diff) < 0.0001) continue;
       if (kinematic) diff = clamp(diff * 2, -0.05, 0.05);
@@ -1651,6 +1721,13 @@ class Doll {
     if (wet && this.burn > 0 && !this.fire.some((v) => v > 0)) paintDisc(this.x[this.pa[TORSO]], this.y[this.pa[TORSO]], 12, STEAM, 0.4, 60);
     this.burnImmune = Math.max(0, this.burnImmune - DT);
     this.updateFire();
+    if (this.taseT > 0) {
+      // The current makes every muscle shake.
+      this.taseT -= DT;
+      for (let i = 0; i < this.x.length; i++) if (!this.fixed(i)) { this.x[i] += rf(-0.35, 0.35); this.y[i] += rf(-0.35, 0.35); }
+      if (!this.dead) this.ko = Math.max(15, this.ko - DT * 14);
+      if (this.taseT <= 0 && !this.dead) { this.ko = 5; this.koTimer = rf(8, 12); this.koLatched = true; }
+    }
     if (cold > 0) this.freeze = Math.min(1.6, this.freeze + DT * 0.06 * Math.min(cold, 5));
     else if (this.burn <= 0) this.freeze = Math.max(0, this.freeze - DT * 0.06);
     if (!this.frozen && this.freeze >= 1) {
@@ -1994,6 +2071,7 @@ class Doll {
       CHOKE: this.headUnder && !this.dead, AGONY: this.pn >= AGONY_PN && !this.isOut(),
       HEAL: this.healing || this.iv > 0, BLADE: this.bladeTimer > 0, TORN: this.severed.includes(true), FROZEN: this.frozen,
       BROKEN: this.broken.some((b, k) => b && this.attached(k)), PINNED: this.pins.size > 0,
+      ZAP: this.taseT > 0,
       BANDAGED: this.wounds.some((w) => w.bandaged && !this.gone[w.part]) || this.bands.some((b) => b.burn),
     };
   }
@@ -2787,7 +2865,7 @@ const STATUS = [
   ["OUT", "BEWUSSTLOS", "#a2a2aa"], ["BLEED", "BLUTET", "#d6202f"], ["FIRE", "BRENNT", "#ff5a1e"],
   ["CHOKE", "ERSTICKT", "#2ec8c0"], ["AGONY", "QUALEN", "#f08a24"], ["HEAL", "HEILT", "#f2da3a"],
   ["BLADE", "SCHNITT", "#c8d0dc"], ["TORN", "GLIED AB", "#f272b8"], ["FROZEN", "GEFROREN", "#86c4ff"],
-  ["BROKEN", "KNOCHENBRUCH", "#e8dcc0"], ["PINNED", "FIXIERT", "#e8443a"], ["BANDAGED", "VERBUNDEN", "#ece6d8"],
+  ["BROKEN", "KNOCHENBRUCH", "#e8dcc0"], ["PINNED", "FIXIERT", "#e8443a"], ["BANDAGED", "VERBUNDEN", "#ece6d8"], ["ZAP", "ELEKTROSCHOCK", "#7ad0ff"],
 ];
 
 // Shrinks a label until it fits the width.
@@ -3245,7 +3323,21 @@ const SPRITE_GLOCK = [
   "qppppp............",
   "kkkkkk............",
 ];
+// Taser: yellow body, black cartridge with the two barb doors in front.
+const SPRITE_TASER = [
+  "yyyyyyyyyyyyyykkkkkk",
+  "yhhhhhhhhhhhyykbkbkk",
+  "yyyyyyyyyyyyyykkkkkk",
+  "..YYyyyyyyyY.kkkkkk.",
+  "..yyyy..p..y........",
+  "..yyyyyppppy........",
+  ".Yyyyy..............",
+  ".yyyyy..............",
+  "Yyyyy...............",
+  "kkkkk...............",
+];
 const GUN_COLORS = {
+  y: hex("#e2b81c"), Y: hex("#a8840e"),
   k: hex("#121215"), b: hex("#25252c"), m: hex("#43434c"), l: hex("#7a7a86"),
   w: hex("#8a4a22"), h: hex("#b8702f"), d: hex("#5a2c12"),
   p: hex("#34352f"), q: hex("#5a5c53"), g: hex("#26272a"), r: hex("#ff3a30"),
@@ -3254,7 +3346,9 @@ const WEAPONS = [
   { name: "AK-47", sprite: SPRITE_AK, grip: [12.5, 7], muzzle: [38, 3.5], mag: 30, reload: 2.4, climb: 0.035, auto: true, rate: 10, dmg: 1.0, spread: 0.045, push: 6, sever: 0.25, headKill: 0.3, kick: 0.06, snd: 1 },
   { name: "Sturmgewehr", sprite: SPRITE_AR, grip: [12.5, 7], muzzle: [38, 3.5], mag: 30, reload: 2.0, climb: 0.022, auto: true, rate: 13, dmg: 0.85, spread: 0.025, push: 5, sever: 0.15, headKill: 0.22, kick: 0.045, snd: 0.8 },
   { name: "Glock 17", sprite: SPRITE_GLOCK, grip: [4, 6], muzzle: [18, 2.5], mag: 17, reload: 1.4, climb: 0.07, auto: false, rate: 6, dmg: 0.65, spread: 0.015, push: 3.5, sever: 0.05, headKill: 0.12, kick: 0.03, snd: 0.6 },
+  { name: "Taser", sprite: SPRITE_TASER, grip: [4, 5], muzzle: [19, 1.5], mag: 1, reload: 1.8, climb: 0, auto: false, rate: 1, dmg: 0, spread: 0.008, push: 0.5, sever: 0, headKill: 0, kick: 0.01, snd: 0.2, taser: true, range: 520 },
 ];
+let wires = [];
 let tracers = [], flashes = [], sparks = [];
 
 // Front view: the gun works like the blade and shoots exactly where the
@@ -3265,6 +3359,14 @@ function fireAtFinger() {
   const jitter = wp.spread * 60 + state.climb * 40;
   const x = state.mx + rf(-jitter, jitter), y = state.my + rf(-jitter, jitter);
   const hit = fingerHit(x, y);
+  if (wp.taser) {
+    // The barbs fly in from the viewer: the wires trail off below the picture.
+    if (hit) { hit.d.tase(hit.k, hit.t, hit.s, x + rf(-30, 30), H + 40); state.selected = hit.d; }
+    else for (let n = 0; n < 4; n++) sparks.push({ x, y, vx: rf(-80, 80), vy: rf(-120, -20), life: rf(0.1, 0.25) });
+    state.lastShot = [x, y];
+    taserPop();
+    return;
+  }
   if (hit) { hit.d.preciseShot(hit, wp, Math.random() < 0.5 ? 1 : -1); state.selected = hit.d; }
   else wallShot(x, y);
   state.lastShot = [x, y];
@@ -3333,6 +3435,22 @@ function fireRanged() {
   const a = aimDir(ox, oy, ang) + rf(-wp.spread, wp.spread);
   const dx = Math.cos(a), dy = Math.sin(a);
   const [hitD, hitK, hitT] = dollOnRay(ox, oy, dx, dy);
+  if (wp.taser) {
+    // Two barbs on wires, only as far as the wires reach.
+    taserPop();
+    let blocked = false;
+    for (let t = 4; t < Math.min(hitT, wp.range); t += 2) { const m = matAt(ox + dx * t, oy + dy * t); if (m === WALL || m === ICE) { blocked = true; break; } }
+    if (hitD && hitT <= wp.range && !blocked) {
+      const ax = hitD.x[hitD.pa[hitK]], ay = hitD.y[hitD.pa[hitK]], bx = hitD.x[hitD.pb[hitK]], by = hitD.y[hitD.pb[hitK]];
+      const hx = ox + dx * hitT, hy = oy + dy * hitT, l2 = (bx - ax) ** 2 + (by - ay) ** 2 || 1;
+      const t = hitK === HEAD ? Math.random() : clamp(((hx - ax) * (bx - ax) + (hy - ay) * (by - ay)) / l2, 0.1, 0.9);
+      hitD.tase(hitK, t, rf(-0.6, 0.6), ox, oy); state.selected = hitD;
+    } else {
+      const end = Math.min(hitT, wp.range);
+      wires.push({ d: null, ox, oy, ex: ox + dx * end, ey: oy + dy * end + 30, age: 0 });
+    }
+    return;
+  }
   // Walls, ice and water along the ray
   let endT = hitT, wall = false;
   for (let t = 4; t < hitT; t += 2) {
@@ -4582,7 +4700,7 @@ function fillRect(r, m, mx = 0, lf = 0) {
 function loadMap(i) {
   state.map = i;
   state.cam.z = 1; state.cam.x = 0; state.cam.y = 0; state.zoomAnim = null;
-  state.fires = [];
+  state.fires = []; wires = [];
   worldReset();
   const m = MAPS[i].build();
   for (const r of m.walls) fillRect(r, WALL);
@@ -5777,10 +5895,11 @@ function aimFire() {
   const [cx, cy] = aimCenter();
   const hit = frontHit(d, (v.cx - cx) / AIM_F, (v.cy - cy) / AIM_F);
   state.ammo[state.weapon]--;
-  gunSound(wp.snd);
+  if (wp.taser) taserPop(); else gunSound(wp.snd);
   state.shake = Math.max(state.shake, wp.kick);
   v.flash = 1; v.last = hit;
   if (!hit) { state.toast = 0.8; state.toastText = "Daneben"; return; }
+  if (wp.taser) { d.tase(hit.k, hit.t, hit.s, d.x[P_WAIST] + rf(-40, 40), H + 40); state.selected = d; return; }
   const [wx, wy] = d.preciseShot(hit, wp, Math.random() < 0.5 ? 1 : -1);
   flashes.push({ x: wx, y: wy, ang: 0, age: 0 });
   state.selected = d;
@@ -5788,7 +5907,8 @@ function aimFire() {
 
 function aimButtons() {
   const x0 = Math.round(W * 0.6), w = W - x0 - 16, out = [];
-  WEAPONS.forEach((wp, n) => out.push({ id: "w" + n, n, x: x0 + n * (w / 3), y: 58, w: w / 3 - 6, h: 52 }));
+  const nw = WEAPONS.length;
+  WEAPONS.forEach((wp, n) => out.push({ id: "w" + n, n, x: x0 + n * (w / nw), y: 58, w: w / nw - 6, h: 52 }));
   out.push({ id: "reload", x: x0, y: 118, w: w / 2 - 3, h: 30 });
   out.push({ id: "xray", x: x0 + w / 2 + 3, y: 118, w: w / 2 - 3, h: 30 });
   return out;
@@ -6394,6 +6514,54 @@ const fireCrackle = () => noiseBurst(rf(0.01, 0.04), rf(1500, 4500), 2, rf(0.03,
 const whooshSound = (v) => noiseBurst(0.45, 500, 0.6, 0.22 * v, "lowpass");
 function glassSound() { for (let n = 0; n < 5; n++) setTimeout(() => noiseBurst(0.05, rf(3500, 7000), 6, 0.12), n * 25); }
 
+// Taser wires: from the gun to the two barbs, sagging a little. While the
+// current runs, blue arcs jump between the barbs and the gun clicks.
+function barbPos(d, k, t) {
+  if (k === HEAD) return [d.x[d.pb[HEAD]], d.y[d.pb[HEAD]]];
+  const [ax, ay] = limbStart(d, k);
+  return [lerp(ax, d.x[d.pb[k]], t), lerp(ay, d.y[d.pb[k]], t)];
+}
+let zapAcc = 0;
+function stepWires() {
+  for (const w of wires) w.age += DT;
+  wires = wires.filter((w) => (w.d ? state.dolls.includes(w.d) && (w.d.taseT > 0 || w.age < 9) : w.age < 3));
+  if (state.dolls.some((d) => d.taseT > 0)) {
+    zapAcc += DT;
+    while (zapAcc > 1 / 19) { zapAcc -= 1 / 19; noiseBurst(0.012, 5200, 1, 0.09, "highpass"); }
+  }
+}
+function drawWires() {
+  if (!wires.length) return;
+  ctx.save(); ctx.lineCap = "round";
+  for (const w of wires) {
+    const ends = w.d ? [barbPos(w.d, w.k, w.t), barbPos(w.d, w.k2, w.t2)] : [[w.ex, w.ey], [w.ex + 6, w.ey + 4]];
+    ctx.strokeStyle = "rgba(205,205,215,0.75)"; ctx.lineWidth = 0.6;
+    for (const [ex, ey] of ends) {
+      const mx = (w.ox + ex) / 2, my = (w.oy + ey) / 2 + 10 + Math.hypot(ex - w.ox, ey - w.oy) * 0.06;
+      ctx.beginPath(); ctx.moveTo(w.ox, w.oy); ctx.quadraticCurveTo(mx, my, ex, ey); ctx.stroke();
+      ctx.fillStyle = "#c8c8d0"; ctx.fillRect(ex - 0.8, ey - 0.8, 1.6, 1.6);
+    }
+    if (w.d && w.d.taseT > 0) {
+      // Arcs between the barbs, new every frame
+      ctx.globalCompositeOperation = "lighter";
+      const [[ax, ay], [bx, by]] = ends;
+      for (let n = 0; n < 2; n++) {
+        ctx.strokeStyle = n ? "rgba(140,200,255,0.5)" : "rgba(230,245,255,0.9)"; ctx.lineWidth = n ? 2.4 : 0.9;
+        ctx.beginPath(); ctx.moveTo(ax, ay);
+        for (let q = 1; q < 6; q++) ctx.lineTo(lerp(ax, bx, q / 6) + rf(-5, 5), lerp(ay, by, q / 6) + rf(-5, 5));
+        ctx.lineTo(bx, by); ctx.stroke();
+      }
+      const g = ctx.createRadialGradient(ax, ay, 0, ax, ay, 12);
+      g.addColorStop(0, "rgba(160,215,255,0.45)"); g.addColorStop(1, "rgba(120,180,255,0)");
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(ax, ay, 12, 0, Math.PI * 2); ctx.fill();
+      ctx.globalCompositeOperation = "source-over";
+    }
+  }
+  ctx.restore();
+}
+// The pop of the compressed gas that throws the barbs.
+const taserPop = () => { noiseBurst(0.08, 900, 0.7, 0.25, "lowpass"); noiseBurst(0.03, 4000, 2, 0.08); };
+
 // Dolls bump into each other instead of passing through.
 function collideDolls() {
   const ds = state.dolls;
@@ -6419,6 +6587,7 @@ function collideDolls() {
 function physicsStep() {
   if (state.pressing) applyTool();
   stepFires();
+  stepWires();
   if (state.dolls.some((d) => d.burn > 0) && Math.random() < DT * 14) fireCrackle();
   gunStep();
   worldStep();
@@ -6798,6 +6967,7 @@ function render() {
   ctx.drawImage(pixCan, 0, 0, W, H);
   ctx.imageSmoothingEnabled = true;
   drawBodyFlames();
+  drawWires();
   // Very close up the body opens and shows its organs.
   if (settings.organs && cam.z > 3) for (const d of state.dolls) drawDollOrgans(d, smooth01((cam.z - 3) / 1.6));
   // Liquids, fire and smoke cover the dolls.
