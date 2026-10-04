@@ -5632,7 +5632,7 @@ function drawTitle(dt) {
   playShotStep(dt, px1, floor);
   titleShotStep(dt, px1, floor);
   f.fadeIn = Math.max(0, f.fadeIn - dt);
-  // After the shot the room slowly turns dark red, and back after the revive.
+  // After the shot the room slowly turns dark red, and back once it is over.
   f.dark = moveToward(f.dark, titleShot && titleShot.bled ? 1 : 0, dt * (titleShot ? 0.7 : 1.2));
   const dk = easeOut(f.dark);
   screenBackground("#121216", "#121216");
@@ -5768,10 +5768,9 @@ function titleStandPose(t) {
 }
 
 // ----------------------------------------------------------------- title shot
-// Tapping the chest of the person on the title fires a shot from the menu
-// side: a short freeze, bullet time, blood out of the back, then the body
-// tips over backward and lands hard. Room and music turn dark. Tapping the
-// body again brings the person back.
+// SPIELEN fires a shot into the person on the title from the menu side: a
+// short freeze, bullet time, blood out of the back, then the body tips over
+// backward and lands hard. Room and music turn dark.
 const TS_SEGS = [[P_HIP, P_WAIST], [P_WAIST, P_NECK], [P_NECK, P_HEAD], [P_NECK, P_ELBOW_L], [P_ELBOW_L, P_HAND_L],
   [P_NECK, P_ELBOW_R], [P_ELBOW_R, P_HAND_R], [P_HIP, P_KNEE_L], [P_KNEE_L, P_ANKLE_L], [P_ANKLE_L, P_TOE_L],
   [P_HIP, P_KNEE_R], [P_KNEE_R, P_ANKLE_R], [P_ANKLE_R, P_TOE_R]];
@@ -5798,7 +5797,7 @@ function titleShoot(cx, floor, quiet = false) {
     const dx = d.x[b] - d.x[a], dy = d.y[b] - d.y[a];
     a0.push(Math.atan2(dx, dy)); len.push(Math.hypot(dx, dy));
   }
-  titleShot = { real: 0, t: 0, a0, len, bled: false, landed: false, parts: [], stains: [], splats: [], pool: 0, shake: 0.6, revive: 0, quiet };
+  titleShot = { real: 0, t: 0, a0, len, bled: false, landed: false, parts: [], stains: [], splats: [], pool: 0, shake: 0.6, quiet };
   if (!quiet) gunSound(1);
   shotRing();
   music.duck = 1;
@@ -5874,17 +5873,6 @@ function titleShotStep(dt, cx, floor) {
     s.pool = Math.min(1, s.pool + dt / 9);
     if (s.wound) s.wound.drip = Math.min(7, s.wound.drip + dt * 1.5);
   }
-  // A tap on the body fades out and brings the person back on their feet.
-  if (s.revive > 0) {
-    s.revive += dt;
-    if (s.revive > 0.45) {
-      titleShot = null;
-      d.dead = false;
-      d.wounds = d.wounds.filter((w) => w !== s.wound);
-      d.stain[TORSO] = 0.25;
-      titleFx.fadeIn = 0.45;
-    }
-  }
 }
 
 // Blood on wall and floor, the pool under the chest and the dust of the fall.
@@ -5925,7 +5913,6 @@ function drawTitleShotOverlay() {
   // Film bars slide in for the shot and leave again.
   const bars = Math.min(easeOut(s.real / 0.25), 1 - easeOut((s.real - 2.6) / 0.5)) * 22;
   if (bars > 0.3) { ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, bars); ctx.fillRect(0, H - bars, W, bars); }
-  if (s.revive > 0) { ctx.fillStyle = `rgba(0,0,0,${Math.min(1, s.revive / 0.45)})`; ctx.fillRect(0, 0, W, H); }
 }
 
 // ----------------------------------------------------------------- play shot
@@ -6043,18 +6030,6 @@ function drawPlayBullet() {
   ctx.fillStyle = "#c89a3c"; rr(-6, -1.8, 9, 3.6, 1.8); ctx.fill();
   ctx.fillStyle = "#fff4d0"; ctx.fillRect(-4, -0.8, 6, 1.4);
   ctx.restore();
-}
-
-// The tap on the title: the chest fires the shot, the lying body revives.
-function titlePressDoll() {
-  if (state.screen !== "title" || playShot) return false;
-  const cx = Math.max(W * 0.66, 420), floor = 372, x = state.sx, y = state.sy;
-  if (!titleShot) {
-    if (x > cx - 26 && x < cx + 26 && y > floor - 202 && y < floor - 112) { titleShoot(cx, floor); return true; }
-  } else if (titleShot.t > 1.35 && !titleShot.revive && x > cx - 40 && x < cx + 280 && y > floor - 70 && y < floor + 10) {
-    titleShot.revive = 0.001; clickSound(500, 0.05); return true;
-  }
-  return false;
 }
 
 // ----------------------------------------------------------------- maps
@@ -6385,7 +6360,6 @@ function screenPress() {
   musicStart();
   // While the play shot runs, the title takes no taps.
   if (playShot && state.screen === "title") { state.pressTarget = null; return; }
-  if (titlePressDoll()) { state.pressTarget = null; return; }
   const hit = screenTargets().find((tg) => hitBox(tg.box, state.sx, state.sy));
   state.pressTarget = hit ? hit.id : null;
 }
