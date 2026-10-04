@@ -5479,7 +5479,21 @@ function drawMapBadge(i, x, y, r) {
 }
 
 // A small painted picture of a map: room, lamp light, blocks, water, ice and people.
+// Map pictures are painted once per size into a bitmap and reused.
+const mapPreviewCache = new Map();
 function drawMapPreview(i, x, y, w, h) {
+  const key = i + ":" + Math.round(w) + ":" + Math.round(h) + ":" + K;
+  let c = mapPreviewCache.get(key);
+  if (!c) {
+    c = document.createElement("canvas"); c.width = Math.ceil(w * K); c.height = Math.ceil(h * K);
+    const real = ctx; ctx = c.getContext("2d");
+    try { ctx.setTransform(K, 0, 0, K, 0, 0); paintMapPreview(i, 0, 0, w, h); } finally { ctx = real; }
+    mapPreviewCache.set(key, c);
+  }
+  ctx.drawImage(c, x, y, w, h);
+  drawMapBadge(i, x + w - 15, y + 15, 11);
+}
+function paintMapPreview(i, x, y, w, h) {
   const m = MAPS[i], t = m.theme, sx = w / W, sy = h / H, b = m.build();
   ctx.save();
   rr(x, y, w, h, 8); ctx.clip();
@@ -5542,7 +5556,6 @@ function drawMapPreview(i, x, y, w, h) {
   v.addColorStop(0, "rgba(0,0,0,0)"); v.addColorStop(1, "rgba(0,0,0,0.45)");
   ctx.fillStyle = v; ctx.fillRect(x, y, w, h);
   ctx.restore();
-  drawMapBadge(i, x + w - 15, y + 15, 11);
 }
 
 // ----------------------------------------------------------------- buttons
@@ -6090,27 +6103,93 @@ function menuCards() {
   return cards;
 }
 
-function drawMaps() {
-  screenBackground();
+// The map screen in the style of the settings: wall panels, blood spatter,
+// a red edge, a title with a bleeding underline and cards that lift.
+const mapsFx = { drops: [] };
+const randomBtn = () => ({ x: W - 136, y: 16, w: 120, h: 34 });
+function drawMaps(dt = 0) {
+  screenBackground("#141015", "#0c0b0e");
+  ctx.fillStyle = "rgba(255,255,255,0.025)";
+  for (let x = 0; x < W; x += 96) ctx.fillRect(x, 0, 1.5, H);
+  for (const [x, y, r, a] of settingsSplats()) { ctx.fillStyle = `rgba(110,8,18,${a * 0.8})`; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); }
+  const v = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, W * 0.7);
+  v.addColorStop(0, "rgba(80,0,8,0)"); v.addColorStop(1, "rgba(80,0,8,0.35)");
+  ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
   withAppear(appear(0), () => {
-    label("WÄHLE EINE MAP", W / 2, 42, 24, "#e6e6de", "center");
-    label(MAPS.length + " Maps · tippe auf eine Karte, um zu starten", W / 2, 72, 10.5, "#7a7a84", "center", 400);
+    label("WÄHLE EINE MAP", W / 2, 36, 24, "#ecece4", "center");
+    const line = easeOut((state.screenT - 0.1) / 0.4), lw = 250;
+    ctx.fillStyle = "#8e0f1c"; ctx.fillRect(W / 2 - lw / 2, 53, lw * line, 3);
+    if (line >= 1 && Math.random() < dt * 1.4) mapsFx.drops.push({ x: W / 2 - lw / 2 + 8 + Math.random() * (lw - 16), y: 56, v: 0, len: 0, age: 0 });
+    label(MAPS.length + " MAPS · TIPPE AUF EINE KARTE", W / 2, 74, 9.5, "#8a6e74", "center");
     drawBackButton();
+    drawRandomButton();
   });
-  menuCards().forEach((c, n) => withAppear(appear(1 + n * 0.5), () => scaled(c.x + c.w / 2, c.y + c.h / 2, 1 - 0.03 * pressAmt("map" + c.i, c), () => drawMapCard(c)), 14));
+  for (const d of mapsFx.drops) {
+    d.age += dt;
+    if (d.age < 0.6) d.len = d.age * 10; else { d.v += 420 * dt; d.y += d.v * dt; }
+  }
+  mapsFx.drops = mapsFx.drops.filter((d) => d.y < H);
+  ctx.fillStyle = "#9c0e1c";
+  for (const d of mapsFx.drops) {
+    if (d.age < 0.6) { ctx.fillRect(d.x - 0.8, 55, 1.6, d.len); ctx.beginPath(); ctx.arc(d.x, 55 + d.len, 1.8, 0, Math.PI * 2); ctx.fill(); }
+    else { ctx.beginPath(); ctx.ellipse(d.x, d.y, 1.5, 2.6, 0, 0, Math.PI * 2); ctx.fill(); }
+  }
+  menuCards().forEach((c, n) => withAppear(appear(1 + n * 0.5), () => drawMapCard(c), 18));
+}
+
+function drawRandomButton() {
+  const b = randomBtn();
+  scaled(b.x + b.w / 2, b.y + b.h / 2, 1 - 0.05 * pressAmt("random", b), () => {
+    rr(b.x, b.y, b.w, b.h, 9);
+    ctx.fillStyle = "rgba(26,26,32,0.92)"; ctx.fill();
+    ctx.strokeStyle = "#5a1a22"; ctx.lineWidth = 1.5; ctx.stroke();
+    // A die showing five
+    const dx = b.x + 22, dy = b.y + b.h / 2;
+    rr(dx - 8, dy - 8, 16, 16, 4); ctx.fillStyle = "#ecece4"; ctx.fill();
+    ctx.fillStyle = "#8e0f1c";
+    for (const [px, py] of [[-4, -4], [4, -4], [0, 0], [-4, 4], [4, 4]]) { ctx.beginPath(); ctx.arc(dx + px, dy + py, 1.5, 0, Math.PI * 2); ctx.fill(); }
+    label("ZUFALL", b.x + 70, dy + 1, 12, "#e4a0a8", "center");
+  });
 }
 
 function drawMapCard(c) {
-  {
-    const on = c.i === state.map && state.inGame;
-    rr(c.x, c.y, c.w, c.h, 12);
-    ctx.fillStyle = on ? "#26262e" : "#1a1a20"; ctx.fill();
-    ctx.strokeStyle = on ? MAPS[c.i].accent : "#34343c"; ctx.lineWidth = on ? 2 : 1.5; ctx.stroke();
-    const ph = c.h - 36;
-    drawMapPreview(c.i, c.x + 5, c.y + 5, c.w - 10, ph);
-    label(MAPS[c.i].name.toUpperCase(), c.x + 9, c.y + ph + 16, fitFont(MAPS[c.i].name.toUpperCase(), c.w - 18, 12), "#e6e6de");
-    label(MAPS[c.i].desc, c.x + 9, c.y + ph + 29, fitFont(MAPS[c.i].desc, c.w - 18, 8.5, 400), "#7a7a84", "left", 400);
+  const m = MAPS[c.i], on = c.i === state.map && state.inGame, press = pressAmt("map" + c.i, c);
+  const accent = hex(m.accent), hot = Math.max(press, on ? 0.6 : 0);
+  ctx.save();
+  // The pressed card sinks a little and its frame lights up.
+  ctx.translate(c.x + c.w / 2, c.y + c.h / 2); ctx.scale(1 - 0.03 * press, 1 - 0.03 * press); ctx.translate(-c.x - c.w / 2, -c.y - c.h / 2 + press * 1.5);
+  ctx.save();
+  ctx.shadowColor = hot > 0.05 ? css(accent, 0.45 * hot) : "rgba(0,0,0,0.55)"; ctx.shadowBlur = 12; ctx.shadowOffsetY = hot > 0.05 ? 0 : 4;
+  rr(c.x, c.y, c.w, c.h, 12);
+  const g = ctx.createLinearGradient(0, c.y, 0, c.y + c.h);
+  g.addColorStop(0, "#1f1d23"); g.addColorStop(1, "#131216");
+  ctx.fillStyle = g; ctx.fill();
+  ctx.restore();
+  rr(c.x, c.y, c.w, c.h, 12);
+  ctx.strokeStyle = css(mixc(hex("#34343c"), accent, hot)); ctx.lineWidth = 1.5 + hot; ctx.stroke();
+  const ph = c.h - 36, px = c.x + 5, py = c.y + 5, pw = c.w - 10;
+  drawMapPreview(c.i, px, py, pw, ph);
+  if (press > 0.01) { rr(px, py, pw, ph, 8); ctx.fillStyle = `rgba(255,240,220,${0.08 * press})`; ctx.fill(); }
+  // Number of the map, top left
+  rr(px + 5, py + 5, 22, 13, 4); ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fill();
+  label(String(c.i + 1).padStart(2, "0"), px + 16, py + 12, 8.5, m.accent, "center");
+  if (on) {
+    rr(px + 30, py + 5, 40, 13, 4); ctx.fillStyle = css(accent, 0.9); ctx.fill();
+    label("AKTIV", px + 50, py + 12, 7.5, "#141216", "center");
   }
+  // How many people the map starts with, bottom right
+  if (m.nDolls === undefined) m.nDolls = m.build().dolls.length;
+  const nd = m.nDolls, bx = px + pw - 26, by = py + ph - 17;
+  rr(bx, by, 21, 12, 4); ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fill();
+  ctx.fillStyle = "#cfcfc8"; ctx.fillRect(bx + 4, by + 2, 3, 3); ctx.fillRect(bx + 3.5, by + 5.5, 4, 4.5);
+  label(String(nd), bx + 14, by + 6.5, 8, "#cfcfc8", "center");
+  // A strip in the map color under the picture
+  ctx.fillStyle = css(accent, 0.75); ctx.fillRect(px, py + ph + 1, pw, 1.5);
+  const name = m.name.toUpperCase();
+  ctx.fillStyle = m.accent; ctx.fillRect(c.x + 9, c.y + ph + 12, 3, 8);
+  label(name, c.x + 16, c.y + ph + 16, fitFont(name, c.w - 26, 12), "#ecece4");
+  label(m.desc, c.x + 9, c.y + ph + 29, fitFont(m.desc, c.w - 18, 8.5, 400), "#8a8590", "left", 400);
+  ctx.restore();
 }
 
 // ----------------------------------------------------------------- help
@@ -6373,7 +6452,7 @@ function drawSettingIcon(id, cx, cy) {
 
 function drawScreen(dt) {
   if (state.screen === "title") drawTitle(dt);
-  else if (state.screen === "maps") drawMaps();
+  else if (state.screen === "maps") drawMaps(dt);
   else if (state.screen === "help") drawHelp();
   else if (state.screen === "settings") drawSettings(dt);
 }
@@ -6389,6 +6468,7 @@ function screenTargets() {
   if (state.screen === "settings" && state.settingsFromGame) t.push({ id: "home", box: homeBtn(), run: () => setScreen("title") });
   if (state.screen === "maps") {
     for (const c of menuCards()) t.push({ id: "map" + c.i, box: c, run: () => { state.inGame = true; loadMap(c.i); setScreen("game"); } });
+    t.push({ id: "random", box: randomBtn(), run: () => { state.inGame = true; loadMap(rnd(MAPS.length)); setScreen("game"); } });
   } else if (state.screen === "settings") {
     for (const r of settingRows()) {
       t.push({ id: r.id, box: r, run: () => { if (r.id === "panel") togglePanel(); else { settings[r.id] = !settings[r.id]; saveSettings(); } musicStart(); } });
