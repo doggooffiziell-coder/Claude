@@ -606,7 +606,10 @@ const PART_COUNT = 13;
 const PART_A = [P_NECK, P_NECK, P_WAIST, P_NECK, P_ELBOW_L, P_NECK, P_ELBOW_R, P_HIP, P_KNEE_L, P_ANKLE_L, P_HIP, P_KNEE_R, P_ANKLE_R];
 const PART_B = [P_HEAD, P_WAIST, P_HIP, P_ELBOW_L, P_HAND_L, P_ELBOW_R, P_HAND_R, P_KNEE_L, P_ANKLE_L, P_TOE_L, P_KNEE_R, P_ANKLE_R, P_TOE_R];
 const PARENT = [TORSO, -1, TORSO, TORSO, UARM_L, TORSO, UARM_R, PELVIS, THIGH_L, SHIN_L, PELVIS, THIGH_R, SHIN_R];
-const WIDTH = [11, 30, 28, 12, 10, 12, 10, 16, 13, 9, 16, 13, 9];
+// Size of the dolls. Every body measure below is multiplied by it.
+const DS = 1.15;
+const dsc = (a) => a.map((v) => (Array.isArray(v) ? dsc(v) : v * DS));
+const WIDTH = dsc([11, 30, 28, 12, 10, 12, 10, 16, 13, 9, 16, 13, 9]);
 const FAR_SIDE = [false, false, false, true, true, false, false, true, true, true, false, false, false];
 const DRAW_ORDER = [UARM_L, LARM_L, THIGH_L, SHIN_L, FOOT_L, PELVIS, TORSO, HEAD, THIGH_R, SHIN_R, FOOT_R, UARM_R, LARM_R];
 // Facing the viewer: both legs side by side, the arms beside the chest.
@@ -614,15 +617,15 @@ const FRONT_ORDER = [THIGH_L, SHIN_L, FOOT_L, THIGH_R, SHIN_R, FOOT_R, PELVIS, T
 const POINT_OWNER = [HEAD, TORSO, TORSO, PELVIS, UARM_L, LARM_L, UARM_R, LARM_R, THIGH_L, SHIN_L, FOOT_L, THIGH_R, SHIN_R, FOOT_R];
 const POINT_INV_MASS = [0.8, 0.6, 0.5, 0.6, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
 // Standing pose, facing right. Origin sits on the floor between the feet.
-const POSE = [[0, -162], [0, -144], [0, -92], [0, -74], [-21, -122], [-27, -97], [21, -122], [27, -97],
-  [-9, -41], [-11, -8], [-4, -6], [9, -41], [11, -8], [18, -6]];
+const POSE = dsc([[0, -162], [0, -144], [0, -92], [0, -74], [-21, -122], [-27, -97], [21, -122], [27, -97],
+  [-9, -41], [-11, -8], [-4, -6], [9, -41], [11, -8], [18, -6]]);
 // Standing pose for the front view: upright, arms straight down beside the
 // chest, legs straight and parallel. Every segment keeps its length from POSE.
-const FRONT_POSE = [[0, -162], [0, -144], [0, -92], [0, -74], [-21, -122], [-21, -96.3], [21, -122], [21, -96.3],
-  [-9.5, -41.15], [-9.5, -8.09], [-2.5, -6.09], [9.5, -41.15], [9.5, -8.09], [16.5, -6.09]];
+const FRONT_POSE = dsc([[0, -162], [0, -144], [0, -92], [0, -74], [-21, -122], [-21, -96.3], [21, -122], [21, -96.3],
+  [-9.5, -41.15], [-9.5, -8.09], [-2.5, -6.09], [9.5, -41.15], [9.5, -8.09], [16.5, -6.09]]);
 const activePose = () => (settings.front ? FRONT_POSE : POSE);
 // Collision radius of every body point, so the thick limbs rest on the floor.
-const POINT_R = [17, 9, 14, 14, 8, 7, 8, 7, 9, 7, 5, 9, 7, 5];
+const POINT_R = dsc([17, 9, 14, 14, 8, 7, 8, 7, 9, 7, 5, 9, 7, 5]);
 // child, parent, joint on parent end A, min and max degrees
 const JOINTS = [
   [HEAD, TORSO, true, -35, 35], [PELVIS, TORSO, false, -35, 45],
@@ -638,7 +641,7 @@ for (const a of [P_HEAD, P_NECK]) for (const b of [P_HIP, P_KNEE_L, P_KNEE_R, P_
 for (const b of [P_KNEE_L, P_KNEE_R, P_ANKLE_L, P_ANKLE_R, P_TOE_L, P_TOE_R]) SELF_PAIRS.push([P_WAIST, b]);
 const IV_TIME = 12;
 let MUSCLE_HELD = 0.04, LIMIT_SOAK = 0.6;
-const ITERATIONS = 8, HEAD_R = 17, MAX_STEP = 40, DOLL_GRAVITY = 1300;
+const ITERATIONS = 8, HEAD_R = 17 * DS, MAX_STEP = 40, DOLL_GRAVITY = 1300;
 // Impact speeds in units per second. A fall from height h lands at about
 // sqrt(2 * 1300 * h): 1.5 m about 620, 2.5 m about 810, the full room 980.
 const SAFE_SPEED = 620, OPEN_SPEED = 1050;
@@ -1348,8 +1351,8 @@ class Doll {
     }
     if (!grounded || feet === 0) return;
     feetX /= feet;
-    const groundY = Math.max(this.y[P_ANKLE_L], this.y[P_ANKLE_R]) + 8;
-    if (this.y[P_NECK] > this.y[P_HIP] - 30 || this.y[P_HIP] > groundY - 40 || Math.abs(this.x[P_NECK] - feetX) > 36) return;
+    const groundY = Math.max(this.y[P_ANKLE_L], this.y[P_ANKLE_R]) + 8.09 * DS;
+    if (this.y[P_NECK] > this.y[P_HIP] - 30 * DS || this.y[P_HIP] > groundY - 40 * DS || Math.abs(this.x[P_NECK] - feetX) > 36 * DS) return;
     this.standing = true;
     // Pain weakens the stance, so a hurt doll sways and wobbles.
     const s = 0.15 * clamp(this.ko / 100, 0, 1) * (1 - this.pn / 160);
@@ -2228,13 +2231,13 @@ function rasterDisc(cx, cy, r, c, order, onlyBody = false) {
 
 // Rectangular body parts in the style of a crash-test sandbox: [half width,
 // extension past the joint end A, extension past end B] in world units.
-const RECT = {
+const RECT = Object.fromEntries(Object.entries({
   [TORSO]: [15, 3, 2], [PELVIS]: [14, 0, 7],
   [UARM_L]: [6, 3, 2], [UARM_R]: [6, 3, 2], [LARM_L]: [5, 1, 1], [LARM_R]: [5, 1, 1],
   [THIGH_L]: [8, 1, 2], [THIGH_R]: [8, 1, 2], [SHIN_L]: [6.5, 2, 1], [SHIN_R]: [6.5, 2, 1],
   [FOOT_L]: [4.5, 5, 4], [FOOT_R]: [4.5, 5, 4],
-};
-const NECK_LEN = 8, HEAD_H = 34, HEAD_HW = 14, SHOULDER_DROP = 8;
+}).map(([k, v]) => [k, dsc(v)]));
+const NECK_LEN = 8 * DS, HEAD_H = 34 * DS, HEAD_HW = 14 * DS, SHOULDER_DROP = 8 * DS;
 const LOOKS = {
   skin: ["#ecc8a6", "#d9a87e", "#b47c54", "#7c513a", "#f4d8c0"],
   shirt: ["#5a6c80", "#6a7a3c", "#8a3a3a", "#c49a3c", "#3c7a74", "#d8d8d0", "#3a3a44", "#7a4a8a"],
@@ -4966,7 +4969,7 @@ const MAPS = [
     name: "Treppenhaus", accent: "#d8a070", desc: "Lange Treppe zum Werfen",
     theme: { wall: ["#241a16", "#33251e"], floor: ["#8c7c6c", "#5c4e42"], edge: "#a89888", line: "#1a120e" },
     build: () => {
-      const walls = [], x0 = Math.round(W * 0.2), step = 30, rise = 22;
+      const walls = [], x0 = Math.round(W * 0.2), step = 30, rise = 14.5;
       for (let i = 0; i < 7; i++) walls.push([x0 + i * step, FLOOR_Y - (i + 1) * rise, step, (i + 1) * rise]);
       const top = x0 + 7 * step;
       walls.push([top, FLOOR_Y - 8 * rise, 150, 8 * rise]);
@@ -4977,7 +4980,7 @@ const MAPS = [
     name: "Halle", accent: "#f0b030", desc: "Plattformen in der Höhe",
     theme: { wall: ["#13161c", "#1e232c"], floor: ["#6c7078", "#46494f"], edge: "#8c9098", line: "#0c0e12" },
     build: () => ({
-      walls: [[W * 0.08, 300, 150, 12], [W * 0.32, 245, 160, 12], [W * 0.54, 205, 140, 12]],
+      walls: [[W * 0.08, 316, 150, 12], [W * 0.32, 284, 160, 12], [W * 0.54, 258, 140, 12]],
       water: [], ice: [], dolls: [W * 0.32 + 80, W * 0.54 + 70],
     }),
   },
@@ -4997,7 +5000,7 @@ const MAPS = [
     name: "Hochhaus", accent: "#9ab0d0", desc: "Ganz oben auf dem Dach",
     theme: { wall: ["#0e1422", "#1a2436"], floor: ["#6a707c", "#3e434c"], edge: "#9aa0aa", line: "#0a0e18" },
     build: () => ({
-      walls: [[W * 0.2, 236, 150, FLOOR_Y - 236], [W * 0.2 + 150, 236, 30, 6], [W * 0.56, 296, 120, FLOOR_Y - 296]],
+      walls: [[W * 0.2, 262, 150, FLOOR_Y - 262], [W * 0.2 + 150, 262, 30, 6], [W * 0.56, 316, 120, FLOOR_Y - 316]],
       water: [], ice: [], dolls: [W * 0.2 + 60, W * 0.56 + 60],
     }),
   },
@@ -5007,8 +5010,8 @@ const MAPS = [
     build: () => {
       const a = Math.round(W * 0.3), b = Math.round(W * 0.7);
       return {
-        walls: [[0, 232, a, FLOOR_Y - 232], [b, 232, W - b, FLOOR_Y - 232], [a, 232, b - a, 6]],
-        water: [[a, 296, b - a, FLOOR_Y - 296]], ice: [], dolls: [W * 0.14, W * 0.5],
+        walls: [[0, 262, a, FLOOR_Y - 262], [b, 262, W - b, FLOOR_Y - 262], [a, 262, b - a, 6]],
+        water: [[a, 312, b - a, FLOOR_Y - 312]], ice: [], dolls: [W * 0.14, W * 0.5],
       };
     },
   },
@@ -5026,7 +5029,7 @@ const MAPS = [
     build: () => {
       const a = W * 0.1, b = W * 0.58;
       return {
-        walls: [[a, 322, 50, 50], [a + 52, 322, 50, 50], [a + 26, 270, 50, 50], [b, 312, 60, 60], [b, 250, 60, 60], [b + 62, 342, 30, 30], [W * 0.82, 330, 42, 42]],
+        walls: [[a, 322, 50, 50], [a + 52, 322, 50, 50], [a + 26, 270, 50, 50], [b, 312, 60, 60], [b, 262, 60, 50], [b + 62, 342, 30, 30], [W * 0.82, 330, 42, 42]],
         water: [], ice: [], dolls: [a + 51, W * 0.4, b + 30],
       };
     },
@@ -5035,9 +5038,9 @@ const MAPS = [
     name: "Gefängnis", accent: "#a8a8b8", desc: "Zellen unter einer Decke",
     theme: { wall: ["#16161a", "#222228"], floor: ["#5c5c62", "#38383e"], edge: "#7c7c84", line: "#0e0e12" },
     build: () => {
-      const x0 = W * 0.06, cw = W * 0.15, walls = [[x0, 166, cw * 4 + 6, 10]];
-      for (let k = 0; k <= 4; k++) walls.push([x0 + k * cw, 176, 6, FLOOR_Y - 176]);
-      return { walls, water: [], ice: [], dolls: [[x0 + cw * 0.5 + 3, 300], [x0 + cw * 1.5 + 3, 300], [x0 + cw * 2.5 + 3, 300], W * 0.7] };
+      const x0 = W * 0.06, cw = W * 0.15, walls = [[x0, 134, cw * 4 + 6, 10]];
+      for (let k = 0; k <= 4; k++) walls.push([x0 + k * cw, 144, 6, FLOOR_Y - 144]);
+      return { walls, water: [], ice: [], dolls: [[x0 + cw * 0.5 + 3, 300], [x0 + cw * 1.5 + 3, 300], [x0 + cw * 2.5 + 3, 300], W * 0.74] };
     },
   },
   {
@@ -5046,7 +5049,7 @@ const MAPS = [
     build: () => {
       const x0 = Math.round(W * 0.42), tw = Math.round(W * 0.34);
       return {
-        walls: [[x0, 176, 8, FLOOR_Y - 176], [x0 + tw, 176, 8, FLOOR_Y - 176], [W * 0.22, 236, 120, 8], [W * 0.22 + 112, 244, 8, FLOOR_Y - 244]],
+        walls: [[x0, 176, 8, FLOOR_Y - 176], [x0 + tw, 176, 8, FLOOR_Y - 176], [W * 0.22, 262, 120, 8], [W * 0.22 + 112, 270, 8, FLOOR_Y - 270]],
         water: [[x0 + 8, 214, tw - 8, FLOOR_Y - 214]], ice: [], dolls: [W * 0.22 + 40, W * 0.1],
       };
     },
@@ -5055,7 +5058,7 @@ const MAPS = [
     name: "Parkour", accent: "#e070c0", desc: "Plattformen bis unters Dach",
     theme: { wall: ["#1a1020", "#281830"], floor: ["#6a5a72", "#40344a"], edge: "#8a7a92", line: "#120a16" },
     build: () => ({
-      walls: [[W * 0.04, 322, 110, 10], [W * 0.22, 282, 100, 10], [W * 0.4, 250, 100, 10], [W * 0.58, 226, 110, 10], [W * 0.8, 262, 110, 10]],
+      walls: [[W * 0.04, 332, 110, 10], [W * 0.22, 304, 100, 10], [W * 0.4, 280, 100, 10], [W * 0.58, 258, 110, 10], [W * 0.8, 286, 110, 10]],
       water: [], ice: [], dolls: [W * 0.58 + 55, W * 0.12],
     }),
   },
@@ -5063,7 +5066,7 @@ const MAPS = [
     name: "Rampe", accent: "#f08a4a", desc: "Glatte Schräge zum Rutschen",
     theme: { wall: ["#1e140c", "#2e2014"], floor: ["#8a7460", "#5a4a3c"], edge: "#aa9480", line: "#140c06" },
     build: () => {
-      const walls = [], ice = [], x0 = Math.round(W * 0.26), y0 = 236, n = 45;
+      const walls = [], ice = [], x0 = Math.round(W * 0.26), y0 = 262, n = 45;
       walls.push([x0 - 60, y0, 60, FLOOR_Y - y0]);
       for (let i = 0; i < n; i++) {
         const y = y0 + i * 3;
@@ -5079,8 +5082,8 @@ const MAPS = [
     build: () => {
       const a = Math.round(W * 0.46), sw = 64;
       return {
-        walls: [[0, 230, a, FLOOR_Y - 230], [a + sw, 230, W - a - sw, FLOOR_Y - 230], [a - 6, 214, 6, 16], [a + sw, 214, 6, 16]],
-        water: [[a, 316, sw, FLOOR_Y - 316]], ice: [], dolls: [W * 0.25, W * 0.67],
+        walls: [[0, 262, a, FLOOR_Y - 262], [a + sw, 262, W - a - sw, FLOOR_Y - 262], [a - 6, 248, 6, 14], [a + sw, 248, 6, 14]],
+        water: [[a, 326, sw, FLOOR_Y - 326]], ice: [], dolls: [W * 0.25, W * 0.67],
       };
     },
   },
@@ -5088,7 +5091,7 @@ const MAPS = [
     name: "Bunker", accent: "#8a9a6a", desc: "Niedrige Decke, enge Räume",
     theme: { wall: ["#141610", "#20241a"], floor: ["#5a5e50", "#363a30"], edge: "#7a7e70", line: "#0c0e08" },
     build: () => ({
-      walls: [[W * 0.14, 160, W * 0.72, 14], [W * 0.14, 174, 10, 120], [W * 0.86 - 10, 174, 10, 120], [W * 0.5 - 4, 174, 8, 140]],
+      walls: [[W * 0.14, 132, W * 0.72, 14], [W * 0.14, 146, 10, 144], [W * 0.86 - 10, 146, 10, 144], [W * 0.5 - 4, 146, 8, 168]],
       water: [], ice: [], dolls: [[W * 0.3, 300], [W * 0.66, 300], W * 0.06],
     }),
   },
@@ -5122,7 +5125,8 @@ function loadMap(i) {
 }
 
 const mapIce = new Uint8Array(N);
-const MENU_BTN = { x: 212, y: 9, w: 74, h: 34 };
+// The gear opens the settings. From there the game or the main menu.
+const MENU_BTN = { x: 212, y: 9, w: 34, h: 34 };
 const inMenuBtn = (x, y) => x >= MENU_BTN.x && x < MENU_BTN.x + MENU_BTN.w && y >= MENU_BTN.y && y < MENU_BTN.y + MENU_BTN.h;
 
 function drawMenuButton() {
@@ -5133,13 +5137,26 @@ function drawMenuButtonFrame(x, y, w, h) {
   rr(x, y, w, h, 9);
   ctx.fillStyle = "rgba(15,15,19,0.85)"; ctx.fill();
   ctx.strokeStyle = "#3e3e46"; ctx.lineWidth = 1.5; ctx.stroke();
-  label("MENÜ", x + w / 2, y + h / 2 + 1, 12, "#cfcfd6", "center");
+  drawGear(x + w / 2, y + h / 2, 11, Math.PI / 8, "#cfcfd6", "#141418");
+}
+// A gear wheel: eight square teeth around a ring with a hole.
+function drawGear(cx, cy, r, rot, color, hole) {
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(rot);
+  ctx.fillStyle = color;
+  for (let n = 0; n < 8; n++) {
+    ctx.save(); ctx.rotate(n * Math.PI / 4);
+    ctx.beginPath(); ctx.moveTo(-r * 0.24, -r * 0.7); ctx.lineTo(-r * 0.19, -r); ctx.lineTo(r * 0.19, -r); ctx.lineTo(r * 0.24, -r * 0.7); ctx.fill();
+    ctx.restore();
+  }
+  ctx.beginPath(); ctx.arc(0, 0, r * 0.74, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = hole; ctx.beginPath(); ctx.arc(0, 0, r * 0.32, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
 }
 
 // ----------------------------------------------------------------- extras
 
 // Cleanup and time controls in a drop-down under the EXTRAS button.
-const EXTRAS_BTN = { x: 294, y: 9, w: 88, h: 34 };
+const EXTRAS_BTN = { x: 254, y: 9, w: 88, h: 34 };
 const EXTRAS = { x: 170, y: 50, w: 304, cols: 2, rowH: 38 };
 const inExtrasBtn = (x, y) => x >= EXTRAS_BTN.x && x < EXTRAS_BTN.x + EXTRAS_BTN.w && y >= EXTRAS_BTN.y && y < EXTRAS_BTN.y + EXTRAS_BTN.h;
 const extrasH = () => 12 + Math.ceil(EXTRA_ITEMS.length / EXTRAS.cols) * EXTRAS.rowH;
@@ -5333,6 +5350,7 @@ function popScale(key, depth = 0.08) {
 
 function setScreen(name) {
   if (state.screen === name) return;
+  if (state.screen === "settings") state.settingsFromGame = false;
   state.screen = name; state.screenT = 0; state.pressTarget = null;
 }
 
@@ -5556,7 +5574,19 @@ function drawBackBody() {
   rr(BACK_BTN.x, BACK_BTN.y, BACK_BTN.w, BACK_BTN.h, 9);
   ctx.fillStyle = "rgba(26,26,32,0.92)"; ctx.fill();
   ctx.strokeStyle = "#3a3a42"; ctx.lineWidth = 1.5; ctx.stroke();
-  label("‹ ZURÜCK", BACK_BTN.x + BACK_BTN.w / 2, BACK_BTN.y + BACK_BTN.h / 2 + 1, 12, "#cfcfd6", "center");
+  const toGame = state.screen === "settings" && state.settingsFromGame;
+  label(toGame ? "‹ SPIEL" : "‹ ZURÜCK", BACK_BTN.x + BACK_BTN.w / 2, BACK_BTN.y + BACK_BTN.h / 2 + 1, 12, "#cfcfd6", "center");
+}
+// Settings opened from the game also lead to the main menu.
+const homeBtn = () => ({ x: W - 136, y: 16, w: 120, h: 34 });
+function drawHomeButton() {
+  const b = homeBtn();
+  scaled(b.x + b.w / 2, b.y + b.h / 2, 1 - 0.05 * pressAmt("home", b), () => {
+    rr(b.x, b.y, b.w, b.h, 9);
+    ctx.fillStyle = "rgba(26,26,32,0.92)"; ctx.fill();
+    ctx.strokeStyle = "#5a1a22"; ctx.lineWidth = 1.5; ctx.stroke();
+    label("HAUPTMENÜ", b.x + b.w / 2, b.y + b.h / 2 + 1, 12, "#e4a0a8", "center");
+  });
 }
 
 function screenBackground(top = "#121216", bottom = "#1c1c22") {
@@ -6030,6 +6060,7 @@ function drawSettings(dt) {
     ctx.fillStyle = "#8e0f1c"; ctx.fillRect(W / 2 - lw / 2, 64, lw * line, 3);
     if (line >= 1 && Math.random() < (dt || 0) * 1.6) settingsFx.drops.push({ x: W / 2 - lw / 2 + 8 + Math.random() * (lw - 16), y: 67, v: 0, len: 0, age: 0 });
     drawBackButton();
+    if (state.settingsFromGame) drawHomeButton();
   });
   for (const d of settingsFx.drops) {
     d.age += dt || 0;
@@ -6195,7 +6226,8 @@ function screenTargets() {
     for (const b of titleButtons()) t.push({ id: b.id, box: b, run: () => setScreen(b.id === "resume" ? "game" : b.id) });
     return t;
   }
-  t.push({ id: "back", box: BACK_BTN, run: () => setScreen("title") });
+  t.push({ id: "back", box: BACK_BTN, run: () => setScreen(state.screen === "settings" && state.settingsFromGame ? "game" : "title") });
+  if (state.screen === "settings" && state.settingsFromGame) t.push({ id: "home", box: homeBtn(), run: () => setScreen("title") });
   if (state.screen === "maps") {
     for (const c of menuCards()) t.push({ id: "map" + c.i, box: c, run: () => { state.inGame = true; loadMap(c.i); setScreen("game"); } });
   } else if (state.screen === "settings") {
@@ -6732,7 +6764,7 @@ function press() {
     return;
   }
   if (inPanelHead(state.sx, state.sy)) { togglePanel(); return; }
-  if (inMenuBtn(state.sx, state.sy)) { pop("menu"); release(); state.aimView = null; state.ctxMenu = null; setScreen("title"); state.extrasOpen = false; state.triggerDown = false; return; }
+  if (inMenuBtn(state.sx, state.sy)) { pop("menu"); release(); state.aimView = null; state.ctxMenu = null; state.settingsFromGame = true; setScreen("settings"); state.extrasOpen = false; state.triggerDown = false; return; }
   const c = ctxHit(state.sx, state.sy);
   if (c) {
     pop("cx" + c.kind + c.n);
@@ -6942,29 +6974,65 @@ function stepFires() {
   state.fires = state.fires.filter((f) => f.t > 0);
 }
 // Flames licking up from every burning part, drawn over the doll.
+// Flames on a burning body, drawn in the same pixel grid as the dolls.
+// Tongues rise from cells all over the burning part and flicker about ten
+// times a second. Pixels go in color buckets, tips first, so the bright core
+// always sits on top and the rim stays red.
+const FLAME_COLS = ["#a8200c", "#e24a16", "#ff8c1e", "#ffc834", "#fff2a8"];
+const flameBuckets = FLAME_COLS.map(() => []);
+function flameNoise(a, b) {
+  let h = Math.imul(a | 0, 374761393) + Math.imul(b | 0, 668265263);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
 function drawBodyFlames() {
-  const now = performance.now() / 1000;
+  const now = performance.now() / 1000, P = PIX;
+  for (const bk of flameBuckets) bk.length = 0;
   ctx.save(); ctx.globalCompositeOperation = "lighter";
-  for (const d of state.dolls) for (let k = 0; k < PART_COUNT; k++) {
-    if (d.fire[k] <= 0 || d.gone[k]) continue;
-    const [ax, ay] = limbStart(d, k), bx = d.x[d.pb[k]], by = d.y[d.pb[k]], f = Math.min(1, d.fire[k] / 1.5);
-    const n = k === TORSO ? 6 : k === HEAD ? 4 : 3, w = (k === HEAD ? HEAD_R : RECT[k][0]) * 0.8;
-    for (let q = 0; q < n; q++) {
-      const t = (q + 0.5) / n, sd = d.id * 7 + k * 3 + q, x = lerp(ax, bx, t) + Math.sin(sd * 2.3) * w * 0.6, y = lerp(ay, by, t);
-      const h = (10 + 8 * Math.abs(Math.sin(now * 7 + sd))) * (0.5 + 0.5 * f), sway = Math.sin(now * 5 + sd) * 3, fw = 3 + 2 * Math.sin(now * 9 + sd * 1.7);
-      const g = ctx.createLinearGradient(x, y, x, y - h);
-      g.addColorStop(0, "rgba(255,240,170,0.85)"); g.addColorStop(0.35, "rgba(255,150,40,0.7)"); g.addColorStop(1, "rgba(220,40,10,0)");
-      ctx.fillStyle = g;
-      ctx.beginPath(); ctx.moveTo(x - fw, y + 2);
-      ctx.quadraticCurveTo(x - fw * 0.7, y - h * 0.5, x + sway, y - h);
-      ctx.quadraticCurveTo(x + fw * 0.7, y - h * 0.5, x + fw, y + 2);
-      ctx.closePath(); ctx.fill();
+  for (const d of state.dolls) {
+    const seen = new Set();
+    for (let k = 0; k < PART_COUNT; k++) {
+      if (d.fire[k] <= 0 || d.gone[k]) continue;
+      const [ax, ay] = limbStart(d, k), bx = d.x[d.pb[k]], by = d.y[d.pb[k]], f = Math.min(1, d.fire[k] / 1.5);
+      const len = Math.hypot(bx - ax, by - ay) || 1, ux = (bx - ax) / len, uy = (by - ay) / len;
+      const w = (k === HEAD ? HEAD_R : RECT[k][0]) * 0.7, steps = Math.max(2, Math.round(len / (P * 2)));
+      for (let q = 0; q <= steps; q++) for (const o of [-w, 0, w]) {
+        const px = lerp(ax, bx, q / steps) - uy * o, py = lerp(ay, by, q / steps) + ux * o;
+        const gx = Math.floor(px / P), gy = Math.floor(py / P), key = gx * 4096 + gy;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        // Each cell flickers on its own beat, weaker fire leaves gaps.
+        const beat = Math.floor(now * 10 + flameNoise(gx, gy) * 7);
+        const n = flameNoise(gx * 31 + d.id, gy * 17 + beat);
+        if (n > 0.25 + 0.75 * f) continue;
+        const hc = 1 + Math.floor(flameNoise(gx + beat, gy - d.id) * (2 + 5 * f));
+        for (let j = -1; j < hc; j++) {
+          const c = Math.min(4, Math.floor((1 - (j + 1) / (hc + 1)) * 5));
+          flameBuckets[c].push(gx * P, (gy - j) * P);
+          // The lower half of a tongue is two pixels wide.
+          if (j < hc / 2) flameBuckets[c].push((gx + 1) * P, (gy - j) * P);
+        }
+        // Now and then a spark flies off the tip.
+        if (n < 0.08 * f) flameBuckets[2].push(gx * P + (beat % 3 - 1) * P, (gy - hc - 1 - (beat % 3)) * P);
+      }
     }
-    const glow = ctx.createRadialGradient((ax + bx) / 2, (ay + by) / 2, 0, (ax + bx) / 2, (ay + by) / 2, 26);
-    glow.addColorStop(0, `rgba(255,120,30,${0.22 * f})`); glow.addColorStop(1, "rgba(255,80,0,0)");
-    ctx.fillStyle = glow; ctx.beginPath(); ctx.arc((ax + bx) / 2, (ay + by) / 2, 26, 0, Math.PI * 2); ctx.fill();
+    for (let k = 0; k < PART_COUNT; k++) {
+      if (d.fire[k] <= 0 || d.gone[k]) continue;
+      const [ax, ay] = limbStart(d, k), bx = d.x[d.pb[k]], by = d.y[d.pb[k]], f = Math.min(1, d.fire[k] / 1.5);
+      const glow = ctx.createRadialGradient((ax + bx) / 2, (ay + by) / 2, 0, (ax + bx) / 2, (ay + by) / 2, 24);
+      glow.addColorStop(0, `rgba(255,120,30,${0.16 * f})`); glow.addColorStop(1, "rgba(255,80,0,0)");
+      ctx.fillStyle = glow; ctx.beginPath(); ctx.arc((ax + bx) / 2, (ay + by) / 2, 24, 0, Math.PI * 2); ctx.fill();
+    }
   }
   ctx.restore();
+  for (let c = 0; c < FLAME_COLS.length; c++) {
+    const bk = flameBuckets[c];
+    if (!bk.length) continue;
+    ctx.fillStyle = FLAME_COLS[c];
+    ctx.beginPath();
+    for (let i = 0; i < bk.length; i += 2) ctx.rect(bk[i], bk[i + 1], P, P);
+    ctx.fill();
+  }
 }
 // Fire sounds: crackling while something burns, a whoosh when it catches,
 // breaking glass for the molotov.
