@@ -5971,6 +5971,8 @@ function drawSplitLabel(b, text) {
   const p = playShot, x = b.x + 18, y = b.y + b.h / 2 + 1, col = "#fff4ec";
   if (!p.aim) { label(text, x, y, 15, col); return; }
   const bx = p.hit ? Infinity : playX(p, p.t);
+  // Once the halves fly, drawPlayBullet draws them above everything.
+  if (playFlyAge(p) >= 0) return;
   for (let sx = p.tx0; sx < p.tx1; sx += PS_STRIP) {
     const mid = sx + PS_STRIP / 2, ly = playY(p, mid);
     if (mid > bx) {
@@ -5993,9 +5995,65 @@ function drawSplitLabel(b, text) {
     if (glow > 0) { ctx.fillStyle = `rgba(255,214,140,${glow})`; ctx.fillRect(sx, ly - 0.8, PS_STRIP, 1.6); }
   }
 }
+// Shortly after the bullet leaves the word, the two halves break loose and
+// fly off: the upper half spins up and away toward the camera, the lower
+// half tumbles down. They start in slow motion, then speed up, leaving a
+// faint trail.
+const PS_FLY_DELAY = 0.2;
+const playFlyAge = (p) => p.t - playPass(p, p.tx1) - PS_FLY_DELAY;
+const playWarp = (a) => (a < 0.3 ? a * 0.25 : 0.075 + (a - 0.3) * 1.1);
+const PS_PIECES = [
+  { side: -1, vx: 230, vy: -430, g: 170, spin: -1.5, grow: 0.9 },
+  { side: 1, vx: 150, vy: 110, g: 760, spin: 2.2, grow: 0.25 },
+];
+function drawPlayPieces(p) {
+  const a = playFlyAge(p);
+  if (a < 0) return;
+  const text = p.b.text, x = p.b.x + 18, y = p.b.y + p.b.h / 2 + 1, base = 3.7;
+  const l0 = p.tx0 - 4, l1 = p.tx1 + 4, y0 = playY(p, l0), y1 = playY(p, l1);
+  ctx.save();
+  ctx.shadowColor = "rgba(255,70,50,0.7)"; ctx.shadowBlur = 8;
+  for (const pc of PS_PIECES) {
+    for (let k = 3; k >= 0; k--) {
+      const u = playWarp(a) - 0.04 * k;
+      if (u < 0) continue;
+      const fade = 1 - clamp((u - 1.1) / 0.5, 0, 1);
+      if (fade <= 0) continue;
+      ctx.save();
+      ctx.globalAlpha *= fade * (k ? 0.22 / k : 1);
+      const ox = p.dir[0] * base * 0.5 - p.nrm[0] * base * pc.side + pc.vx * u;
+      const oy = p.dir[1] * base * 0.5 - p.nrm[1] * base * pc.side + pc.vy * u + pc.g * u * u;
+      ctx.translate(p.tcx + ox, p.ty + oy);
+      ctx.rotate(pc.spin * u);
+      const z = 1 + pc.grow * u;
+      ctx.scale(z, z);
+      ctx.translate(-p.tcx, -p.ty);
+      ctx.beginPath();
+      if (pc.side < 0) { ctx.moveTo(l0, y0); ctx.lineTo(l1, y1); ctx.lineTo(l1, p.ty - 30); ctx.lineTo(l0, p.ty - 30); }
+      else { ctx.moveTo(l0, y0); ctx.lineTo(l1, y1); ctx.lineTo(l1, p.ty + 30); ctx.lineTo(l0, p.ty + 30); }
+      ctx.closePath(); ctx.clip();
+      label(text, x, y, 15, "#fff4ec");
+      // The cut edge still glows on each half.
+      const hot = 1 - u / 0.4;
+      if (hot > 0 && !k) {
+        ctx.strokeStyle = `rgba(255,214,140,${hot})`; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(l0, y0); ctx.lineTo(l1, y1); ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+  ctx.restore();
+  // A white streak flashes along the cut as the halves break loose.
+  const flash = 1 - a / 0.22;
+  if (flash > 0) {
+    ctx.strokeStyle = `rgba(255,250,235,${flash})`; ctx.lineWidth = 2.5 * flash + 0.5; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(l0 - 20, playY(p, l0 - 20)); ctx.lineTo(l1 + 20, playY(p, l1 + 20)); ctx.stroke();
+  }
+}
 function drawPlayBullet() {
   const p = playShot;
   if (!p || !p.aim) return;
+  drawPlayPieces(p);
   for (const sp of p.sparks) { ctx.fillStyle = `rgba(255,${180 + 60 * (1 - sp.age / 0.45) | 0},90,${1 - sp.age / 0.45})`; ctx.fillRect(sp.x - 1, sp.y - 1, 2, 2); }
   // Muzzle flash at the left edge
   if (p.t < 0.09) {
