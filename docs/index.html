@@ -4932,6 +4932,43 @@ function drawOrganLine(d, x, y, w, h) {
   label(text, x + 17, y + h / 2 + 0.5, 9, col);
 }
 
+// Bandages on the front figure: a wrap all the way round the part, as wide
+// as the wounds under it, with diagonal turns and blood soaked through.
+function drawChartBands(d, cx, cy, s) {
+  for (const b of d.bands) {
+    if (b.stump || !d.attached(b.part)) continue;
+    const [rx, ry, rw, rh] = CHART[b.part];
+    let t0 = b.t, t1 = b.t, wet = false;
+    for (const w of d.wounds) if (w.band === b) { t0 = Math.min(t0, w.t); t1 = Math.max(t1, w.t); wet = wet || w.bleed > 0; }
+    let y0, y1;
+    if (b.part === HEAD) { y0 = ry + rh * 0.12; y1 = ry + rh * 0.42; }
+    else if (b.burn) { y0 = ry + rh * 0.12; y1 = ry + rh * 0.88; }
+    else { const c0 = clamp(t0, 0.08, 0.92), c1 = clamp(t1, 0.08, 0.92); y0 = ry + rh * c0 - 2.4; y1 = ry + rh * c1 + 2.4; }
+    y0 = Math.max(ry, y0); y1 = Math.min(ry + rh, y1);
+    const X = cx + (rx - 0.5) * s, Y = cy + y0 * s, Wd = (rw + 1) * s, Hd = (y1 - y0) * s;
+    ctx.save();
+    rr(X, Y, Wd, Hd, 0.8 * s); ctx.fillStyle = "#0b0b0e"; ctx.fill();
+    rr(X + 0.35 * s, Y + 0.35 * s, Wd - 0.7 * s, Hd - 0.7 * s, 0.6 * s);
+    const g = ctx.createLinearGradient(X, 0, X + Wd, 0);
+    g.addColorStop(0, "#d8d2c4"); g.addColorStop(0.35, "#f4f0e6"); g.addColorStop(1, "#c4bcac");
+    ctx.fillStyle = g; ctx.fill();
+    ctx.clip();
+    // The turns of the gauze run diagonally across the wrap.
+    ctx.strokeStyle = "rgba(120,110,96,0.45)"; ctx.lineWidth = 0.35 * s;
+    ctx.beginPath();
+    for (let u = -Hd; u < Wd + Hd; u += 2.2 * s) { ctx.moveTo(X + u, Y); ctx.lineTo(X + u - Hd * 0.6, Y + Hd); }
+    ctx.stroke();
+    // Blood soaked through over the wounds
+    for (const w of d.wounds) {
+      if (w.band !== b) continue;
+      const [wx, wy] = chartPoint(w);
+      ctx.fillStyle = wet ? "rgba(170,24,40,0.8)" : "rgba(110,26,32,0.75)";
+      blobPath(cx + wx * s, clamp(cy + wy * s, Y + 0.8 * s, Y + Hd - 0.8 * s), (0.6 + (w.soak || 0) * 1.2) * s, w.seed || 1, 7, 0.4); ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+
 // Where a wound sits on the chart, from its part and position along it.
 function chartPoint(w) {
   const [rx, ry, rw, rh] = CHART[w.part];
@@ -4972,6 +5009,7 @@ function drawBodyChart(d, x, y, w, h) {
     const [wx, wy] = chartPoint(wd);
     drawWoundMark(wd, cx + wx * s, cy + wy * s, s * 1.2, now);
   }
+  drawChartBands(d, cx, cy, s);
 }
 
 function drawChartBody(d, x, y, w, h, cx, cy, s) {
@@ -5017,8 +5055,8 @@ function drawDrip(x, y, s, bleed, seed, now) {
 
 function drawWoundMark(w, x, y, s, now) {
   const seed = w.seed || w.rot * 9, big = w.size > 2 ? 1.25 : 1;
-  if (w.bandaged && w.band && w.band.drawn === now) return;
-  if (w.bandaged && w.band) w.band.drawn = now;
+  // A wrapped wound is hidden under its band (drawChartBands).
+  if (w.bandaged && w.band && !w.stump) return;
   if (w.bandaged) {
     // Gauze strip across the part with the blood that soaked through.
     rr(x - 4.2 * s, y - 1.8 * s, 8.4 * s, 3.6 * s, 0.9 * s); ctx.fillStyle = "#ece8de"; ctx.fill();
@@ -6959,6 +6997,7 @@ function drawFrontDoll(d, cx, cy, F) {
     const [wx, wy] = chartPoint(w);
     drawWoundMark(w, cx + wx * F, cy + wy * F, F * 1.1, now);
   }
+  drawChartBands(d, cx, cy, F);
 }
 
 function drawAimView() {
@@ -6967,30 +7006,76 @@ function drawAimView() {
   if (!state.dolls.includes(v.d)) { closeAimView(); return; }
   const d = v.d, a = easeOut((performance.now() - v.t) / 220), wp = WEAPONS[state.weapon];
   ctx.save(); ctx.globalAlpha *= a;
-  ctx.fillStyle = "rgba(10,10,13,0.985)"; ctx.fillRect(0, 0, W, H);
+  // Dark room with wall panels and a red edge, like the other screens.
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, "rgba(20,15,18,0.99)"); bg.addColorStop(1, "rgba(10,9,12,0.99)");
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "rgba(255,255,255,0.02)";
+  for (let x = 0; x < W; x += 96) ctx.fillRect(x, 0, 1.5, H);
+  const vg = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, W * 0.7);
+  vg.addColorStop(0, "rgba(80,0,8,0)"); vg.addColorStop(1, "rgba(80,0,8,0.3)");
+  ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
   // Back button and title
   scaled(AIM_BACK.x + AIM_BACK.w / 2, AIM_BACK.y + AIM_BACK.h / 2, popScale("aimback"), () => {
     rr(AIM_BACK.x, AIM_BACK.y, AIM_BACK.w, AIM_BACK.h, 9); ctx.fillStyle = "rgba(26,26,32,0.95)"; ctx.fill();
     ctx.strokeStyle = "#3a3a42"; ctx.lineWidth = 1.5; ctx.stroke();
     label("‹ ZURÜCK", AIM_BACK.x + AIM_BACK.w / 2, AIM_BACK.y + AIM_BACK.h / 2 + 1, 12, "#cfcfd6", "center");
   });
-  label("SCHUSS PRÄZISIEREN", W * 0.32, 27, 15, "#e6e6de", "center");
-  // Figure box with the doll from the front
+  label("SCHUSS PRÄZISIEREN", W * 0.32, 25, 15, "#ecece4", "center");
+  ctx.font = `700 15px ${FONT}`;
+  const tw = ctx.measureText("SCHUSS PRÄZISIEREN").width, ul = easeOut((performance.now() - v.t) / 500);
+  ctx.fillStyle = "#8e0f1c"; ctx.fillRect(W * 0.32 - tw / 2, 38, tw * ul, 2.5);
+  // Figure box: a dark shooting range under a lamp, with scope corners.
   const B = AIM_BOX();
-  rr(B.x, B.y, B.w, B.h, 14); ctx.fillStyle = "#121216"; ctx.fill();
-  ctx.strokeStyle = "#26262e"; ctx.lineWidth = 1.5; ctx.stroke();
+  rr(B.x, B.y, B.w, B.h, 14);
+  const bgB = ctx.createLinearGradient(0, B.y, 0, B.y + B.h);
+  bgB.addColorStop(0, "#15131a"); bgB.addColorStop(1, "#0c0b0f");
+  ctx.fillStyle = bgB; ctx.fill();
+  ctx.save(); rr(B.x, B.y, B.w, B.h, 14); ctx.clip();
   const [cx, cy] = aimCenter();
-  ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.beginPath(); ctx.ellipse(cx, cy + 72 * AIM_F, 34, 5, 0, 0, Math.PI * 2); ctx.fill();
+  // Range lines and a height scale on the left
+  ctx.fillStyle = "rgba(255,255,255,0.035)";
+  for (let yy = B.y + 20; yy < B.y + B.h; yy += 24) ctx.fillRect(B.x, yy, B.w, 1);
+  ctx.fillStyle = "rgba(255,255,255,0.12)";
+  for (let yy = B.y + 20, n = 0; yy < B.y + B.h - 10; yy += 12, n++) ctx.fillRect(B.x + 8, yy, n % 2 ? 4 : 8, 1);
+  // Light cone from a lamp above the doll
+  const lc = ctx.createLinearGradient(0, B.y, 0, B.y + B.h);
+  lc.addColorStop(0, "rgba(255,240,204,0.16)"); lc.addColorStop(1, "rgba(255,240,204,0.02)");
+  ctx.fillStyle = lc;
+  ctx.beginPath(); ctx.moveTo(cx - 14, B.y); ctx.lineTo(cx + 14, B.y); ctx.lineTo(cx + 150, B.y + B.h); ctx.lineTo(cx - 150, B.y + B.h); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#d8d8d0"; ctx.fillRect(cx - 12, B.y, 24, 4);
+  ctx.fillStyle = "rgba(255,246,216,0.9)"; ctx.fillRect(cx - 6, B.y + 4, 12, 1.5);
+  ctx.restore();
+  rr(B.x, B.y, B.w, B.h, 14); ctx.strokeStyle = "#2c2228"; ctx.lineWidth = 1.5; ctx.stroke();
+  // Red scope corners
+  ctx.strokeStyle = "rgba(224,48,63,0.7)"; ctx.lineWidth = 2; ctx.lineCap = "round";
+  for (const [qx, qy, sx, sy] of [[B.x + 10, B.y + 10, 1, 1], [B.x + B.w - 10, B.y + 10, -1, 1], [B.x + 10, B.y + B.h - 10, 1, -1], [B.x + B.w - 10, B.y + B.h - 10, -1, -1]]) {
+    ctx.beginPath(); ctx.moveTo(qx, qy + sy * 14); ctx.lineTo(qx, qy); ctx.lineTo(qx + sx * 14, qy); ctx.stroke();
+  }
+  ctx.fillStyle = "rgba(0,0,0,0.45)"; ctx.beginPath(); ctx.ellipse(cx, cy + 72 * AIM_F, 46, 6, 0, 0, Math.PI * 2); ctx.fill();
   drawFrontDoll(d, cx, cy, AIM_F);
   // Crosshair with the target name
   const hit = v.aiming ? frontHit(d, (v.cx - cx) / AIM_F, (v.cy - cy) / AIM_F) : null;
   if (v.aiming) {
-    const col = hit ? "#ff4050" : "#cfcfd6";
+    const col = hit ? "#ff4050" : "#cfcfd6", spin = performance.now() / 900;
+    ctx.save();
+    ctx.shadowColor = hit ? "rgba(255,64,80,0.8)" : "rgba(0,0,0,0)"; ctx.shadowBlur = 8;
     ctx.strokeStyle = col; ctx.lineWidth = 1.6; ctx.lineCap = "round";
     ctx.beginPath(); ctx.arc(v.cx, v.cy, 9, 0, Math.PI * 2);
-    ctx.moveTo(v.cx - 16, v.cy); ctx.lineTo(v.cx - 5, v.cy); ctx.moveTo(v.cx + 5, v.cy); ctx.lineTo(v.cx + 16, v.cy);
-    ctx.moveTo(v.cx, v.cy - 16); ctx.lineTo(v.cx, v.cy - 5); ctx.moveTo(v.cx, v.cy + 5); ctx.lineTo(v.cx, v.cy + 16); ctx.stroke();
+    ctx.moveTo(v.cx - 18, v.cy); ctx.lineTo(v.cx - 5, v.cy); ctx.moveTo(v.cx + 5, v.cy); ctx.lineTo(v.cx + 18, v.cy);
+    ctx.moveTo(v.cx, v.cy - 18); ctx.lineTo(v.cx, v.cy - 5); ctx.moveTo(v.cx, v.cy + 5); ctx.lineTo(v.cx, v.cy + 18); ctx.stroke();
+    // A turning outer ring in four pieces
+    ctx.lineWidth = 1.2; ctx.globalAlpha *= 0.7;
+    for (let q = 0; q < 4; q++) { ctx.beginPath(); ctx.arc(v.cx, v.cy, 14, spin + q * Math.PI / 2 + 0.25, spin + q * Math.PI / 2 + 1.1); ctx.stroke(); }
+    ctx.restore();
     ctx.fillStyle = col; ctx.beginPath(); ctx.arc(v.cx, v.cy, 1.4, 0, Math.PI * 2); ctx.fill();
+    // The name of the spot rides next to the crosshair.
+    if (hit) {
+      ctx.font = `700 8px ${FONT}`;
+      const nw = ctx.measureText(hit.name).width + 12, tx = Math.min(v.cx + 20, B.x + B.w - nw - 6), ty = v.cy - 26;
+      rr(tx, ty, nw, 14, 7); ctx.fillStyle = "rgba(224,48,63,0.92)"; ctx.fill();
+      label(hit.name, tx + nw / 2, ty + 7.5, 8, "#fff4ec", "center");
+    }
   }
   if (v.flash > 0) {
     v.flash = Math.max(0, v.flash - frameDt * 5);
@@ -7001,8 +7086,14 @@ function drawAimView() {
   for (const b of aimButtons()) {
     scaled(b.x + b.w / 2, b.y + b.h / 2, popScale("aim" + b.id), () => {
       const on = b.id === "xray" ? state.xray : b.id[0] === "w" ? state.weapon === b.n : false;
-      rr(b.x, b.y, b.w, b.h, 9); ctx.fillStyle = on ? "#2e2e37" : "#1d1d23"; ctx.fill();
-      ctx.strokeStyle = on ? "#ecece6" : "#34343c"; ctx.lineWidth = on ? 1.8 : 1.2; ctx.stroke();
+      const accent = b.id === "xray" ? "#4aa8ff" : "#e0303f";
+      ctx.save();
+      if (on) { ctx.shadowColor = accent; ctx.shadowBlur = 10; }
+      rr(b.x, b.y, b.w, b.h, 9);
+      const gb = ctx.createLinearGradient(0, b.y, 0, b.y + b.h);
+      gb.addColorStop(0, on ? "#2e2228" : "#1e1c22"); gb.addColorStop(1, on ? "#1e1418" : "#141317");
+      ctx.fillStyle = gb; ctx.fill(); ctx.restore();
+      rr(b.x, b.y, b.w, b.h, 9); ctx.strokeStyle = on ? accent : "#34303a"; ctx.lineWidth = on ? 1.8 : 1.2; ctx.stroke();
       if (b.id[0] === "w") {
         const sp = WEAPONS[b.n].sprite, z = Math.min(1.5, (b.w - 12) / sp[0].length);
         drawSpriteOutlined(sp, b.x + b.w / 2 - sp[0].length * z / 2, b.y + 18 - sp.length * z / 2, z, on ? 1 : 0.5);
@@ -7013,10 +7104,22 @@ function drawAimView() {
     });
   }
   const x0 = Math.round(W * 0.6), cw = W - x0 - 16;
-  label("MUNITION", x0, 166, 9, "#8e8e98");
-  label(state.ammo[state.weapon] + " / " + wp.mag, x0 + cw, 166, 11, state.ammo[state.weapon] ? "#ecece6" : "#ff5060", "right");
-  // Target card
-  rr(x0, 180, cw, 74, 10); ctx.fillStyle = "#16161b"; ctx.fill(); ctx.strokeStyle = "#2a2a32"; ctx.lineWidth = 1.2; ctx.stroke();
+  label("MUNITION", x0, 162, 9, "#8e8e98");
+  const ammo = state.ammo[state.weapon];
+  label(ammo + " / " + wp.mag, x0 + cw, 162, 11, ammo ? "#ecece6" : "#ff5060", "right");
+  // One brass pip per round in the magazine, empty ones dark.
+  const pw0 = Math.min(14, (cw - (wp.mag - 1) * 2) / wp.mag);
+  for (let n = 0; n < wp.mag; n++) {
+    const px = x0 + n * (pw0 + 2);
+    rr(px, 169, pw0, 5, Math.min(2.5, pw0 / 2));
+    ctx.fillStyle = n < ammo ? (wp.taser ? "#e6c850" : "#d8a84a") : "#26222a"; ctx.fill();
+  }
+  // Target card with a red edge on the left
+  rr(x0, 180, cw, 74, 10);
+  const gt = ctx.createLinearGradient(0, 180, 0, 254);
+  gt.addColorStop(0, "#1c181e"); gt.addColorStop(1, "#131116"); ctx.fillStyle = gt; ctx.fill();
+  ctx.strokeStyle = "#2c2630"; ctx.lineWidth = 1.2; ctx.stroke();
+  ctx.fillStyle = "#e0303f"; ctx.fillRect(x0, 190, 3, 54);
   label("ZIEL", x0 + 12, 195, 9, "#8e8e98");
   const shown = v.aiming ? hit : v.last;
   if (shown) {
@@ -7035,9 +7138,12 @@ function drawAimView() {
     const y = 322 + i * 18, val = vt.get(d), txt = String(vt.text(val));
     label(vt.name, x0, y, fitFont(vt.name, cw * 0.45, 8), "#8e8e98");
     const bx = x0 + cw * 0.47, bw = cw * 0.53 - 34;
-    rr(bx, y - 3, bw, 6, 3); ctx.fillStyle = "#1e1e24"; ctx.fill();
+    rr(bx, y - 3.5, bw, 7, 3.5); ctx.fillStyle = "#1e1c22"; ctx.fill();
     const fw = bw * clamp(i === 4 ? val / 160 : val / 100, 0, 1);
-    if (fw > 1) { rr(bx, y - 3, Math.max(6, fw), 6, 3); ctx.fillStyle = vt.color; ctx.fill(); }
+    if (fw > 1) {
+      rr(bx, y - 3.5, Math.max(7, fw), 7, 3.5); ctx.fillStyle = vt.color; ctx.fill();
+      rr(bx + 2, y - 2.3, Math.max(3, fw - 4), 1.8, 0.9); ctx.fillStyle = css(lighten(hex(vt.color), 0.45), 0.7); ctx.fill();
+    }
     label(txt, x0 + cw, y, 9, !d.dead && vt.bad(val) ? "#ff5060" : "#ecece6", "right");
   });
   ctx.restore();
