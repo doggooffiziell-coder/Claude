@@ -689,6 +689,25 @@ const ORGAN_DEATH = {
   liver: "LEBERBLUTUNG", stomach: "BAUCHFELLENTZÜNDUNG", kidneys: "NIERENBLUTUNG", gut: "BAUCHFELLENTZÜNDUNG",
 };
 
+// ----------------------------------------------------------------- burns
+// Fire burns part by part. Clothes and hair catch first and feed the
+// flames, the skin under them burns through four degrees: 1 red, 2 blisters,
+// 3 white and leathery, 4 charred to the bone. Burns over a large share of
+// the body (BSA, rule of nines) drain fluid and lead to burn shock.
+const BSA = [9, 27, 9, 4.5, 4.5, 4.5, 4.5, 9, 7, 2, 9, 7, 2];
+const BURN_NEIGHBORS = PARENT.map((p, k) => [...(p >= 0 ? [p] : []), ...PARENT.map((q, c) => (q === k ? c : -1)).filter((c) => c >= 0)]);
+const COL_BURN1 = hex("#e0705e"), COL_BURN2 = hex("#d8505a"), COL_BURN3 = hex("#d8c4a4"), COL_BURN4 = hex("#2a1c16");
+const COL_BLISTER = hex("#f6e2cc"), COL_EMBER = hex("#ff7a28"), COL_SCORCH = hex("#1e1612");
+// Skin color after a burn of degree deg (0 to 4).
+function burnSkin(c, deg) {
+  if (deg <= 0.05) return c;
+  if (deg < 1) return mixc(c, COL_BURN1, deg * 0.55);
+  if (deg < 2) return mixc(mixc(c, COL_BURN1, 0.55), COL_BURN2, (deg - 1) * 0.6);
+  if (deg < 3) return mixc(mixc(mixc(c, COL_BURN1, 0.55), COL_BURN2, 0.6), COL_BURN3, (deg - 2) * 0.8);
+  return mixc(COL_BURN3, COL_BURN4, Math.min(1, (deg - 3) * 1.1));
+}
+const burnDegName = (deg) => (deg >= 3.5 ? "4. GRAD" : deg >= 2.5 ? "3. GRAD" : deg >= 1.5 ? "2. GRAD" : "1. GRAD");
+
 // ----------------------------------------------------------------- decay
 // A dead doll goes through the stages of a real body, compressed in time:
 // it turns pale, livor spots gather on the low side, rigor sets in and
@@ -771,6 +790,9 @@ class Doll {
     this.ko = 100; this.bl = 100; this.pn = 0; this.o2 = 100; this.hr = 72;
     this.dead = false; this.headUnder = false; this.deadT = 0; this.dc = null; this.rigorOn = false;
     this.burn = 0; this.bladeTimer = 0; this.freeze = 0; this.frozen = false;
+    this.fire = new Array(PART_COUNT).fill(0); this.ember = new Array(PART_COUNT).fill(0);
+    this.burnDeg = new Array(PART_COUNT).fill(0); this.cloth = new Array(PART_COUNT).fill(1);
+    this.hair = 1; this.burnLoss = 0; this.tbsa = 0; this.rollT = 0; this.rollDir = 1;
     this.sinceDamage = 0; this.healing = false;
     this.beatPhase = 0; this.beatFlash = 0; this.hurtFlash = 0;
     this.noAir = 0; this.beat = false; this.severCd = 0; this.woundCd = 0; this.burnImmune = 0;
@@ -850,9 +872,9 @@ class Doll {
     let wound = 0;
     for (const w of this.wounds) if (this.attached(w.part)) wound += w.bleed * 0.8;
     this.woundBleed = wound;
-    let loss = this.organBleed + wound;
+    let loss = this.organBleed + wound + this.burnLoss;
     if (this.iv > 0) loss -= 8;
-    if (loss > 0.05) { eta = Math.max(0, this.bl - 8) / loss; this.etaWhy = "blood"; }
+    if (loss > 0.05) { eta = Math.max(0, this.bl - 8) / loss; this.etaWhy = this.burnLoss > this.organBleed + wound ? "burn" : "blood"; }
     // Air: what the lungs bring in against what the body loses.
     const breath = (this.organ[ORGAN.lungL] + this.organ[ORGAN.lungR]) / 200;
     const gain = this.headUnder ? -11 : this.arrest ? 0 : 20 * breath;
@@ -1173,6 +1195,15 @@ class Doll {
     let maxV = 0;
     for (const i of [P_HEAD, P_NECK, P_WAIST, P_HIP]) maxV = Math.max(maxV, Math.hypot(this.x[i] - this.ox[i], this.y[i] - this.oy[i]));
 
+    if (this.burn > 0 && !this.headUnder) {
+      // Stop, drop and roll: a burning doll throws itself down and rolls.
+      this.rollT += DT;
+      if (this.standing && this.rollT > 0.6) { this.stagger = Math.max(this.stagger, 1.4); this.push(P_NECK, this.rollDir * 2.2, 0.8); }
+      else if (!this.standing) {
+        if (Math.random() < DT * 0.6) this.rollDir = -this.rollDir;
+        this.push(P_NECK, this.rollDir * 1.5, -0.7); this.push(P_WAIST, this.rollDir * 1.1, 0.2); this.push(P_HIP, this.rollDir * 0.9, 0.3);
+      }
+    } else this.rollT = 0;
     if (this.burn > 0 || this.headUnder) {
       // Panic: flail arms and kick legs.
       if (ends.length && Math.random() < 0.45) this.push(ends[rnd(ends.length)], rf(-2.4, 2.4), rf(-3, 0.5));
@@ -1563,7 +1594,8 @@ class Doll {
     }
     this.pn = 100;
     this.ko -= 40;
-    this.burn = Math.max(this.burn, 3);
+    // The fireball sets the near side of the body alight.
+    this.applyHeat(x, y, R * 0.45, 2.5);
     this.damaged();
     return true;
   }
@@ -1572,8 +1604,27 @@ class Doll {
     for (let i = 0; i < this.x.length; i++) if (Math.hypot(this.x[i] - px0, this.y[i] - py0) <= r) return true;
     return false;
   }
-  applyHeat(x, y, r) { if (this.near(x, y, r)) this.burn = Math.max(this.burn, 5); }
-  applyCold(x, y, r) { if (this.near(x, y, r)) { this.freeze = Math.min(1.6, this.freeze + DT * 1.1); this.burn = 0; } }
+  // Sets a body part on fire for at least t seconds. Clothes and hair keep
+  // it burning longer.
+  ignite(k, t) {
+    if (k < 0 || this.gone[k] || this.frozen) return;
+    const fuel = (PART_CLOTH[k] !== "skin" ? this.cloth[k] * 3 : 0) + (k === HEAD ? this.hair * 1.5 : 0);
+    this.fire[k] = Math.max(this.fire[k], t + fuel);
+  }
+  extinguish(k = -1) {
+    for (let n = 0; n < PART_COUNT; n++) if (k < 0 || n === k) this.fire[n] = 0;
+    this.burn = this.fire.some((v) => v > 0) ? 1 : 0;
+  }
+  // Parts within r of the point catch fire.
+  applyHeat(x, y, r, t = 3) {
+    for (let k = 0; k < PART_COUNT; k++) {
+      if (this.gone[k]) continue;
+      const [ax, ay] = limbStart(this, k), bx = this.x[this.pb[k]], by = this.y[this.pb[k]];
+      const [qx, qy] = closestOnSeg(x, y, ax, ay, bx, by), w = k === HEAD ? HEAD_R : RECT[k][0];
+      if (Math.hypot(x - qx, y - qy) <= r + w) this.ignite(k, t);
+    }
+  }
+  applyCold(x, y, r) { if (this.near(x, y, r)) { this.freeze = Math.min(1.6, this.freeze + DT * 1.1); this.extinguish(); } }
   damaged() { this.sinceDamage = 0; this.hurtFlash = 1; this.stagger = Math.max(this.stagger, 0.6); }
   die() {
     if (!this.dead) this.dyingTimer = 2.4;
@@ -1603,8 +1654,8 @@ class Doll {
     let cold = 0, wet = false;
     for (let i = 0; i < this.x.length; i++) {
       const x = this.x[i], y = this.y[i], m = matAt(x, y);
-      if (m === FIRE && this.burn <= 0 && this.burnImmune <= 0) this.burn = 5;
-      else if (m === WATER || m === BLOOD) wet = true;
+      if (m === FIRE && this.burnImmune <= 0) this.ignite(this.owner[i], 2.5);
+      else if (m === WATER || m === BLOOD) { wet = true; this.fire[this.owner[i]] = 0; }
       // Only fresh ice from the ice tool is cold enough to freeze a doll.
       const r = this.rad[i] + 3;
       if (coldIceAt(x, y + r) || coldIceAt(x + r, y) || coldIceAt(x - r, y)) cold++;
@@ -1612,27 +1663,9 @@ class Doll {
     const hx = this.x[this.pb[HEAD]], hy = this.y[this.pb[HEAD]];
     this.headUnder = !this.severed[HEAD] && liquidAt(hx, hy) && liquidAt(hx, hy - 10);
 
-    if (wet && this.burn > 0) {
-      this.burn = 0;
-      paintDisc(this.x[this.pa[TORSO]], this.y[this.pa[TORSO]], 12, STEAM, 0.4, 60);
-    }
+    if (wet && this.burn > 0 && !this.fire.some((v) => v > 0)) paintDisc(this.x[this.pa[TORSO]], this.y[this.pa[TORSO]], 12, STEAM, 0.4, 60);
     this.burnImmune = Math.max(0, this.burnImmune - DT);
-    if (this.burn > 0) {
-      this.burn -= DT;
-      if (this.burn <= 0) this.burnImmune = 1.5;
-      this.freeze = Math.max(0, this.freeze - DT * 0.9);
-      this.pn = Math.min(100, this.pn + 9 * DT);
-      this.sinceDamage = 0;
-      for (let n = 0; n < 4; n++) {
-        const k = rnd(PART_COUNT);
-        if (this.gone[k]) continue;
-        const t = Math.random();
-        const x = lerp(this.x[this.pa[k]], this.x[this.pb[k]], t), y = lerp(this.y[this.pa[k]], this.y[this.pb[k]], t);
-        this.char[k] = Math.min(1, this.char[k] + DT * 0.25);
-        this.hurtPart(k, DT * 14);
-        if (matAt(x, y - 10) === EMPTY) setCell(Math.floor(x) + rnd(9) - 4, Math.floor(y) - 10, FIRE, 0, 30 + rnd(40));
-      }
-    }
+    this.updateFire();
     if (cold > 0) this.freeze = Math.min(1.6, this.freeze + DT * 0.06 * Math.min(cold, 5));
     else if (this.burn <= 0) this.freeze = Math.max(0, this.freeze - DT * 0.06);
     if (!this.frozen && this.freeze >= 1) {
@@ -1714,6 +1747,89 @@ class Doll {
   }
 
   // Extras: closes every wound and resets all values. Lost limbs stay lost.
+  // Flames on each part: clothes and hair burn away, the skin under them
+  // burns deeper, fire creeps to the neighbors, rolling on the floor and
+  // water put it out.
+  updateFire() {
+    let burning = 0;
+    const speed = Math.hypot(this.x[P_WAIST] - this.ox[P_WAIST], this.y[P_WAIST] - this.oy[P_WAIST]);
+    for (let k = 0; k < PART_COUNT; k++) {
+      if (this.fire[k] <= 0) { this.ember[k] = Math.max(0, this.ember[k] - DT * 0.3); continue; }
+      if (this.gone[k] || this.frozen) { this.fire[k] = 0; continue; }
+      burning++;
+      this.fire[k] -= DT;
+      this.ember[k] = 1;
+      const ax = this.x[this.pa[k]], ay = this.y[this.pa[k]], bx = this.x[this.pb[k]], by = this.y[this.pb[k]];
+      // Pressed against the floor while rolling, the flames suffocate.
+      const r = this.rad[this.pa[k]] + 3;
+      if (speed > 1 && (solidAt(ax, ay + r) || solidAt(bx, by + r))) this.fire[k] -= DT * 1.6;
+      // Clothes and hair burn first and keep the fire going.
+      const clothed = PART_CLOTH[k] !== "skin";
+      if (clothed && this.cloth[k] > 0) {
+        this.cloth[k] = Math.max(0, this.cloth[k] - DT * (k === FOOT_L || k === FOOT_R ? 0.05 : 0.15));
+        this.fire[k] = Math.max(this.fire[k], 0.6);
+      }
+      if (k === HEAD && this.hair > 0) this.hair = Math.max(0, this.hair - DT * 0.45);
+      // Clothes shield the skin at first.
+      const shield = clothed ? 0.3 + 0.7 * (1 - this.cloth[k]) : 1;
+      this.burnDeg[k] = Math.min(4, this.burnDeg[k] + DT * 0.3 * shield);
+      this.char[k] = clamp((this.burnDeg[k] - 2.6) / 1.4, 0, 1);
+      this.hurtPart(k, DT * 7 * shield);
+      // Fire creeps along the body to the parts next to it.
+      if (Math.random() < DT * 0.5) {
+        const nb = BURN_NEIGHBORS[k], n = nb[rnd(nb.length)], pc = this.pieces();
+        if (n !== undefined && pc[this.pa[n]] === pc[this.pa[k]]) this.ignite(n, 2);
+      }
+      // Flames and sparks rise from the part.
+      if (Math.random() < 0.45) {
+        const t = Math.random(), x = lerp(ax, bx, t), y = lerp(ay, by, t) - 8;
+        if (matAt(x, y) === EMPTY) setCell(Math.floor(x) + rnd(7) - 3, Math.floor(y), FIRE, 0, 18 + rnd(26));
+      }
+      if (Math.random() < DT * 4) sparks.push({ x: lerp(ax, bx, Math.random()), y: lerp(ay, by, Math.random()) - 6, vx: rf(-40, 40), vy: rf(-170, -70), life: rf(0.3, 0.7) });
+      if (this.fire[k] <= 0) this.burnImmune = 0.8;
+    }
+    this.burn = burning ? 1 : 0;
+    if (burning) {
+      this.sinceDamage = 0;
+      this.freeze = Math.max(0, this.freeze - DT * 0.9);
+      if (!this.dead) this.pn = Math.min(100, this.pn + (4 + 3 * burning) * DT);
+    }
+  }
+
+  // Burns over the body: how much skin is burnt (rule of nines), the fluid
+  // the burns weep, and the pain they leave. Called from the vitals.
+  updateBurns() {
+    let tbsa = 0, loss = 0, pain = 0;
+    for (let k = 0; k < PART_COUNT; k++) {
+      const deg = this.burnDeg[k];
+      if (deg < 0.3 || !this.attached(k)) continue;
+      const dressed = this.bands.some((b) => b.burn && b.part === k) ? 0.5 : 1;
+      if (deg >= 1.5) tbsa += BSA[k];
+      loss += BSA[k] * clamp(deg - 1.2, 0, 2) * 0.0045 * dressed;
+      // Deep burns kill the nerves: the 3rd degree hurts less than the 2nd.
+      pain += BSA[k] * (deg < 1.5 ? 0.6 * deg : deg < 2.6 ? 1.4 : 0.5) * dressed;
+    }
+    this.tbsa = Math.round(tbsa);
+    this.burnLoss = this.dead ? 0 : loss;
+    if (!this.dead) {
+      this.bl = Math.max(0, this.bl - loss * DT);
+      this.pn = Math.max(this.pn, Math.min(90, pain));
+      // Burnt all over: the body cannot survive it.
+      if (this.burnDeg[TORSO] >= 3.8 && this.burnDeg[HEAD] >= 3.5) { this.cause = "VERBRANNT"; this.die(); }
+    }
+    // Light burns heal with time, deep ones stay.
+    if (this.healing || this.iv > 0) {
+      for (let k = 0; k < PART_COUNT; k++) if (this.burnDeg[k] > 0 && this.burnDeg[k] < 2.5) this.burnDeg[k] = Math.max(0, this.burnDeg[k] - DT * (this.iv > 0 ? 0.05 : 0.015));
+    }
+  }
+
+  // A burn dressing: a wide wrap of gauze over a burnt part.
+  dressBurn(k) {
+    if (this.bands.some((b) => b.burn && b.part === k)) return false;
+    this.bands.push({ part: k, t: 0.5, stump: false, soak: 0.15, burn: true });
+    return true;
+  }
+
   // A bandage is one wrap of gauze around a part. Wounds close to an
   // existing wrap go under it, so many wounds give a few neat wraps. The
   // head always gets one wrap around the forehead. The gauze soaks up blood
@@ -1732,6 +1848,7 @@ class Doll {
 
   fullHeal() {
     this.wounds = this.wounds.filter((w) => w.stump);
+    this.fire.fill(0); this.ember.fill(0); this.burnDeg.fill(0); this.cloth.fill(1); this.hair = 1; this.burnLoss = 0; this.tbsa = 0;
     this.bands = this.bands.filter((b) => b.stump);
     for (const w of this.wounds) w.bleed = 0;
     for (let k = 0; k < PART_COUNT; k++) {
@@ -1809,13 +1926,15 @@ class Doll {
     if (this.headUnder && !this.dead) this.o2 = Math.max(0, this.o2 - 11 * DT);
     else if (!this.arrest) this.o2 = Math.min(100, this.o2 + 20 * DT * (this.organ[ORGAN.lungL] + this.organ[ORGAN.lungR]) / 200);
     if (this.burn > 0 && !this.dead) {
-      // Smoke burns the lungs.
-      for (const id of ["lungL", "lungR"]) this.organ[ORGAN[id]] = Math.max(0, this.organ[ORGAN[id]] - 1.5 * DT);
+      // Smoke and hot air burn the lungs, worst with the head in the flames.
+      const rate = this.fire[HEAD] > 0 ? 2.2 : 0.5;
+      for (const id of ["lungL", "lungR"]) this.organ[ORGAN[id]] = Math.max(0, this.organ[ORGAN[id]] - rate * DT);
     }
+    this.updateBurns();
     this.updateOrgans();
     this.noAir = this.o2 <= 0 ? this.noAir + DT : 0;
 
-    this.healing = !this.dead && this.sinceDamage > 4 && this.burn <= 0 && !this.headUnder && this.organBleed < 0.1 && !this.arrest &&
+    this.healing = !this.dead && this.sinceDamage > 4 && this.burn <= 0 && !this.headUnder && this.organBleed < 0.1 && this.burnLoss < 0.1 && !this.arrest &&
       (this.bl < 99.9 || this.pn > 0.5 || this.ko < 99 || this.o2 < 99 || bleedTotal > 0 || this.organ.some((v) => v < 100));
     if (this.healing || this.iv > 0) {
       for (let k = 0; k < PART_COUNT; k++) if (this.attached(k)) this.dmg[k] = Math.max(0, this.dmg[k] - (this.iv > 0 ? 12 : 3) * DT);
@@ -1849,7 +1968,7 @@ class Doll {
       else {
         let worst = -1;
         ORGANS.forEach((o, n) => { if (o.bleed > 0 && this.organ[n] < 60 && (worst < 0 || o.bleed * (100 - this.organ[n]) > ORGANS[worst].bleed * (100 - this.organ[worst]))) worst = n; });
-        this.cause = worst >= 0 && this.organBleed > 0.5 ? ORGAN_DEATH[ORGANS[worst].id] : "VERBLUTET";
+        this.cause = worst >= 0 && this.organBleed > 0.5 ? ORGAN_DEATH[ORGANS[worst].id] : this.burnLoss > this.organBleed + (this.woundBleed || 0) ? "VERBRENNUNGSSCHOCK" : "VERBLUTET";
       }
       this.die();
     }
@@ -1890,7 +2009,7 @@ class Doll {
       CHOKE: this.headUnder && !this.dead, AGONY: this.pn >= AGONY_PN && !this.isOut(),
       HEAL: this.healing || this.iv > 0, BLADE: this.bladeTimer > 0, TORN: this.severed.includes(true), FROZEN: this.frozen,
       BROKEN: this.broken.some((b, k) => b && this.attached(k)), PINNED: this.pins.size > 0,
-      BANDAGED: this.wounds.some((w) => w.bandaged && !this.gone[w.part]),
+      BANDAGED: this.wounds.some((w) => w.bandaged && !this.gone[w.part]) || this.bands.some((b) => b.burn),
     };
   }
   // The body cannot pass through itself: head, neck and belly keep their
@@ -2080,7 +2199,10 @@ function tintFor(d, k, c) {
     } else if (c === d.look.hair) c = mixc(c, COL_DEAD, 0.2 + 0.3 * dc.rot);
     else { c = mixc(c, COL_DEAD, 0.18); c = mixc(c, COL_DIRT, 0.45 * dc.rot); }
   }
-  if (d.char[k] > 0.02) c = mixc(c, COL_CHAR, clamp(d.char[k], 0, 0.9));
+  // Burns: the skin by its degree, clothes scorched, hair singed.
+  if (c === d.look.skin) c = burnSkin(c, d.burnDeg[k]);
+  else if (c === d.look.hair) c = mixc(c, COL_SCORCH, (1 - d.hair) * 0.8);
+  else if (d.cloth[k] < 1 || d.burnDeg[k] > 0.3) c = mixc(c, COL_SCORCH, Math.min(0.75, (1 - d.cloth[k]) * 0.6 + d.burnDeg[k] * 0.08));
   if (d.frozen) c = mixc(c, COL_ICE, 0.55);
   if (d.hurtFlash > 0) c = mixc(c, COL_HURT, d.hurtFlash * 0.3);
   return c;
@@ -2088,7 +2210,7 @@ function tintFor(d, k, c) {
 
 // Decay marks for the part being drawn: livor on the low side, marbled
 // veins on the skin, holes in rotten clothes.
-let RFX_LIVOR = 0, RFX_MARBLE = 0, RFX_HOLES = 0;
+let RFX_LIVOR = 0, RFX_MARBLE = 0, RFX_HOLES = 0, RFX_BURN = null;
 
 // One rotated rectangle from a to b in pixel units, with a lit top edge,
 // a shaded bottom edge and a faint pixel grain.
@@ -2113,6 +2235,19 @@ function rasterRect(ax, ay, bx, by, hw, e0, e1, order, base, stain) {
       if (RFX_LIVOR > 0.02) { const low = (v * ny) / hw; if (low > 0) c = mixc(c, COL_LIVOR, RFX_LIVOR * 0.6 * low); }
       if (RFX_MARBLE > 0.02) { const h = Math.sin(x * 1.7 + Math.sin(y * 0.9) * 2.2) * Math.sin(y * 1.3 + x * 0.3); if (Math.abs(h) < 0.12 * RFX_MARBLE) c = mixc(c, COL_MARBLE, 0.6); }
       if (RFX_HOLES > 0.02 && (((x * 2654435761) ^ (y * 40503)) >>> 0) % 100 < RFX_HOLES * 26) c = COL_RAG;
+      if (RFX_BURN) {
+        // Burnt clothes open in blotches with charred, glowing edges and
+        // show the burnt skin under them.
+        const n = 0.5 + 0.25 * (Math.sin(x * 0.83 + y * 0.21) + Math.sin(y * 0.97 - x * 0.37 + 1.7)), hb = (((x * 1597334677) ^ (y * 3812015801)) >>> 0) % 100;
+        let skin = !RFX_BURN.clothed;
+        if (RFX_BURN.clothed && n > RFX_BURN.cloth) skin = true;
+        else if (RFX_BURN.clothed && n > RFX_BURN.cloth - 0.07) c = RFX_BURN.ember > 0.3 && hb % 3 === 0 ? COL_EMBER : COL_SCORCH;
+        if (skin && RFX_BURN.clothed) c = (hw - Math.abs(v) < 1) ? darken(RFX_BURN.skin, 0.2) : RFX_BURN.skin;
+        if (skin && RFX_BURN.deg > 1.4) {
+          if (RFX_BURN.deg < 3.2 && hb < (RFX_BURN.deg - 1.4) * 14) c = COL_BLISTER;
+          if (RFX_BURN.deg > 2.9 && Math.abs(Math.sin(x * 1.3 + Math.sin(y * 0.7) * 2)) < 0.12 * (RFX_BURN.deg - 2.9)) c = RFX_BURN.ember > 0.3 && hb % 2 === 0 ? COL_EMBER : COL_SCORCH;
+        }
+      }
       tset(i, c, order);
     }
   }
@@ -2144,7 +2279,7 @@ function rasterBand(d, b, order) {
     let t0 = b.t, t1 = b.t;
     for (const w of d.wounds) if (w.band === b) { t0 = Math.min(t0, w.t); t1 = Math.max(t1, w.t); }
     const tc = (t0 + t1) / 2;
-    half = Math.min(5, Math.max(1.6, (t1 - t0) * l / PIX / 2 + 1));
+    half = b.burn ? Math.min(4, l / PIX / 2.6) : Math.min(5, Math.max(1.6, (t1 - t0) * l / PIX / 2 + 1));
     mx = lerp(ax, bx, tc) / PIX; my = lerp(ay, by, tc) / PIX;
   }
   const wet = d.wounds.some((w) => w.band === b && w.bleed > 0);
@@ -2276,6 +2411,7 @@ function rasterDoll(d) {
     RFX_LIVOR = dc && skinPart ? dc.livor * (1 - dc.skel) : 0;
     RFX_MARBLE = dc && skinPart ? dc.marble : 0;
     RFX_HOLES = dc && !skinPart && k !== FOOT_L && k !== FOOT_R ? dc.skel : 0;
+    RFX_BURN = d.burnDeg[k] > 0.3 || d.cloth[k] < 0.98 ? { clothed: !skinPart, cloth: d.cloth[k], deg: d.burnDeg[k], ember: d.ember[k], skin: tintFor(d, k, d.look.skin) } : null;
     if (k === HEAD) {
       // Neck, then a square head with hair on top and a face on the front.
       const l = Math.hypot(bx - ax, by - ay) || 1, ux = (bx - ax) / l, uy = (by - ay) / l;
@@ -2286,8 +2422,11 @@ function rasterDoll(d) {
       const hairBase = tintFor(d, k, d.look.hair), hb = 9 / PIX;
       RFX_LIVOR = 0; RFX_MARBLE = 0;
       // A bare skull loses its hair.
-      if (skull < 0.7) rasterRect(hx1 - ux * hb, hy1 - uy * hb, hx1, hy1, HEAD_HW * sw / PIX + 0.3, 0, 0.3, order, hairBase, 0);
-      if (settings.front && skull < 0.7) {
+      // Burnt hair is gone, singed hair shrinks to a short dark stubble.
+      const hairOn = skull < 0.7 && d.hair > 0.15, hbn = hb * (0.45 + 0.55 * d.hair);
+      RFX_BURN = null;
+      if (hairOn) rasterRect(hx1 - ux * hbn, hy1 - uy * hbn, hx1, hy1, HEAD_HW * sw / PIX + 0.3, 0, 0.3, order, hairBase, 0);
+      if (settings.front && hairOn && d.hair > 0.5) {
         // Seen from the front, the hair also frames both sides of the face.
         const sx = -uy, sy = ux, side = HEAD_HW / PIX - 0.6, sl = h0 * 0.42;
         for (const sd of [-1, 1]) {
@@ -2347,7 +2486,7 @@ function rasterDoll(d) {
         rasterRect(bx, by, bx + ux * 8 / PIX, by + uy * 8 / PIX, 5.5 * sw / PIX, 0, 0, order, tintFor(d, k, d.look.skin), d.stain[k]);
       }
     }
-    RFX_LIVOR = 0; RFX_MARBLE = 0; RFX_HOLES = 0;
+    RFX_LIVOR = 0; RFX_MARBLE = 0; RFX_HOLES = 0; RFX_BURN = null;
     // Wounds sit on top of their own part, gone once only bones are left.
     if (skull > 0.6) continue;
     for (const w of d.wounds) {
@@ -2731,6 +2870,11 @@ function drawPanel(d) {
   drawOrganLine(d, px0 + 8, py0 + 193, pw - 16, 20);
   // Status chips: only what applies right now, wrapped over up to three rows.
   const f = d.flags(), chips = STATUS.filter(([key]) => f[key]);
+  // Burns: how much skin is burnt and how deep the worst burn goes.
+  if (d.tbsa > 0 || d.burnDeg.some((v, k) => v >= 0.5 && d.attached(k))) {
+    const deg = Math.max(...d.burnDeg.filter((v, k) => d.attached(k)));
+    chips.unshift(["BURN", "VERBRANNT " + d.tbsa + "% · " + burnDegName(deg), deg >= 3.5 ? "#8a6a5a" : deg >= 2.5 ? "#d8c4a4" : deg >= 1.5 ? "#ff7a5a" : "#f2a07a"]);
+  }
   // A dead body shows its stage of decay and how long it has been dead.
   if (d.dc) chips.unshift(["DECAY", decayName(d) + " · " + decayTime(d), d.dc.skel > 0.5 ? "#e2d8bf" : d.dc.green > 0.3 ? "#a8b86a" : "#b48cff"]);
   if (!chips.length) chips.push([null, d.dead ? "KEINE FUNKTION" : "STABIL", d.dead ? "#5a5a64" : "#4ccf5a"]);
@@ -3032,8 +3176,11 @@ function drawCursor() {
   const { mx, my } = state;
   if (!state.pointerSeen || blocksInput(state.sx, state.sy)) return;
   ctx.strokeStyle = "rgba(255,255,255,0.45)"; ctx.lineWidth = 1.2;
-  if (state.tool === T_WATER || state.tool === T_FIRE || state.tool === T_ICE) {
-    ctx.beginPath(); ctx.arc(mx, my, state.tool === T_WATER ? 4 : 8, 0, Math.PI * 2); ctx.stroke();
+  if (state.tool === T_FIRE && state.fireMode === 2) {
+    ctx.setLineDash([3, 3]); ctx.strokeStyle = "rgba(255,140,60,0.7)";
+    ctx.beginPath(); ctx.arc(mx, my, 30, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+  } else if (state.tool === T_WATER || state.tool === T_FIRE || state.tool === T_ICE) {
+    ctx.beginPath(); ctx.arc(mx, my, state.tool === T_WATER || state.fireMode === 0 && state.tool === T_FIRE ? 4 : 8, 0, Math.PI * 2); ctx.stroke();
   } else if (state.tool === T_BOMB) {
     ctx.setLineDash([4, 4]);
     ctx.beginPath(); ctx.arc(mx, my, 130, 0, Math.PI * 2); ctx.stroke();
@@ -3645,6 +3792,7 @@ const ctxY = () => 66;
 function ctxItems() {
   if (state.tool === T_WATER) return [1, 2, 3, 4, 5].map((n) => ({ kind: "water", n, w: 34, label: String(n) }));
   if (state.tool === T_GUN) return WEAPONS.map((wp, n) => ({ kind: "gun", n, w: 104, label: wp.name.toUpperCase() }));
+  if (state.tool === T_FIRE) return FIRE_MODES.map((name, n) => ({ kind: "fire", n, w: 96, label: name }));
   return [];
 }
 function ctxLayout() {
@@ -3733,12 +3881,12 @@ function drawContextBarBody(l) {
   ctx.strokeStyle = "#383840"; ctx.lineWidth = 1.5; ctx.stroke();
   if (l.head) label("MENGE", l.x0 + 12, y + CTX_H / 2 + 1, 12, "#8e8e98");
   for (const it of l.items) {
-    const isOn = it.kind === "water" ? it.n <= state.waterLevel : it.n === state.weapon;
+    const isOn = it.kind === "water" ? it.n <= state.waterLevel : it.kind === "fire" ? it.n === state.fireMode : it.n === state.weapon;
     const k = tween("cx" + it.kind + it.n, isOn ? 1 : 0, 18), on = k > 0.5;
     const ps = popScale("cx" + it.kind + it.n, 0.08);
     ctx.save(); ctx.translate(it.x + it.w / 2, y + CTX_H / 2); ctx.scale(ps, ps); ctx.translate(-(it.x + it.w / 2), -(y + CTX_H / 2));
     rr(it.x, y + 6, it.w, CTX_H - 12, 8);
-    ctx.fillStyle = css(mixc(hex("#24242a"), hex(it.kind === "water" ? "#3c82e6" : "#3a3a44"), k)); ctx.fill();
+    ctx.fillStyle = css(mixc(hex("#24242a"), hex(it.kind === "water" ? "#3c82e6" : it.kind === "fire" ? "#c8441c" : "#3a3a44"), k)); ctx.fill();
     ctx.strokeStyle = it.kind === "gun" ? css(mixc(hex("#3e3e46"), hex("#ecece6"), k)) : "#3e3e46"; ctx.lineWidth = 1.5; ctx.stroke();
     if (it.kind === "gun") {
       const sp = WEAPONS[it.n].sprite, z = Math.min(2.2, (it.w - 16) / sp[0].length);
@@ -4118,6 +4266,7 @@ function drawOrganLine(d, x, y, w, h) {
       // the bleeding organ, open wounds or the inflamed belly.
       if (d.etaWhy === "air") what = d.arrest ? "HERZSTILLSTAND" : d.headUnder ? "ERTRINKT" : "LUNGEN VERSAGEN";
       else if (d.etaWhy === "belly") what = "BAUCHFELLENTZÜNDUNG";
+      else if (d.etaWhy === "burn") what = "VERBRENNUNGSSCHOCK";
       else if (d.etaWhy === "blood") {
         let bleeder = -1;
         ORGANS.forEach((og, n) => { if (og.bleed > 0.1 && d.attached(og.part) && d.organ[n] < 100 && (bleeder < 0 || og.bleed * (100 - d.organ[n]) > ORGANS[bleeder].bleed * (100 - d.organ[bleeder]))) bleeder = n; });
@@ -4151,7 +4300,7 @@ const chartCache = { key: "", can: null };
 function drawBodyChart(d, x, y, w, h) {
   const s = h / 150, cx = x + w / 2, cy = y + h / 2 + 2 * s;
   let key = K + "|" + w + "|" + h + "|" + (d.frozen ? 1 : 0) + (d.dead ? 1 : 0) + (d.arrest ? 1 : 0) + "|";
-  for (let k = 0; k < PART_COUNT; k++) key += (d.attached(k) ? Math.round(d.dmg[k] / 3) + "." + Math.round(d.char[k] * 20) : "x") + ",";
+  for (let k = 0; k < PART_COUNT; k++) key += (d.attached(k) ? Math.round(d.dmg[k] / 3) + "." + Math.round(d.burnDeg[k] * 8) : "x") + ",";
   for (let n = 0; n < ORGANS.length; n++) key += Math.round(d.organ[n]) + ",";
   const m = 6;
   if (chartCache.key !== key) {
@@ -4187,7 +4336,7 @@ function drawChartBody(d, x, y, w, h, cx, cy, s) {
       continue;
     }
     let [light, dark] = damageColors(d.dmg[k]);
-    if (d.char[k] > 0.05) { light = mixc(light, COL_CHAR, d.char[k] * 0.8); dark = mixc(dark, COL_CHAR, d.char[k] * 0.8); }
+    if (d.burnDeg[k] > 0.3) { const bc = burnSkin(hex("#f0d0b8"), d.burnDeg[k]), m = Math.min(1, d.burnDeg[k] / 1.5) * 0.85; light = mixc(light, bc, m); dark = mixc(dark, darken(bc, 0.3), m); }
     if (d.frozen) { light = mixc(light, COL_ICE, 0.5); dark = mixc(dark, COL_ICE, 0.5); }
     const g = ctx.createLinearGradient(x, y, x + w, y + h);
     g.addColorStop(0, css(light)); g.addColorStop(1, css(dark));
@@ -4448,6 +4597,7 @@ function fillRect(r, m, mx = 0, lf = 0) {
 function loadMap(i) {
   state.map = i;
   state.cam.z = 1; state.cam.x = 0; state.cam.y = 0; state.zoomAnim = null;
+  state.fires = [];
   worldReset();
   const m = MAPS[i].build();
   for (const r of m.walls) fillRect(r, WALL);
@@ -4512,7 +4662,8 @@ const EXTRA_ITEMS = [
   { name: "Feuer löschen", color: "#ff7a2a", run() {
     clearCells((i) => mat[i] === FIRE || mat[i] === SMOKE || mat[i] === STEAM);
     particles = particles.filter((p) => p.m === WATER || p.m === BLOOD);
-    for (const d of state.dolls) d.burn = 0;
+    for (const d of state.dolls) d.extinguish();
+    state.fires = [];
     return "Feuer gelöscht";
   } },
   { name: "Eis entfernen", color: "#86c4ff", run() {
@@ -5222,7 +5373,7 @@ const HELP = [
   [T_BUCKET, "Wasser und Blut aufsaugen"],
   [T_BLADE, "Schnell ziehen, um zu schneiden"],
   [T_GUN, "Zielen + roter Knopf, vorn: tippen"],
-  [T_FIRE, "Puppen anzünden, Wasser löscht"],
+  [T_FIRE, "Feuerzeug, Flamme, Molotow, Wasser löscht"],
   [T_ICE, "Eis setzen, friert Puppen ein"],
   [T_BOMB, "Tippen, um zu sprengen"],
   [T_BANDAGE, "Auf eine Wunde tippen, stoppt die Blutung"],
@@ -5948,7 +6099,7 @@ function drawEgg() {
 
 const state = {
   tool: T_GRAB, mx: W / 2, my: H / 2, sx: W / 2, sy: H / 2, lastX: W / 2, lastY: H / 2,
-  cam: { z: 1, x: 0, y: 0 }, zoomAnim: null,
+  cam: { z: 1, x: 0, y: 0 }, zoomAnim: null, fireMode: 1, fires: [],
   pressing: false, pointerSeen: false, hover: -1, flashBtn: -1, toast: 0, toastText: "",
   dolls: [], selected: null, grabDoll: null, counter: 0, trail: [], shake: 0,
   waterLevel: 3, weapon: 0, fireCd: 0, map: 0, screen: "", screenT: 0, lp: null, ctxMenu: null, aimView: null, xray: false, toolT: 9, pressTarget: null, inGame: false, menuDown: false,
@@ -6024,6 +6175,7 @@ function press() {
   if (c) {
     pop("cx" + c.kind + c.n);
     if (c.kind === "water") { state.waterLevel = c.n; state.toast = 1; state.toastText = "Menge " + c.n; }
+    if (c.kind === "fire") { state.fireMode = c.n; state.toast = 1; state.toastText = FIRE_HINTS[c.n]; }
     if (c.kind === "gun") { state.weapon = c.n; state.reloadT = 0; state.triggerDown = false; state.climb = 0; state.toast = 1; state.toastText = WEAPONS[c.n].name; }
     return;
   }
@@ -6033,6 +6185,11 @@ function press() {
   state.pressing = true;
   state.lastX = state.mx; state.lastY = state.my;
   if (state.tool === T_BOMB) { explode(state.mx, Math.min(state.my, FLOOR_Y - 2)); state.pressing = false; return; }
+  if (state.tool === T_FIRE && state.fireMode !== 1) {
+    state.pressing = false;
+    if (state.fireMode === 0) lighter(state.mx, state.my); else molotov(state.mx, state.my);
+    return;
+  }
   if (state.tool === T_GUN) {
     // Front view: like the blade, the shot lands right under the finger.
     if (settings.front) { pullTrigger(); return; }
@@ -6066,7 +6223,17 @@ function press() {
       const [wx, wy] = d.woundPos(w), dist = Math.hypot(wx - state.mx, wy - state.my);
       if (dist < bd) { bd = dist; best = w; bdoll = d; }
     }
-    if (!best) { state.toast = 1.2; state.toastText = "Hier ist keine Wunde"; return; }
+    if (!best) {
+      // No wound here: a burnt part gets a wide burn dressing instead.
+      let bk = -1, bdl = null, bdist = 30;
+      for (const d of state.dolls) for (let k = 0; k < PART_COUNT; k++) {
+        if (d.gone[k] || d.burnDeg[k] < 1.2) continue;
+        const [ax, ay] = limbStart(d, k), [qx, qy] = closestOnSeg(state.mx, state.my, ax, ay, d.x[d.pb[k]], d.y[d.pb[k]]), dist = Math.hypot(qx - state.mx, qy - state.my);
+        if (dist < bdist) { bdist = dist; bk = k; bdl = d; }
+      }
+      if (bdl && bdl.dressBurn(bk)) { state.selected = bdl; state.toast = 1.2; state.toastText = "Brandverband angelegt"; tearSound(); return; }
+      state.toast = 1.2; state.toastText = "Hier ist keine Wunde"; return;
+    }
     bdoll.bandage(best);
     state.selected = bdoll; state.toast = 1.2; state.toastText = bdoll.dead ? "Verband angelegt, zu spät" : "Verband angelegt";
     tearSound();
@@ -6139,7 +6306,7 @@ function applyTool() {
     aimAt(mx, my);
   } else if (state.tool === T_FIRE) {
     paintDisc(mx, my, 8, FIRE, 0.25);
-    for (const d of state.dolls) d.applyHeat(mx, my, 26);
+    for (const d of state.dolls) d.applyHeat(mx, my, 10, 3);
   } else if (state.tool === T_ICE) {
     // Ice grows around the doll, never inside it.
     paintDisc(mx, my, 7, ICE, 1, 200, (x, y) => state.dolls.some((d) => d.near(x, y, 4) || d.x.some((px1, i) => Math.hypot(px1 - x, d.y[i] - y) < d.rad[i] + 3)));
@@ -6152,6 +6319,95 @@ function applyTool() {
     }
   }
 }
+
+// ----------------------------------------------------------------- fire tools
+// Feuerzeug: a small flame that sets exactly the touched part alight.
+// Flamme: hold to burn, as before. Molotow: a bottle bursts into a pool of
+// burning fuel that keeps burning for a while and sets alight what is in it.
+const FIRE_MODES = ["FEUERZEUG", "FLAMME", "MOLOTOW"];
+const FIRE_HINTS = ["Tippe auf ein Körperteil", "Halten zum Brennen", "Tippe, wo die Flasche platzt"];
+function lighter(x, y) {
+  let best = null, bk = -1, bd = 18;
+  for (const d of state.dolls) for (let k = 0; k < PART_COUNT; k++) {
+    if (d.gone[k]) continue;
+    const [ax, ay] = limbStart(d, k), [qx, qy] = closestOnSeg(x, y, ax, ay, d.x[d.pb[k]], d.y[d.pb[k]]);
+    const dist = Math.hypot(qx - x, qy - y) - (k === HEAD ? HEAD_R : RECT[k][0]);
+    if (dist < bd) { bd = dist; best = d; bk = k; }
+  }
+  if (best) { best.ignite(bk, 3); state.selected = best; state.toast = 1; state.toastText = PART_NAME[bk] + " brennt"; }
+  paintDisc(x, y, 3, FIRE, 0.8);
+  whooshSound(0.4);
+}
+function molotov(x, y) {
+  // The fuel spreads out on the surface below the finger.
+  let gy = Math.floor(y);
+  while (gy < H - 1 && !solidAt(x, gy + 1)) gy++;
+  state.fires.push({ x, y: gy, r: 34, t: 7 });
+  for (let n = 0; n < 40; n++) spawnParticle(x + rf(-4, 4), y + rf(-4, 4), rf(-260, 260), rf(-320, -40), FIRE);
+  for (let n = 0; n < 14; n++) sparks.push({ x, y, vx: rf(-260, 260), vy: rf(-300, -60), life: rf(0.3, 0.8) });
+  paintDisc(x, y, 14, FIRE, 0.7);
+  for (const d of state.dolls) d.applyHeat(x, y, 30, 5);
+  flashes.push({ x, y, ang: 0, age: 0 });
+  state.shake = Math.max(state.shake, 0.18);
+  glassSound(); whooshSound(1);
+}
+// Burning pools from the molotov: flames along the ground, dolls in them catch fire.
+function stepFires() {
+  for (const f of state.fires) {
+    f.t -= DT;
+    const k = Math.min(1, f.t / 2);
+    for (let n = 0; n < 6 * k; n++) {
+      const x = f.x + rf(-f.r, f.r) * (0.6 + 0.4 * k);
+      let y = f.y;
+      while (y > f.y - 30 && solidAt(x, y)) y--;
+      if (isFree(getMat(Math.floor(x), Math.floor(y)))) setCell(Math.floor(x), Math.floor(y), FIRE, 0, 25 + rnd(35));
+    }
+    if (Math.random() < 0.3 * k) for (const d of state.dolls) d.applyHeat(f.x, f.y - 6, f.r * 0.8, 2);
+  }
+  state.fires = state.fires.filter((f) => f.t > 0);
+}
+// Flames licking up from every burning part, drawn over the doll.
+function drawBodyFlames() {
+  const now = performance.now() / 1000;
+  ctx.save(); ctx.globalCompositeOperation = "lighter";
+  for (const d of state.dolls) for (let k = 0; k < PART_COUNT; k++) {
+    if (d.fire[k] <= 0 || d.gone[k]) continue;
+    const [ax, ay] = limbStart(d, k), bx = d.x[d.pb[k]], by = d.y[d.pb[k]], f = Math.min(1, d.fire[k] / 1.5);
+    const n = k === TORSO ? 6 : k === HEAD ? 4 : 3, w = (k === HEAD ? HEAD_R : RECT[k][0]) * 0.8;
+    for (let q = 0; q < n; q++) {
+      const t = (q + 0.5) / n, sd = d.id * 7 + k * 3 + q, x = lerp(ax, bx, t) + Math.sin(sd * 2.3) * w * 0.6, y = lerp(ay, by, t);
+      const h = (10 + 8 * Math.abs(Math.sin(now * 7 + sd))) * (0.5 + 0.5 * f), sway = Math.sin(now * 5 + sd) * 3, fw = 3 + 2 * Math.sin(now * 9 + sd * 1.7);
+      const g = ctx.createLinearGradient(x, y, x, y - h);
+      g.addColorStop(0, "rgba(255,240,170,0.85)"); g.addColorStop(0.35, "rgba(255,150,40,0.7)"); g.addColorStop(1, "rgba(220,40,10,0)");
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.moveTo(x - fw, y + 2);
+      ctx.quadraticCurveTo(x - fw * 0.7, y - h * 0.5, x + sway, y - h);
+      ctx.quadraticCurveTo(x + fw * 0.7, y - h * 0.5, x + fw, y + 2);
+      ctx.closePath(); ctx.fill();
+    }
+    const glow = ctx.createRadialGradient((ax + bx) / 2, (ay + by) / 2, 0, (ax + bx) / 2, (ay + by) / 2, 26);
+    glow.addColorStop(0, `rgba(255,120,30,${0.22 * f})`); glow.addColorStop(1, "rgba(255,80,0,0)");
+    ctx.fillStyle = glow; ctx.beginPath(); ctx.arc((ax + bx) / 2, (ay + by) / 2, 26, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+// Fire sounds: crackling while something burns, a whoosh when it catches,
+// breaking glass for the molotov.
+function noiseBurst(dur, freq, q, gain, type = "bandpass") {
+  if (!settings.sound) return;
+  try {
+    if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
+    const n = Math.floor(audio.sampleRate * dur), buf = audio.createBuffer(1, n, audio.sampleRate), ch = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) ch[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 2);
+    const src = audio.createBufferSource(); src.buffer = buf;
+    const f = audio.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+    const g = audio.createGain(); g.gain.value = gain;
+    src.connect(f); f.connect(g); g.connect(audio.destination); src.start();
+  } catch (e) { /* sound is optional */ }
+}
+const fireCrackle = () => noiseBurst(rf(0.01, 0.04), rf(1500, 4500), 2, rf(0.03, 0.08));
+const whooshSound = (v) => noiseBurst(0.45, 500, 0.6, 0.22 * v, "lowpass");
+function glassSound() { for (let n = 0; n < 5; n++) setTimeout(() => noiseBurst(0.05, rf(3500, 7000), 6, 0.12), n * 25); }
 
 // Dolls bump into each other instead of passing through.
 function collideDolls() {
@@ -6177,6 +6433,8 @@ function collideDolls() {
 
 function physicsStep() {
   if (state.pressing) applyTool();
+  stepFires();
+  if (state.dolls.some((d) => d.burn > 0) && Math.random() < DT * 14) fireCrackle();
   gunStep();
   worldStep();
   stepGibs();
@@ -6554,6 +6812,7 @@ function render() {
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(pixCan, 0, 0, W, H);
   ctx.imageSmoothingEnabled = true;
+  drawBodyFlames();
   // Very close up the body opens and shows its organs.
   if (settings.organs && cam.z > 3) for (const d of state.dolls) drawDollOrgans(d, smooth01((cam.z - 3) / 1.6));
   // Liquids, fire and smoke cover the dolls.

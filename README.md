@@ -44,6 +44,12 @@ Mit "Neue Puppe" tippst du auf die Stelle, an der die Puppe stehen soll. Sie ste
 
 Tippe auf die Kopfzeile des Schadenspanels, um es zuzuklappen oder aufzuklappen. Zugeklappt bleiben Name, Zustand und EKG sichtbar. Das Spiel merkt sich deine Wahl.
 
+Das Feuer hat oben links drei Arten. FEUERZEUG: Tippe auf ein Körperteil, und genau dieser Teil fängt Feuer. FLAMME: Halten zum Brennen. MOLOTOW: Tippe, und eine Flasche platzt. Sie lässt eine Lache aus brennendem Benzin auf dem Boden zurück, die etwa 7 Sekunden brennt und alles anzündet, was darin liegt. Dazu klirrt Glas und die Flammen fauchen.
+
+Jeder Körperteil brennt für sich. Zuerst brennen Kleidung und Haare. Die Kleidung bekommt Löcher mit verkohlten, glühenden Rändern, durch die die verbrannte Haut zu sehen ist, die Haare schrumpfen zu dunklen Stoppeln und verschwinden. Das Feuer kriecht von Teil zu Teil weiter. Flammen züngeln am Körper hoch, Funken fliegen, und es knistert. Unter dem Feuer verbrennt die Haut immer tiefer: 1. Grad rot, 2. Grad rot mit hellen Blasen, 3. Grad weiß und ledrig, 4. Grad schwarz verkohlt mit Rissen, die noch nachglühen. Kleidung schützt die Haut am Anfang etwas. Eine brennende Puppe macht "Stop, Drop and Roll": Sie wirft sich zu Boden und rollt hin und her. Was am Boden gerollt wird, erstickt schneller. Wasser löscht sofort, Eis auch.
+
+Verbrennungen wirken auf den ganzen Körper. Das Panel zeigt, wie viel Haut verbrannt ist, nach der Neunerregel, und den schlimmsten Grad, zum Beispiel "VERBRANNT 41% · 2. GRAD". Die Körpertafel färbt jeden Teil nach seinem Grad. Ab dem 2. Grad verliert der Körper Flüssigkeit, bei großen Flächen führt das in den VERBRENNUNGSSCHOCK, die Organzeile zeigt die Zeit bis dahin. Der 2. Grad schmerzt am meisten, der 3. weniger, weil die Nerven zerstört sind. Brennt der Kopf, verbrennen Rauch und heiße Luft die Lungen. Ist der Rumpf und der Kopf völlig verkohlt, stirbt die Puppe mit "VERBRANNT". Leichte Verbrennungen heilen mit der Zeit, tiefe bleiben. Der Verband auf einem verbrannten Teil ohne Wunde wird ein breiter Brandverband: Er halbiert dort Schmerz und Flüssigkeitsverlust. Die Infusion gleicht den Verlust aus.
+
 Der Knopf "EXTRAS" oben öffnet eine Liste: Blut entfernen, Wasser entfernen, Feuer löschen, Eis entfernen, Reste entfernen, Alle heilen, Puppe entfernen, Alle Puppen weg, Zeitlupe und Pause. "Eis entfernen" lässt das Eis der Map stehen. "Alle heilen" schließt Wunden und füllt alle Werte auf, abgetrennte Glieder bleiben ab.
 
 Das Schadenspanel ist auf Deutsch. Oben stehen der Name der Puppe und ihr Zustand. Rechts neben der Figur stehen fünf Werte mit Zahl und Balken: Bewusstsein, Blut, Schmerz, Sauerstoff und Puls mit laufendem EKG. Kritische Werte werden rot. Ganz unten erscheinen nur die Zustände, die gerade zutreffen, zum Beispiel BLUTET, BRENNT oder GLIED AB, sonst STABIL. Zugeklappt zeigt die Kopfzeile ein kleines EKG.
@@ -112,7 +118,7 @@ Das Spiel spart Rechenzeit, wo es geht. Der Wasserausgleich rechnet nur jeden zw
 1. Greifen: Puppe packen, ziehen und werfen.
 2. Wasser: Wasser aus dem Cursor gießen.
 3. Klinge: Schnell durch die Puppe ziehen. Schnelle Schnitte trennen Glieder ab.
-4. Feuer: Flammen setzen. Die Puppe fängt Feuer. Wasser löscht.
+4. Feuer: Feuerzeug, Flamme oder Molotow. Körperteile brennen einzeln, Wasser löscht.
 5. Eis: Eisblöcke setzen. Kontakt friert die Puppe ein.
 6. Neue Puppe: Lässt eine neue Puppe unter der Lampe fallen.
 7. Reset: Leert den Raum und stellt eine Puppe hin.
