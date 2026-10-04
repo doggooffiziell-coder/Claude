@@ -1904,6 +1904,55 @@ class Doll {
     }
   }
   applyCold(x, y, r) { if (this.near(x, y, r)) { this.freeze = Math.min(1.6, this.freeze + DT * 1.1); this.extinguish(); } }
+  // A swing with the bat: a hard blow on one part that knocks the body away
+  // from the side it was hit, bruises, breaks bones and opens the skin.
+  batHit(k, t, s, dir) {
+    const i = k === HEAD ? this.pb[HEAD] : t < 0.5 ? this.pa[k] : this.pb[k];
+    const leg = k === THIGH_L || k === THIGH_R || k === SHIN_L || k === SHIN_R || k === FOOT_L || k === FOOT_R;
+    this.onImpact(i, rf(980, 1180));
+    for (const j of [this.pa[k], this.pb[k]]) this.push(j, dir * 7, -2.2);
+    if (k === HEAD) this.push(P_NECK, dir * 3, -1);
+    this.stagger = Math.max(this.stagger, k === HEAD || leg ? 1.6 : 0.9);
+    this.hitReact = { t: 0.7, k, tt: t, s };
+    this.logEvent("Schlag " + PART_NAME[k]);
+  }
+  // Two paddles on the chest and a shock. A dead body comes back only if it
+  // died a short while ago, the heart and brain still work and there is
+  // enough blood left. Returns what happened, for the message.
+  defib() {
+    for (const i of [P_NECK, P_WAIST, P_HIP]) this.push(i, rf(-0.5, 0.5), -2.6);
+    for (const i of [P_ELBOW_L, P_ELBOW_R, P_KNEE_L, P_KNEE_R]) this.push(i, rf(-1.5, 1.5), -1.5);
+    const cx = lerp(this.x[P_NECK], this.x[P_WAIST], 0.4), cy = lerp(this.y[P_NECK], this.y[P_WAIST], 0.4);
+    for (let n = 0; n < 12; n++) sparks.push({ x: cx + rf(-10, 10), y: cy + rf(-6, 6), vx: rf(-160, 160), vy: rf(-180, 40), life: rf(0.1, 0.3) });
+    flashes.push({ x: cx, y: cy, ang: 0, age: 0 });
+    if (!this.dead) {
+      this.pn = Math.min(100, this.pn + 25); this.hurtPart(TORSO, 6); this.damaged();
+      this.logEvent("Elektroschock Brust");
+      return this.isOut() ? "Schock, bleibt bewusstlos" : "Autsch! Sie lebt doch";
+    }
+    const brain = this.organ[ORGAN.brain], heart = this.organ[ORGAN.heart];
+    if (!this.attached(HEAD) || this.cause === "KOPF VERLOREN" || this.cause === "VERBRANNT" || brain <= 0) return "Keine Chance mehr";
+    if (this.deadT > 45) return "Zu lange tot";
+    if (heart <= 0) return "Das Herz ist zerstört";
+    if (this.bl <= 15) return "Zu wenig Blut, erst Infusion";
+    if (Math.random() < 0.3) return "Kein Rhythmus, nochmal!";
+    this.dead = false; this.cause = ""; this.report = null; this.dyingTimer = 0; this.deadT = 0; this.dc = null; this.rigorOn = false;
+    this.arrest = false; this.noAir = 0; this.o2 = Math.max(this.o2, 60); this.hr = 60;
+    this.ko = 15; this.koTimer = rf(4, 6); this.koLatched = true; this.sinceDamage = 0;
+    this.logEvent("Wiederbelebt");
+    return "Wiederbelebt!";
+  }
+  // Adrenaline: wakes it up, the heart races, pain fades for a while. A
+  // second shot too soon strains the heart.
+  adrenaline() {
+    if (this.dead) return "Zu spät";
+    if (this.adrenT > 12) { this.organ[ORGAN.heart] = Math.max(0, this.organ[ORGAN.heart] - 40); this.pn = Math.min(100, this.pn + 30); this.logEvent("Überdosis Adrenalin"); return "Überdosis! Herz geschädigt"; }
+    this.adrenT = 25; this.ko = Math.min(100, this.ko + 70); this.koTimer = 0; this.koLatched = false;
+    this.pn = Math.max(0, this.pn - 40); this.fear = Math.max(this.fear || 0, 0.6); this.stagger = 0;
+    this.logEvent("Adrenalin");
+    return "Adrenalin: hellwach";
+  }
+
   // Notes what happens to the doll with its time, for the death report.
   logEvent(text) {
     if (this.dead) return;
@@ -2287,6 +2336,8 @@ class Doll {
     }
 
     let target = 72 + this.pn * 0.5 + Math.max(0, 100 - this.bl) * 0.9;
+    // Adrenaline: the heart races and pain is pushed away for a while.
+    if (this.adrenT > 0) { this.adrenT -= DT; target += 50; this.pn = Math.min(this.pn, 35); }
     if (this.o2 < 50) target -= (50 - this.o2) * 1.4;
     if (this.frozen) target = 38;
     if (this.organ[ORGAN.heart] < 40 && !this.arrest) target += rf(-40, 40);
@@ -3073,7 +3124,7 @@ function explode(x, y) {
 // HUD
 // ======================================================================
 
-const T_GRAB = 0, T_WATER = 1, T_BUCKET = 2, T_BLADE = 3, T_GUN = 4, T_FIRE = 5, T_ICE = 6, T_BOMB = 7, T_IV = 8, T_DOLL = 9, T_RESET = 10, T_PIN = 11, T_BANDAGE = 12;
+const T_GRAB = 0, T_WATER = 1, T_BUCKET = 2, T_BLADE = 3, T_GUN = 4, T_FIRE = 5, T_ICE = 6, T_BOMB = 7, T_IV = 8, T_DOLL = 9, T_RESET = 10, T_PIN = 11, T_BANDAGE = 12, T_BAT = 13, T_DEFI = 14, T_ADREN = 15;
 
 // Tool icons as pixel sprites, shaded like the guns: a dark outline, light
 // on the upper left edges, shade on the lower right. Made by a small
@@ -3320,6 +3371,66 @@ const TOOL_PIX = {
     ".....kkkXXkkk.....",
     "........kk........",
   ],
+  [T_BAT]: [
+    "..................",
+    "...........kkkk...",
+    "..........kttttk..",
+    ".........ktuuuutk.",
+    ".........ktuuuuvk.",
+    ".........ktuuuuvk.",
+    "........ktuuuuuvk.",
+    ".......ktuuuvvvk..",
+    "......ktuuuvkkk...",
+    "......ktuuvk......",
+    ".....ktuuvk.......",
+    "....ktuuvk........",
+    "...kCvvvk.........",
+    "..kCDCkk..........",
+    ".kCDDEk...........",
+    "..kEEk............",
+    "...kk.............",
+    "..................",
+  ],
+  [T_DEFI]: [
+    "..........k.......",
+    ".........kzk......",
+    "........kzk.......",
+    ".kkkkkk.kBkkkkkkk.",
+    "kddddddkzBkddddddk",
+    "kfhhhhfkBkkfhhhhfk",
+    "kfhhhhfkzzzfhhhhfk",
+    "kdddddfzBABdddddfk",
+    "kdeeeefkkBkdeeeefk",
+    "kdeeeefkkBkdeeeefk",
+    "kdeeeefkzkkdeeeefk",
+    "kdeeeefkBkkdeeeefk",
+    "kdfffffkk.kdfffffk",
+    "kfCCCCfk..kfCCCCfk",
+    ".kCDDEk....kCDDEk.",
+    ".kCDDEk....kCDDEk.",
+    ".kEEEEk....kEEEEk.",
+    "..kkkk......kkkk..",
+  ],
+  [T_ADREN]: [
+    "..................",
+    "..............k...",
+    ".............kgk..",
+    "..........k...kgk.",
+    ".........kgkkkgkgk",
+    "..........kgFgk.k.",
+    ".........kFFgFk...",
+    "........kFHGFgk...",
+    ".......kFHAFHkgk..",
+    "......kFHAFHk.k...",
+    ".....kFHAFHk......",
+    "....kFHAFHk.......",
+    "...kFHAFHk........",
+    "....kHFHk.........",
+    "...kjkHk..........",
+    "..kjk.k...........",
+    ".kjk..............",
+    "..k...............",
+  ],
 };
 
 // Paints a tool sprite centred on the origin, every sprite pixel snapped to
@@ -3343,7 +3454,7 @@ function drawToolPix(rows) {
   }
   ctx.restore();
 }
-const TOOL_NAMES = ["Greifen", "Wasser", "Eimer", "Klinge", "Waffe", "Feuer", "Eis", "Bombe", "Infusion", "Neue Puppe", "Reset", "Fixieren", "Verband"];
+const TOOL_NAMES = ["Greifen", "Wasser", "Eimer", "Klinge", "Waffe", "Feuer", "Eis", "Bombe", "Infusion", "Neue Puppe", "Reset", "Fixieren", "Verband", "Schläger", "Defibrillator", "Adrenalin"];
 const BTN = 46, BTN_GAP = 6, TOOLBAR_Y = H - 54;
 const PANEL = { x: W - 206, y: 8, w: 198, h: 282 };
 const MINI = [[0, -12], [0, -8], [0, 0], [0, 3], [-5, -3], [-7, 2], [5, -3], [7, 2], [-2, 9], [-3, 15], [-5, 15], [2, 9], [3, 15], [5, 15]];
@@ -3353,14 +3464,14 @@ const MINI_W = [2, 4.2, 4, 2, 1.8, 2, 1.8, 2.4, 2, 1.4, 2.4, 2, 1.4];
 const DOCK_GROUPS = [
   { color: "#ecece6", items: [{ tool: T_GRAB }, { tool: T_PIN }] },
   { color: "#5aa0f0", items: [{ tool: T_WATER }, { tool: T_BUCKET }] },
-  { color: "#e8443a", items: [{ tool: T_BLADE }, { tool: T_GUN }] },
+  { color: "#e8443a", items: [{ tool: T_BLADE }, { tool: T_GUN }, { tool: T_BAT }] },
   { color: "#ff8a2a", items: [{ tool: T_FIRE }, { tool: T_ICE }, { tool: T_BOMB }] },
-  { color: "#4ccf5a", items: [{ tool: T_BANDAGE }, { tool: T_IV }] },
+  { color: "#4ccf5a", items: [{ tool: T_BANDAGE }, { tool: T_IV }, { tool: T_DEFI }, { tool: T_ADREN }] },
   { color: "#e6c850", items: [{ tool: T_DOLL }, { tool: T_RESET }] },
 ];
-// The tools sit in a rail on the left edge: two columns, each group on its
-// own rows with a coloured strip beside it.
-const RAIL_BTN = 40, RAIL_GAP = 4, RAIL_GROUP_GAP = 9, RAIL_X = 10, RAIL_PAD = 6;
+// The tools sit in a rail on the left edge: three columns, each group on
+// its own rows with a coloured strip beside it.
+const RAIL_BTN = 38, RAIL_GAP = 4, RAIL_GROUP_GAP = 9, RAIL_X = 10, RAIL_PAD = 6, RAIL_COLS = 3;
 const DOCK = (() => {
   const items = [], groups = [];
   let y = 0;
@@ -3368,14 +3479,14 @@ const DOCK = (() => {
     if (gi) y += RAIL_GROUP_GAP - RAIL_GAP;
     const y0 = y;
     g.items.forEach((it, n) => {
-      const col = n % 2;
+      const col = n % RAIL_COLS;
       if (n && !col) y += RAIL_BTN + RAIL_GAP;
       items.push({ ...it, color: g.color, x: RAIL_X + RAIL_PAD + col * (RAIL_BTN + RAIL_GAP), y, w: RAIL_BTN, h: RAIL_BTN });
     });
     y += RAIL_BTN + RAIL_GAP;
     groups.push({ color: g.color, y0, y1: y - RAIL_GAP });
   });
-  const total = y - RAIL_GAP, w = RAIL_BTN * 2 + RAIL_GAP + RAIL_PAD * 2;
+  const total = y - RAIL_GAP, w = RAIL_BTN * RAIL_COLS + RAIL_GAP * (RAIL_COLS - 1) + RAIL_PAD * 2;
   // Centred in the space under the title.
   const top = Math.round(Math.max(70, (70 + H - total - RAIL_PAD * 2) / 2)) + RAIL_PAD;
   for (const it of items) it.y += top;
@@ -4025,10 +4136,39 @@ const GUN_COLORS = {
   w: hex("#8a4a22"), h: hex("#b8702f"), d: hex("#5a2c12"),
   p: hex("#34352f"), q: hex("#5a5c53"), g: hex("#26272a"), r: hex("#ff3a30"),
 };
+// Pump shotgun: wooden stock and pump under a long barrel.
+const SPRITE_SHOTGUN = [
+  "...................................b..",
+  "kwwwwwwwwkmmmmmmmmmmmmmmmmmmmmmmmmmmmb",
+  "kwhhhhhhwkllllllllllllllllllllllllllmb",
+  "kwwwwwwwwmmmmmmbbbbbbmhhhhhhhhhhhmbbbb",
+  "kwwwwwdddbbbbbbbbbbbbdwwwwwwwwwwwd....",
+  "kwwddd.....dwhbl......................",
+  "kddd.......dwhbl......................",
+  "...........dwwb.......................",
+  "..........dwwb........................",
+  "..........ddd.........................",
+];
+// Sniper rifle: long barrel, scope on top, bipod folded under.
+const SPRITE_SNIPER = [
+  "..............kkkkkkkkkkkkk......................",
+  "..............kmllllllllllk......................",
+  "...............kbk.....kbk.......................",
+  "kpppppppkbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbk",
+  "kpqqqqqpkmmmmmmmmmmmmmmmmmmmmmlllllllllllllllllmk",
+  "kpppppppppppbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbk",
+  "kppppp....ppqbl.bbb..............................",
+  "kpp.......ppqbbbbbb.......k......................",
+  "..........ppq.............k......................",
+  ".........ppq...............k.....................",
+  ".........kkk.....................................",
+];
 const WEAPONS = [
   { name: "AK-47", sprite: SPRITE_AK, grip: [12.5, 7], muzzle: [38, 3.5], mag: 30, reload: 2.4, climb: 0.035, auto: true, rate: 10, dmg: 1.0, spread: 0.045, push: 6, sever: 0.25, headKill: 0.3, kick: 0.06, snd: 1 },
   { name: "Sturmgewehr", sprite: SPRITE_AR, grip: [12.5, 7], muzzle: [38, 3.5], mag: 30, reload: 2.0, climb: 0.022, auto: true, rate: 13, dmg: 0.85, spread: 0.025, push: 5, sever: 0.15, headKill: 0.22, kick: 0.045, snd: 0.8 },
   { name: "Glock 17", sprite: SPRITE_GLOCK, grip: [4, 6], muzzle: [18, 2.5], mag: 17, reload: 1.4, climb: 0.07, auto: false, rate: 6, dmg: 0.65, spread: 0.015, push: 3.5, sever: 0.05, headKill: 0.12, kick: 0.03, snd: 0.6 },
+  { name: "Schrotflinte", sprite: SPRITE_SHOTGUN, grip: [12.5, 6], muzzle: [38, 2], mag: 6, reload: 2.4, climb: 0.09, auto: false, rate: 1.4, dmg: 0.42, pellets: 8, spread: 0.11, push: 4.5, sever: 0.12, headKill: 0.12, kick: 0.11, snd: 1.4 },
+  { name: "Sniper", sprite: SPRITE_SNIPER, grip: [11.5, 7], muzzle: [49, 4], mag: 5, reload: 2.8, climb: 0.12, auto: false, rate: 1.1, dmg: 2.2, pierce: 3, spread: 0.002, push: 14, sever: 0.5, headKill: 0.95, kick: 0.14, snd: 1.6 },
   { name: "Taser", sprite: SPRITE_TASER, grip: [4, 5], muzzle: [19, 1.5], mag: 1, reload: 1.8, climb: 0, auto: false, rate: 1, dmg: 0, spread: 0.008, push: 0.5, sever: 0, headKill: 0, kick: 0.01, snd: 0.2, taser: true, range: 520 },
 ];
 let wires = [];
@@ -4052,6 +4192,11 @@ function fireAtFinger() {
   }
   if (hit) { hit.d.preciseShot(hit, wp, Math.random() < 0.5 ? 1 : -1); state.selected = hit.d; }
   else wallShot(x, y);
+  // Buckshot: the other pellets spread around the aim point.
+  for (let n = 1; n < (wp.pellets || 1); n++) {
+    const a = rf(0, Math.PI * 2), r = Math.sqrt(Math.random()) * 18, px = x + Math.cos(a) * r, py = y + Math.sin(a) * r, h2 = fingerHit(px, py);
+    if (h2) { h2.d.preciseShot(h2, wp, Math.random() < 0.5 ? 1 : -1); state.selected = h2.d; } else if (Math.random() < 0.4) wallShot(px, py);
+  }
   state.lastShot = [x, y];
   worldEvent("shot", x, y, hit ? hit.d : null);
   flashes.push({ x, y, ang: 0, age: 0 });
@@ -4088,9 +4233,10 @@ function muzzlePoint(px0, py0, ang, wp) {
 
 // First doll part along a ray: [doll, part, distance].
 const RANGE = 1100;
-function dollOnRay(ox, oy, dx, dy) {
+function dollOnRay(ox, oy, dx, dy, skip = null) {
   let hitD = null, hitK = -1, hitT = RANGE;
   for (const d of state.dolls) {
+    if (skip && skip.has(d)) continue;
     for (let k = 0; k < PART_COUNT; k++) {
       if (d.gone[k]) continue;
       let ax = d.x[d.pa[k]], ay = d.y[d.pa[k]], bx = d.x[d.pb[k]], by = d.y[d.pb[k]];
@@ -4118,8 +4264,8 @@ function fireRanged() {
   const [ox, oy] = muzzlePoint(px0, py0, ang, wp);
   const a = aimDir(ox, oy, ang) + rf(-wp.spread, wp.spread);
   const dx = Math.cos(a), dy = Math.sin(a);
-  const [hitD, hitK, hitT] = dollOnRay(ox, oy, dx, dy);
   if (wp.taser) {
+    const [hitD, hitK, hitT] = dollOnRay(ox, oy, dx, dy);
     // Two barbs on wires, only as far as the wires reach.
     taserPop();
     let blocked = false;
@@ -4135,26 +4281,9 @@ function fireRanged() {
     }
     return;
   }
-  // Walls, ice and water along the ray
-  let endT = hitT, wall = false;
-  for (let t = 4; t < hitT; t += 2) {
-    const x = ox + dx * t, y = oy + dy * t, m = matAt(x, y);
-    if (m === WALL || m === ICE) {
-      endT = t; wall = true;
-      if (m === ICE) {
-        for (let n = 0; n < 10; n++) {
-          const ix = Math.floor(x + rf(-4, 4)), iy = Math.floor(y + rf(-4, 4));
-          if (getMat(ix, iy) === ICE) { setCell(ix, iy, EMPTY); spawnParticle(ix, iy, rf(-80, 80) - dx * 120, rf(-160, -40), WATER, 0); }
-        }
-      }
-      break;
-    }
-    if ((m === WATER || m === BLOOD) && Math.random() < 0.25) splash(x, y, dx * 600, dy * 600);
-  }
-  const ex = ox + dx * endT, ey = oy + dy * endT;
-  if (!wall && hitD) { hitD.shot(hitK, ex, ey, dx, dy, wp); state.selected = hitD; }
-  if (wall) for (let n = 0; n < 6; n++) sparks.push({ x: ex - dx * 2, y: ey - dy * 2, vx: -dx * rf(60, 220) + rf(-90, 90), vy: -dy * rf(60, 220) - rf(30, 160), life: rf(0.15, 0.35) });
-  tracers.push({ ax: ox, ay: oy, bx: ex, by: ey, age: 0 });
+  // One ray per bullet; the shotgun fires a spread of pellets.
+  let ex = ox, ey = oy;
+  for (let n = 0; n < (wp.pellets || 1); n++) [ex, ey] = shootRay(ox, oy, n ? aimDir(ox, oy, ang) + rf(-wp.spread, wp.spread) : a, wp);
   worldEvent("shot", ox, oy); worldEvent("shot", ex, ey);
   flashes.push({ x: ox, y: oy, ang, age: 0 });
   // Casing flies out of the side and bounces on the floor.
@@ -4164,6 +4293,33 @@ function fireRanged() {
   state.kick = 1;
   state.climb = Math.min(0.3, state.climb + wp.climb);
   gunSound(wp.snd);
+}
+
+// A bullet along a ray: it stops at the first wall, splashes through water,
+// and hits dolls on its way. The sniper round goes through up to three.
+function shootRay(ox, oy, a, wp) {
+  const dx = Math.cos(a), dy = Math.sin(a), pierce = wp.pierce || 1, skip = new Set();
+  let wallT = RANGE, wallM = 0;
+  for (let t = 4; t < RANGE; t += 2) { const m = matAt(ox + dx * t, oy + dy * t); if (m === WALL || m === ICE) { wallT = t; wallM = m; break; } }
+  let hits = 0, lastT = 0;
+  while (hits < pierce) {
+    const [d, k, t] = dollOnRay(ox, oy, dx, dy, skip);
+    if (!d || t >= wallT) break;
+    d.shot(k, ox + dx * t, oy + dy * t, dx, dy, wp); state.selected = d;
+    skip.add(d); hits++; lastT = t;
+  }
+  const stopped = hits >= pierce, endT = stopped ? lastT : wallT;
+  for (let t = 4; t < endT; t += 2) { const m = matAt(ox + dx * t, oy + dy * t); if ((m === WATER || m === BLOOD) && Math.random() < 0.25) splash(ox + dx * t, oy + dy * t, dx * 600, dy * 600); }
+  const ex = ox + dx * endT, ey = oy + dy * endT;
+  if (!stopped && wallT < RANGE) {
+    if (wallM === ICE) for (let n = 0; n < 10; n++) {
+      const ix = Math.floor(ex + rf(-4, 4)), iy = Math.floor(ey + rf(-4, 4));
+      if (getMat(ix, iy) === ICE) { setCell(ix, iy, EMPTY); spawnParticle(ix, iy, rf(-80, 80) - dx * 120, rf(-160, -40), WATER, 0); }
+    }
+    for (let n = 0; n < 6; n++) sparks.push({ x: ex - dx * 2, y: ey - dy * 2, vx: -dx * rf(60, 220) + rf(-90, 90), vy: -dy * rf(60, 220) - rf(30, 160), life: rf(0.15, 0.35) });
+  }
+  tracers.push({ ax: ox, ay: oy, bx: ex, by: ey, age: 0 });
+  return [ex, ey];
 }
 
 // The body part under a point, with its spot, side and the organs behind it.
@@ -4580,7 +4736,11 @@ const ctxH = () => (state.tool === T_GUN ? 60 : 36);
 const ctxY = () => 66;
 function ctxItems() {
   if (state.tool === T_WATER) return [1, 2, 3, 4, 5].map((n) => ({ kind: "water", n, w: 34, label: String(n) }));
-  if (state.tool === T_GUN) return WEAPONS.map((wp, n) => ({ kind: "gun", n, w: 104, label: wp.name.toUpperCase() }));
+  if (state.tool === T_GUN) {
+    // As wide as fits between the rail and the panel.
+    const room = W - 216 - (dockOpen ? DOCK.x + DOCK.w + 10 : 34) - 16, w = Math.min(104, Math.floor((room - 6 * (WEAPONS.length - 1)) / WEAPONS.length));
+    return WEAPONS.map((wp, n) => ({ kind: "gun", n, w, label: wp.name.toUpperCase() }));
+  }
   if (state.tool === T_FIRE) return FIRE_MODES.map((name, n) => ({ kind: "fire", n, w: 96, label: name }));
   return [];
 }
@@ -4681,7 +4841,7 @@ function drawContextBarBody(l) {
     if (it.kind === "gun") {
       const sp = WEAPONS[it.n].sprite, z = Math.min(2.2, (it.w - 16) / sp[0].length);
       drawSprite(sp, it.x + it.w / 2 - sp[0].length * z / 2, y + 30 - sp.length * z / 2 - 4, z, 0.45 + 0.55 * k);
-      label(it.label, it.x + it.w / 2, y + CTX_H - 15, 9, on ? "#f2f2ec" : "#6a6a74", "center");
+      label(it.label, it.x + it.w / 2, y + CTX_H - 15, fitFont(it.label, it.w - 8, 9), on ? "#f2f2ec" : "#6a6a74", "center");
     } else {
       label(it.label, it.x + it.w / 2, y + CTX_H / 2 + 1, 11, on ? "#f2f2ec" : "#6a6a74", "center");
     }
@@ -6302,7 +6462,7 @@ function drawTitle(dt) {
     if (playShot && b.id === "maps") { menuButton(b, "", b.primary, 0); drawSplitLabel(b, b.text); }
     else menuButton(b, b.text, b.primary, pressAmt(b.id, b));
   }));
-  withAppear(appear(8), () => label("v2 · " + MAPS.length + " MAPS · 12 WERKZEUGE", 56, H - 16, 9, "#4c4c56"), 0);
+  withAppear(appear(8), () => label("v2 · " + MAPS.length + " MAPS · " + TOOL_NAMES.length + " WERKZEUGE", 56, H - 16, 9, "#4c4c56"), 0);
   // A tip that changes every few seconds, under the buttons
   const btns = titleButtons(), last = btns[btns.length - 1], ty = last.y + last.h + 22;
   if (ty < H - 34) withAppear(appear(9), () => {
@@ -6880,25 +7040,29 @@ const HELP = [
   [T_IV, "Heilt und weckt Bewusstlose"],
   [T_DOLL, "Tippen, wo sie stehen soll"],
   [T_RESET, "Baut die Map neu auf"],
+  [T_BAT, "Tippen = Schlag, bricht Knochen"],
+  [T_DEFI, "Belebt frisch Tote wieder, mit Glück"],
+  [T_ADREN, "Weckt auf, Schmerz weg, nicht zu oft"],
   [-1, "Aufräumen, Zeitlupe und Pause"],
 ];
 
 function drawHelp() {
   screenBackground();
   withAppear(appear(0), () => { label("ANLEITUNG", W / 2, 50, 26, "#e6e6de", "center"); drawBackButton(); });
-  const colW = Math.min(360, (W - 80) / 2), x0 = W / 2 - colW - 8, y0 = 80, rowH = 44, per = Math.ceil(HELP.length / 2);
+  const colW = Math.min(360, (W - 80) / 2), x0 = W / 2 - colW - 8, y0 = 76, per = Math.ceil(HELP.length / 2), rowH = Math.min(44, (H - y0 - 34) / per);
   HELP.forEach(([tool, text], n) => {
     const x = x0 + Math.floor(n / per) * (colW + 16), y = y0 + (n % per) * rowH;
     const a = appear(1 + (n % per) + Math.floor(n / per) * 0.5, 0.3, 0.04);
     if (a <= 0) return;
     ctx.save(); ctx.globalAlpha *= a; ctx.translate(0, (1 - a) * 8);
-    rr(x, y, colW, rowH - 8, 10); ctx.fillStyle = "rgba(26,26,32,0.92)"; ctx.fill();
+    const ch = rowH - 5, ib = ch - 6;
+    rr(x, y, colW, ch, 9); ctx.fillStyle = "rgba(26,26,32,0.92)"; ctx.fill();
     ctx.strokeStyle = "#2e2e36"; ctx.lineWidth = 1.2; ctx.stroke();
-    rr(x + 5, y + 4, 30, 30, 8); ctx.fillStyle = "#26262c"; ctx.fill();
-    if (tool >= 0) { ctx.save(); ctx.translate(x + 20, y + 19); ctx.scale(0.66, 0.66); drawIcon(tool, 0, 0); ctx.restore(); }
-    else label("+", x + 20, y + 20, 18, "#e6c850", "center");
-    label(tool >= 0 ? TOOL_NAMES[tool].toUpperCase() : "EXTRAS", x + 44, y + 12, 11, "#e2e2da");
-    label(text, x + 44, y + 26, 10, "#8e8e98", "left", 400);
+    rr(x + 3, y + 3, ib, ib, 7); ctx.fillStyle = "#26262c"; ctx.fill();
+    if (tool >= 0) { ctx.save(); ctx.translate(x + 3 + ib / 2, y + 3 + ib / 2); ctx.scale(ib / 34, ib / 34); drawIcon(tool, 0, 0); ctx.restore(); }
+    else label("+", x + 3 + ib / 2, y + 4 + ib / 2, 16, "#e6c850", "center");
+    label(tool >= 0 ? TOOL_NAMES[tool].toUpperCase() : "EXTRAS", x + ib + 12, y + ch * 0.33, 10.5, "#e2e2da");
+    label(text, x + ib + 12, y + ch * 0.72, 9.5, "#8e8e98", "left", 400);
     ctx.restore();
   });
   if (appear(8) > 0) label("Zustände: WACH, K.O. und TOT. Tippe auf die Kopfzeile des Panels, um es zuzuklappen.", W / 2, H - 22, 10, "#6a6a74", "center", 400);
@@ -7716,7 +7880,7 @@ const state = {
   tool: T_GRAB, mx: W / 2, my: H / 2, sx: W / 2, sy: H / 2, lastX: W / 2, lastY: H / 2,
   cam: { z: 1, x: 0, y: 0 }, zoomAnim: null, fireMode: 1, fires: [],
   pressing: false, pointerSeen: false, hover: -1, flashBtn: -1, toast: 0, toastText: "",
-  dolls: [], selected: null, grabDoll: null, pinDrag: null, counter: 0, trail: [], shake: 0,
+  dolls: [], selected: null, grabDoll: null, pinDrag: null, swings: [], counter: 0, trail: [], shake: 0,
   waterLevel: 3, weapon: 0, fireCd: 0, map: 0, screen: "", screenT: 0, lp: null, ctxMenu: null, aimView: null, xray: false, toolT: 9, pressTarget: null, inGame: false, menuDown: false,
   extrasOpen: false, extrasFlash: -1, extrasFlashT: 0, paused: false, slow: false,
   gunX: W * 0.22, gunY: FLOOR_Y - 130, gunAng: 0, gunDrag: false, aimX: W, aimY: FLOOR_Y - 130,
@@ -7756,7 +7920,7 @@ function useButton(i) {
     state.tool = i;
   }
   state.toast = 1.4;
-  state.toastText = i === T_DOLL ? "Tippe, wo sie stehen soll" : i === T_PIN ? "Körperteil ziehen, loslassen = fixieren" : i === T_GUN ? (settings.front ? "Tippe auf die Puppe, dort trifft der Schuss" : "Ziehen = zielen, roter Knopf = Feuer") : TOOL_NAMES[i];
+  state.toastText = i === T_DOLL ? "Tippe, wo sie stehen soll" : i === T_PIN ? "Körperteil ziehen, loslassen = fixieren" : i === T_GUN ? (settings.front ? "Tippe auf die Puppe, dort trifft der Schuss" : "Ziehen = zielen, roter Knopf = Feuer") : i === T_BAT ? "Tippe auf ein Körperteil zum Zuschlagen" : i === T_DEFI ? "Tippe auf eine Puppe, Schock auf die Brust" : i === T_ADREN ? "Tippe auf eine Puppe, weckt sie auf" : TOOL_NAMES[i];
 }
 
 // New doll stands upright on the ground below the tap, no fall, no collapse.
@@ -7827,6 +7991,29 @@ function press() {
   if (state.tool === T_DOLL) {
     state.pressing = false;
     placeDoll(state.mx, state.my);
+    return;
+  }
+  if (state.tool === T_BAT) {
+    // A swing: the doll part under the finger takes the blow, knocked away
+    // from the side it was hit on.
+    state.pressing = false;
+    const hit = fingerHit(state.mx, state.my);
+    state.swings.push({ x: state.mx, y: state.my, dir: hit ? (Math.sign(hit.d.x[P_NECK] - state.mx) || 1) : 1, age: 0 });
+    if (hit) {
+      hit.d.batHit(hit.k, hit.t, hit.s, Math.sign(hit.d.x[P_NECK] - state.mx) || 1);
+      state.selected = hit.d; state.shake = Math.max(state.shake, 0.25); thudSound();
+      worldEvent("shot", state.mx, state.my, hit.d);
+    } else whooshSound(0.4);
+    return;
+  }
+  if (state.tool === T_DEFI || state.tool === T_ADREN) {
+    state.pressing = false;
+    let bestD = 70, best = null;
+    for (const d of state.dolls) { const [i, dist] = d.nearestPoint(state.mx, state.my, bestD); if (i >= 0) { bestD = dist; best = d; } }
+    if (!best) { state.toast = 1.2; state.toastText = "Tippe auf eine Puppe"; return; }
+    state.selected = best; state.toast = 1.6;
+    if (state.tool === T_DEFI) { state.toastText = best.defib(); taserPop(); state.shake = Math.max(state.shake, 0.15); }
+    else { state.toastText = best.adrenaline(); clickSound(1200, 0.05); }
     return;
   }
   if (state.tool === T_IV) {
@@ -8569,6 +8756,13 @@ function render() {
   if (pd && pd.d.grabbed === pd.i) { ctx.save(); ctx.globalAlpha *= 0.6 + 0.2 * Math.sin(performance.now() / 120); drawPin(pd.d.x[pd.i], pd.d.y[pd.i]); ctx.restore(); }
   // Bullet tracers and ricochet sparks
   ctx.lineCap = "round";
+  // Bat swings: a white arc that fades out
+  state.swings = state.swings.filter((sw) => (sw.age += frameDt) < 0.22);
+  for (const sw of state.swings) {
+    const a = 1 - sw.age / 0.22, r = 26 + sw.age * 60;
+    ctx.strokeStyle = `rgba(255,255,255,${0.7 * a})`; ctx.lineWidth = 3 * a + 1; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.arc(sw.x - sw.dir * r * 0.6, sw.y, r, sw.dir > 0 ? -0.9 : Math.PI - 0.9, sw.dir > 0 ? 0.9 : Math.PI + 0.9); ctx.stroke();
+  }
   for (const t of tracers) {
     ctx.strokeStyle = `rgba(255,236,160,${1 - t.age / 0.07})`; ctx.lineWidth = 1.6;
     ctx.beginPath(); ctx.moveTo(t.ax, t.ay); ctx.lineTo(t.bx, t.by); ctx.stroke();
