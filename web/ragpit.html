@@ -629,7 +629,9 @@ const POINT_R = dsc([17, 9, 14, 14, 8, 7, 8, 7, 9, 7, 5, 9, 7, 5]);
 // child, parent, joint on parent end A, min and max degrees
 const JOINTS = [
   [HEAD, TORSO, true, -35, 35], [PELVIS, TORSO, false, -35, 45],
-  [UARM_L, TORSO, true, 8, 352], [UARM_R, TORSO, true, 8, 352],
+  // Shoulders turn all the way round. A gap at the top made an arm hung
+  // straight up from a pin snap between both limits and shake the body.
+  [UARM_L, TORSO, true, 0, 360], [UARM_R, TORSO, true, 0, 360],
   [LARM_L, UARM_L, false, -150, 60], [LARM_R, UARM_R, false, -150, 60],
   [THIGH_L, PELVIS, false, -120, 30], [THIGH_R, PELVIS, false, -120, 30],
   [SHIN_L, THIGH_L, false, -30, 150], [SHIN_R, THIGH_R, false, -30, 150],
@@ -998,12 +1000,20 @@ class Doll {
     this.dampSpin(0.02, this.grabbed >= 0 ? this.pieces()[this.grabbed] : -1);
     this.behave();
     if (this.getUp <= 0) this.balance();
+    // Rigor gives way slowly under the weight of a body hung on a pin or held
+    // up, so it ends up hanging instead of staying folded in the air.
+    if (this.rigorOn && (this.pins.size || this.grabbed >= 0)) for (const j of this.joints) j.rigorRel += wrapPi(this.jointRel(j) - j.rigorRel) * DT * 0.8;
     for (let it = 0; it < ITERATIONS; it++) {
       for (let k = 0; k < PART_COUNT; k++) this.solveDistance(this.pa[k], this.pb[k], this.restLen[k]);
       this.solveJoints(this.frozen ? 0.5 : this.taseT > 0 ? 0.45 : this.rigorOn ? 0.45 * this.dc.rigor : 0, false);
       if (it % 2 === 1) { for (let i = 0; i < this.x.length; i++) this.pushOut(i); this.pushOutSegments(); this.selfCollide(); }
     }
     for (const i of this.pins.keys()) this.holdPin(i);
+    // A stiff body moves as one block: whatever the points do apart from
+    // swinging and turning together is calmed, so it cannot shake on a pin.
+    // Hung on a pin, the block also slows down, so it settles under the pin
+    // instead of turning like a windmill.
+    if (this.frozen || this.rigorOn || this.taseT > 0) this.dampNonRigid(0.15, this.pins.size ? 0.9 : 1);
     // Muscles hold the posture once per step. They move the limbs without
     // adding speed, so they cannot rock the body into shaking.
     if (!this.frozen && !this.dead && !this.isOut()) {
@@ -1128,6 +1138,35 @@ class Doll {
       const ids = [];
       for (let j = 0; j < this.x.length; j++) if (piece[j] === piece[i]) ids.push(j);
       if (ids.length > 1) this.dampPieceSpin(ids, f);
+    }
+  }
+
+  // Keeps the part of each point's speed that fits a rigid move of its
+  // piece (shift plus turn) and damps the rest.
+  dampNonRigid(keep, rigidKeep = 1) {
+    const piece = this.pieces(), done = new Set();
+    for (let i = 0; i < this.x.length; i++) {
+      if (done.has(piece[i])) continue;
+      done.add(piece[i]);
+      const ids = [];
+      for (let j = 0; j < this.x.length; j++) if (piece[j] === piece[i]) ids.push(j);
+      if (ids.length < 2) continue;
+      let cx = 0, cy = 0, vx = 0, vy = 0;
+      for (const j of ids) { cx += this.x[j]; cy += this.y[j]; vx += this.x[j] - this.ox[j]; vy += this.y[j] - this.oy[j]; }
+      cx /= ids.length; cy /= ids.length; vx /= ids.length; vy /= ids.length;
+      let L = 0, I = 0;
+      for (const j of ids) {
+        const rx = this.x[j] - cx, ry = this.y[j] - cy;
+        L += rx * (this.y[j] - this.oy[j] - vy) - ry * (this.x[j] - this.ox[j] - vx); I += rx * rx + ry * ry;
+      }
+      const w = I > 1 ? L / I : 0;
+      for (const j of ids) {
+        if (this.fixed(j)) continue;
+        const rvx = (vx - w * (this.y[j] - cy)) * rigidKeep, rvy = (vy + w * (this.x[j] - cx)) * rigidKeep;
+        const ux = this.x[j] - this.ox[j], uy = this.y[j] - this.oy[j];
+        this.ox[j] = this.x[j] - (rvx + (ux - rvx) * keep);
+        this.oy[j] = this.y[j] - (rvy + (uy - rvy) * keep);
+      }
     }
   }
 
@@ -1393,7 +1432,8 @@ class Doll {
   // instead of folding its joints backwards.
   updateFacing() {
     this.faceCd -= DT;
-    if (this.faceCd > 0 || this.standing || this.getUp > 0) return;
+    // A stiff body (rigor, ice) cannot fold the other way round.
+    if (this.faceCd > 0 || this.standing || this.getUp > 0 || this.rigorOn || this.frozen) return;
     this.faceCd = 0.2;
     const bad = (f) => {
       let v = 0;
@@ -1414,9 +1454,9 @@ class Doll {
       const limp = !this.frozen && !this.rigorOn && !(this.taseT > 0) && (this.crippled[j.child] || (j.parent !== TORSO && this.crippled[j.parent]));
       const m = limp ? 0 : muscle;
       const [jp, op, cp] = this.jointIds(j);
-      // The finger holds the outer end of this joint: leave the joint loose
-      // instead of twisting the whole body around it against gravity.
-      if (cp === this.grabbed) continue;
+      // The finger or a pin holds the outer end of this joint: leave the joint
+      // loose instead of twisting the whole body around it against gravity.
+      if (cp === this.grabbed || this.pins.has(cp)) continue;
       const jx = this.x[jp], jy = this.y[jp];
       const rel = this.jointRel(j);
       // A joint pushed past its limit is led back gently. Only a joint turned
