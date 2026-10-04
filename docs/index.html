@@ -685,6 +685,53 @@ const ORGAN_DEATH = {
   liver: "LEBERBLUTUNG", stomach: "BAUCHFELLENTZÜNDUNG", kidneys: "NIERENBLUTUNG", gut: "BAUCHFELLENTZÜNDUNG",
 };
 
+// ----------------------------------------------------------------- decay
+// A dead doll goes through the stages of a real body, compressed in time:
+// it turns pale, livor spots gather on the low side, rigor sets in and
+// passes again, the skin turns green and shows dark marbled veins, gas
+// bloats the body, then it rots dark, leaks fluid, draws flies and at the
+// end only a skeleton in rags is left. One second in the game stands for
+// about half an hour at first and for days later on (DECAY_HOURS).
+const DECAY_HOURS = [[0, 0], [20, 2], [60, 8], [150, 24], [210, 48], [330, 144], [420, 264], [570, 720]];
+function decayHours(t) {
+  for (let n = 1; n < DECAY_HOURS.length; n++) {
+    const [t0, h0] = DECAY_HOURS[n - 1], [t1, h1] = DECAY_HOURS[n];
+    if (t <= t1) return lerp(h0, h1, (t - t0) / (t1 - t0));
+  }
+  return 720 + (t - 570) * 4;
+}
+const ramp = (t, a, b) => { const u = clamp((t - a) / (b - a), 0, 1); return u * u * (3 - 2 * u); };
+function decayOf(t) {
+  return {
+    pale: ramp(t, 0, 20), livor: ramp(t, 15, 60),
+    rigor: ramp(t, 25, 60) * (1 - ramp(t, 150, 210)),
+    green: ramp(t, 160, 260), marble: ramp(t, 220, 300) * (1 - ramp(t, 400, 450)),
+    bloat: ramp(t, 210, 320) * (1 - ramp(t, 340, 430)),
+    rot: ramp(t, 300, 440), purge: ramp(t, 300, 340) * (1 - ramp(t, 470, 530)),
+    flies: ramp(t, 8, 60) * (1 - ramp(t, 520, 600)), skel: ramp(t, 420, 570),
+  };
+}
+function decayName(d) {
+  const t = d.deadT;
+  return t < 15 ? "FRISCH TOT" : t < 30 ? "BLASS" : t < 60 ? "LEICHENFLECKEN" : t < 190 ? "LEICHENSTARRE" : t < 280 ? "VERFÄRBT"
+    : t < 380 ? "AUFGEBLÄHT" : t < 480 ? "VERWEST" : t < 560 ? "SKELETTIERT" : "SKELETT";
+}
+function decayTime(d) {
+  const h = decayHours(d.deadT);
+  return h < 1 ? Math.max(1, Math.round(h * 60)) + " MIN" : h < 48 ? Math.round(h) + " STD" : Math.round(h / 24) + " TAGE";
+}
+const COL_PALE = hex("#d4cfc4"), COL_GREEN = hex("#8a9a5a"), COL_ROT = hex("#4a3e28"), COL_SKEL = hex("#e2d8bf");
+const COL_DIRT = hex("#3a3222"), COL_DEAD = hex("#9a9a94"), COL_MARBLE = hex("#2e3a2c"), COL_LIVOR = hex("#6a3a5a"), COL_RAG = hex("#1e1a12");
+// How much a part swells with gas, or shrinks to bone at the end.
+function swellOf(d, k) {
+  const dc = d.dc;
+  if (!dc) return 1;
+  let f = 1 + dc.bloat * (k === TORSO || k === PELVIS ? 0.24 : 0.1);
+  if (k === LARM_L || k === LARM_R) f *= lerp(1, 0.45, ramp(dc.skel, 0.4, 0.9));
+  else if (k !== HEAD) f *= lerp(1, 0.82, dc.skel);
+  return f;
+}
+
 class Doll {
   constructor(bx, by, id) {
     this.id = id;
@@ -718,7 +765,7 @@ class Doll {
     this.wounds = [];
     this.grabbed = -1; this.gx = 0; this.gy = 0;
     this.ko = 100; this.bl = 100; this.pn = 0; this.o2 = 100; this.hr = 72;
-    this.dead = false; this.headUnder = false;
+    this.dead = false; this.headUnder = false; this.deadT = 0; this.dc = null; this.rigorOn = false;
     this.burn = 0; this.bladeTimer = 0; this.freeze = 0; this.frozen = false;
     this.sinceDamage = 0; this.healing = false;
     this.beatPhase = 0; this.beatFlash = 0; this.hurtFlash = 0;
@@ -891,7 +938,9 @@ class Doll {
       let vx = x - this.ox[i], vy = y - this.oy[i];
       if (liquidAt(x, y)) {
         vx *= 0.86; vy *= 0.86;
-        vy += g * 0.12;
+        // Gas in a bloated corpse lifts the trunk up to the surface.
+        const gas = this.dc && (i === P_NECK || i === P_WAIST || i === P_HIP) ? 0.5 * this.dc.bloat : 0;
+        vy += g * (0.12 - gas);
         if (vx * vx + vy * vy > 64) splash(x, y, vx / DT, vy / DT);
       } else {
         const drag = 0.998;
@@ -918,7 +967,7 @@ class Doll {
     if (this.getUp <= 0) this.balance();
     for (let it = 0; it < ITERATIONS; it++) {
       for (let k = 0; k < PART_COUNT; k++) this.solveDistance(this.pa[k], this.pb[k], this.restLen[k]);
-      this.solveJoints(this.frozen ? 0.5 : 0, false);
+      this.solveJoints(this.frozen ? 0.5 : this.rigorOn ? 0.45 * this.dc.rigor : 0, false);
       if (it % 2 === 1) { for (let i = 0; i < this.x.length; i++) this.pushOut(i); this.pushOutSegments(); this.selfCollide(); }
     }
     for (const i of this.pins.keys()) this.holdPin(i);
@@ -1260,7 +1309,7 @@ class Doll {
     };
     if (bad(-this.facing) + 0.35 < bad(this.facing)) {
       this.facing = -this.facing;
-      for (const j of this.joints) j.frozenRel = -j.frozenRel;
+      for (const j of this.joints) { j.frozenRel = -j.frozenRel; j.rigorRel = -(j.rigorRel || 0); }
     }
   }
 
@@ -1269,7 +1318,7 @@ class Doll {
   solveJoints(muscle, kinematic) {
     for (const j of this.joints) {
       if (!j.active) continue;
-      const limp = !this.frozen && (this.crippled[j.child] || (j.parent !== TORSO && this.crippled[j.parent]));
+      const limp = !this.frozen && !this.rigorOn && (this.crippled[j.child] || (j.parent !== TORSO && this.crippled[j.parent]));
       const m = limp ? 0 : muscle;
       const [jp, op, cp] = this.jointIds(j);
       // The finger holds the outer end of this joint: leave the joint loose
@@ -1282,7 +1331,7 @@ class Doll {
       const over = Math.abs(rel) - j.half;
       if (over > 1.8) continue;
       let target = kinematic ? rel : clamp(rel, -j.half, j.half);
-      if (m > 0) target = lerp(target, this.frozen ? j.frozenRel : (settings.front ? j.restFront : j.rest) * this.facing, m);
+      if (m > 0) target = lerp(target, this.frozen ? j.frozenRel : this.rigorOn ? j.rigorRel : (settings.front ? j.restFront : j.rest) * this.facing, m);
       let diff = target - rel;
       if (Math.abs(diff) < 0.0001) continue;
       if (kinematic) diff = clamp(diff * 2, -0.05, 0.05);
@@ -1585,6 +1634,28 @@ class Doll {
       this.frozen = true;
       for (const j of this.joints) j.frozenRel = this.jointRel(j);
     } else if (this.frozen && this.freeze < 0.5) this.frozen = false;
+
+    // Decay after death. Ice stops it, cool water slows it.
+    if (this.dead && settings.decay) {
+      const wet = liquidAt(this.x[P_WAIST], this.y[P_WAIST]);
+      const rate = this.frozen ? 0 : (settings.decayFast ? 10 : 1) * (wet ? 0.6 : 1);
+      this.deadT += DT * rate;
+      this.dc = decayOf(this.deadT);
+      // Leaking fluid stains the floor under the trunk.
+      if (this.dc.purge > 0.05 && rate > 0 && Math.random() < this.dc.purge * DT * 4 * rate) {
+        let lo = P_WAIST;
+        for (const i of [P_NECK, P_HIP]) if (this.y[i] > this.y[lo]) lo = i;
+        const sx = this.x[lo] + rf(-14, 14), sy = this.y[lo] + 10;
+        if (solidAt(sx, sy + 4)) {
+          dctx.fillStyle = "rgba(48,38,14,0.09)";
+          dctx.beginPath(); dctx.ellipse(sx * 2, sy * 2, rf(10, 26), rf(4, 7), 0, 0, Math.PI * 2); dctx.fill();
+        }
+      }
+    } else this.dc = null;
+    // Rigor: the joints lock in the pose the body has when it sets in.
+    if (this.dc && this.dc.rigor > 0.05) {
+      if (!this.rigorOn) { this.rigorOn = true; for (const j of this.joints) j.rigorRel = this.jointRel(j); }
+    } else this.rigorOn = false;
 
     if (this.iv > 0) this.updateInfusion();
 
@@ -1968,12 +2039,26 @@ const PART_CLOTH = { [HEAD]: "skin", [TORSO]: "shirt", [PELVIS]: "pants", [UARM_
 // Color of a surface after the doll's condition: death, burns, ice, fresh pain.
 function tintFor(d, k, c) {
   if (FAR_SIDE[k] && !settings.front) c = darken(c, 0.16);
-  if (d.dead) c = mixc(c, hex("#9a9a94"), 0.28);
+  const dc = d.dc;
+  if (d.dead && !dc) c = mixc(c, COL_DEAD, 0.28);
+  else if (dc) {
+    if (c === d.look.skin) {
+      c = mixc(c, COL_PALE, 0.45 * dc.pale);
+      c = mixc(c, COL_GREEN, 0.55 * dc.green);
+      c = mixc(c, COL_ROT, 0.7 * dc.rot);
+      c = mixc(c, COL_SKEL, ramp(dc.skel, 0.35, 0.85));
+    } else if (c === d.look.hair) c = mixc(c, COL_DEAD, 0.2 + 0.3 * dc.rot);
+    else { c = mixc(c, COL_DEAD, 0.18); c = mixc(c, COL_DIRT, 0.45 * dc.rot); }
+  }
   if (d.char[k] > 0.02) c = mixc(c, COL_CHAR, clamp(d.char[k], 0, 0.9));
   if (d.frozen) c = mixc(c, COL_ICE, 0.55);
   if (d.hurtFlash > 0) c = mixc(c, COL_HURT, d.hurtFlash * 0.3);
   return c;
 }
+
+// Decay marks for the part being drawn: livor on the low side, marbled
+// veins on the skin, holes in rotten clothes.
+let RFX_LIVOR = 0, RFX_MARBLE = 0, RFX_HOLES = 0;
 
 // One rotated rectangle from a to b in pixel units, with a lit top edge,
 // a shaded bottom edge and a faint pixel grain.
@@ -1995,6 +2080,9 @@ function rasterRect(ax, ay, bx, by, hw, e0, e1, order, base, stain) {
       const i = y * DW + x;
       if (tmask[i] && tmask[i] !== order && hw - Math.abs(v) < 1.2) c = darken(c, 0.25);
       if (stain > 0.02) c = mixc(c, COL_GORE, stain * 0.6);
+      if (RFX_LIVOR > 0.02) { const low = (v * ny) / hw; if (low > 0) c = mixc(c, COL_LIVOR, RFX_LIVOR * 0.6 * low); }
+      if (RFX_MARBLE > 0.02) { const h = Math.sin(x * 1.7 + Math.sin(y * 0.9) * 2.2) * Math.sin(y * 1.3 + x * 0.3); if (Math.abs(h) < 0.12 * RFX_MARBLE) c = mixc(c, COL_MARBLE, 0.6); }
+      if (RFX_HOLES > 0.02 && (((x * 2654435761) ^ (y * 40503)) >>> 0) % 100 < RFX_HOLES * 26) c = COL_RAG;
       tset(i, c, order);
     }
   }
@@ -2114,16 +2202,24 @@ function rasterDoll(d) {
     const base = tintFor(d, k, d.look[PART_CLOTH[k]]);
     let [ax, ay] = P(d.pa[k]);
     const [bx, by] = P(d.pb[k]);
+    // Decay marks and swelling for this part
+    const dc = d.dc, skinPart = PART_CLOTH[k] === "skin", sw = swellOf(d, k);
+    const skull = dc ? ramp(dc.skel, 0.45, 0.8) : 0;
+    RFX_LIVOR = dc && skinPart ? dc.livor * (1 - dc.skel) : 0;
+    RFX_MARBLE = dc && skinPart ? dc.marble : 0;
+    RFX_HOLES = dc && !skinPart && k !== FOOT_L && k !== FOOT_R ? dc.skel : 0;
     if (k === HEAD) {
       // Neck, then a square head with hair on top and a face on the front.
       const l = Math.hypot(bx - ax, by - ay) || 1, ux = (bx - ax) / l, uy = (by - ay) / l;
       const n0 = NECK_LEN / PIX, h0 = HEAD_H / PIX;
       rasterRect(ax, ay, ax + ux * (n0 + 1), ay + uy * (n0 + 1), 5.5 / PIX, 1, 0, order, darken(base, 0.06), d.stain[k]);
       const hx0 = ax + ux * n0, hy0 = ay + uy * n0, hx1 = hx0 + ux * h0, hy1 = hy0 + uy * h0;
-      rasterRect(hx0, hy0, hx1, hy1, HEAD_HW / PIX, 0, 0, order, base, d.stain[k]);
+      rasterRect(hx0, hy0, hx1, hy1, HEAD_HW * sw / PIX, 0, 0, order, base, d.stain[k]);
       const hairBase = tintFor(d, k, d.look.hair), hb = 9 / PIX;
-      rasterRect(hx1 - ux * hb, hy1 - uy * hb, hx1, hy1, HEAD_HW / PIX + 0.3, 0, 0.3, order, hairBase, 0);
-      if (settings.front) {
+      RFX_LIVOR = 0; RFX_MARBLE = 0;
+      // A bare skull loses its hair.
+      if (skull < 0.7) rasterRect(hx1 - ux * hb, hy1 - uy * hb, hx1, hy1, HEAD_HW * sw / PIX + 0.3, 0, 0.3, order, hairBase, 0);
+      if (settings.front && skull < 0.7) {
         // Seen from the front, the hair also frames both sides of the face.
         const sx = -uy, sy = ux, side = HEAD_HW / PIX - 0.6, sl = h0 * 0.42;
         for (const sd of [-1, 1]) {
@@ -2136,7 +2232,18 @@ function rasterDoll(d) {
       const put = (x, y, c) => { x = Math.floor(x); y = Math.floor(y); if (x >= bbx0 && x <= bbx1 && y >= bby0 && y <= bby1 && tmask[y * DW + x]) tset(y * DW + x, c, tmask[y * DW + x]); };
       const ex = hx0 + ux * (h0 * 0.58) + fx * (HEAD_HW / PIX - 1.6), ey = hy0 + uy * (h0 * 0.58) + fy * (HEAD_HW / PIX - 1.6);
       const mx = hx0 + ux * (h0 * 0.25) + fx * (HEAD_HW / PIX - 1.4), my = hy0 + uy * (h0 * 0.25) + fy * (HEAD_HW / PIX - 1.4);
-      if (settings.front) {
+      if (skull > 0.5) {
+        // Skull: dark eye sockets, the nose hole and a row of teeth.
+        const sock = hex("#1a140c"), tooth = hex("#efe6cc");
+        const cxh = hx0 + ux * (h0 * 0.58), cyh = hy0 + uy * (h0 * 0.58);
+        const sockets = settings.front ? [-1, 1].map((sd) => [cxh + fx * sd * 2, cyh + fy * sd * 2]) : [[ex, ey]];
+        for (const [qx, qy] of sockets) { put(qx, qy, sock); put(qx + 1, qy, sock); put(qx, qy + 1, sock); put(qx + 1, qy + 1, sock); }
+        const nx2 = settings.front ? cxh - ux * 1.6 : ex - ux * 1.6 + fx * 0.6, ny2 = settings.front ? cyh - uy * 1.6 : ey - uy * 1.6 + fy * 0.6;
+        put(nx2, ny2, sock);
+        const tcx = settings.front ? hx0 + ux * (h0 * 0.2) : mx, tcy = settings.front ? hy0 + uy * (h0 * 0.2) : my;
+        const sx2 = -uy, sy2 = ux;
+        for (let n = -2; n <= 2; n++) put(tcx + sx2 * n, tcy + sy2 * n, n & 1 ? sock : tooth);
+      } else if (settings.front) {
         // Front view: two eyes and the mouth in the middle of the face.
         const cxh = hx0 + ux * (h0 * 0.58), cyh = hy0 + uy * (h0 * 0.58);
         for (const sd of [-1, 1]) {
@@ -2165,14 +2272,16 @@ function rasterDoll(d) {
         const [kx2, ky2] = P(d.pb[k === FOOT_L ? THIGH_L : THIGH_R]);
         const sl = Math.hypot(ax - kx2, ay - ky2) || 1, ux2 = (ax - kx2) / sl, uy2 = (ay - ky2) / sl;
         rasterRect(ax - ux2 * 0.4, ay - uy2 * 0.4, ax + ux2 * 2.2, ay + uy2 * 2.2, 6.5 / PIX, 0, 0, order, base, d.stain[k]);
-      } else rasterRect(ax, ay, bx, by, hw / PIX, e0 / PIX, e1 / PIX, order, base, d.stain[k]);
+      } else rasterRect(ax, ay, bx, by, hw * sw / PIX, e0 / PIX, e1 / PIX, order, base, d.stain[k]);
       if (k === LARM_L || k === LARM_R) {
         // Square hand
         const l = Math.hypot(bx - ax, by - ay) || 1, ux = (bx - ax) / l, uy = (by - ay) / l;
-        rasterRect(bx, by, bx + ux * 8 / PIX, by + uy * 8 / PIX, 5.5 / PIX, 0, 0, order, tintFor(d, k, d.look.skin), d.stain[k]);
+        rasterRect(bx, by, bx + ux * 8 / PIX, by + uy * 8 / PIX, 5.5 * sw / PIX, 0, 0, order, tintFor(d, k, d.look.skin), d.stain[k]);
       }
     }
-    // Wounds sit on top of their own part.
+    RFX_LIVOR = 0; RFX_MARBLE = 0; RFX_HOLES = 0;
+    // Wounds sit on top of their own part, gone once only bones are left.
+    if (skull > 0.6) continue;
     for (const w of d.wounds) {
       if (w.part !== k || w.stump) continue;
       // In the front view an exit hole is on the back of the body.
@@ -2543,6 +2652,8 @@ function drawPanel(d) {
   drawOrganLine(d, px0 + 8, py0 + 193, pw - 16, 20);
   // Status chips: only what applies right now, wrapped over up to three rows.
   const f = d.flags(), chips = STATUS.filter(([key]) => f[key]);
+  // A dead body shows its stage of decay and how long it has been dead.
+  if (d.dc) chips.unshift(["DECAY", decayName(d) + " · " + decayTime(d), d.dc.skel > 0.5 ? "#e2d8bf" : d.dc.green > 0.3 ? "#a8b86a" : "#b48cff"]);
   if (!chips.length) chips.push([null, d.dead ? "KEINE FUNKTION" : "STABIL", d.dead ? "#5a5a64" : "#4ccf5a"]);
   let cx = px0 + 8, cy = py0 + 220, rows = 1;
   for (const [key, name, col] of chips) {
@@ -4343,7 +4454,7 @@ function setScreen(name) {
 // Screens: title, map choice, help and settings
 // ======================================================================
 
-const settings = { sound: true, music: true, shake: true, front: false, organs: true };
+const settings = { sound: true, music: true, shake: true, front: false, organs: true, decay: true, decayFast: false };
 try { Object.assign(settings, JSON.parse(localStorage.getItem("ragpit.settings") || "{}")); } catch (e) { /* storage is optional */ }
 function saveSettings() {
   try { localStorage.setItem("ragpit.settings", JSON.stringify(settings)); } catch (e) { /* storage is optional */ }
@@ -4598,8 +4709,6 @@ function drawTitle(dt) {
   drawTitleShotBack(px1, floor);
   drawTitleDoll(px1, floor, f.t);
   drawTitleShotFront(px1, floor);
-  // AK on the floor
-  drawSprite(SPRITE_AK, px1 - 150, floor - 13 * 2.2 + 4, 2.2);
   ctx.restore();
   // A red shadow of the vignette closes in once it is dark.
   if (dk > 0.01) {
@@ -4937,6 +5046,8 @@ const SETTING_TABS = [
   { id: "game", name: "GAMEPLAY", rows: () => [
     { id: "front", text: "FRONTANSICHT", sub: "Puppen von vorn, gedrückt halten = Menü", on: settings.front },
     { id: "organs", text: "ORGANE IM ZOOM", sub: "Ganz nah rangezoomt siehst du die Organe", on: settings.organs },
+    { id: "decay", text: "VERWESUNG", sub: "Tote Puppen verwesen bis zum Skelett", on: settings.decay },
+    { id: "decayFast", text: "VERWESUNG IM ZEITRAFFER", sub: "Zehnmal schneller, etwa eine Minute", on: settings.decayFast },
   ] },
   { id: "misc", name: "SONSTIGES", rows: () => [
     { id: "panel", text: "SCHADENSPANEL", sub: "Offen oder zugeklappt", on: panelOpen },
@@ -5894,6 +6005,46 @@ window.addEventListener("orientationchange", () => setTimeout(fit, 200));
 // ---------------------------------------------------------------- render
 
 const COL_P_BLOOD = "#9c0e1c", COL_P_FIRE = "#ffc048";
+// Flies circle a dead body and sit on it now and then. A faint haze of
+// stink rises while it bloats and rots.
+function drawDecayFx() {
+  const now = performance.now() / 1000;
+  for (const d of state.dolls) {
+    const dc = d.dc;
+    if (!dc) continue;
+    const cx = (d.x[P_NECK] + d.x[P_HIP]) / 2, cy = (d.y[P_NECK] + d.y[P_HIP]) / 2;
+    const stink = Math.max(dc.bloat, dc.rot * (1 - dc.skel));
+    if (stink > 0.05) {
+      ctx.strokeStyle = css([150, 170, 90], 0.25 * stink); ctx.lineWidth = 1.2; ctx.lineCap = "round";
+      for (let n = 0; n < 3; n++) {
+        const ph = (now * 0.3 + n / 3 + d.id * 0.17) % 1, x0 = cx + (n - 1) * 14;
+        ctx.save(); ctx.globalAlpha *= Math.sin(ph * Math.PI);
+        ctx.beginPath();
+        for (let k = 0; k <= 8; k++) {
+          const yy = cy - 12 - ph * 40 - k * 3, xx = x0 + Math.sin(k * 0.9 + now * 3 + n) * 3;
+          k ? ctx.lineTo(xx, yy) : ctx.moveTo(xx, yy);
+        }
+        ctx.stroke(); ctx.restore();
+      }
+    }
+    const count = Math.round(dc.flies * 9);
+    for (let f = 0; f < count; f++) {
+      const sd = d.id * 13 + f * 7.31, sp = 1.6 + (f % 3) * 0.7;
+      const sit = Math.sin(now * 0.4 + sd) > 0.6;
+      let x, y;
+      if (sit) {
+        const i = [P_HEAD, P_NECK, P_WAIST, P_HIP][f % 4];
+        x = d.x[i] + Math.sin(sd) * 6; y = d.y[i] + Math.cos(sd * 1.3) * 5;
+      } else {
+        x = cx + Math.sin(now * sp + sd) * (18 + (f % 4) * 7) + Math.sin(now * 7.3 + sd * 2) * 3;
+        y = cy - 12 + Math.sin(now * sp * 1.3 + sd * 1.7) * 14 + Math.cos(now * 9.1 + sd) * 2;
+      }
+      ctx.fillStyle = "#121212"; ctx.fillRect(x - 0.9, y - 0.7, 1.8, 1.4);
+      if (!sit && ((now * 30 + f) | 0) % 2) { ctx.fillStyle = "rgba(220,220,230,0.6)"; ctx.fillRect(x - 0.6, y - 1.6, 1.2, 0.8); }
+    }
+  }
+}
+
 function render() {
   flushPaint();
   ctx.globalCompositeOperation = "source-over";
@@ -5936,6 +6087,7 @@ function render() {
   ctx.beginPath();
   for (const p of particles) if (p.m !== BLOOD && p.m !== WATER) ctx.rect(p.x - 0.8, p.y - 0.8, 1.6, 1.6);
   ctx.fill();
+  drawDecayFx();
   // Pins hold body points in place.
   for (const d of state.dolls) for (const [i] of d.pins) {
     if (d.gone[d.owner[i]]) continue;
