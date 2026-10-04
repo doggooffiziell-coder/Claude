@@ -839,7 +839,7 @@ class Doll {
   updateOrgans() {
     const hp = (id) => this.organ[ORGAN[id]] / 100;
     if (!this.dead && hp("brain") <= 0) { this.cause = ORGAN_DEATH.brain; this.die(); }
-    if (!this.arrest && hp("heart") <= 0) this.arrest = true;
+    if (!this.arrest && hp("heart") <= 0) { this.arrest = true; this.logEvent("Herzstillstand"); }
     // Internal bleeding grows with the damage. A stopped heart bleeds less.
     let bleed = 0;
     // Organs in a lost body part bleed out through the stump instead.
@@ -930,6 +930,7 @@ class Doll {
   // When the current stops, the doll is knocked out for a while.
   tase(k, t, s, ox, oy) {
     if (this.gone[k]) return;
+    this.logEvent("Elektroschock " + PART_NAME[k]);
     // The second barb lands a hand's width lower on the body.
     const k2 = k === HEAD ? TORSO : k === TORSO ? (Math.random() < 0.5 ? TORSO : PELVIS) : k;
     const t2 = k2 === k ? clamp(t + rf(0.25, 0.4), 0, 0.95) : rf(0.1, 0.5);
@@ -979,6 +980,7 @@ class Doll {
   // ------------------------------------------------ physics
   step() {
     const g = DOLL_GRAVITY * DT * DT;
+    if (!this.dead) this.lifeT = (this.lifeT || 0) + DT;
     const feet0 = [this.x[P_ANKLE_L], this.x[P_TOE_L], this.x[P_ANKLE_R], this.x[P_TOE_R]];
     for (let i = 0; i < this.x.length; i++) {
       this.impactCd[i] = Math.max(0, this.impactCd[i] - DT);
@@ -1558,6 +1560,7 @@ class Doll {
     // A badly hurt arm or leg breaks and stops carrying weight.
     if (k !== HEAD && k !== TORSO && k !== PELVIS && this.dmg[k] >= 85 && !this.broken[k]) {
       this.broken[k] = true;
+      this.logEvent(PART_NAME[k] + " gebrochen");
       if (!loose) { this.pn = Math.min(100, this.pn + 30); this.stagger = Math.max(this.stagger, 1.5); }
     }
     if (speed > OPEN_SPEED && this.woundCd <= 0) {
@@ -1596,6 +1599,7 @@ class Doll {
       const idx = this.wounds.findIndex((w) => !w.stump);
       this.wounds.splice(idx >= 0 ? idx : 0, 1);
     }
+    if (!stump && !(extra && extra.exit)) this.logEvent((WOUND_KIND[kind] || "Wunde") + " " + PART_NAME[k]);
     this.wounds.push({ part: k, t: clamp(t, 0, 1), s: clamp(s, -1, 1), bleed: severity * 0.25,
       size: severity < 1.5 ? 1.4 : 2.2, stump, kind, rot: rf(-0.6, 0.6), seed: Math.random() * 6.28, drip: 0, ...extra });
   }
@@ -1607,6 +1611,7 @@ class Doll {
     this.inv.push(this.inv[jp]); this.owner.push(k); this.impactCd.push(0.3); this.rad.push(this.rad[jp]);
     this.pa[k] = np;
     this.severed[k] = true;
+    this.logEvent(PART_NAME[k] + " abgetrennt");
     this.dmg[k] = 100;
     this.hurtPart(PARENT[k], 35);
     for (const j of this.joints) if (j.child === k) j.active = false;
@@ -1721,6 +1726,7 @@ class Doll {
   // it burning longer.
   ignite(k, t) {
     if (k < 0 || this.gone[k] || this.frozen) return;
+    if (!this.fire.some((v) => v > 0)) this.logEvent(PART_NAME[k] + " fängt Feuer");
     const fuel = (PART_CLOTH[k] !== "skin" ? this.cloth[k] * 3 : 0) + (k === HEAD ? this.hair * 1.5 : 0);
     this.fire[k] = Math.max(this.fire[k], t + fuel);
   }
@@ -1738,10 +1744,21 @@ class Doll {
     }
   }
   applyCold(x, y, r) { if (this.near(x, y, r)) { this.freeze = Math.min(1.6, this.freeze + DT * 1.1); this.extinguish(); } }
-  damaged() { this.sinceDamage = 0; this.hurtFlash = 1; this.stagger = Math.max(this.stagger, 0.6); }
+  // Notes what happens to the doll with its time, for the death report.
+  logEvent(text) {
+    if (this.dead) return;
+    (this.log || (this.log = [])).push([this.lifeT || 0, text]);
+    if (this.log.length > 40) this.log.shift();
+  }
+  damaged() {
+    if (this.firstHurt === undefined) this.firstHurt = this.lifeT || 0;
+    this.sinceDamage = 0; this.hurtFlash = 1; this.stagger = Math.max(this.stagger, 0.6);
+  }
   die() {
     if (!this.dead) this.dyingTimer = 2.4;
     if (!this.dead && !this.cause) this.cause = "TOT";
+    // The report is written at the moment of death, before anything changes.
+    if (!this.dead) { this.dead = true; this.report = deathReport(this); }
     this.dead = true; this.ko = 0; this.getUp = 0;
   }
 
@@ -1774,7 +1791,12 @@ class Doll {
       if (coldIceAt(x, y + r) || coldIceAt(x + r, y) || coldIceAt(x - r, y)) cold++;
     }
     const hx = this.x[this.pb[HEAD]], hy = this.y[this.pb[HEAD]];
-    this.headUnder = !this.severed[HEAD] && liquidAt(hx, hy) && liquidAt(hx, hy - 10);
+    const under = !this.severed[HEAD] && liquidAt(hx, hy) && liquidAt(hx, hy - 10);
+    if (under && !this.headUnder) this.logEvent("Kopf unter Wasser");
+    this.headUnder = under;
+    // Organs that fail are noted once.
+    if (!this.orgDown) this.orgDown = ORGANS.map(() => false);
+    ORGANS.forEach((o, n) => { if (this.organ[n] <= 0 && !this.orgDown[n]) { this.orgDown[n] = true; this.logEvent(o.name + " ZERSTÖRT"); } });
 
     if (wet && this.burn > 0 && !this.fire.some((v) => v > 0)) paintDisc(this.x[this.pa[TORSO]], this.y[this.pa[TORSO]], 12, STEAM, 0.4, 60);
     this.burnImmune = Math.max(0, this.burnImmune - DT);
@@ -1833,9 +1855,12 @@ class Doll {
       if (loose) w.bleed = Math.max(0, w.bleed - 0.07 * DT);
       this.stain[w.part] = Math.min(0.75, this.stain[w.part] + w.bleed * DT * 0.08);
       const f = loose ? 0.6 : flow;
-      // Blood runs down the skin from the wound. The trail stays when it stops.
-      w.drip = Math.min(3 + w.size * 2 + w.bleed * 5, (w.drip || 0) + w.bleed * f * DT * 4);
+      // Blood runs down the body from the wound for as long as it bleeds,
+      // a few pixels a second. The trail stays when it stops.
+      w.drip = Math.min(160, (w.drip || 0) + (0.6 + w.bleed) * f * DT * 5);
       if (f <= 0) continue;
+      // Where the run leaves the body, drops fall off to the floor.
+      if (w.dripOut && w.dripEnd && Math.random() < (0.5 + w.bleed) * f * DT * 4) spawnParticle(w.dripEnd[0] + rf(-0.8, 0.8), w.dripEnd[1], rf(-4, 4), rf(10, 30), BLOOD);
       const [wx, wy] = this.woundPos(w);
       if (Math.random() < w.bleed * DT * 12 * f) {
         const [nx, ny] = this.woundNormal(w), s = rf(10, 50);
@@ -1979,7 +2004,7 @@ class Doll {
     this.koTimer = 0; this.koLatched = false;
     this.burn = 0; this.freeze = 0; this.frozen = false;
     this.stagger = 0; this.sinceDamage = 10;
-    this.organ = ORGANS.map(() => 100); this.arrest = false; this.cause = ""; this.sepsis = 0;
+    this.organ = ORGANS.map(() => 100); this.arrest = false; this.cause = ""; this.sepsis = 0; this.report = null; this.firstHurt = undefined; this.log = []; this.orgDown = null;
     this.broken.fill(false);
   }
 
@@ -2060,9 +2085,11 @@ class Doll {
       for (let k = 0; k < PART_COUNT; k++) if (this.attached(k)) this.dmg[k] = Math.max(0, this.dmg[k] - (this.iv > 0 ? 12 : 3) * DT);
     }
     if (this.healing) {
-      this.bl = Math.min(100, this.bl + 1.2 * DT);
+      // Only small wounds close by themselves. A real wound keeps bleeding
+      // until a bandage or a blood bag stops it, and no blood comes back meanwhile.
+      if (bleedTotal < 0.4) this.bl = Math.min(100, this.bl + 1.2 * DT);
       this.pn = Math.max(0, this.pn - 6 * DT);
-      for (const w of this.wounds) if (this.attached(w.part)) w.bleed = Math.max(0, w.bleed - (w.stump ? 0.05 : 0.14) * DT);
+      for (const w of this.wounds) if (this.attached(w.part) && !w.stump && w.bleed < 0.4) w.bleed = Math.max(0, w.bleed - 0.05 * DT);
     }
     this.pn = Math.max(0, this.pn - 4.5 * DT);
 
@@ -2077,7 +2104,7 @@ class Doll {
     else if (this.koTimer <= 0) this.ko = moveToward(this.ko, cap, (this.healing || this.isOut() ? 6 : 2) * DT);
     this.ko = clamp(this.ko, 0, 100);
     // Knocked out: stays down for a few seconds before waking up again.
-    if (!this.dead && this.ko <= 10 && !this.koLatched) { this.koTimer = rf(4, 7); this.koLatched = true; }
+    if (!this.dead && this.ko <= 10 && !this.koLatched) { this.koTimer = rf(4, 7); this.koLatched = true; this.logEvent("Bewusstlos"); }
     if (this.ko > 30) this.koLatched = false;
     if (this.koTimer > 0) { this.koTimer -= DT; this.ko = Math.min(this.ko, 10); }
 
@@ -2469,14 +2496,32 @@ function rasterWound(d, w, order) {
       put(cx, cy, WC_CORE); lowY = cy + 1;
     } else if (open || w.size > 2) put(cx, cy, WC_TORN);
   }
-  // The line of blood runs straight down and wanders a little.
-  const len = Math.floor(w.drip || 0);
-  let x = lowX, y = lowY;
-  for (let n = 1; n <= len; n++) {
-    if (n > 1 && hash(n + 30) < 0.22) x += hash(n + 50) < 0.5 ? -1 : 1;
-    y++;
-    if (at(x, y) < 0) break;
-    put(x, y, open ? (n === len ? WC_DROP : WC_RUN) : WC_DRIED);
+  // The line of blood starts at the lowest point of the wound. It is drawn
+  // once the whole body is drawn (rasterRuns), so it can run over the parts
+  // below.
+  // A wound hidden behind another part has no visible run.
+  w.runFrom = at(lowX, lowY) >= 0 || at(cx, cy) >= 0 ? [lowX, lowY, open, hash] : null;
+}
+
+// Blood runs straight down from every open wound, over shirt, trousers and
+// legs, wandering a little. Where it reaches the edge of the body it drips
+// off; the drops fall to the floor (Doll.updateEffects).
+function rasterRuns(d) {
+  for (const w of d.wounds) {
+    const r = w.runFrom;
+    w.runFrom = null;
+    if (!r || w.bandaged || d.gone[w.part]) { w.dripOut = false; continue; }
+    const [x0, y0, open, hash] = r, len = Math.floor(w.drip || 0);
+    let x = x0, y = y0, out = false;
+    for (let n = 1; n <= len; n++) {
+      if (n > 1 && hash(n + 30) < 0.22) x += hash(n + 50) < 0.5 ? -1 : 1;
+      y++;
+      const i = y * DW + x;
+      if (y > bby1 || x < bbx0 || x > bbx1 || !tmask[i]) { out = true; break; }
+      tset(i, open ? (n === len ? WC_DROP : WC_RUN) : WC_DRIED, tmask[i]);
+    }
+    w.dripOut = out && open;
+    if (out) w.dripEnd = [(x + 0.5) * PIX, y * PIX + 0.5];
   }
 }
 
@@ -2618,6 +2663,7 @@ function rasterDoll(d) {
     }
     for (const b of d.bands) if (b.part === k && !b.stump) rasterBand(d, b, order);
   }
+  rasterRuns(d);
   // Stumps: torn flesh with bone sticking out.
   for (const w of d.wounds) {
     if (!w.stump || d.gone[w.part]) continue;
@@ -3205,6 +3251,7 @@ function fitFont(text, maxW, size, weight = 700) {
 }
 
 function drawPanel(d) {
+  state.infoBtn = null;
   const { x: px0, y: py0, w: pw } = PANEL, ph = tween("panelH", panelH(), 16);
   rr(px0, py0, pw, ph, 12);
   ctx.fillStyle = "rgba(14,14,18,0.95)"; ctx.fill();
@@ -4711,11 +4758,150 @@ function drawChartOrgans(d, cx, cy, s, mode) {
   ctx.restore();
 }
 
+// ----------------------------------------------------------------- death report
+// Everything about a death, written down at the moment it happens: what
+// killed the doll, how it came to that, its wounds and its state.
+const WOUND_KIND = { shot: "Schusswunde", cut: "Schnitt", hit: "Prellung" };
+const fmtTime = (t) => (t < 60 ? Math.round(t) + " s" : Math.floor(t / 60) + ":" + String(Math.round(t % 60)).padStart(2, "0") + " min");
+function deathReport(d) {
+  const att = (k) => d.attached(k) || d.severed[k];
+  const hp = (id) => Math.round(d.organ[ORGAN[id]]);
+  const r = { id: d.id, cause: d.cause || "TOT", life: d.lifeT || 0, since: d.firstHurt !== undefined ? (d.lifeT || 0) - d.firstHurt : null,
+    bl: Math.round(d.bl), o2: Math.round(d.o2), tbsa: d.tbsa || 0 };
+  // Wounds, counted by kind, the worst bleeders named.
+  const n = { shot: 0, exit: 0, cut: 0, hit: 0 }, lost = [], bandaged = d.wounds.filter((w) => w.bandaged).length;
+  for (const w of d.wounds) {
+    if (w.stump) { if (w.child !== undefined) lost.push(PART_NAME[w.child]); continue; }
+    if (w.kind === "shot" && w.exit) n.exit++; else n[w.kind] = (n[w.kind] || 0) + 1;
+  }
+  const bleeders = d.wounds.filter((w) => !w.bandaged && w.bleed > 0.05 && att(w.part)).sort((a, b) => b.bleed - a.bleed).slice(0, 2)
+    .map((w) => (w.stump ? "Stumpf" : w.exit ? "Austritt" : WOUND_KIND[w.kind] || "Wunde") + " " + PART_NAME[w.part]);
+  const last = [...d.wounds].reverse().find((w) => !w.stump && !w.exit);
+  const lines = [];
+  if (n.shot) lines.push(n.shot + (n.shot > 1 ? " Schusswunden" : " Schusswunde") + (n.exit ? ", " + n.exit + " Austritt" : ""));
+  if (n.cut) lines.push(n.cut + (n.cut > 1 ? " Schnitte" : " Schnitt"));
+  if (n.hit) lines.push(n.hit + (n.hit > 1 ? " Prellungen" : " Prellung"));
+  for (const p of lost) lines.push("Ab: " + p);
+  const broken = [];
+  for (let k = 0; k < PART_COUNT; k++) if (d.broken[k] && d.attached(k)) broken.push(PART_NAME[k]);
+  if (broken.length) lines.push("Gebrochen: " + broken.join(", "));
+  if (bandaged) lines.push(bandaged + " verbunden");
+  if (last) lines.push("Zuletzt: " + (WOUND_KIND[last.kind] || "Wunde") + " " + PART_NAME[last.part]);
+  if (!lines.length) lines.push("Keine äußeren Wunden");
+  r.wounds = lines;
+  // State at death
+  const st = [["BLUT", r.bl + "%", r.bl < 30], ["SAUERSTOFF", r.o2 + "%", r.o2 < 40]];
+  if (r.tbsa > 0) st.push(["VERBRANNT", r.tbsa + "% Haut", r.tbsa > 30]);
+  ORGANS.forEach((o) => { const v = hp(o.id); if (v < 100) st.push([o.name, v <= 0 ? "ZERSTÖRT" : v + "%", v < 40]); });
+  r.state = st;
+  // What happened, in plain words
+  const lung = "Lunge L " + hp("lungL") + "%, R " + hp("lungR") + "%";
+  const top = bleeders.length ? bleeders.join(" und ") : "mehrere kleine Wunden";
+  const T = {
+    "GEHIRN ZERSTÖRT": "Ein Treffer am Kopf hat das Gehirn zerstört. Atmung und Herzschlag hörten im selben Moment auf.",
+    "KOPF VERLOREN": "Der Kopf wurde vom Körper getrennt. Der Tod trat sofort ein.",
+    "HERZSTILLSTAND": "Das Herz hörte auf zu schlagen (Herz " + hp("heart") + "%). Ohne Kreislauf bekam das Gehirn keinen Sauerstoff mehr.",
+    "ERSTICKT": "Die Lungen nahmen keinen Sauerstoff mehr auf (" + lung + "). Der Sauerstoff im Blut fiel, bis das Herz stehen blieb.",
+    "ERTRUNKEN": "Der Kopf war zu lange unter Wasser. Nach etwa 6 Sekunden ohne Luft liefen die Lungen voll, und die Puppe starb.",
+    "VERBLUTET": "Die Puppe hat zu viel Blut verloren, nur " + r.bl + "% waren noch übrig. Die stärkste Blutung kam aus: " + top + "." + (bandaged ? "" : " Kein Verband hat sie gestoppt."),
+    "LEBERBLUTUNG": "Die Leber wurde verletzt (" + hp("liver") + "%) und blutete in den Bauch. Diese innere Blutung stoppt kein Verband, nur eine Infusion gewinnt Zeit.",
+    "NIERENBLUTUNG": "Die Nieren wurden verletzt (" + hp("kidneys") + "%) und bluteten nach innen. Von außen war die Blutung kaum zu sehen.",
+    "BAUCHFELLENTZÜNDUNG": "Magen oder Darm wurden verletzt (Magen " + hp("stomach") + "%, Darm " + hp("gut") + "%). Ihr Inhalt lief in den Bauch und löste eine tödliche Entzündung aus.",
+    "VERBRANNT": "Kopf und Brust sind bis auf die Knochen verkohlt. So schwere Verbrennungen überlebt kein Körper.",
+    "VERBRENNUNGSSCHOCK": r.tbsa + "% der Haut sind verbrannt. Der Körper verlor über die Wunden so viel Flüssigkeit, dass der Kreislauf zusammenbrach.",
+  };
+  r.text = T[r.cause] || "Die Puppe starb ohne erkennbare Ursache.";
+  r.time = "Tot nach " + fmtTime(r.life) + (r.since === null ? " · ohne Verletzung" : r.since < 1 ? " · sofort beim ersten Treffer" : " · " + fmtTime(r.since) + " nach der ersten Verletzung");
+  // The last things that happened, with the time before death.
+  const log = (d.log || []).slice(-6);
+  r.events = log.map(([t, text]) => [r.life - t < 0.5 ? "0 s" : "-" + fmtTime(r.life - t), text]);
+  return r;
+}
+function wrapText(text, maxW, size, weight = 400) {
+  ctx.font = `${weight} ${size}px ${FONT}`;
+  const out = [];
+  let line = "";
+  for (const word of text.split(" ")) {
+    const t = line ? line + " " + word : word;
+    if (ctx.measureText(t).width > maxW && line) { out.push(line); line = word; } else line = t;
+  }
+  if (line) out.push(line);
+  return out;
+}
+function drawDeathReport() {
+  const d = state.deathReport;
+  const k = tween("report", d ? 1 : 0, 14);
+  if (k < 0.01) return;
+  const r = d ? d.report : state.lastReport;
+  if (!r) return;
+  state.lastReport = r;
+  ctx.save();
+  ctx.fillStyle = `rgba(4,2,3,${0.7 * k})`; ctx.fillRect(0, 0, W, H);
+  const w = Math.min(470, W - 40), x = W / 2 - w / 2;
+  const para = wrapText(r.text, w - 36, 10), rows = Math.max(r.wounds.length, r.state.length);
+  const ev = r.events || [], evH = ev.length ? 22 + Math.ceil(ev.length / 2) * 15 : 0;
+  const h = 118 + para.length * 14 + rows * 15 + evH + 26, y = Math.max(8, H / 2 - h / 2 - 12);
+  ctx.globalAlpha *= k;
+  ctx.translate(W / 2, y + h / 2); ctx.scale(0.94 + 0.06 * k, 0.94 + 0.06 * k); ctx.translate(-W / 2, -y - h / 2);
+  // The card, with blood running from its top edge
+  ctx.save(); ctx.shadowColor = "rgba(0,0,0,0.7)"; ctx.shadowBlur = 24;
+  rr(x, y, w, h, 14);
+  const g = ctx.createLinearGradient(0, y, 0, y + h);
+  g.addColorStop(0, "#1e1418"); g.addColorStop(1, "#0d0a0c");
+  ctx.fillStyle = g; ctx.fill(); ctx.restore();
+  rr(x, y, w, h, 14); ctx.strokeStyle = "#5a1a22"; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.fillStyle = "#8e0f1c"; ctx.fillRect(x + 14, y, w - 28, 3);
+  const grow = Math.min(1, (performance.now() - (state.reportT || 0)) / 900);
+  for (const [fx, len] of [[0.12, 14], [0.27, 8], [0.55, 18], [0.71, 6], [0.88, 11]]) {
+    const dx = x + 14 + (w - 28) * fx, l = len * easeOut(grow);
+    ctx.fillRect(dx - 1, y + 3, 2, l); ctx.beginPath(); ctx.arc(dx, y + 3 + l, 2, 0, Math.PI * 2); ctx.fill();
+  }
+  // Header
+  label("TODESBERICHT", x + 18, y + 22, 10, "#c0404c");
+  label("PUPPE " + r.id, x + w - 18, y + 22, 10, "#8a7a80", "right");
+  label(r.cause, x + 18, y + 48, fitFont(r.cause, w - 36, 22), "#ff4050");
+  label(r.time, x + 18, y + 70, fitFont(r.time, w - 36, 9, 400), "#9a8a90", "left", 400);
+  ctx.fillStyle = "#3a1a20"; ctx.fillRect(x + 18, y + 82, w - 36, 1);
+  // What happened
+  para.forEach((ln, i) => label(ln, x + 18, y + 98 + i * 14, 10, "#e2d8da", "left", 400));
+  // Wounds on the left, the state at death on the right
+  const cy = y + 98 + para.length * 14 + 8, cw = (w - 46) / 2;
+  label("VERLETZUNGEN", x + 18, cy, 8.5, "#c0404c");
+  label("ZUSTAND BEIM TOD", x + 28 + cw, cy, 8.5, "#c0404c");
+  r.wounds.forEach((t, i) => label(t, x + 18, cy + 16 + i * 15, fitFont(t, cw, 9, 400), "#cfc4c6", "left", 400));
+  r.state.forEach(([name, val, bad], i) => {
+    const yy = cy + 16 + i * 15;
+    label(name, x + 28 + cw, yy, fitFont(name, cw * 0.6, 9, 400), "#a89ca0", "left", 400);
+    label(val, x + 28 + cw * 2, yy, 9, bad ? "#ff5060" : "#e2d8da", "right");
+  });
+  // The course of events, two per row, the newest last
+  if (ev.length) {
+    const ey = cy + 16 + rows * 15 + 4;
+    ctx.fillStyle = "#3a1a20"; ctx.fillRect(x + 18, ey - 8, w - 36, 1);
+    label("ABLAUF BIS ZUM TOD", x + 18, ey + 6, 8.5, "#c0404c");
+    ev.forEach(([t, text], i) => {
+      const ex = x + 18 + (i % 2) * (cw + 10), yy = ey + 22 + Math.floor(i / 2) * 15;
+      label(t, ex, yy, 8.5, "#8a7a80");
+      label(text, ex + 48, yy, fitFont(text, cw - 50, 9, 400), "#cfc4c6", "left", 400);
+    });
+  }
+  label("Tippe, um zu schließen", W / 2, y + h - 12, 8.5, "#6a5a60", "center", 400);
+  ctx.restore();
+}
+
 // One line under the chart: what is worst and how long the doll has left.
 function drawOrganLine(d, x, y, w, h) {
   rr(x, y, w, h, 6); ctx.fillStyle = "#0a0a0d"; ctx.fill();
   let text, col;
-  if (d.dead) { text = "TOD: " + (d.cause || "TOT"); col = "#e0303f"; }
+  if (d.dead) {
+    text = "TOD: " + (d.cause || "TOT"); col = "#e0303f";
+    // The i opens the full death report.
+    const bx = x + w - 11, by = y + h / 2, pulse = 0.5 + 0.5 * Math.sin(performance.now() / 300);
+    ctx.save(); ctx.shadowColor = "#ff4050"; ctx.shadowBlur = 4 + 4 * pulse;
+    ctx.fillStyle = "#e0303f"; ctx.beginPath(); ctx.arc(bx, by, 7, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+    label("i", bx + 0.5, by + 0.5, 10, "#101013", "center");
+    state.infoBtn = { x: x + w - 26, y: y - 4, w: 30, h: h + 8, d };
+  }
   else {
     let worst = -1;
     ORGANS.forEach((o, n) => { if (d.attached(o.part) && d.organ[n] < 99 && (worst < 0 || d.organ[n] < d.organ[worst])) worst = n; });
@@ -7046,6 +7232,8 @@ function placeDoll(x, y) {
 
 function press() {
   if (state.screen !== "game") { screenPress(); return; }
+  // An open death report closes on the next tap.
+  if (state.deathReport) { state.deathReport = null; clickSound(500, 0.04); return; }
   if (state.aimView) { aimPress(); return; }
   if (state.ctxMenu) { ctxMenuPress(); return; }
   if (eggPress()) return;
@@ -7059,6 +7247,12 @@ function press() {
     return;
   }
   if (inPanelHead(state.sx, state.sy)) { togglePanel(); return; }
+  if (state.infoBtn && hitBox(state.infoBtn, state.sx, state.sy)) {
+    const d = state.infoBtn.d;
+    if (!d.report) d.report = deathReport(d);
+    state.deathReport = d; state.reportT = performance.now(); clickSound(700, 0.05);
+    return;
+  }
   if (inMenuBtn(state.sx, state.sy)) { pop("menu"); release(); state.aimView = null; state.ctxMenu = null; state.settingsFromGame = true; setScreen("settings"); state.extrasOpen = false; state.triggerDown = false; return; }
   const c = ctxHit(state.sx, state.sy);
   if (c) {
@@ -7877,6 +8071,7 @@ function render() {
   drawExtras();
   drawCtxMenu();
   drawAimView();
+  drawDeathReport();
   const pk = tween("pausePill", state.paused || state.slow ? 1 : 0, 16);
   if (pk > 0.01) {
     if (state.paused || state.slow) pillText = state.paused ? "PAUSE" : "ZEITLUPE";
