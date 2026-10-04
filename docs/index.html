@@ -53,16 +53,19 @@ body {
   max-width: 100%;
   background: #000;
 }
-#hint {
+#hint { display: none; }
+/* Upright phone: the game waits, a painted screen in its style asks to turn it. */
+#portrait {
   display: none;
-  text-align: center;
-  letter-spacing: 0.04em;
-  max-width: 32ch;
-  margin: 0;
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  background: var(--ground);
 }
-#hint strong { color: var(--hint-strong); font-weight: 600; }
 @media (orientation: portrait) {
-  #hint { display: block; }
+  #stage { visibility: hidden; }
+  #portrait { display: block; }
 }
 </style>
 
@@ -70,6 +73,7 @@ body {
   <canvas id="screen" aria-label="Ragpit Spielfeld"></canvas>
   <p id="hint"><strong>Ja, ich hab das Spiel wirklich erstellt,</strong><br>mit der Hilfe von Claude AI.<br><br><strong>Dreh dein iPhone quer</strong><br>Dann wird das Spielfeld groß.</p>
 </div>
+<canvas id="portrait" role="img" aria-label="Ragpit. Ja, ich hab das Spiel wirklich erstellt, mit der Hilfe von Claude AI. Dreh dein iPhone quer, dann wird das Spielfeld groß."></canvas>
 
 <script>
 "use strict";
@@ -4950,7 +4954,7 @@ function drawTitle(dt) {
   }
   withAppear(appear(2), () => label("PIXEL RAGDOLL SANDBOX", 56, 158, 12, "#7a7a84"));
   titleButtons().forEach((b, n) => withAppear(appear(3 + n), () => menuButton(b, b.text, b.primary, pressAmt(b.id, b))));
-  withAppear(appear(8), () => label("v2 · 5 MAPS · 11 WERKZEUGE", 56, H - 16, 9, "#4c4c56"), 0);
+  withAppear(appear(8), () => label("v2 · 5 MAPS · 12 WERKZEUGE", 56, H - 16, 9, "#4c4c56"), 0);
   drawTitleShotOverlay();
 }
 
@@ -4958,7 +4962,7 @@ function drawTitle(dt) {
 // pixel renderer, posed by hand and a little larger than in the game.
 let titleDoll = null;
 const TD_X = 240, TD_Y = 300, TD_SCALE = 1.35;
-function drawTitleDoll(cx, floor, t) {
+function drawTitleDoll(cx, floor, t, scale = TD_SCALE) {
   if (!titleDoll) {
     titleDoll = new Doll(TD_X, TD_Y, 0);
     titleDoll.look = { skin: hex("#e8c09a"), shirt: hex("#3c7a74"), pants: hex("#38425a"), shoes: hex("#2a2420"), hair: hex("#4a3020") };
@@ -4981,7 +4985,7 @@ function drawTitleDoll(cx, floor, t) {
   pixCtx.putImageData(pixImg, 0, 0);
   const L = 75, R = 225, sx = (TD_X - L) / PIX, sy = (TD_Y - 200) / PIX, sw = (L + R) / PIX, shh = 214 / PIX;
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(pixCan, sx, sy, sw, shh, cx - L * TD_SCALE, floor - 200 * TD_SCALE, (L + R) * TD_SCALE, 214 * TD_SCALE);
+  ctx.drawImage(pixCan, sx, sy, sw, shh, cx - L * scale, floor - 200 * scale, (L + R) * scale, 214 * scale);
   ctx.imageSmoothingEnabled = true;
 }
 // Title doll point (after the mirror) in screen units.
@@ -6383,6 +6387,104 @@ window.addEventListener("resize", () => {
 });
 window.addEventListener("orientationchange", () => setTimeout(fit, 200));
 
+// ---------------------------------------------------------------- portrait
+// The upright screen in the look of the game: a dark room with blood on the
+// walls, the bleeding title, the lamp over the breathing person and a phone
+// that turns sideways to show what to do. It is only a picture, the game
+// itself waits for the phone to turn.
+const pcan = document.getElementById("portrait"), pctx = pcan.getContext("2d");
+const portraitMQ = window.matchMedia("(orientation: portrait)");
+const portraitFx = { t: 0, drops: [], splats: null };
+function drawPortrait(dt) {
+  const r = pcan.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const cw = Math.max(1, Math.round(r.width * dpr)), chh = Math.max(1, Math.round(r.height * dpr));
+  if (pcan.width !== cw || pcan.height !== chh) { pcan.width = cw; pcan.height = chh; }
+  const PW = 360, PH = PW * Math.max(1, r.height) / Math.max(1, r.width), k = cw / PW;
+  const f = portraitFx;
+  f.t += dt;
+  const t = f.t, real = ctx;
+  ctx = pctx;
+  try {
+    ctx.setTransform(k, 0, 0, k, 0, 0);
+    // Title, lamp right under it, the person sized to fit between lamp and floor.
+    const titleY = Math.max(56, PH * 0.1), lampY = titleY + 78, floor = Math.round(Math.max(lampY + 170, PH * 0.6));
+    const dollScale = clamp((floor - lampY - 18) / 182, 0.7, 1.35);
+    // Room: dark wall with panels, floor, blood on the wall
+    const bg = ctx.createLinearGradient(0, 0, 0, PH);
+    bg.addColorStop(0, "#141015"); bg.addColorStop(1, "#0b0a0d");
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, PW, PH);
+    ctx.fillStyle = "rgba(255,255,255,0.03)";
+    for (let x = 0; x < PW; x += 72) ctx.fillRect(x, 0, 1.5, floor);
+    ctx.fillRect(0, floor - 170, PW, 1.5);
+    if (!f.splats) {
+      let seed = 11;
+      const rnd2 = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+      f.splats = [];
+      for (const [fx, fy, rad] of [[0.12, 0.3, 14], [0.86, 0.42, 18], [0.2, 0.52, 8], [0.78, 0.18, 9]]) {
+        f.splats.push([fx, fy, rad, 0.6]);
+        for (let n = 0; n < 12; n++) { const a = rnd2() * 6.28, d = rad * (1 + rnd2() * 2); f.splats.push([fx + Math.cos(a) * d / PW, fy + Math.sin(a) * d / 700, 0.8 + rnd2() * rad * 0.16, 0.4 + rnd2() * 0.4]); }
+      }
+    }
+    for (const [fx, fy, rad, a] of f.splats) { ctx.fillStyle = `rgba(110,8,18,${a})`; ctx.beginPath(); ctx.arc(fx * PW, fy * PH, rad, 0, Math.PI * 2); ctx.fill(); }
+    const fl = ctx.createLinearGradient(0, floor, 0, PH);
+    fl.addColorStop(0, "#4a4a52"); fl.addColorStop(0.25, "#1c1c22"); fl.addColorStop(1, "#0b0a0d");
+    ctx.fillStyle = fl; ctx.fillRect(0, floor, PW, PH - floor);
+    ctx.fillStyle = "#8a8a92"; ctx.fillRect(0, floor, PW, 1.5);
+    // Lamp with a flickering cone of light down to the floor
+    const cx = PW / 2, flick = Math.sin(t * 23) > 0.96 ? 0.45 : 1;
+    const cone = ctx.createLinearGradient(0, lampY, 0, floor);
+    cone.addColorStop(0, `rgba(255,240,204,${0.3 * flick})`); cone.addColorStop(1, `rgba(255,240,204,${0.06 * flick})`);
+    ctx.fillStyle = cone;
+    ctx.beginPath(); ctx.moveTo(cx - 9, lampY); ctx.lineTo(cx + 9, lampY); ctx.lineTo(cx + 120, floor); ctx.lineTo(cx - 120, floor); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#0a0a0c"; ctx.fillRect(cx - 1, titleY + 58, 2, lampY - titleY - 68);
+    ctx.fillStyle = "#cfcfc8"; ctx.beginPath(); ctx.moveTo(cx - 15, lampY); ctx.lineTo(cx - 6, lampY - 10); ctx.lineTo(cx + 6, lampY - 10); ctx.lineTo(cx + 15, lampY); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = `rgba(255,246,216,${flick})`; ctx.beginPath(); ctx.arc(cx, lampY + 1, 3, 0, Math.PI * 2); ctx.fill();
+    // The person under the lamp, a pool of blood at the feet
+    ctx.fillStyle = "rgba(110,8,18,0.85)"; ctx.beginPath(); ctx.ellipse(cx + 22 * dollScale, floor + 2, 40 * dollScale, 4, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.beginPath(); ctx.ellipse(cx, floor + 1, 30, 3, 0, 0, Math.PI * 2); ctx.fill();
+    drawTitleDoll(cx, floor, t, dollScale);
+    // Title with a bleeding underline
+    label("RAGPIT", cx, titleY, 54, "#ecece4", "center");
+    const lw = 220, line = easeOut((t - 0.1) / 0.5);
+    ctx.fillStyle = "#8e0f1c"; ctx.fillRect(cx - lw / 2, titleY + 30, lw * line, 4);
+    label("PIXEL RAGDOLL SANDBOX", cx, titleY + 50, 10, "#7a7a84", "center");
+    if (line >= 1 && Math.random() < dt * 1.8) f.drops.push({ x: cx - lw / 2 + 6 + Math.random() * (lw - 12), y: titleY + 34, v: 0, len: 0, age: 0 });
+    for (const d of f.drops) { d.age += dt; if (d.age < 0.6) d.len = d.age * 12; else { d.v += 420 * dt; d.y += d.v * dt; } }
+    f.drops = f.drops.filter((d) => d.y < PH);
+    ctx.fillStyle = "#9c0e1c";
+    for (const d of f.drops) {
+      if (d.age < 0.6) { ctx.fillRect(d.x - 0.9, titleY + 33, 1.8, d.len); ctx.beginPath(); ctx.arc(d.x, titleY + 33 + d.len, 2, 0, Math.PI * 2); ctx.fill(); }
+      else { ctx.beginPath(); ctx.ellipse(d.x, d.y, 1.6, 2.8, 0, 0, Math.PI * 2); ctx.fill(); }
+    }
+    // A phone that turns sideways, with a red arrow around it
+    const py = floor + (PH - floor) * 0.36, phx = cx - 78;
+    const cyc = t % 3.2, turn = cyc < 0.9 ? 0 : cyc < 1.6 ? easeOut((cyc - 0.9) / 0.7) : cyc < 2.8 ? 1 : 1 - easeOut((cyc - 2.8) / 0.4);
+    ctx.save(); ctx.translate(phx, py); ctx.rotate(-Math.PI / 2 * turn);
+    rr(-15, -26, 30, 52, 6); ctx.fillStyle = "#f2ece0"; ctx.fill();
+    rr(-12, -21, 24, 42, 3); const scr = ctx.createLinearGradient(0, -21, 0, 21);
+    scr.addColorStop(0, "#3a0c12"); scr.addColorStop(1, "#140608"); ctx.fillStyle = scr; ctx.fill();
+    ctx.fillStyle = "#c8222f"; ctx.fillRect(-6, -4, 12, 2.5);
+    ctx.fillStyle = "#1a1a20"; rr(-4, -24.5, 8, 2, 1); ctx.fill();
+    ctx.restore();
+    ctx.strokeStyle = "#d42634"; ctx.lineWidth = 2.6; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.arc(phx, py, 36, -Math.PI * 0.95, -Math.PI * 0.45); ctx.stroke();
+    const ax = phx + Math.cos(-Math.PI * 0.45) * 36, ay = py + Math.sin(-Math.PI * 0.45) * 36;
+    ctx.fillStyle = "#d42634"; ctx.beginPath(); ctx.moveTo(ax + 6, ay - 2); ctx.lineTo(ax - 3, ay - 6); ctx.lineTo(ax - 1, ay + 5); ctx.closePath(); ctx.fill();
+    label("DREH DEIN", cx - 28, py - 12, 17, "#ecece4");
+    label("IPHONE QUER", cx - 28, py + 9, 17, "#ff5a4a");
+    label("Dann wird das Spielfeld groß.", cx - 28, py + 30, 9.5, "#86828e", "left", 400);
+    // Credits near the bottom
+    const by = Math.min(PH - 46, py + 92);
+    ctx.fillStyle = "#26222a"; ctx.fillRect(cx - 120, by - 22, 240, 1);
+    label("Ja, ich hab das Spiel wirklich erstellt,", cx, by, 10.5, "#e2e2da", "center", 400);
+    label("mit der Hilfe von Claude AI.", cx, by + 17, 10.5, "#7a7a84", "center", 400);
+    // Red shadow at the edges
+    const v = ctx.createRadialGradient(cx, PH * 0.45, PW * 0.35, cx, PH * 0.45, PH * 0.75);
+    v.addColorStop(0, "rgba(80,0,8,0)"); v.addColorStop(1, "rgba(80,0,8,0.4)");
+    ctx.fillStyle = v; ctx.fillRect(0, 0, PW, PH);
+  } finally { ctx = real; }
+}
+
 // ---------------------------------------------------------------- render
 
 const COL_P_BLOOD = "#9c0e1c", COL_P_FIRE = "#ffc048";
@@ -6549,6 +6651,8 @@ function loop(now) {
   state.toolT += realDt;
   state.extrasFlashT = Math.max(0, state.extrasFlashT - realDt);
   state.toast = Math.max(0, state.toast - realDt);
+  // Upright phone: nothing runs, the painted portrait screen shows instead.
+  if (portraitMQ.matches) { acc = 0; drawPortrait(realDt); requestAnimationFrame(loop); return; }
   acc += state.paused ? 0 : state.aimView ? realDt * 0.25 : state.slow ? realDt * 0.3 : realDt;
   if (state.screen === "game") { updateLongPress(); eggStep(realDt); zoomStep(realDt); }
   let steps = 0;
