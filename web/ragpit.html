@@ -601,7 +601,9 @@ let gibs = [];
 const COL_MEAT = hex("#8e1424"), COL_MEAT_HI = hex("#c8445a"), COL_BONE = hex("#ece3cf");
 function spawnGib(x, y, vx, vy, bone = false, casing = false, mag = false) {
   if (gibs.length > 260) gibs.shift();
-  gibs.push({ x, y, vx, vy, r: mag ? 6 : casing ? 3.2 : bone ? rf(4, 6) : rf(4, 8.5), rot: mag ? Math.PI / 2 : rf(0, 6.28), vr: mag ? rf(-3, 3) : rf(-12, 12), bone, casing, mag, bleed: casing ? 0 : rf(1, 3), still: 0 });
+  const g = { x, y, vx, vy, r: mag ? 6 : casing ? 3.2 : bone ? rf(4, 6) : rf(4, 8.5), rot: mag ? Math.PI / 2 : rf(0, 6.28), vr: mag ? rf(-3, 3) : rf(-12, 12), bone, casing, mag, bleed: casing ? 0 : rf(1, 3), still: 0 };
+  gibs.push(g);
+  return g;
 }
 function stepGibs() {
   for (const g of gibs) {
@@ -2005,11 +2007,14 @@ class Doll {
     m.x = lerp(m.x, clamp(tx, 30, WW - 30), 0.06);
     // Dragged too far away, the lines tear off.
     if (Math.hypot(this.x[P_WAIST] - m.x, this.y[P_WAIST] - (m.y || this.y[P_WAIST])) > 260) {
-      addGhost({ kind: "monitor", x: m.x, gy: (m.y || FLOOR_Y - 40) + 40, side: m.side, dur: 1.2 });
+      addGhost({ kind: "monitor", x: m.x, gy: (m.y || FLOOR_Y - 40) + 40, side: m.side, dur: 1.2, m });
       this.monitor = null; state.toast = 1.6; state.toastText = "Monitor abgerissen!"; this.logEvent("Monitor abgerissen"); return;
     }
+    // A monitor shot to pieces does nothing any more; without its bag it
+    // still gives air but no blood.
+    if (m.broken) return;
     if (!this.dead) {
-      this.bl = Math.min(100, this.bl + MONITOR_BLOOD * DT);
+      if (m.bag !== false) this.bl = Math.min(100, this.bl + MONITOR_BLOOD * DT);
       if (!this.arrest && !this.headUnder) this.o2 = Math.min(100, this.o2 + 6 * DT);
     }
     // Alarm: two fast tones while the heart is stopped, a flat tone once dead.
@@ -2475,7 +2480,7 @@ class Doll {
     this.hr = moveToward(this.hr, Math.max(0, target), (this.arrest ? 60 : 30) * DT);
     if (this.hr > 1) {
       this.beatPhase += DT * this.hr / 60;
-      if (this.beatPhase >= 1) { this.beatPhase -= 1; this.beat = true; this.beatFlash = 1; this.sinceBeat = 0; if (this.monitor && state.selected === this) monitorBeep(); }
+      if (this.beatPhase >= 1) { this.beatPhase -= 1; this.beat = true; this.beatFlash = 1; this.sinceBeat = 0; if (this.monitor && !this.monitor.broken && state.selected === this) monitorBeep(); }
     }
     if (this.monitor) this.updateMonitor();
     // ECG trace: a heartbeat spike after every beat, flat line when dead.
@@ -2505,7 +2510,7 @@ class Doll {
       HEAL: this.healing || this.iv > 0, BLADE: this.bladeTimer > 0, TORN: this.severed.includes(true), FROZEN: this.frozen,
       BROKEN: this.broken.some((b, k) => b && this.attached(k)), PINNED: this.pins.size > 0,
       ZAP: this.taseT > 0,
-      ARREST: this.arrest && !this.dead, MONITOR: !!this.monitor,
+      ARREST: this.arrest && !this.dead, MONITOR: !!this.monitor && !this.monitor.broken, MONBROKEN: !!(this.monitor && this.monitor.broken),
       HEARTWEAK: !this.arrest && !this.dead && this.organ[ORGAN.heart] > 0 && this.organ[ORGAN.heart] < 60,
       BANDAGED: this.wounds.some((w) => w.bandaged && !this.gone[w.part]) || this.bands.some((b) => b.burn),
     };
@@ -3236,7 +3241,7 @@ function rasterGib(g) {
   const cx = g.x / PIX, cy = g.y / PIX, r = g.r / PIX;
   const put = (x, y, c) => { if (x >= 0 && y >= 0 && x < DW && y < DH) { const o = (y * DW + x) * 4; ppx[o] = c[0]; ppx[o + 1] = c[1]; ppx[o + 2] = c[2]; ppx[o + 3] = 255; } };
   const ca = Math.cos(g.rot), sa = Math.sin(g.rot);
-  const rx = g.mag ? 3.2 * PQ : g.casing ? 1.2 * PQ : g.bone ? r * 1.6 : r * 1.25, ry = g.mag ? 1.3 * PQ : g.casing ? 0.5 * PQ : g.bone ? Math.max(0.6 * PQ, r * 0.45) : r * 0.85;
+  const rx = g.bag ? 5 * PQ : g.mag ? 3.2 * PQ : g.casing ? 1.2 * PQ : g.bone ? r * 1.6 : r * 1.25, ry = g.bag ? 2 * PQ : g.mag ? 1.3 * PQ : g.casing ? 0.5 * PQ : g.bone ? Math.max(0.6 * PQ, r * 0.45) : r * 0.85;
   pxMark(cx - rx - 2, cy - rx - 2, cx + rx + 2, cy + rx + 2);
   for (let pass = 0; pass < 2; pass++) {
     const grow = pass === 0 ? 1 : 0;
@@ -3244,9 +3249,12 @@ function rasterGib(g) {
       for (let x = Math.floor(cx - rx - 1); x <= Math.ceil(cx + rx + 1); x++) {
         const ex = x + 0.5 - cx, ey = y + 0.5 - cy;
         const u = (ex * ca + ey * sa) / (rx + grow), v = (-ex * sa + ey * ca) / (ry + grow);
-        if (g.mag ? Math.abs(u) > 1 || Math.abs(v) > 1 : u * u + v * v > 1) continue;
+        if (g.mag || g.bag ? Math.abs(u) > 1 || Math.abs(v) > 1 : u * u + v * v > 1) continue;
         if (pass === 0) put(x, y, PX_BLACK);
+        // A burst blood bag lies flat and empty, red inside along one edge.
+        else if (g.bag) put(x, y, v > 0.25 ? (u > 0.6 ? COL_MEAT : hex("#9a1020")) : Math.abs(u) < 0.35 && v < -0.1 ? hex("#f6f6f6") : hex("#d4d8e0"));
         else if (g.mag) put(x, y, v < -0.3 ? GUN_COLORS.l : GUN_COLORS.m);
+        else if (g.glass) put(x, y, u < 0 ? hex("#e8f4fa") : hex("#9ab8c8"));
         else if (g.casing && g.shell) put(x, y, u < 0.3 ? hex("#c8302a") : hex("#e8c050"));
         else if (g.casing) put(x, y, u < -0.2 ? hex("#f0c860") : hex("#c8962c"));
         else if (g.bone) put(x, y, PX_BONE);
@@ -3838,7 +3846,7 @@ const VITALS = [
 ];
 // Status chips in German. Only the ones that apply are shown.
 const STATUS = [
-  ["MONITOR", "AM MONITOR", "#46d07a"], ["ARREST", "HERZSTILLSTAND", "#ff3040"], ["HEARTWEAK", "HERZ SCHWACH", "#ff7a8a"],
+  ["MONITOR", "AM MONITOR", "#46d07a"], ["MONBROKEN", "MONITOR KAPUTT", "#9a9aa4"], ["ARREST", "HERZSTILLSTAND", "#ff3040"], ["HEARTWEAK", "HERZ SCHWACH", "#ff7a8a"],
   ["OUT", "BEWUSSTLOS", "#a2a2aa"], ["BLEED", "BLUTET", "#d6202f"], ["FIRE", "BRENNT", "#ff5a1e"],
   ["CHOKE", "ERSTICKT", "#2ec8c0"], ["AGONY", "QUALEN", "#f08a24"], ["HEAL", "HEILT", "#f2da3a"],
   ["BLADE", "SCHNITT", "#c8d0dc"], ["TORN", "GLIED AB", "#f272b8"], ["FROZEN", "GEFROREN", "#86c4ff"],
@@ -4639,7 +4647,10 @@ function fireAtFinger() {
   state.ammo[state.weapon]--;
   const jitter = wp.spread * 60 + state.climb * 40;
   const x = state.mx + rf(-jitter, jitter), y = state.my + rf(-jitter, jitter);
-  const hit = fingerHit(x, y);
+  // A blood bag or a monitor screen under the finger takes the shot.
+  const med = wp.taser ? null : medTargets().find((tg) => inBox(tg, x, y));
+  if (med) hitMedical(med, x, y, rf(-0.4, 0.4), 1);
+  const hit = med ? null : fingerHit(x, y);
   if (wp.taser) {
     // The barbs fly in from the viewer: the wires trail off below the picture.
     if (hit) { hit.d.tase(hit.k, hit.t, hit.s, x + rf(-30, 30), viewBottom() + 40); state.selected = hit.d; }
@@ -4649,10 +4660,13 @@ function fireAtFinger() {
     return;
   }
   if (hit) { hit.d.preciseShot(hit, wp, Math.random() < 0.5 ? 1 : -1); state.selected = hit.d; }
-  else wallShot(x, y);
+  else if (!med) wallShot(x, y);
   // Buckshot: the other pellets spread around the aim point.
   for (let n = 1; n < (wp.pellets || 1); n++) {
-    const a = rf(0, Math.PI * 2), r = Math.sqrt(Math.random()) * 18, px = x + Math.cos(a) * r, py = y + Math.sin(a) * r, h2 = fingerHit(px, py);
+    const a = rf(0, Math.PI * 2), r = Math.sqrt(Math.random()) * 18, px = x + Math.cos(a) * r, py = y + Math.sin(a) * r;
+    const m2 = medTargets().find((tg) => inBox(tg, px, py));
+    if (m2) { hitMedical(m2, px, py, Math.cos(a) * 0.3, 1); continue; }
+    const h2 = fingerHit(px, py);
     if (h2) { h2.d.preciseShot(h2, wp, Math.random() < 0.5 ? 1 : -1); state.selected = h2.d; } else if (Math.random() < 0.4) wallShot(px, py);
   }
   state.lastShot = [x, y];
@@ -4780,6 +4794,8 @@ function shootRay(ox, oy, a, wp) {
     skip.add(d); hits++; lastT = t;
   }
   const stopped = hits >= pierce, endT = stopped ? lastT : wallT;
+  // Bags and monitor screens on the way are hit too; the bullet goes on.
+  for (const tg of medTargets()) { const t = rayBox(ox, oy, dx, dy, tg); if (t < endT) hitMedical(tg, ox + dx * t, oy + dy * t, dx, dy); }
   for (let t = 4; t < endT; t += 2) { const m = matAt(ox + dx * t, oy + dy * t); if ((m === WATER || m === BLOOD) && Math.random() < 0.25) splash(ox + dx * t, oy + dy * t, dx * 600, dy * 600); }
   const ex = ox + dx * endT, ey = oy + dy * endT;
   if (!stopped && wallT < RANGE) {
@@ -5144,11 +5160,22 @@ function drawMonitor(d) {
   // Lines first, so the cart stands in front of them.
   const ai = d.ivPoint(), ax = d.x[ai], ay = d.y[ai], cx = lerp(d.x[P_NECK], d.x[P_WAIST], 0.35), cy = lerp(d.y[P_NECK], d.y[P_WAIST], 0.35);
   ctx.lineWidth = 1.4; ctx.lineCap = "round";
-  ctx.strokeStyle = "#9a1020"; ctx.beginPath(); ctx.moveTo(x + 10, gy - 94); ctx.quadraticCurveTo((x + ax) / 2, Math.max(gy - 94, ay) + 18, ax, ay); ctx.stroke();
+  // Without its bag the blood line hangs empty and dark.
+  ctx.strokeStyle = m.bag === false ? "#3a1a1e" : "#9a1020"; ctx.beginPath(); ctx.moveTo(x + 10, gy - 94); ctx.quadraticCurveTo((x + ax) / 2, Math.max(gy - 94, ay) + 18, ax, ay); ctx.stroke();
   ctx.strokeStyle = "#2a2a30"; ctx.beginPath(); ctx.moveTo(x - 4, gy - 52); ctx.quadraticCurveTo((x + cx) / 2, Math.max(gy - 52, cy) + 22, cx, cy); ctx.stroke();
   ctx.fillStyle = "#e8e8e0"; ctx.beginPath(); ctx.arc(cx, cy, 1.8, 0, Math.PI * 2); ctx.fill();
-  drawMonitorCart(x, gy, blink ? "#3a0a10" : "#081210");
+  drawMonitorCart(x, gy, m.broken ? "#040505" : blink ? "#3a0a10" : "#081210", m);
   const sx = x - 24, sy = gy - 62, sw = 44, sh = 32;
+  if (m.broken) {
+    // Shot to pieces: now and then it still sparks and a garbled line flickers.
+    if (Math.random() < 0.025) {
+      for (let k = 0; k < 4; k++) sparks.push({ x: sx + m.hx, y: sy + m.hy, vx: rf(-90, 90), vy: rf(-140, 10), life: rf(0.1, 0.3) });
+      m.flick = 0.12;
+    }
+    m.flick = Math.max(0, (m.flick || 0) - frameDt);
+    if (m.flick > 0) { ctx.fillStyle = "rgba(70,208,122,0.5)"; ctx.fillRect(sx + 2, sy + rf(4, sh - 6), sw - 4, 1); }
+    return;
+  }
   // Live trace from the doll's own ECG buffer
   ctx.strokeStyle = d.dead ? "#ff4050" : "#46d07a"; ctx.lineWidth = 1; ctx.beginPath();
   const n = d.ecg.length;
@@ -5162,13 +5189,20 @@ function drawMonitor(d) {
   label(Math.round(d.bl) + "", sx + 6, sy + sh - 6, 5.5, "#ff7a8a", "center");
   ctx.fillStyle = blink ? "#ff3040" : alarm ? "#5a1018" : "#1d6a3a"; ctx.beginPath(); ctx.arc(sx + sw - 4, sy + sh - 5, 1.8, 0, Math.PI * 2); ctx.fill();
 }
-// The cart: pole with the bag, wheels, base and the screen frame.
-function drawMonitorCart(x, gy, screen) {
+// The cart: pole with the bag, wheels, base and the screen frame. m holds
+// what was shot: the bag (bag false) and the screen (broken, hx/hy the hole).
+function drawMonitorCart(x, gy, screen, m = {}) {
   const now = performance.now() / 1000;
   ctx.fillStyle = "#0b0b0e"; ctx.fillRect(x + 8, gy - 108, 4, 82);
   ctx.fillStyle = "#8a8a94"; ctx.fillRect(x + 9, gy - 107, 2, 80);
-  ctx.fillStyle = "#0b0b0e"; ctx.fillRect(x + 3, gy - 104, 14, 16); ctx.fillStyle = "#e6e8ee"; ctx.fillRect(x + 4, gy - 103, 12, 14);
-  ctx.fillStyle = "#b0121f"; ctx.fillRect(x + 5, gy - 100 + 2 * Math.sin(now), 10, 10);
+  if (m.bag !== false) {
+    ctx.fillStyle = "#0b0b0e"; ctx.fillRect(x + 3, gy - 104, 14, 16); ctx.fillStyle = "#e6e8ee"; ctx.fillRect(x + 4, gy - 103, 12, 14);
+    ctx.fillStyle = "#b0121f"; ctx.fillRect(x + 5, gy - 100 + 2 * Math.sin(now), 10, 10);
+  } else {
+    // Only the hook and a torn scrap stay on the pole.
+    ctx.fillStyle = "#0b0b0e"; ctx.fillRect(x + 5, gy - 106, 10, 4);
+    ctx.fillStyle = "#c8ccd4"; ctx.fillRect(x + 6, gy - 105, 3, 5); ctx.fillStyle = "#7a1018"; ctx.fillRect(x + 11, gy - 105, 2, 4);
+  }
   ctx.fillStyle = "#0b0b0e"; ctx.fillRect(x - 16, gy - 9, 34, 5); ctx.fillStyle = "#5a5a64"; ctx.fillRect(x - 15, gy - 8, 32, 3);
   for (const wx of [x - 13, x + 13]) { ctx.fillStyle = "#121216"; ctx.beginPath(); ctx.arc(wx, gy - 3, 3, 0, Math.PI * 2); ctx.fill(); }
   ctx.fillStyle = "#0b0b0e"; ctx.fillRect(x - 2, gy - 30, 5, 22); ctx.fillStyle = "#6a6a74"; ctx.fillRect(x - 1, gy - 29, 3, 20);
@@ -5177,6 +5211,101 @@ function drawMonitorCart(x, gy, screen) {
   ctx.fillStyle = "#0b0b0e"; ctx.fillRect(sx - 2, sy - 2, sw + 4, sh + 4);
   ctx.fillStyle = "#b8bcc4"; ctx.fillRect(sx - 1, sy - 1, sw + 2, sh + 2);
   ctx.fillStyle = screen; ctx.fillRect(sx + 1, sy + 1, sw - 2, sh - 2);
+  if (m.broken) {
+    // Cracks run out from the bullet hole, the glass around it is white.
+    const hx = sx + m.hx, hy = sy + m.hy;
+    ctx.save(); ctx.beginPath(); ctx.rect(sx + 1, sy + 1, sw - 2, sh - 2); ctx.clip();
+    ctx.strokeStyle = "rgba(220,228,236,0.55)"; ctx.lineWidth = 0.6;
+    for (const [a, l] of m.cracks) {
+      ctx.beginPath(); ctx.moveTo(hx, hy);
+      const mx = hx + Math.cos(a) * l * 0.5 + Math.sin(a) * 2, my = hy + Math.sin(a) * l * 0.5 - Math.cos(a) * 2;
+      ctx.lineTo(mx, my); ctx.lineTo(hx + Math.cos(a + 0.15) * l, hy + Math.sin(a + 0.15) * l); ctx.stroke();
+    }
+    ctx.beginPath(); ctx.arc(hx, hy, 4, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle = "#0b0b0e"; ctx.beginPath(); ctx.arc(hx, hy, 1.6, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+// ---------------------------------------------------------- shooting medical gear
+// Besides the dolls a shot can hit every blood bag (on its own stand or on a
+// monitor pole) and every monitor screen.
+function medTargets() {
+  const out = [], S = SPX;
+  for (const d of state.dolls) {
+    if (d.iv > 0) out.push({ kind: "iv", d, x: d.ivX - 3 * S, y: d.ivY, w: 8 * S, h: 10 * S });
+    const m = d.monitor;
+    if (m && m.y !== undefined) {
+      const x = Math.round(m.x), gy = m.y + 40;
+      if (m.bag !== false) out.push({ kind: "monbag", d, x: x + 3, y: gy - 104, w: 14, h: 16 });
+      if (!m.broken) out.push({ kind: "screen", d, x: x - 26, y: gy - 64, w: 48, h: 36 });
+    }
+  }
+  return out;
+}
+const inBox = (b, x, y) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
+// How far along a ray it first enters a box, or Infinity.
+function rayBox(ox, oy, dx, dy, b) {
+  let t0 = 0, t1 = Infinity;
+  for (const [o, d, lo, hi] of [[ox, dx, b.x, b.x + b.w], [oy, dy, b.y, b.y + b.h]]) {
+    if (Math.abs(d) < 1e-9) { if (o < lo || o > hi) return Infinity; continue; }
+    let a = (lo - o) / d, c = (hi - o) / d;
+    if (a > c) [a, c] = [c, a];
+    t0 = Math.max(t0, a); t1 = Math.min(t1, c);
+    if (t0 > t1) return Infinity;
+  }
+  return t0;
+}
+// A hit on medical gear at (x, y), the shot flying along (dx, dy).
+function hitMedical(tg, x, y, dx, dy) {
+  if (tg.kind === "screen") breakMonitor(tg.d, x, y, dx, dy); else burstBag(tg, dx, dy);
+}
+// Blood squirting out of a shot bag for a moment after it bursts.
+let bagJets = [];
+function burstBag(tg, dx, dy) {
+  const d = tg.d, cx = tg.x + tg.w / 2, cy = tg.y + tg.h * 0.55;
+  const full = tg.kind === "iv" ? clamp(d.iv / IV_TIME, 0.2, 1) : 0.85;
+  // The bag bursts: a cloud of blood flies on with the bullet and spatters the wall.
+  for (let n = 0; n < 30 + full * 60; n++) {
+    const a = Math.atan2(dy, dx) + rf(-1.2, 1.2), sp = rf(80, 460);
+    spawnParticle(cx + rf(-4, 4), cy + rf(-4, 4), Math.cos(a) * sp + rf(-70, 70), Math.sin(a) * sp - rf(40, 240), BLOOD);
+  }
+  for (let n = 0; n < 10; n++) splat(cx + dx * rf(8, 70) + rf(-14, 14), cy + dy * rf(8, 70) + rf(-16, 16), rf(1.2, 3.4));
+  bagJets.push({ x: cx, y: cy + 4, dx, dy, t: 0.3 + 0.7 * full });
+  // The empty bag drops to the floor and stays there.
+  const g = spawnGib(cx, cy, dx * 110 + rf(-30, 30), rf(-170, -70));
+  g.bag = true; g.r = 7; g.rot = rf(-0.4, 0.4); g.vr = rf(-7, 7); g.bleed = 0.8;
+  if (tg.kind === "iv") { d.iv = 0; d.logEvent("Blutbeutel zerschossen"); }
+  else { d.monitor.bag = false; d.logEvent("Blutbeutel am Monitor zerschossen"); }
+  state.toast = 1.4; state.toastText = "Blutbeutel geplatzt!";
+  splatSound(); splashSound(0.7);
+  worldEvent("shot", cx, cy);
+}
+// The jets thin out quickly and bend down under their own weight.
+function stepBagJets() {
+  for (const j of bagJets) {
+    j.t -= DT;
+    const k = clamp(j.t, 0, 1);
+    for (let n = 0; n < 3; n++) {
+      const a = Math.atan2(j.dy, j.dx) + rf(-0.25, 0.25) + 0.5 * (1 - k), sp = 120 + 260 * k;
+      spawnParticle(j.x, j.y, Math.cos(a) * sp, Math.sin(a) * sp, BLOOD);
+    }
+  }
+  bagJets = bagJets.filter((j) => j.t > 0);
+}
+// A shot through the screen: glass and sparks, then it stays dark and dead.
+function breakMonitor(d, x, y, dx, dy) {
+  const m = d.monitor, gy = m.y + 40, sx = Math.round(m.x) - 24, sy = gy - 62;
+  m.broken = true;
+  m.hx = clamp(x - sx, 4, 40); m.hy = clamp(y - sy, 4, 28);
+  m.cracks = Array.from({ length: 9 }, (_, n) => [n * 0.7 + rf(-0.3, 0.3), rf(10, 30)]);
+  for (let n = 0; n < 22; n++) sparks.push({ x, y, vx: -dx * rf(40, 200) + rf(-160, 160), vy: rf(-220, 40), life: rf(0.12, 0.4) });
+  for (let n = 0; n < 4; n++) smokes.push({ x: x + rf(-4, 4), y: y + rf(-4, 4), vx: rf(-15, 15), vy: rf(-30, -10), r: rf(3, 6), age: 0, life: rf(0.8, 1.4), a: 0.4 });
+  for (let n = 0; n < 6; n++) spawnGib(x, y, rf(-120, 120), rf(-200, -60), false, true).glass = true;
+  glassSound(); wallHitSound();
+  d.logEvent("Monitor zerschossen");
+  state.toast = 1.6; state.toastText = "Monitor kaputt!";
+  worldEvent("shot", x, y);
 }
 
 // Things leave the room with a short animation instead of vanishing: the
@@ -5237,7 +5366,7 @@ const GHOST_DRAW = {
     const roll = easeIn(p) * 110 * g.side;
     ctx.globalAlpha *= 1 - smooth01(clamp((p - 0.45) / 0.55, 0, 1));
     ctx.translate(g.x + roll, g.gy); ctx.rotate(-g.side * 0.05 * Math.sin(p * Math.PI)); ctx.translate(-(g.x + roll), -g.gy);
-    drawMonitorCart(Math.round(g.x + roll), g.gy, "#040606");
+    drawMonitorCart(Math.round(g.x + roll), g.gy, "#040606", g.m || {});
   },
   // The pin jumps out, turns and fades.
   pin(g, p) {
@@ -6739,7 +6868,7 @@ function loadMap(i) {
   for (const r of m.water) fillRect(down(r), WATER);
   // Remember the map's own ice so "Eis entfernen" only clears placed ice.
   for (let i = 0; i < N; i++) mapIce[i] = mat[i] === ICE ? 1 : 0;
-  gibs = []; effects = []; tracers = []; flashes = []; sparks = []; smokes = [];
+  gibs = []; effects = []; tracers = []; flashes = []; sparks = []; smokes = []; bagJets = [];
   dctx.clearRect(0, 0, decal.width, decal.height);
   state.dolls = []; state.selected = null; state.grabDoll = null; state.counter = 0;
   for (const e of m.dolls) { const [x, y] = mapDollSpot(e); placeDoll(x + OFFX, y + OFFY); }
@@ -8738,7 +8867,7 @@ function press() {
     for (const d of state.dolls) { const [i, dist] = d.nearestPoint(state.mx, state.my, bestD); if (i >= 0) { bestD = dist; best = d; } }
     if (!best) { state.toast = 1.2; state.toastText = "Tippe auf eine Puppe"; return; }
     state.selected = best; state.toast = 1.8;
-    if (best.monitor) { const m = best.monitor; addGhost({ kind: "monitor", x: m.x, gy: (m.y || FLOOR_Y - 40) + 40, side: m.side, dur: 1.2 }); best.monitor = null; state.toastText = "Monitor abgenommen"; best.logEvent("Monitor abgenommen"); clickSound(500, 0.06); }
+    if (best.monitor) { const m = best.monitor; addGhost({ kind: "monitor", x: m.x, gy: (m.y || FLOOR_Y - 40) + 40, side: m.side, dur: 1.2, m }); best.monitor = null; state.toastText = "Monitor abgenommen"; best.logEvent("Monitor abgenommen"); clickSound(500, 0.06); }
     else if (best.dead && best.deadT > 45) state.toastText = "Zu spät für den Monitor";
     else {
       const side = best.x[P_WAIST] < WW / 2 ? 1 : -1;
@@ -9106,6 +9235,7 @@ function physicsStep() {
   gunStep();
   worldStep();
   stepGibs();
+  stepBagJets();
   for (const d of state.dolls) {
     if (d === state.grabDoll) { d.gx = state.mx; d.gy = state.my; }
     d.step();
