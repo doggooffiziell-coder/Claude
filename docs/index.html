@@ -637,15 +637,24 @@ function stepGibs() {
   for (const g of gibs) {
     if (g.still > 1.5) continue;
     g.vy += GRAVITY * DT;
-    let nx = g.x + g.vx * DT, ny = g.y + g.vy * DT;
-    if (solidAt(nx, g.y)) { g.vx *= -0.35; nx = g.x; }
-    if (solidAt(nx, ny + g.r * 0.6)) {
+    // Fast pieces move in small steps, so they cannot skip through a thin wall.
+    const sub = Math.max(1, Math.ceil(Math.max(Math.abs(g.vx), Math.abs(g.vy)) * DT / 3));
+    let nx = g.x, ny = g.y;
+    for (let k = 0; k < sub; k++) {
+      const tx = nx + g.vx * DT / sub, ty = ny + g.vy * DT / sub, rr0 = g.r * 0.7;
+      if (solidAt(tx + Math.sign(g.vx) * rr0, ny) || solidAt(tx, ny)) { g.vx *= -0.35; } else nx = tx;
+      if (solidAt(nx, ty + rr0) || solidAt(nx, ty)) break;
+      ny = ty;
+    }
+    if (solidAt(nx, ny + g.r * 0.75) && g.vy >= 0) {
       if (g.vy > 200 && !g.casing) for (let n = 0; n < 2; n++) spawnParticle(nx, ny - 1, rf(-60, 60), rf(-120, -30), BLOOD);
       // Brass rings on the floor, a magazine clatters.
       if (g.vy > 120) { if (g.mag) magDropSound(); else if (g.casing) casingSound(); }
       g.vy *= -0.3; g.vx *= 0.65; g.vr *= 0.6; ny = g.y;
     }
     g.x = clamp(nx, 1, WW - 1); g.y = ny;
+    // A piece that ended up inside a block is lifted back out on top.
+    for (let k = 0; k < 30 && solidAt(g.x, g.y + g.r * 0.5); k++) g.y -= 1;
     g.rot += g.vr * DT;
     if (g.bleed > 0 && Math.random() < 0.3) { spawnParticle(g.x, g.y, rf(-20, 20), rf(-20, 20), BLOOD); g.bleed -= DT * 3; }
     g.still = Math.abs(g.vx) + Math.abs(g.vy) < 20 ? g.still + DT : 0;
@@ -1081,6 +1090,7 @@ class Doll {
     // A held doll swings around the finger and settles instead of whirling.
     if (this.grabbed >= 0) this.dampAroundGrab(0.86);
     this.dampSpin(0.02, this.grabbed >= 0 ? this.pieces()[this.grabbed] : -1);
+    this.markSafe();
     this.behave();
     if (this.getUp <= 0) this.balance();
     // Rigor gives way slowly under the weight of a body hung on a pin or held
@@ -1089,7 +1099,7 @@ class Doll {
     for (let it = 0; it < ITERATIONS; it++) {
       for (let k = 0; k < PART_COUNT; k++) this.solveDistance(this.pa[k], this.pb[k], this.restLen[k]);
       this.solveJoints(this.frozen ? 0.5 : this.taseT > 0 ? 0.45 : this.rigorOn ? 0.45 * this.dc.rigor : 0, false);
-      if (it % 2 === 1) { for (let i = 0; i < this.x.length; i++) this.pushOut(i); this.pushOutSegments(); this.selfCollide(); }
+      if (it % 2 === 1) { this.noTunnel(); for (let i = 0; i < this.x.length; i++) this.pushOut(i); this.pushOutSegments(); this.selfCollide(); this.noTunnel(); }
     }
     for (const i of this.pins.keys()) this.holdPin(i);
     // A stiff body moves as one block: whatever the points do apart from
@@ -1104,8 +1114,10 @@ class Doll {
       // instead of going limp; only an unconscious one hangs loose.
       this.solveJoints(0.08 * clamp(this.ko / 100, 0, 1), true);
 
+      this.noTunnel();
       for (let i = 0; i < this.x.length; i++) this.pushOut(i);
       this.pushOutSegments();
+      this.noTunnel();
     }
     // In the front view a calm standing doll keeps the clean upright stance:
     // the muscles finish the step by lining the body up over its feet.
@@ -2562,34 +2574,84 @@ class Doll {
 
   // Body parts are more than their end points: samples along each limb push
   // the limb out of walls, so it cannot slide through a thin platform or a corner.
+  // Remembers where every point is while it is surely outside any block.
+  markSafe() {
+    const n = this.x.length;
+    if (!this.safeX || this.safeX.length !== n) { this.safeX = new Float64Array(n); this.safeY = new Float64Array(n); }
+    for (let i = 0; i < n; i++) { this.safeX[i] = this.x[i]; this.safeY[i] = this.y[i]; }
+  }
+  // Joints and pushes move points without looking where they go. A point
+  // whose way since the last safe spot runs through a block (a thin wall,
+  // the bars of a cell) is set back to the last free spot on that way, so
+  // nothing slips through walls or floors. The safe spot then moves along.
+  noTunnel() {
+    if (!this.safeX || this.safeX.length !== this.x.length) { this.markSafe(); return; }
+    for (let i = 0; i < this.x.length; i++) {
+      const x0 = this.safeX[i], y0 = this.safeY[i], x1 = this.x[i], y1 = this.y[i];
+      const d = Math.hypot(x1 - x0, y1 - y0);
+      if (d >= 1 && !solidAt(x0, y0)) {
+        const n = Math.ceil(d);
+        for (let s = 1; s <= n; s++) {
+          const t = s / n, px = lerp(x0, x1, t), py = lerp(y0, y1, t);
+          if (!solidAt(px, py)) continue;
+          if (this.fixed(i)) break;
+          const t0 = (s - 1) / n, bx = lerp(x0, x1, t0), by = lerp(y0, y1, t0);
+          this.ox[i] += bx - x1; this.oy[i] += by - y1;
+          this.x[i] = bx; this.y[i] = by;
+          break;
+        }
+      }
+      this.safeX[i] = this.x[i]; this.safeY[i] = this.y[i];
+    }
+  }
+
+  // Keeps the whole drawn shape of every part out of floors and walls, not
+  // just its joints: the centre line and both long edges of each part (the
+  // head box, the arms from the shoulder, the hand, the shoe) are checked.
+  // Any sample inside a block finds the shortest way out, and the deepest
+  // one moves the two ends of the part by their share.
   pushOutSegments() {
     for (let k = 0; k < PART_COUNT; k++) {
-      if (this.gone[k] || k === HEAD) continue;
+      if (this.gone[k]) continue;
       const a = this.pa[k], b = this.pb[k];
-      const ax = this.x[a], ay = this.y[a], bx = this.x[b], by = this.y[b];
-      const len = Math.hypot(bx - ax, by - ay), n = Math.floor(len / 6);
-      if (n < 2) continue;
-      for (let j = 1; j < n; j++) {
-        const t = j / n, sx = lerp(ax, bx, t), sy = lerp(ay, by, t);
-        if (!solidAt(sx, sy)) continue;
-        // Shortest way out: up, down, left or right.
-        let ex = 0, ey = 0, best = 99;
-        for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
-          for (let d = 1; d < Math.min(best, 24); d++) {
-            if (!solidAt(sx + dx * d, sy + dy * d)) { best = d; ex = dx * (d + 1); ey = dy * (d + 1); break; }
-          }
-        }
-        if (best === 99) continue;
-        // Move both ends so the sample point leaves the wall.
-        const wa = this.w(a) * (1 - t), wb = this.w(b) * t, norm = wa * (1 - t) + wb * t;
-        if (norm <= 0) continue;
-        const f = 1 / norm;
-        this.x[a] += ex * wa * f; this.y[a] += ey * wa * f;
-        this.x[b] += ex * wb * f; this.y[b] += ey * wb * f;
-        this.ox[a] += ex * wa * f * 0.8; this.oy[a] += ey * wa * f * 0.8;
-        this.ox[b] += ex * wb * f * 0.8; this.oy[b] += ey * wb * f * 0.8;
-        break;
+      let sx0, sy0, ux, uy, len, hw, t0, t1;
+      if (k === HEAD) {
+        const nx = this.x[a], ny = this.y[a], l = Math.hypot(this.x[b] - nx, this.y[b] - ny) || 1;
+        ux = (this.x[b] - nx) / l; uy = (this.y[b] - ny) / l;
+        sx0 = nx + ux * NECK_LEN; sy0 = ny + uy * NECK_LEN; len = HEAD_H; hw = HEAD_HW * 0.9; t0 = 0; t1 = 1;
+      } else {
+        const st = limbStart(this, k), bx = this.x[b], by = this.y[b];
+        len = Math.hypot(bx - st[0], by - st[1]) || 1; ux = (bx - st[0]) / len; uy = (by - st[1]) / len;
+        sx0 = st[0]; sy0 = st[1];
+        const R = RECT[k] || [WIDTH[k] * 0.5, 0, 0], hand = k === LARM_L || k === LARM_R ? 8 * DS : 0;
+        hw = R[0] * 0.85; t0 = -R[1] / len; t1 = 1 + (R[2] + hand) / len;
       }
+      const nx = -uy, ny = ux, n = Math.max(2, Math.ceil(len * (t1 - t0) / 5));
+      let best = 0, bex = 0, bey = 0, bt = 0;
+      for (let j = 0; j <= n; j++) {
+        const t = t0 + (t1 - t0) * j / n, cx = sx0 + ux * len * t, cy = sy0 + uy * len * t;
+        for (const side of [0, -1, 1]) {
+          const px = cx + nx * hw * side, py = cy + ny * hw * side;
+          if (!solidAt(px, py)) continue;
+          // Shortest way out of the block, straight or diagonal.
+          let found = 0, ex = 0, ey = 0;
+          for (let d = 1; d <= 40 && !found; d++) {
+            for (const [dx, dy] of [[0, -1], [-1, 0], [1, 0], [0, 1], [-0.7, -0.7], [0.7, -0.7], [-0.7, 0.7], [0.7, 0.7]]) {
+              if (!solidAt(px + dx * d, py + dy * d)) { found = d; ex = dx * (d + 0.6); ey = dy * (d + 0.6); break; }
+            }
+          }
+          if (found > best) { best = found; bex = ex; bey = ey; bt = clamp(t, 0, 1); }
+        }
+      }
+      if (!best) continue;
+      // Move both ends so the deepest sample leaves the block.
+      const wa = this.w(a) * (1 - bt), wb = this.w(b) * bt, norm = wa * (1 - bt) + wb * bt;
+      if (norm <= 0) continue;
+      const f = 1 / norm;
+      this.x[a] += bex * wa * f; this.y[a] += bey * wa * f;
+      this.x[b] += bex * wb * f; this.y[b] += bey * wb * f;
+      this.ox[a] += bex * wa * f * 0.8; this.oy[a] += bey * wa * f * 0.8;
+      this.ox[b] += bex * wb * f * 0.8; this.oy[b] += bey * wb * f * 0.8;
     }
   }
 
