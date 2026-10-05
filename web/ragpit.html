@@ -198,6 +198,8 @@ function splash(x, y, vx, vy) {
   x = Math.floor(x); y = Math.floor(y);
   const m = getMat(x, y);
   if (m !== WATER && m !== BLOOD) return;
+  const sp = Math.hypot(vx, vy);
+  if (sp > 300) splashSound(Math.min(1, sp / 1200));
   const mx = mixv[y * W + x];
   setCell(x, y, EMPTY);
   spawnParticle(x + 0.5, y - 0.5, vx * 0.5 + rf(-50, 50), -Math.abs(vy) * 0.45 - rf(40, 120), m, m === WATER ? mx : 255);
@@ -598,6 +600,8 @@ function stepGibs() {
     if (solidAt(nx, g.y)) { g.vx *= -0.35; nx = g.x; }
     if (solidAt(nx, ny + g.r * 0.6)) {
       if (g.vy > 200 && !g.casing) for (let n = 0; n < 2; n++) spawnParticle(nx, ny - 1, rf(-60, 60), rf(-120, -30), BLOOD);
+      // Brass rings on the floor, a magazine clatters.
+      if (g.vy > 120) { if (g.mag) magDropSound(); else if (g.casing) casingSound(); }
       g.vy *= -0.3; g.vx *= 0.65; g.vr *= 0.6; ny = g.y;
     }
     g.x = clamp(nx, 1, W - 1); g.y = ny;
@@ -916,6 +920,7 @@ class Doll {
     const sx = bx - ax, sy = by - ay, l2 = sx * sx + sy * sy || 1;
     const t = k === HEAD ? Math.random() : clamp(((x - ax) * sx + (y - ay) * sy) / l2, 0, 1);
     const side = Math.sign(sx * (y - ay) - sy * (x - ax)) || 1;
+    fleshHitSound();
     this.addWound(k, t, side * 0.8, 1.1 + wp.dmg * 0.7, false, "shot");
     this.addWound(k, clamp(t + rf(-0.12, 0.12), 0, 1), -side * 0.8, 1.2 + wp.dmg, false, "shot", { exit: true });
     const w = k === HEAD ? HEAD_R : (TAPER[k][0] + TAPER[k][1]) / 2;
@@ -965,6 +970,7 @@ class Doll {
   // Returns where it hit in the room.
   preciseShot(hit, wp, dir = 0) {
     const { k, t, s, organs } = hit;
+    fleshHitSound();
     this.addWound(k, t, s, 1.1 + wp.dmg * 0.7, false, "shot");
     // The exit hole sits on the back, out of sight in the front view, but it bleeds.
     this.addWound(k, t, s, 1.2 + wp.dmg, false, "shot", { exit: true });
@@ -1724,6 +1730,7 @@ class Doll {
     const k = this.owner[i];
     if (this.gone[k] || speed < SAFE_SPEED) return;
     const over = (speed - SAFE_SPEED) / 100, dmg = over * over * 3 * (IMPACT_MULT[k] || 1);
+    bodyThudSound(speed);
     this.hurtPart(k, dmg);
     // A limb that came off can be bashed around without the body feeling it.
     const loose = !this.attached(k);
@@ -1734,6 +1741,7 @@ class Doll {
     // A badly hurt arm or leg breaks and stops carrying weight.
     if (k !== HEAD && k !== TORSO && k !== PELVIS && this.dmg[k] >= 85 && !this.broken[k]) {
       this.broken[k] = true;
+      boneCrackSound();
       this.logEvent(PART_NAME[k] + " gebrochen");
       if (!loose) { this.pn = Math.min(100, this.pn + 30); this.stagger = Math.max(this.stagger, 1.5); }
     }
@@ -1780,6 +1788,7 @@ class Doll {
 
   sever(k) {
     if (k === TORSO || this.severed[k]) return;
+    splatSound();
     const jp = this.pa[k], np = this.x.length;
     this.x.push(this.x[jp]); this.y.push(this.y[jp]); this.ox.push(this.ox[jp]); this.oy.push(this.oy[jp]);
     this.inv.push(this.inv[jp]); this.owner.push(k); this.impactCd.push(0.3); this.rad.push(this.rad[jp]);
@@ -1847,6 +1856,7 @@ class Doll {
       if (this.bladeCd[k] > 0) continue;
       this.bladeCd[k] = 0.15;
       this.hurtPart(k, 30);
+      sliceSound();
       // The cut runs along the blade's path. A slow push leaves a short stab.
       const lx = k === HEAD ? 0 : p1x - p0x, ly = k === HEAD ? 1 : p1y - p0y;
       const ang = Math.atan2(lx * (by - ay) - ly * (bx - ax), lx * (bx - ax) + ly * (by - ay));
@@ -3067,6 +3077,7 @@ function rasterGib(g) {
         if (g.mag ? Math.abs(u) > 1 || Math.abs(v) > 1 : u * u + v * v > 1) continue;
         if (pass === 0) put(x, y, PX_BLACK);
         else if (g.mag) put(x, y, v < -0.3 ? GUN_COLORS.l : GUN_COLORS.m);
+        else if (g.casing && g.shell) put(x, y, u < 0.3 ? hex("#c8302a") : hex("#e8c050"));
         else if (g.casing) put(x, y, u < -0.2 ? hex("#f0c860") : hex("#c8962c"));
         else if (g.bone) put(x, y, PX_BONE);
         else put(x, y, u * 0.6 + v * 0.8 < -0.35 ? COL_MEAT_HI : COL_MEAT);
@@ -3116,6 +3127,7 @@ function worldEvent(kind, x, y, self = null) {
 }
 function explode(x, y) {
   const R = 130;
+  boomSound();
   worldEvent("boom", x, y);
   for (const d of state.dolls) if (d.blast(x, y, R)) state.selected = d;
   for (const g of gibs) {
@@ -4073,10 +4085,12 @@ function drawCursor() {
     ctx.setLineDash([]);
   } else if (state.tool === T_GUN) {
     if (!settings.front) return; // the laser dot is the reticle
-    ctx.strokeStyle = state.pressing ? "rgba(255,90,90,0.95)" : "rgba(255,255,255,0.5)"; ctx.lineWidth = 1.4;
-    ctx.beginPath(); ctx.arc(mx, my, 6, 0, Math.PI * 2);
-    ctx.moveTo(mx - 11, my); ctx.lineTo(mx - 3, my); ctx.moveTo(mx + 3, my); ctx.lineTo(mx + 11, my);
-    ctx.moveTo(mx, my - 11); ctx.lineTo(mx, my - 3); ctx.moveTo(mx, my + 3); ctx.lineTo(mx, my + 11);
+    // The reticle kicks open with every shot and with a long burst.
+    const o = state.kick * 5 + state.climb * 30, rl = state.reloadT > 0;
+    ctx.strokeStyle = rl ? "rgba(230,200,80,0.8)" : state.pressing ? "rgba(255,90,90,0.95)" : "rgba(255,255,255,0.5)"; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.arc(mx, my, 6 + o * 0.6, 0, Math.PI * 2);
+    ctx.moveTo(mx - 11 - o, my); ctx.lineTo(mx - 3 - o, my); ctx.moveTo(mx + 3 + o, my); ctx.lineTo(mx + 11 + o, my);
+    ctx.moveTo(mx, my - 11 - o); ctx.lineTo(mx, my - 3 - o); ctx.moveTo(mx, my + 3 + o); ctx.lineTo(mx, my + 11 + o);
     ctx.stroke();
   } else if (state.tool === T_IV || state.tool === T_BANDAGE) {
     ctx.strokeStyle = state.tool === T_IV ? "rgba(110,230,110,0.8)" : "rgba(240,236,226,0.85)"; ctx.lineWidth = 2.4;
@@ -4188,15 +4202,15 @@ const SPRITE_SNIPER = [
   ".........kkk.....................................",
 ];
 const WEAPONS = [
-  { name: "AK-47", sprite: SPRITE_AK, grip: [12.5, 7], muzzle: [38, 3.5], mag: 30, reload: 2.4, climb: 0.035, auto: true, rate: 10, dmg: 1.0, spread: 0.045, push: 6, sever: 0.25, headKill: 0.3, kick: 0.06, snd: 1 },
-  { name: "Sturmgewehr", sprite: SPRITE_AR, grip: [12.5, 7], muzzle: [38, 3.5], mag: 30, reload: 2.0, climb: 0.022, auto: true, rate: 13, dmg: 0.85, spread: 0.025, push: 5, sever: 0.15, headKill: 0.22, kick: 0.045, snd: 0.8 },
-  { name: "Glock 17", sprite: SPRITE_GLOCK, grip: [4, 6], muzzle: [18, 2.5], mag: 17, reload: 1.4, climb: 0.07, auto: false, rate: 6, dmg: 0.65, spread: 0.015, push: 3.5, sever: 0.05, headKill: 0.12, kick: 0.03, snd: 0.6 },
-  { name: "Schrotflinte", sprite: SPRITE_SHOTGUN, grip: [12.5, 6], muzzle: [38, 2], mag: 6, reload: 2.4, climb: 0.09, auto: false, rate: 1.4, dmg: 0.42, pellets: 8, spread: 0.11, push: 4.5, sever: 0.12, headKill: 0.12, kick: 0.11, snd: 1.4 },
-  { name: "Sniper", sprite: SPRITE_SNIPER, grip: [11.5, 7], muzzle: [49, 4], mag: 5, reload: 2.8, climb: 0.12, auto: false, rate: 1.1, dmg: 2.2, pierce: 3, spread: 0.002, push: 14, sever: 0.5, headKill: 0.95, kick: 0.14, snd: 1.6 },
-  { name: "Taser", sprite: SPRITE_TASER, grip: [4, 5], muzzle: [19, 1.5], mag: 1, reload: 1.8, climb: 0, auto: false, rate: 1, dmg: 0, spread: 0.008, push: 0.5, sever: 0, headKill: 0, kick: 0.01, snd: 0.2, taser: true, range: 520 },
+  { name: "AK-47", sprite: SPRITE_AK, grip: [12.5, 7], muzzle: [38, 3.5], mag: 30, reload: 2.4, climb: 0.035, auto: true, rate: 10, dmg: 1.0, spread: 0.045, push: 6, sever: 0.25, headKill: 0.3, kick: 0.06, snd: 1, rk: "mag" },
+  { name: "Sturmgewehr", sprite: SPRITE_AR, grip: [12.5, 7], muzzle: [38, 3.5], mag: 30, reload: 2.0, climb: 0.022, auto: true, rate: 13, dmg: 0.85, spread: 0.025, push: 5, sever: 0.15, headKill: 0.22, kick: 0.045, snd: 0.8, rk: "mag" },
+  { name: "Glock 17", sprite: SPRITE_GLOCK, grip: [4, 6], muzzle: [18, 2.5], mag: 17, reload: 1.4, climb: 0.07, auto: false, rate: 6, dmg: 0.65, spread: 0.015, push: 3.5, sever: 0.05, headKill: 0.12, kick: 0.03, snd: 0.6, rk: "pistol" },
+  { name: "Schrotflinte", sprite: SPRITE_SHOTGUN, grip: [12.5, 6], muzzle: [38, 2], mag: 6, reload: 2.4, climb: 0.09, auto: false, rate: 1.4, dmg: 0.42, pellets: 8, spread: 0.11, push: 4.5, sever: 0.12, headKill: 0.12, kick: 0.11, snd: 1.4, rk: "shells", cycle: "pump" },
+  { name: "Sniper", sprite: SPRITE_SNIPER, grip: [11.5, 7], muzzle: [49, 4], mag: 5, reload: 2.8, climb: 0.12, auto: false, rate: 1.1, dmg: 2.2, pierce: 3, spread: 0.002, push: 14, sever: 0.5, headKill: 0.95, kick: 0.14, snd: 1.6, rk: "bolt", cycle: "bolt" },
+  { name: "Taser", sprite: SPRITE_TASER, grip: [4, 5], muzzle: [19, 1.5], mag: 1, reload: 1.8, climb: 0, auto: false, rate: 1, dmg: 0, spread: 0.008, push: 0.5, sever: 0, headKill: 0, kick: 0.01, snd: 0.2, taser: true, range: 520, rk: "taser" },
 ];
 let wires = [];
-let tracers = [], flashes = [], sparks = [];
+let tracers = [], flashes = [], sparks = [], smokes = [];
 
 // Front view: the gun works like the blade and shoots exactly where the
 // finger touches. A long burst climbs and spreads a little.
@@ -4223,12 +4237,18 @@ function fireAtFinger() {
   }
   state.lastShot = [x, y];
   worldEvent("shot", x, y, hit ? hit.d : null);
-  flashes.push({ x, y, ang: 0, age: 0 });
-  // The casing jumps out next to the finger and bounces on the floor.
-  spawnGib(x + rf(-6, 6), y - 6, rf(-140, 140), rf(-260, -160), false, true);
+  flashes.push({ x, y, ang: 0, age: 0, s: 0.6 });
+  // Dust and powder smoke where the shot lands, a warm flash from the gun
+  // below the picture and the reticle kicks open.
+  for (let n = 0; n < (wp.pellets ? 5 : 2); n++) smokes.push({ x: x + rf(-4, 4), y: y + rf(-4, 4), vx: rf(-25, 25), vy: rf(-30, -8), r: rf(2, 4), age: 0, life: rf(0.5, 0.9), a: 0.35 });
+  state.frontFlash = 1; state.kick = 1;
+  // The casing jumps out next to the finger and bounces on the floor; a
+  // pump or bolt gun throws it out only when it cycles.
+  if (!wp.cycle) spawnGib(x + rf(-6, 6), y - 6, rf(-140, 140), rf(-260, -160), false, true);
+  else state.cycle = { at: performance.now() + (wp.cycle === "pump" ? 330 : 520), kind: wp.cycle, x: x + 10, y: y - 6 };
   state.shake = Math.max(state.shake, wp.kick);
   state.climb = Math.min(0.3, state.climb + wp.climb);
-  gunSound(wp.snd);
+  shotSound(SHOT_KIND[wp.name]);
 }
 
 // Without the front view the gun floats in the room and fires along its laser.
@@ -4241,7 +4261,9 @@ function fire() {
 const gunFlip = () => (Math.cos(state.gunAng) < 0 ? -1 : 1);
 function gunPose() {
   const k = state.kick * 5, a = state.gunAng;
-  return [state.gunX - Math.cos(a) * k, state.gunY - Math.sin(a) * k, a - state.climb * gunFlip()];
+  // While reloading the gun tips down and turns its side to you a little.
+  const r = state.reloadT > 0 && state.reloadLen ? Math.sin(Math.PI * Math.min(1, (1 - state.reloadT / state.reloadLen) * 1.15)) : 0;
+  return [state.gunX - Math.cos(a) * k, state.gunY - Math.sin(a) * k + r * 6, a - state.climb * gunFlip() + r * 0.45 * gunFlip()];
 }
 
 function aimAt(x, y) {
@@ -4309,14 +4331,19 @@ function fireRanged() {
   let ex = ox, ey = oy;
   for (let n = 0; n < (wp.pellets || 1); n++) [ex, ey] = shootRay(ox, oy, n ? aimDir(ox, oy, ang) + rf(-wp.spread, wp.spread) : a, wp);
   worldEvent("shot", ox, oy); worldEvent("shot", ex, ey);
-  flashes.push({ x: ox, y: oy, ang, age: 0 });
-  // Casing flies out of the side and bounces on the floor.
+  const big = wp.pellets ? 1.6 : wp.pierce ? 1.8 : wp.rk === "pistol" ? 0.8 : 1.1;
+  flashes.push({ x: ox, y: oy, ang: a, age: 0, s: big, muzzle: true });
+  // Powder smoke drifts out of the muzzle and rises.
+  for (let n = 0; n < Math.round(2 + big * 2); n++) smokes.push({ x: ox, y: oy, vx: Math.cos(a) * rf(20, 90) + rf(-10, 10), vy: Math.sin(a) * rf(20, 90) - rf(10, 30), r: rf(2, 4) * big, age: 0, life: rf(0.6, 1.2), a: 0.3 });
+  // Casing flies out of the side and bounces on the floor; pump and bolt
+  // guns throw it out when they cycle.
   const back = Math.cos(ang) < 0 ? 1 : -1;
-  spawnGib(px0, py0 - 4, back * rf(60, 140), rf(-260, -160), false, true);
+  if (!wp.cycle) spawnGib(px0, py0 - 4, back * rf(60, 140), rf(-260, -160), false, true);
+  else state.cycle = { at: performance.now() + (wp.cycle === "pump" ? 330 : 520), kind: wp.cycle, back };
   state.shake = Math.max(state.shake, wp.kick);
   state.kick = 1;
   state.climb = Math.min(0.3, state.climb + wp.climb);
-  gunSound(wp.snd);
+  shotSound(SHOT_KIND[wp.name]);
 }
 
 // A bullet along a ray: it stops at the first wall, splashes through water,
@@ -4390,6 +4417,7 @@ function fingerHit(x, y) {
 // A shot that misses every doll: sparks and a hole in walls, a splash in water.
 function wallShot(x, y) {
   const m = matAt(x, y);
+  if (m === WATER || m === BLOOD) splashSound(0.4); else wallHitSound();
   if (m === WATER || m === BLOOD) { for (let n = 0; n < 4; n++) splash(x + rf(-3, 3), y + rf(-3, 3), rf(-300, 300), -400); return; }
   if (m === ICE) {
     for (let n = 0; n < 10; n++) {
@@ -4402,17 +4430,151 @@ function wallShot(x, y) {
   for (let n = 0; n < 6; n++) sparks.push({ x, y, vx: rf(-200, 200), vy: rf(-260, -40), life: rf(0.15, 0.35) });
 }
 
-// Short metallic clicks for an empty gun and for reloading.
-function clickSound(freq, vol = 0.12) {
-  if (!settings.sound) return;
+// ======================================================================
+// Sound engine. Every effect is made from noise and simple waves, shaped
+// like the real thing: a sharp attack, a body in the right frequency band
+// and a short decay. All of it runs through one mixer with a compressor
+// (so loud shots do not clip) and a small concrete room reverb, which ties
+// the sounds to the lab. Nothing is loaded from files.
+// ======================================================================
+const SFX = { master: null, verb: null, noise: null, last: {} };
+function sfxCtx() {
+  if (!settings.sound) return null;
   try {
     if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
     if (audio.state === "suspended") audio.resume();
-    const o = audio.createOscillator(), g = audio.createGain(), t = audio.currentTime;
-    o.type = "square"; o.frequency.value = freq;
-    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
-    o.connect(g); g.connect(audio.destination); o.start(t); o.stop(t + 0.06);
-  } catch (e) { /* sound is optional */ }
+    if (!SFX.master) {
+      const comp = audio.createDynamicsCompressor();
+      comp.threshold.value = -16; comp.knee.value = 8; comp.ratio.value = 5; comp.attack.value = 0.002; comp.release.value = 0.18;
+      comp.connect(audio.destination);
+      SFX.master = audio.createGain(); SFX.master.gain.value = 0.9; SFX.master.connect(comp);
+      // Room: a few early reflections and an exponential tail.
+      const len = Math.floor(audio.sampleRate * 1.3), ir = audio.createBuffer(2, len, audio.sampleRate);
+      for (let c = 0; c < 2; c++) {
+        const d = ir.getChannelData(c);
+        for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.2) * 0.6;
+        for (const [ms, a] of [[11, 0.7], [19, 0.5], [31, 0.4], [47, 0.3]]) { const i = Math.floor(audio.sampleRate * (ms + c * 3) / 1000); if (i < len) d[i] += a; }
+      }
+      const conv = audio.createConvolver(); conv.buffer = ir;
+      SFX.verb = audio.createGain(); SFX.verb.gain.value = 0.32;
+      SFX.verb.connect(conv); conv.connect(SFX.master);
+      const n = audio.sampleRate * 2; SFX.noise = audio.createBuffer(1, n, audio.sampleRate);
+      const nd = SFX.noise.getChannelData(0); for (let i = 0; i < n; i++) nd[i] = Math.random() * 2 - 1;
+    }
+    return audio;
+  } catch (e) { return null; }
+}
+// Once every ms milliseconds at most, so a burst of hits stays clean.
+function sfxLimit(key, ms) {
+  const now = performance.now();
+  if (now - (SFX.last[key] || -1e9) < ms) return false;
+  SFX.last[key] = now; return true;
+}
+function sfxEnv(g, t, a, peak, dur) {
+  g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(peak, t + a);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + a + dur);
+}
+function sfxRoute(node, send) {
+  node.connect(SFX.master);
+  if (send > 0) { const sg = audio.createGain(); sg.gain.value = send; node.connect(sg); sg.connect(SFX.verb); }
+}
+// Filtered noise: type and freq of the filter (swept to f2), q, level g,
+// attack a, decay dur, reverb send.
+function nz(t, dur, o) {
+  const src = audio.createBufferSource(); src.buffer = SFX.noise; src.playbackRate.value = o.rate || 1;
+  const f = audio.createBiquadFilter(); f.type = o.type || "bandpass"; f.Q.value = o.q || 1;
+  f.frequency.setValueAtTime(o.f, t); if (o.f2) f.frequency.exponentialRampToValueAtTime(o.f2, t + (o.a || 0.002) + dur);
+  const g = audio.createGain(); sfxEnv(g, t, o.a || 0.002, o.g, dur);
+  src.connect(f); f.connect(g); sfxRoute(g, o.send || 0);
+  src.start(t, Math.random() * 1.5); src.stop(t + (o.a || 0.002) + dur + 0.05);
+}
+// A tone: wave type, pitch f swept to f2, level g, decay dur.
+function tn(t, dur, o) {
+  const osc = audio.createOscillator(); osc.type = o.type || "sine";
+  osc.frequency.setValueAtTime(o.f, t); if (o.f2) osc.frequency.exponentialRampToValueAtTime(o.f2, t + dur);
+  const g = audio.createGain(); sfxEnv(g, t, o.a || 0.002, o.g, dur);
+  osc.connect(g); sfxRoute(g, o.send || 0);
+  osc.start(t); osc.stop(t + (o.a || 0.002) + dur + 0.05);
+}
+const sfx = (fn) => { const ac = sfxCtx(); if (!ac) return; try { fn(ac.currentTime + 0.005); } catch (e) { /* sound is optional */ } };
+
+// Gunshots. Each weapon has its own crack, body, low punch and tail.
+const SHOT_KIND = { "AK-47": "ak", "Sturmgewehr": "ar", "Glock 17": "pistol", "Schrotflinte": "shotgun", "Sniper": "sniper", "Taser": "taser" };
+function shotSound(kind) {
+  sfx((t) => {
+    const P = {
+      ak: { crack: 0.55, body: 900, bodyG: 0.75, bodyD: 0.16, punch: 110, punchG: 0.55, tail: 0.5, mech: 2600 },
+      ar: { crack: 0.6, body: 1300, bodyG: 0.6, bodyD: 0.12, punch: 130, punchG: 0.4, tail: 0.4, mech: 3200 },
+      pistol: { crack: 0.45, body: 1500, bodyG: 0.5, bodyD: 0.09, punch: 150, punchG: 0.3, tail: 0.3, mech: 3800 },
+      shotgun: { crack: 0.5, body: 520, bodyG: 0.95, bodyD: 0.32, punch: 85, punchG: 0.8, tail: 0.75, mech: 0 },
+      sniper: { crack: 0.9, body: 1100, bodyG: 0.9, bodyD: 0.22, punch: 70, punchG: 0.85, tail: 0.9, mech: 0 },
+    }[kind] || null;
+    if (!P) return;
+    nz(t, 0.025, { type: "highpass", f: 3500, g: P.crack, send: 0.2 });
+    nz(t, P.bodyD, { type: "bandpass", f: P.body, f2: P.body * 0.55, q: 0.9, g: P.bodyG, a: 0.001, send: P.tail });
+    nz(t + 0.004, P.bodyD * 2.2, { type: "lowpass", f: 500, f2: 120, g: P.bodyG * 0.5, send: P.tail * 0.8 });
+    tn(t, P.bodyD * 1.4, { f: P.punch, f2: P.punch * 0.4, g: P.punchG, send: 0.1 });
+    if (P.mech) nz(t + 0.018, 0.015, { type: "bandpass", f: P.mech, q: 4, g: 0.12 });
+    // The long gun's crack echoes back from the far wall.
+    if (kind === "sniper") { nz(t + 0.22, 0.4, { type: "bandpass", f: 700, f2: 300, q: 0.7, g: 0.22, send: 1 }); nz(t + 0.48, 0.5, { type: "lowpass", f: 400, g: 0.12, send: 1 }); }
+  });
+}
+// Metal parts of the gun.
+const dryFireSound = () => sfx((t) => { nz(t, 0.012, { type: "bandpass", f: 4200, q: 5, g: 0.35 }); tn(t, 0.02, { type: "square", f: 1900, g: 0.04 }); });
+const magOutSound = () => sfx((t) => { nz(t, 0.02, { type: "bandpass", f: 3000, q: 4, g: 0.3 }); nz(t + 0.03, 0.12, { type: "bandpass", f: 1500, f2: 700, q: 1.5, g: 0.18 }); });
+const magInSound = () => sfx((t) => { nz(t, 0.05, { type: "bandpass", f: 1800, f2: 1200, q: 1.2, g: 0.18 }); nz(t + 0.06, 0.03, { type: "bandpass", f: 2600, q: 3, g: 0.5, send: 0.1 }); tn(t + 0.06, 0.05, { f: 240, f2: 160, g: 0.2 }); });
+const rackSound = () => sfx((t) => { nz(t, 0.09, { type: "bandpass", f: 2200, f2: 3200, q: 2, g: 0.22 }); nz(t + 0.1, 0.025, { type: "bandpass", f: 3600, q: 4, g: 0.45, send: 0.1 }); nz(t + 0.13, 0.03, { type: "bandpass", f: 2400, q: 3, g: 0.35 }); });
+const pumpSound = () => sfx((t) => { nz(t, 0.08, { type: "bandpass", f: 900, f2: 1400, q: 1.5, g: 0.35 }); nz(t + 0.08, 0.02, { type: "bandpass", f: 2400, q: 4, g: 0.45 }); nz(t + 0.16, 0.08, { type: "bandpass", f: 1400, f2: 900, q: 1.5, g: 0.35 }); nz(t + 0.24, 0.03, { type: "bandpass", f: 2000, q: 4, g: 0.5, send: 0.15 }); });
+const shellInSound = () => sfx((t) => { nz(t, 0.03, { type: "bandpass", f: 1700, q: 2, g: 0.3 }); tn(t, 0.04, { f: 300, f2: 200, g: 0.15 }); });
+const boltSound = () => sfx((t) => { nz(t, 0.03, { type: "bandpass", f: 2800, q: 4, g: 0.35 }); nz(t + 0.05, 0.12, { type: "bandpass", f: 1600, f2: 2400, q: 2, g: 0.2 }); nz(t + 0.2, 0.03, { type: "bandpass", f: 3200, q: 4, g: 0.4, send: 0.1 }); });
+const casingSound = () => { if (sfxLimit("casing", 45)) sfx((t) => { const f = rf(3800, 5600); for (let n = 0; n < 3; n++) tn(t + n * rf(0.04, 0.07), 0.05, { f: f * rf(0.92, 1.08), g: 0.05 / (n + 1), send: 0.2 }); }); };
+const magDropSound = () => sfx((t) => { nz(t, 0.05, { type: "bandpass", f: 1200, q: 2, g: 0.3, send: 0.2 }); tn(t, 0.08, { type: "triangle", f: 420, f2: 300, g: 0.1 }); });
+// Hits on bodies and walls.
+const fleshHitSound = () => { if (sfxLimit("flesh", 35)) sfx((t) => { nz(t, 0.07, { type: "lowpass", f: 900, f2: 200, g: 0.45 }); tn(t, 0.08, { f: 95, f2: 50, g: 0.35 }); nz(t + 0.01, 0.05, { type: "bandpass", f: 600, q: 1.5, g: 0.2, rate: 0.6 }); }); };
+const wallHitSound = () => { if (sfxLimit("wall", 40)) sfx((t) => { nz(t, 0.03, { type: "bandpass", f: 2600, q: 2, g: 0.35, send: 0.3 }); if (Math.random() < 0.3) tn(t + 0.01, 0.22, { f: rf(2200, 3200), f2: rf(1200, 1600), g: 0.05, send: 0.5 }); }); };
+function bodyThudSound(speed) {
+  if (!sfxLimit("thud", 70)) return;
+  const v = clamp((speed - 500) / 1200, 0.15, 1);
+  sfx((t) => { nz(t, 0.12 + v * 0.08, { type: "lowpass", f: 380, f2: 90, g: 0.6 * v, send: 0.25 }); tn(t, 0.14, { f: 80, f2: 42, g: 0.5 * v }); nz(t, 0.02, { type: "bandpass", f: 1200, q: 1, g: 0.12 * v }); });
+}
+const boneCrackSound = () => sfx((t) => { for (let n = 0; n < 4; n++) nz(t + n * rf(0.008, 0.02), 0.012, { type: "bandpass", f: rf(1400, 2600), q: 3, g: 0.45 }); tn(t, 0.05, { f: 160, f2: 90, g: 0.2 }); });
+const sliceSound = () => { if (sfxLimit("slice", 60)) sfx((t) => { nz(t, 0.09, { type: "bandpass", f: 2600, f2: 1400, q: 2, g: 0.25 }); nz(t + 0.02, 0.06, { type: "lowpass", f: 700, g: 0.25, rate: 0.7 }); }); };
+const splatSound = () => sfx((t) => { nz(t, 0.14, { type: "lowpass", f: 900, f2: 180, g: 0.55, rate: 0.6, send: 0.2 }); for (let n = 0; n < 3; n++) nz(t + 0.03 + n * 0.03, 0.04, { type: "bandpass", f: rf(500, 900), q: 2, g: 0.18 }); });
+const batSound = (hit) => sfx((t) => {
+  nz(t, 0.12, { type: "bandpass", f: 700, f2: 2200, q: 0.8, g: 0.18 });
+  if (hit) { nz(t + 0.1, 0.05, { type: "bandpass", f: 550, q: 2.5, g: 0.6, send: 0.25 }); tn(t + 0.1, 0.07, { type: "triangle", f: 210, f2: 150, g: 0.3 }); tn(t + 0.1, 0.12, { f: 85, f2: 45, g: 0.4 }); }
+});
+function boomSound() {
+  sfx((t) => {
+    nz(t, 0.05, { type: "highpass", f: 2500, g: 0.6, send: 0.3 });
+    nz(t, 1.4, { type: "lowpass", f: 900, f2: 60, g: 1.0, a: 0.004, send: 0.9 });
+    tn(t, 0.9, { f: 70, f2: 22, g: 0.9 });
+    nz(t + 0.05, 0.7, { type: "bandpass", f: 300, f2: 90, q: 0.6, g: 0.4, send: 0.6 });
+    // Bits of debris come down afterwards.
+    for (let n = 0; n < 7; n++) nz(t + rf(0.25, 1.2), 0.03, { type: "bandpass", f: rf(1200, 3500), q: 3, g: rf(0.05, 0.14), send: 0.3 });
+  });
+}
+function whooshSound(v) { sfx((t) => nz(t, 0.35, { type: "bandpass", f: 300, f2: 900, q: 0.7, g: 0.35 * v, a: 0.08, send: 0.2 })); }
+function glassSound() {
+  sfx((t) => {
+    nz(t, 0.04, { type: "highpass", f: 3000, g: 0.5, send: 0.3 });
+    for (let n = 0; n < 9; n++) tn(t + rf(0, 0.25), rf(0.08, 0.25), { f: rf(3000, 7500), g: rf(0.03, 0.08), send: 0.4 });
+    for (let n = 0; n < 6; n++) nz(t + rf(0.05, 0.4), 0.02, { type: "bandpass", f: rf(4000, 8000), q: 5, g: 0.12 });
+  });
+}
+const splashSound = (v) => { if (sfxLimit("splash", 110)) sfx((t) => { nz(t, 0.18 + v * 0.2, { type: "bandpass", f: 900, f2: 350, q: 0.8, g: 0.12 + 0.3 * v, send: 0.3 }); for (let n = 0; n < 4; n++) tn(t + rf(0.02, 0.2), 0.04, { f: rf(600, 1400), f2: rf(1500, 2400), g: 0.04 * v + 0.01 }); }); };
+const pourSound = () => { if (sfxLimit("pour", 120)) sfx((t) => nz(t, 0.16, { type: "bandpass", f: rf(1200, 1800), q: 0.8, g: 0.06, a: 0.04 })); };
+const defibSound = () => sfx((t) => {
+  // Charging whine, then the shock: a thump and a crackle.
+  tn(t, 0.5, { type: "sine", f: 900, f2: 3400, g: 0.06, a: 0.05 });
+  nz(t + 0.5, 0.06, { type: "lowpass", f: 400, g: 0.7, send: 0.2 }); tn(t + 0.5, 0.15, { f: 70, f2: 35, g: 0.6 });
+  for (let n = 0; n < 8; n++) nz(t + 0.5 + n * 0.012, 0.01, { type: "highpass", f: 4000, g: 0.25 });
+});
+const syringeSound = () => sfx((t) => { nz(t, 0.015, { type: "bandpass", f: 3000, q: 4, g: 0.2 }); nz(t + 0.06, 0.35, { type: "highpass", f: 5000, g: 0.05, a: 0.05 }); });
+const iceSound = () => { if (sfxLimit("ice", 90)) sfx((t) => { for (let n = 0; n < 3; n++) nz(t + n * rf(0.01, 0.04), 0.02, { type: "bandpass", f: rf(3500, 6500), q: 6, g: 0.1 }); }); };
+// Short ticks for buttons and small actions.
+function clickSound(freq, vol = 0.12) {
+  sfx((t) => { tn(t, 0.035, { type: "triangle", f: freq * 1.6, f2: freq * 1.2, g: vol * 0.7 }); nz(t, 0.01, { type: "bandpass", f: freq * 4, q: 3, g: vol * 0.4 }); });
 }
 
 // Red laser from the muzzle until it meets a wall or a body.
@@ -4491,28 +4653,84 @@ function gunButtonAt(x, y) {
 }
 const modeAuto = () => WEAPONS[state.weapon].auto && state.autoMode[state.weapon];
 
+// Reloading runs through the steps of the real gun, each with its sound:
+// magazine out, new one in, then the bolt or slide is pulled. The shotgun
+// takes shells one by one, the sniper works its bolt.
+const RELOAD_STEPS = {
+  mag: [[0, "MAGAZIN RAUS", "out"], [0.28, "NEUES MAGAZIN", null], [0.58, "MAGAZIN REIN", "in"], [0.84, "DURCHLADEN", "rack"]],
+  pistol: [[0, "MAGAZIN RAUS", "out"], [0.3, "NEUES MAGAZIN", null], [0.6, "MAGAZIN REIN", "in"], [0.84, "SCHLITTEN VOR", "rack"]],
+  bolt: [[0, "VERSCHLUSS AUF", "bolt"], [0.18, "MAGAZIN RAUS", "out"], [0.56, "MAGAZIN REIN", "in"], [0.84, "VERSCHLUSS ZU", "bolt"]],
+  taser: [[0, "KARTUSCHE RAUS", "out"], [0.6, "NEUE KARTUSCHE", "in"]],
+};
+function reloadSteps(wp) {
+  if (wp.rk !== "shells") return RELOAD_STEPS[wp.rk] || RELOAD_STEPS.mag;
+  const n = Math.max(1, wp.mag - state.reloadFrom), out = [];
+  for (let i = 0; i < n; i++) out.push([(i + 0.4) / (n + 1), "PATRONE " + (state.reloadFrom + i + 1) + "/" + wp.mag, "shell"]);
+  out.push([(n + 0.3) / (n + 1), "DURCHLADEN", "pump"]);
+  return out;
+}
+function reloadEvent(ev) {
+  const wp = WEAPONS[state.weapon];
+  if (ev === "out") {
+    magOutSound();
+    // The empty magazine drops out under the gun, or in the front view where
+    // the last shot was fired.
+    if (settings.front) { const [lx, ly] = state.lastShot || [W / 2, FLOOR_Y - 120]; spawnGib(lx, ly, rf(-30, 30), rf(-60, 0), false, true, true); }
+    else { const [px0, py0, ang] = gunPose(); spawnGib(px0 + Math.cos(ang) * 14, py0 + 10, rf(-30, 30), rf(-60, 0), false, true, true); }
+  } else if (ev === "in") { magInSound(); state.kick = 0.5; }
+  else if (ev === "rack") { rackSound(); state.kick = 0.8; }
+  else if (ev === "bolt") boltSound();
+  else if (ev === "pump") { pumpSound(); state.kick = 0.8; }
+  else if (ev === "shell") { shellInSound(); state.ammo[state.weapon] = Math.min(wp.mag, state.ammo[state.weapon] + 1); state.kick = 0.3; }
+}
+function reloadProgress() { return state.reloadT > 0 && state.reloadLen ? 1 - state.reloadT / state.reloadLen : 1; }
+function reloadLabel() {
+  const wp = WEAPONS[state.weapon], p = reloadProgress();
+  let txt = "LÄDT";
+  for (const [at, name] of reloadSteps(wp)) if (p >= at) txt = name;
+  return txt;
+}
 function startReload() {
   const wp = WEAPONS[state.weapon];
   if (state.reloadT > 0 || state.ammo[state.weapon] >= wp.mag) return;
-  state.reloadT = wp.reload;
+  state.reloadFrom = state.ammo[state.weapon];
+  // Shells go in one by one, so the time grows with the shells missing.
+  state.reloadT = wp.rk === "shells" ? wp.reload * (0.35 + 0.65 * (wp.mag - state.reloadFrom) / wp.mag) : wp.reload;
+  state.reloadLen = state.reloadT; state.reloadStep = 0;
   state.triggerDown = false;
-  clickSound(520);
-  // The empty magazine drops out under the gun, or in the front view where
-  // the last shot was fired.
-  if (settings.front) {
-    const [lx, ly] = state.lastShot || [W / 2, FLOOR_Y - 120];
-    spawnGib(lx, ly, rf(-30, 30), rf(-60, 0), false, true, true);
-  } else {
-    const [px0, py0, ang] = gunPose();
-    spawnGib(px0 + Math.cos(ang) * 14, py0 + 10, rf(-30, 30), rf(-60, 0), false, true, true);
-  }
+}
+function reloadStep() {
+  const wp = WEAPONS[state.weapon];
+  if (state.reloadT <= 0) return;
+  state.reloadT -= DT;
+  const p = 1 - Math.max(0, state.reloadT) / state.reloadLen, steps = reloadSteps(wp);
+  while (state.reloadStep < steps.length && p >= steps[state.reloadStep][0]) { const ev = steps[state.reloadStep][2]; if (ev) reloadEvent(ev); state.reloadStep++; }
+  if (state.reloadT <= 0) { state.reloadT = 0; state.ammo[state.weapon] = wp.mag; }
+}
+// The fresh magazine travels up into the gun while reloading (side view).
+function drawReloadMag() {
+  if (settings.front || state.tool !== T_GUN || state.reloadT <= 0) return;
+  const wp = WEAPONS[state.weapon];
+  if (wp.rk === "shells") return;
+  const p = 1 - state.reloadT / state.reloadLen, steps = reloadSteps(wp);
+  const t0 = steps.find((s) => s[1].startsWith("NEU") || s[1] === "MAGAZIN REIN")[0] - 0.12, t1 = steps.find((s) => s[2] === "in")[0];
+  if (p < t0 || p > t1 + 0.02) return;
+  const u = easeOut(clamp((p - t0) / (t1 - t0), 0, 1)), [px0, py0, ang] = gunPose();
+  const wx = px0 + Math.cos(ang) * 10, wy = py0 + 14, x = wx, y = wy + (1 - u) * 46;
+  ctx.save(); ctx.translate(x, y); ctx.rotate(ang * 0.3);
+  ctx.fillStyle = "#0b0b0e"; ctx.fillRect(-4.5, -1, 9, 17);
+  ctx.fillStyle = wp.rk === "taser" ? "#2a2a30" : "#4a4a54"; ctx.fillRect(-3.5, 0, 7, 15);
+  ctx.fillStyle = "#e0b84a"; ctx.fillRect(-2.5, -2.5, 5, 3);
+  ctx.restore();
 }
 
 function pullTrigger() {
   state.triggerDown = true;
+  // A shotgun can stop loading and fire the shells already in.
+  if (state.reloadT > 0 && WEAPONS[state.weapon].rk === "shells" && state.ammo[state.weapon] > 0) { state.reloadT = 0; pumpSound(); return; }
   if (state.reloadT > 0) return;
   if (state.ammo[state.weapon] <= 0) {
-    clickSound(1400, 0.08);
+    dryFireSound();
     state.toast = 1.2; state.toastText = "Leer. Nachladen!";
     state.emptyFlash = 1;
     return;
@@ -4538,14 +4756,23 @@ function gunStep() {
   const wp = WEAPONS[state.weapon];
   if (state.tool !== T_GUN) { state.triggerDown = false; state.pendingShot = 0; }
   if (state.pendingShot && performance.now() - state.pendingShot > 110) { state.pendingShot = 0; if (!pinch && state.pressing) pullTrigger(); }
-  if (state.reloadT > 0) {
-    state.reloadT -= DT;
-    if (state.reloadT <= 0) { state.reloadT = 0; state.ammo[state.weapon] = wp.mag; clickSound(700); }
+  reloadStep();
+  // Pump and bolt guns cycle a moment after the shot: sound, casing out.
+  const cy = state.cycle;
+  if (cy && performance.now() >= cy.at) {
+    state.cycle = null;
+    if (cy.kind === "pump") pumpSound(); else boltSound();
+    state.kick = 0.7;
+    let gx, gy, vx;
+    if (cy.x !== undefined) { gx = cy.x; gy = cy.y; vx = rf(60, 140); }
+    else { const [px0, py0] = gunPose(); gx = px0; gy = py0 - 4; vx = cy.back * rf(60, 140); }
+    spawnGib(gx, gy, vx, rf(-260, -160), false, true);
+    if (cy.kind === "pump") gibs[gibs.length - 1].shell = true;
   }
   if (state.triggerDown && modeAuto() && state.reloadT <= 0) {
     state.fireCd -= DT;
     while (state.fireCd <= 0 && state.ammo[state.weapon] > 0) { fire(); state.fireCd += 1 / wp.rate; }
-    if (state.ammo[state.weapon] <= 0 && state.fireCd <= 0) { state.triggerDown = false; clickSound(1400, 0.08); state.emptyFlash = 1; }
+    if (state.ammo[state.weapon] <= 0 && state.fireCd <= 0) { state.triggerDown = false; dryFireSound(); state.emptyFlash = 1; }
   }
   state.kick = Math.max(0, state.kick - DT * 14);
   state.climb = moveToward(state.climb, 0, (state.triggerDown ? 0.15 : 0.9) * DT);
@@ -4566,28 +4793,51 @@ function drawGunControlsBody() {
     const f = FIRE_BTN, down = state.triggerDown;
     ctx.beginPath(); ctx.arc(f.x, f.y, f.r + 5, 0, Math.PI * 2);
     ctx.fillStyle = "rgba(15,15,19,0.88)"; ctx.fill();
-    const frac = tween("ammoRing", state.reloadT > 0 ? 1 - state.reloadT / wp.reload : ammo / wp.mag, 24);
-    const fk = tween("fireDown", down ? 1 : 0, 32);
+    const fk = tween("fireDown", down ? 1 : 0, 32), rl = state.reloadT > 0;
+    // One segment per round around the button; while reloading a yellow
+    // band runs round instead.
     ctx.lineCap = "butt"; ctx.lineWidth = 4;
-    ctx.strokeStyle = "#2c2c34"; ctx.beginPath(); ctx.arc(f.x, f.y, f.r + 1.5, 0, Math.PI * 2); ctx.stroke();
-    ctx.strokeStyle = state.reloadT > 0 ? "#e6c850" : ammo / wp.mag < 0.25 ? "#ff5040" : "#ecece6";
-    ctx.beginPath(); ctx.arc(f.x, f.y, f.r + 1.5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac); ctx.stroke();
+    const seg = (Math.PI * 2) / wp.mag, gap = Math.min(0.06, seg * 0.3);
+    for (let n = 0; n < wp.mag; n++) {
+      const a0 = -Math.PI / 2 + n * seg + gap / 2;
+      ctx.strokeStyle = n < ammo ? (ammo / wp.mag < 0.25 ? "#ff5040" : "#ecece6") : "#2c2c34";
+      ctx.beginPath(); ctx.arc(f.x, f.y, f.r + 1.5, a0, a0 + seg - gap); ctx.stroke();
+    }
+    if (rl) {
+      ctx.strokeStyle = "#e6c850"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(f.x, f.y, f.r + 6, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - state.reloadT / state.reloadLen)); ctx.stroke();
+    }
     const rg = ctx.createRadialGradient(f.x - 8, f.y - 10, 4, f.x, f.y, f.r);
     rg.addColorStop(0, down ? "#ff6a5a" : "#e8443a"); rg.addColorStop(1, down ? "#9a1a14" : "#7c1410");
     ctx.beginPath(); ctx.arc(f.x, f.y + 1.5 * fk, f.r - 3 - 2.5 * fk, 0, Math.PI * 2); ctx.fillStyle = rg; ctx.fill();
     ctx.strokeStyle = "rgba(255,255,255,0.18)"; ctx.lineWidth = 1.2; ctx.stroke();
     // Crosshair mark and the round count
     const cy = f.y + 1.5 * fk;
-    label(state.reloadT > 0 ? "..." : String(ammo), f.x, cy - 3, 20, "#fff4ec", "center");
-    label(state.reloadT > 0 ? "LÄDT" : "FEUER", f.x, cy + 15, 8, "rgba(255,240,230,0.85)", "center");
+    label(String(ammo), f.x, cy - 3, 20, rl ? "#ffe8a0" : "#fff4ec", "center");
+    label(rl ? "LÄDT" : ammo <= 0 ? "LEER" : "FEUER", f.x, cy + 15, 8, "rgba(255,240,230,0.85)", "center");
+    // The current step of the reload floats over the button.
+    if (rl) {
+      const t = reloadLabel();
+      ctx.font = `700 9px ${FONT}`;
+      const tw = ctx.measureText(t).width + 16;
+      rr(f.x - tw / 2, f.y - f.r - 30, tw, 18, 9); ctx.fillStyle = "rgba(15,15,19,0.92)"; ctx.fill();
+      ctx.strokeStyle = "#e6c850"; ctx.lineWidth = 1.2; ctx.stroke();
+      label(t, f.x, f.y - f.r - 20.5, 9, "#e6c850", "center");
+    }
   } else {
     // Rounds left, with a bar for the magazine
-    const f = FIRE_BTN, frac = tween("ammoRing", state.reloadT > 0 ? 1 - state.reloadT / wp.reload : ammo / wp.mag, 24);
-    rr(f.x - 36, f.y - 24, 72, 48, 12); ctx.fillStyle = "rgba(15,15,19,0.88)"; ctx.fill();
-    ctx.strokeStyle = "#3e3e46"; ctx.lineWidth = 1.4; ctx.stroke();
-    label(state.reloadT > 0 ? "..." : String(ammo), f.x, f.y - 6, 18, ammo / wp.mag < 0.25 && state.reloadT <= 0 ? "#ff6a5a" : "#fff4ec", "center");
-    rr(f.x - 26, f.y + 10, 52, 5, 2.5); ctx.fillStyle = "#2c2c34"; ctx.fill();
-    rr(f.x - 26, f.y + 10, Math.max(5, 52 * frac), 5, 2.5); ctx.fillStyle = state.reloadT > 0 ? "#e6c850" : "#ecece6"; ctx.fill();
+    // Rounds left as a row of cartridges, the reload step written under it.
+    const f = { x: W - 62, y: FIRE_BTN.y }, rl = state.reloadT > 0, bw = 74;
+    rr(f.x - bw / 2 - 14, f.y - 26, bw + 28, rl ? 64 : 52, 12); ctx.fillStyle = "rgba(15,15,19,0.88)"; ctx.fill();
+    ctx.strokeStyle = rl ? "#8a7420" : "#3e3e46"; ctx.lineWidth = 1.4; ctx.stroke();
+    label(String(ammo), f.x, f.y - 9, 18, ammo / wp.mag < 0.25 && !rl ? "#ff6a5a" : rl ? "#ffe8a0" : "#fff4ec", "center");
+    const n = wp.mag, cw = Math.min(8, (bw - (n - 1)) / n), x0 = f.x - (n * cw + (n - 1)) / 2;
+    for (let i = 0; i < n; i++) {
+      const x = x0 + i * (cw + 1), full = i < ammo;
+      ctx.fillStyle = full ? (wp.rk === "shells" ? "#c8302a" : "#d8a84a") : "#2c2c34"; ctx.fillRect(x, f.y + 6, cw, 9);
+      if (full) { ctx.fillStyle = wp.rk === "shells" ? "#e8c050" : "#a87a2a"; ctx.fillRect(x, f.y + 12, cw, 3); }
+    }
+    if (rl) label(reloadLabel(), f.x, f.y + 27, 8.5, "#e6c850", "center");
   }
   // Reload button with a magazine icon, pulses when the gun is empty
   const rs = popScale("reload", 0.12);
@@ -4599,7 +4849,7 @@ function drawGunControlsBody() {
   ctx.strokeStyle = empty || state.emptyFlash > 0 ? "#e6c850" : "#3e3e46"; ctx.lineWidth = 1.6; ctx.stroke();
   if (state.reloadT > 0) {
     ctx.strokeStyle = "#e6c850"; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(r.x, r.y, r.r - 3, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - state.reloadT / wp.reload)); ctx.stroke();
+    ctx.beginPath(); ctx.arc(r.x, r.y, r.r - 3, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * reloadProgress()); ctx.stroke();
   }
   ctx.save(); ctx.translate(r.x, r.y - 3); ctx.rotate(0.18);
   ctx.fillStyle = "#cfcfd6"; rr(-5, -9, 10, 15, 2); ctx.fill();
@@ -4620,33 +4870,13 @@ function drawGunControlsBody() {
 }
 
 let audio = null;
-function gunSound(power) {
-  if (!settings.sound) return;
-  try {
-    if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
-    if (audio.state === "suspended") audio.resume();
-    const n = Math.floor(audio.sampleRate * 0.16), buf = audio.createBuffer(1, n, audio.sampleRate), ch = buf.getChannelData(0);
-    for (let i = 0; i < n; i++) ch[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 3.5);
-    const src = audio.createBufferSource(); src.buffer = buf;
-    const f = audio.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 900 + power * 1400;
-    const g = audio.createGain(); g.gain.value = 0.18 + power * 0.18;
-    src.connect(f); f.connect(g); g.connect(audio.destination); src.start();
-  } catch (e) { /* sound is optional */ }
+function gunSound(power, kind) {
+  if (kind) { shotSound(kind); return; }
+  shotSound(power >= 1.2 ? "shotgun" : power >= 0.9 ? "ak" : power >= 0.7 ? "ar" : "pistol");
 }
 
-// Gauze torn off the roll.
-function tearSound() {
-  if (!settings.sound) return;
-  try {
-    if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
-    const n = Math.floor(audio.sampleRate * 0.16), buf = audio.createBuffer(1, n, audio.sampleRate), ch = buf.getChannelData(0);
-    for (let i = 0; i < n; i++) ch[i] = (Math.random() * 2 - 1) * (0.5 + 0.5 * Math.sin(i / 90)) * (1 - i / n);
-    const src = audio.createBufferSource(); src.buffer = buf;
-    const f = audio.createBiquadFilter(); f.type = "bandpass"; f.frequency.value = 2600; f.Q.value = 0.8;
-    const g = audio.createGain(); g.gain.value = 0.16;
-    src.connect(f); f.connect(g); g.connect(audio.destination); src.start();
-  } catch (e) { /* sound is optional */ }
-}
+// Gauze torn off the roll: a ripping band of noise in short pulls.
+function tearSound() { sfx((t) => { for (let n = 0; n < 3; n++) nz(t + n * 0.06, 0.07, { type: "bandpass", f: rf(2500, 4000), q: 1.2, g: 0.18 }); }); }
 
 // The high ring in the ears after a shot close by.
 function shotRing() {
@@ -4660,21 +4890,7 @@ function shotRing() {
 }
 
 // A body hitting the floor: a dull knock with a low drop.
-function thudSound() {
-  if (!settings.sound) return;
-  try {
-    const t = audio.currentTime, n = Math.floor(audio.sampleRate * 0.25), buf = audio.createBuffer(1, n, audio.sampleRate), ch = buf.getChannelData(0);
-    for (let i = 0; i < n; i++) ch[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 5);
-    const src = audio.createBufferSource(); src.buffer = buf;
-    const f = audio.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 260;
-    const g = audio.createGain(); g.gain.value = 0.55;
-    src.connect(f); f.connect(g); g.connect(audio.destination); src.start(t);
-    const o = audio.createOscillator(), og = audio.createGain();
-    o.frequency.setValueAtTime(95, t); o.frequency.exponentialRampToValueAtTime(38, t + 0.22);
-    og.gain.setValueAtTime(0.4, t); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
-    o.connect(og); og.connect(audio.destination); o.start(t); o.stop(t + 0.32);
-  } catch (e) { /* sound is optional */ }
-}
+function thudSound() { bodyThudSound(1300); }
 
 // ----------------------------------------------------------------- music
 // Quiet menu music made on the fly: a soft pad and a slow plucked melody
@@ -5887,7 +6103,7 @@ function loadMap(i) {
   for (const r of m.water) fillRect(r, WATER);
   // Remember the map's own ice so "Eis entfernen" only clears placed ice.
   for (let i = 0; i < N; i++) mapIce[i] = mat[i] === ICE ? 1 : 0;
-  gibs = []; effects = []; tracers = []; flashes = []; sparks = [];
+  gibs = []; effects = []; tracers = []; flashes = []; sparks = []; smokes = [];
   dctx.clearRect(0, 0, decal.width, decal.height);
   state.dolls = []; state.selected = null; state.grabDoll = null; state.counter = 0;
   for (const e of m.dolls) placeDoll(...mapDollSpot(e));
@@ -7480,11 +7696,11 @@ function frontHit(d, x, y) {
 function aimFire() {
   const v = state.aimView, d = v.d, wp = WEAPONS[state.weapon];
   if (state.reloadT > 0) return;
-  if (state.ammo[state.weapon] <= 0) { clickSound(1400, 0.08); state.toast = 1.2; state.toastText = "Leer. Nachladen!"; return; }
+  if (state.ammo[state.weapon] <= 0) { dryFireSound(); state.toast = 1.2; state.toastText = "Leer. Nachladen!"; return; }
   const [cx, cy] = aimCenter();
   const hit = frontHit(d, (v.cx - cx) / AIM_F, (v.cy - cy) / AIM_F);
   state.ammo[state.weapon]--;
-  if (wp.taser) taserPop(); else gunSound(wp.snd);
+  if (wp.taser) taserPop(); else shotSound(SHOT_KIND[wp.name]);
   state.shake = Math.max(state.shake, wp.kick);
   v.flash = 1; v.last = hit;
   if (!hit) { state.toast = 0.8; state.toastText = "Daneben"; return; }
@@ -8025,9 +8241,9 @@ function press() {
     state.swings.push({ x: state.mx, y: state.my, dir: hit ? (Math.sign(hit.d.x[P_NECK] - state.mx) || 1) : 1, age: 0 });
     if (hit) {
       hit.d.batHit(hit.k, hit.t, hit.s, Math.sign(hit.d.x[P_NECK] - state.mx) || 1);
-      state.selected = hit.d; state.shake = Math.max(state.shake, 0.25); thudSound();
+      state.selected = hit.d; state.shake = Math.max(state.shake, 0.25); batSound(true);
       worldEvent("shot", state.mx, state.my, hit.d);
-    } else whooshSound(0.4);
+    } else batSound(false);
     return;
   }
   if (state.tool === T_DEFI || state.tool === T_ADREN) {
@@ -8036,8 +8252,8 @@ function press() {
     for (const d of state.dolls) { const [i, dist] = d.nearestPoint(state.mx, state.my, bestD); if (i >= 0) { bestD = dist; best = d; } }
     if (!best) { state.toast = 1.2; state.toastText = "Tippe auf eine Puppe"; return; }
     state.selected = best; state.toast = 1.6;
-    if (state.tool === T_DEFI) { state.toastText = best.defib(); taserPop(); state.shake = Math.max(state.shake, 0.15); }
-    else { state.toastText = best.adrenaline(); clickSound(1200, 0.05); }
+    if (state.tool === T_DEFI) { state.toastText = best.defib(); defibSound(); state.shake = Math.max(state.shake, 0.15); }
+    else { state.toastText = best.adrenaline(); syringeSound(); }
     return;
   }
   if (state.tool === T_IV) {
@@ -8137,6 +8353,7 @@ function release() {
 function applyTool() {
   const { mx, my } = state;
   if (state.tool === T_WATER) {
+    pourSound();
     // Each level roughly doubles the flow. Level 5 is a thick, fast jet.
     const lv = state.waterLevel, count = [5, 12, 26, 52, 100][lv - 1], spread = [1.5, 3, 4.5, 6.5, 9][lv - 1];
     const push = [30, 60, 100, 150, 220][lv - 1];
@@ -8163,6 +8380,7 @@ function applyTool() {
     paintDisc(mx, my, 8, FIRE, 0.25);
     for (const d of state.dolls) d.applyHeat(mx, my, 10, 3);
   } else if (state.tool === T_ICE) {
+    iceSound();
     // Ice grows around the doll, never inside it.
     paintDisc(mx, my, 7, ICE, 1, 200, (x, y) => state.dolls.some((d) => d.near(x, y, 4) || d.x.some((px1, i) => Math.hypot(px1 - x, d.y[i] - y) < d.rad[i] + 3)));
     for (const d of state.dolls) d.applyCold(mx, my, 30);
@@ -8285,21 +8503,8 @@ function drawBodyFlames() {
 }
 // Fire sounds: crackling while something burns, a whoosh when it catches,
 // breaking glass for the molotov.
-function noiseBurst(dur, freq, q, gain, type = "bandpass") {
-  if (!settings.sound) return;
-  try {
-    if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
-    const n = Math.floor(audio.sampleRate * dur), buf = audio.createBuffer(1, n, audio.sampleRate), ch = buf.getChannelData(0);
-    for (let i = 0; i < n; i++) ch[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 2);
-    const src = audio.createBufferSource(); src.buffer = buf;
-    const f = audio.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
-    const g = audio.createGain(); g.gain.value = gain;
-    src.connect(f); f.connect(g); g.connect(audio.destination); src.start();
-  } catch (e) { /* sound is optional */ }
-}
+function noiseBurst(dur, freq, q, gain, type = "bandpass") { sfx((t) => nz(t, dur, { type, f: freq, q, g: gain, send: 0.15 })); }
 const fireCrackle = () => noiseBurst(rf(0.01, 0.04), rf(1500, 4500), 2, rf(0.03, 0.08));
-const whooshSound = (v) => noiseBurst(0.45, 500, 0.6, 0.22 * v, "lowpass");
-function glassSound() { for (let n = 0; n < 5; n++) setTimeout(() => noiseBurst(0.05, rf(3500, 7000), 6, 0.12), n * 25); }
 
 // Taser wires: from the gun to the two barbs, sagging a little. While the
 // current runs, blue arcs jump between the barbs and the gun clicks.
@@ -8347,7 +8552,7 @@ function drawWires() {
   ctx.restore();
 }
 // The pop of the compressed gas that throws the barbs.
-const taserPop = () => { noiseBurst(0.08, 900, 0.7, 0.25, "lowpass"); noiseBurst(0.03, 4000, 2, 0.08); };
+const taserPop = () => sfx((t) => { nz(t, 0.06, { type: "lowpass", f: 900, g: 0.35 }); for (let n = 0; n < 6; n++) nz(t + 0.02 + n * 0.015, 0.012, { type: "highpass", f: 4500, g: 0.2 }); tn(t, 0.3, { type: "sawtooth", f: 55, g: 0.05 }); });
 
 // Dolls bump into each other instead of passing through.
 function collideDolls() {
@@ -8391,7 +8596,10 @@ function physicsStep() {
   for (const t of tracers) t.age += DT;
   tracers = tracers.filter((t) => t.age < 0.07);
   for (const f of flashes) f.age += DT;
-  flashes = flashes.filter((f) => f.age < 0.05);
+  flashes = flashes.filter((f) => f.age < 0.06);
+  for (const p of smokes) { p.age += DT; p.x += p.vx * DT; p.y += p.vy * DT; p.vx *= 1 - 2.5 * DT; p.vy = p.vy * (1 - 2 * DT) - 18 * DT; p.r += 9 * DT; }
+  smokes = smokes.filter((p) => p.age < p.life);
+  state.frontFlash = Math.max(0, (state.frontFlash || 0) - DT * 12);
   for (const p of sparks) { p.vy += GRAVITY * DT; p.x += p.vx * DT; p.y += p.vy * DT; p.life -= DT; }
   sparks = sparks.filter((p) => p.life > 0);
   state.shake = Math.max(0, state.shake - DT);
@@ -8812,12 +9020,32 @@ function render() {
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(e.x, e.y, r, 0, Math.PI * 2); ctx.fill();
   }
   for (const f of flashes) {
-    const g = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, 22);
-    g.addColorStop(0, "rgba(255,240,180,0.95)"); g.addColorStop(0.5, "rgba(255,150,40,0.6)"); g.addColorStop(1, "rgba(255,80,0,0)");
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(f.x, f.y, 22, 0, Math.PI * 2); ctx.fill();
+    const s = f.s || 1, k = 1 - f.age / 0.06;
+    // The room lights up warm for a moment.
+    if (f.muzzle) {
+      const L = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, 170 * s);
+      L.addColorStop(0, `rgba(255,190,110,${0.22 * k})`); L.addColorStop(1, "rgba(255,120,40,0)");
+      ctx.fillStyle = L; ctx.beginPath(); ctx.arc(f.x, f.y, 170 * s, 0, Math.PI * 2); ctx.fill();
+    }
+    const g = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, 20 * s);
+    g.addColorStop(0, `rgba(255,244,200,${0.95 * k})`); g.addColorStop(0.45, `rgba(255,160,50,${0.6 * k})`); g.addColorStop(1, "rgba(255,80,0,0)");
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(f.x, f.y, 20 * s, 0, Math.PI * 2); ctx.fill();
+    if (f.muzzle) {
+      // A star of flame: a long tongue forward, short ones to the sides.
+      ctx.save(); ctx.translate(f.x, f.y); ctx.rotate(f.ang + rf(-0.05, 0.05));
+      ctx.fillStyle = `rgba(255,214,120,${0.9 * k})`;
+      for (const [a, l, w] of [[0, 30, 5], [0.9, 12, 3], [-0.9, 12, 3], [0.35, 18, 3], [-0.35, 18, 3]]) {
+        ctx.save(); ctx.rotate(a); ctx.beginPath(); ctx.moveTo(0, -w * s * 0.5); ctx.lineTo(l * s * rf(0.8, 1.15), 0); ctx.lineTo(0, w * s * 0.5); ctx.closePath(); ctx.fill(); ctx.restore();
+      }
+      ctx.fillStyle = `rgba(255,255,240,${k})`; ctx.beginPath(); ctx.arc(2, 0, 3.5 * s, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
   }
   ctx.drawImage(lightCan, 0, 0, W, H);
   ctx.globalCompositeOperation = "source-over";
+  // Powder smoke
+  for (const p of smokes) { const k = 1 - p.age / p.life; ctx.fillStyle = `rgba(190,188,182,${p.a * k * k})`; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill(); }
+  drawReloadMag();
   // Aim line, cursor and the long press ring belong to the room.
   if (!settings.front) drawLaser();
   drawCursor();
@@ -8830,6 +9058,13 @@ function render() {
   let sel = state.selected;
   if (!sel || !state.dolls.includes(sel)) sel = state.selected = state.dolls[state.dolls.length - 1] || null;
   drawPanel(sel);
+  // Front view: the gun fires from below the picture, its flash lights the
+  // lower edge of the screen for a moment.
+  if (settings.front && state.frontFlash > 0) {
+    const fg = ctx.createRadialGradient(W * 0.78, H + 40, 10, W * 0.78, H + 40, 320);
+    fg.addColorStop(0, `rgba(255,200,120,${0.35 * state.frontFlash})`); fg.addColorStop(1, "rgba(255,140,60,0)");
+    ctx.fillStyle = fg; ctx.fillRect(0, 0, W, H);
+  }
   drawContextBar();
   drawGunControls();
   drawToolbar();
