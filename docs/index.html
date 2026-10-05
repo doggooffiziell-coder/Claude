@@ -677,7 +677,7 @@ const JOINTS = [
 const SELF_PAIRS = [];
 for (const a of [P_HEAD, P_NECK]) for (const b of [P_HIP, P_KNEE_L, P_KNEE_R, P_ANKLE_L, P_ANKLE_R, P_TOE_L, P_TOE_R]) SELF_PAIRS.push([a, b]);
 for (const b of [P_KNEE_L, P_KNEE_R, P_ANKLE_L, P_ANKLE_R, P_TOE_L, P_TOE_R]) SELF_PAIRS.push([P_WAIST, b]);
-const IV_TIME = 12;
+const IV_TIME = 12, MONITOR_BLOOD = 5;
 let MUSCLE_HELD = 0.04, LIMIT_SOAK = 0.6;
 const ITERATIONS = 8, HEAD_R = 17 * DS, MAX_STEP = 40, DOLL_GRAVITY = 1300;
 // Impact speeds in units per second. A fall from height h lands at about
@@ -916,6 +916,7 @@ class Doll {
     this.woundBleed = wound;
     let loss = this.organBleed + wound + this.burnLoss;
     if (this.iv > 0) loss -= 8;
+    if (this.monitor) loss -= MONITOR_BLOOD;
     if (loss > 0.05) { eta = Math.max(0, this.bl - 8) / loss; this.etaWhy = this.burnLoss > this.organBleed + wound ? "burn" : "blood"; }
     // Air: what the lungs bring in against what the body loses.
     const breath = (this.organ[ORGAN.lungL] + this.organ[ORGAN.lungR]) / 200;
@@ -1943,6 +1944,32 @@ class Doll {
     }
   }
   applyCold(x, y, r) { if (this.near(x, y, r)) { this.freeze = Math.min(1.6, this.freeze + DT * 1.1); this.extinguish(); } }
+  // Intensive care: a monitor on a cart beside the body, with a blood line
+  // and an oxygen line. As long as it is connected it replaces lost blood
+  // steadily and helps breathing, so a patient with an internal bleeding
+  // that no bandage can stop stays alive. It does not heal anything: when
+  // it comes off, the bleeding takes over again. It beeps with every beat
+  // and sounds the alarm when the heart stops.
+  updateMonitor() {
+    const m = this.monitor;
+    const tx = this.x[P_WAIST] + m.side * 58;
+    m.x = lerp(m.x, clamp(tx, 30, W - 30), 0.06);
+    // Dragged too far away, the lines tear off.
+    if (Math.hypot(this.x[P_WAIST] - m.x, this.y[P_WAIST] - (m.y || this.y[P_WAIST])) > 260) {
+      this.monitor = null; state.toast = 1.6; state.toastText = "Monitor abgerissen!"; this.logEvent("Monitor abgerissen"); return;
+    }
+    if (!this.dead) {
+      this.bl = Math.min(100, this.bl + MONITOR_BLOOD * DT);
+      if (!this.arrest && !this.headUnder) this.o2 = Math.min(100, this.o2 + 6 * DT);
+    }
+    // Alarm: two fast tones while the heart is stopped, a flat tone once dead.
+    m.alarmT = (m.alarmT || 0) - DT;
+    if (m.alarmT <= 0) {
+      if (this.dead && this.deadT < 10) { monitorFlatline(); m.alarmT = 1.05; }
+      else if (this.arrest && !this.dead) { monitorAlarm(); m.alarmT = 0.55; }
+    }
+  }
+
   // A swing with the bat: a hard blow on one part that knocks the body away
   // from the side it was hit, bruises, breaks bones and opens the skin.
   batHit(k, t, s, dir) {
@@ -2391,8 +2418,9 @@ class Doll {
     this.hr = moveToward(this.hr, Math.max(0, target), (this.arrest ? 60 : 30) * DT);
     if (this.hr > 1) {
       this.beatPhase += DT * this.hr / 60;
-      if (this.beatPhase >= 1) { this.beatPhase -= 1; this.beat = true; this.beatFlash = 1; this.sinceBeat = 0; }
+      if (this.beatPhase >= 1) { this.beatPhase -= 1; this.beat = true; this.beatFlash = 1; this.sinceBeat = 0; if (this.monitor && state.selected === this) monitorBeep(); }
     }
+    if (this.monitor) this.updateMonitor();
     // ECG trace: a heartbeat spike after every beat, flat line when dead.
     this.sinceBeat += DT;
     const t = this.sinceBeat;
@@ -2420,7 +2448,7 @@ class Doll {
       HEAL: this.healing || this.iv > 0, BLADE: this.bladeTimer > 0, TORN: this.severed.includes(true), FROZEN: this.frozen,
       BROKEN: this.broken.some((b, k) => b && this.attached(k)), PINNED: this.pins.size > 0,
       ZAP: this.taseT > 0,
-      ARREST: this.arrest && !this.dead,
+      ARREST: this.arrest && !this.dead, MONITOR: !!this.monitor,
       HEARTWEAK: !this.arrest && !this.dead && this.organ[ORGAN.heart] > 0 && this.organ[ORGAN.heart] < 60,
       BANDAGED: this.wounds.some((w) => w.bandaged && !this.gone[w.part]) || this.bands.some((b) => b.burn),
     };
@@ -3174,7 +3202,7 @@ function explode(x, y) {
 // HUD
 // ======================================================================
 
-const T_GRAB = 0, T_WATER = 1, T_BUCKET = 2, T_BLADE = 3, T_GUN = 4, T_FIRE = 5, T_ICE = 6, T_BOMB = 7, T_IV = 8, T_DOLL = 9, T_RESET = 10, T_PIN = 11, T_BANDAGE = 12, T_BAT = 13, T_DEFI = 14, T_ADREN = 15;
+const T_GRAB = 0, T_WATER = 1, T_BUCKET = 2, T_BLADE = 3, T_GUN = 4, T_FIRE = 5, T_ICE = 6, T_BOMB = 7, T_IV = 8, T_DOLL = 9, T_RESET = 10, T_PIN = 11, T_BANDAGE = 12, T_BAT = 13, T_DEFI = 14, T_ADREN = 15, T_MONITOR = 16;
 
 // Tool icons as pixel sprites, shaded like the guns: a dark outline, light
 // on the upper left edges, shade on the lower right. Made by a small
@@ -3481,6 +3509,26 @@ const TOOL_PIX = {
     ".kjk..............",
     "..k...............",
   ],
+  [T_MONITOR]: [
+    "..................",
+    ".kkkkkkkkkkkkkkkk.",
+    "kggggggggggggggggk",
+    "kghiiiiiiiiiiiihik",
+    "kgiDDDDDDDDDDDDgik",
+    "kgiDDDDJDDDDDDDiik",
+    "kgiDDDJJDDDDDDDeik",
+    "kgiDDDJJDJDDDDDgik",
+    "kgiJJJJDJJJJJJJgik",
+    "kgiDDDDDJDDDDDDgik",
+    "kgiDDDDDJDDDDDDgik",
+    "kghgggggggggggghik",
+    "kiiiiiiihhiiiiiiik",
+    ".kkkkkkkgikkkkkkk.",
+    ".......kgik.......",
+    "....kkkkgikkkk....",
+    "...kggggiiggggk...",
+    "....kkkkkkkkkk....",
+  ],
 };
 
 // Paints a tool sprite centred on the origin, every sprite pixel snapped to
@@ -3504,7 +3552,7 @@ function drawToolPix(rows) {
   }
   ctx.restore();
 }
-const TOOL_NAMES = ["Greifen", "Wasser", "Eimer", "Klinge", "Waffe", "Feuer", "Eis", "Bombe", "Infusion", "Neue Puppe", "Reset", "Fixieren", "Verband", "Baseballschläger", "Defibrillator", "Adrenalin"];
+const TOOL_NAMES = ["Greifen", "Wasser", "Eimer", "Klinge", "Waffe", "Feuer", "Eis", "Bombe", "Infusion", "Neue Puppe", "Reset", "Fixieren", "Verband", "Baseballschläger", "Defibrillator", "Adrenalin", "Monitor"];
 const BTN = 46, BTN_GAP = 6, TOOLBAR_Y = H - 54;
 const PANEL = { x: W - 206, y: 8, w: 198, h: 282 };
 const MINI = [[0, -12], [0, -8], [0, 0], [0, 3], [-5, -3], [-7, 2], [5, -3], [7, 2], [-2, 9], [-3, 15], [-5, 15], [2, 9], [3, 15], [5, 15]];
@@ -3516,7 +3564,7 @@ const DOCK_GROUPS = [
   { color: "#5aa0f0", items: [{ tool: T_WATER }, { tool: T_BUCKET }] },
   { color: "#e8443a", items: [{ tool: T_BLADE }, { tool: T_GUN }, { tool: T_BAT }] },
   { color: "#ff8a2a", items: [{ tool: T_FIRE }, { tool: T_ICE }, { tool: T_BOMB }] },
-  { color: "#4ccf5a", items: [{ tool: T_BANDAGE }, { tool: T_IV }, { tool: T_DEFI }, { tool: T_ADREN }] },
+  { color: "#4ccf5a", items: [{ tool: T_BANDAGE }, { tool: T_IV }, { tool: T_DEFI }, { tool: T_ADREN }, { tool: T_MONITOR }] },
   { color: "#e6c850", items: [{ tool: T_DOLL }, { tool: T_RESET }] },
 ];
 // The tools sit in a rail on the left edge: three columns, each group on
@@ -3666,7 +3714,7 @@ const VITALS = [
 ];
 // Status chips in German. Only the ones that apply are shown.
 const STATUS = [
-  ["ARREST", "HERZSTILLSTAND", "#ff3040"], ["HEARTWEAK", "HERZ SCHWACH", "#ff7a8a"],
+  ["MONITOR", "AM MONITOR", "#46d07a"], ["ARREST", "HERZSTILLSTAND", "#ff3040"], ["HEARTWEAK", "HERZ SCHWACH", "#ff7a8a"],
   ["OUT", "BEWUSSTLOS", "#a2a2aa"], ["BLEED", "BLUTET", "#d6202f"], ["FIRE", "BRENNT", "#ff5a1e"],
   ["CHOKE", "ERSTICKT", "#2ec8c0"], ["AGONY", "QUALEN", "#f08a24"], ["HEAL", "HEILT", "#f2da3a"],
   ["BLADE", "SCHNITT", "#c8d0dc"], ["TORN", "GLIED AB", "#f272b8"], ["FROZEN", "GEFROREN", "#86c4ff"],
@@ -4587,6 +4635,10 @@ const defibSound = () => sfx((t) => {
 });
 const syringeSound = () => sfx((t) => { nz(t, 0.015, { type: "bandpass", f: 3000, q: 4, g: 0.2 }); nz(t + 0.06, 0.35, { type: "highpass", f: 5000, g: 0.05, a: 0.05 }); });
 const iceSound = () => { if (sfxLimit("ice", 90)) sfx((t) => { for (let n = 0; n < 3; n++) nz(t + n * rf(0.01, 0.04), 0.02, { type: "bandpass", f: rf(3500, 6500), q: 6, g: 0.1 }); }); };
+// The patient monitor: a clean beep per beat, an alarm and the flat line.
+const monitorBeep = () => sfx((t) => tn(t, 0.09, { f: 1046, g: 0.08, a: 0.004, send: 0.1 }));
+const monitorAlarm = () => sfx((t) => { tn(t, 0.12, { type: "triangle", f: 988, g: 0.12 }); tn(t + 0.16, 0.12, { type: "triangle", f: 784, g: 0.12 }); });
+const monitorFlatline = () => sfx((t) => { const o = audio.createOscillator(), g = audio.createGain(); o.frequency.value = 1046; g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.07, t + 0.02); g.gain.setValueAtTime(0.07, t + 1.0); g.gain.linearRampToValueAtTime(0.0001, t + 1.08); o.connect(g); sfxRoute(g, 0.1); o.start(t); o.stop(t + 1.1); });
 // Short ticks for buttons and small actions.
 function clickSound(freq, vol = 0.12) {
   sfx((t) => { tn(t, 0.035, { type: "triangle", f: freq * 1.6, f2: freq * 1.2, g: vol * 0.7 }); nz(t, 0.01, { type: "bandpass", f: freq * 4, q: 3, g: vol * 0.4 }); });
@@ -4722,6 +4774,48 @@ function reloadStep() {
   while (state.reloadStep < steps.length && p >= steps[state.reloadStep][0]) { const ev = steps[state.reloadStep][2]; if (ev) reloadEvent(ev); state.reloadStep++; }
   if (state.reloadT <= 0) { state.reloadT = 0; state.ammo[state.weapon] = wp.mag; }
 }
+// The monitor cart: a screen with the live heart trace, pulse and oxygen,
+// a pole with a blood bag, a red blood line to the arm and a cable to the
+// chest. It stands on whatever floor lies below it.
+function drawMonitor(d) {
+  const m = d.monitor, x = Math.round(m.x);
+  let gy = FLOOR_Y;
+  for (let y = Math.max(0, Math.floor(d.y[P_WAIST]) - 40); y < H; y++) if (solidAt(x, y)) { gy = y; break; }
+  m.y = gy - 40;
+  const now = performance.now() / 1000, alarm = d.arrest || d.dead, blink = alarm && Math.sin(now * 12) > 0;
+  // Lines first, so the cart stands in front of them.
+  const ai = d.ivPoint(), ax = d.x[ai], ay = d.y[ai], cx = lerp(d.x[P_NECK], d.x[P_WAIST], 0.35), cy = lerp(d.y[P_NECK], d.y[P_WAIST], 0.35);
+  ctx.lineWidth = 1.4; ctx.lineCap = "round";
+  ctx.strokeStyle = "#9a1020"; ctx.beginPath(); ctx.moveTo(x + 10, gy - 94); ctx.quadraticCurveTo((x + ax) / 2, Math.max(gy - 94, ay) + 18, ax, ay); ctx.stroke();
+  ctx.strokeStyle = "#2a2a30"; ctx.beginPath(); ctx.moveTo(x - 4, gy - 52); ctx.quadraticCurveTo((x + cx) / 2, Math.max(gy - 52, cy) + 22, cx, cy); ctx.stroke();
+  ctx.fillStyle = "#e8e8e0"; ctx.beginPath(); ctx.arc(cx, cy, 1.8, 0, Math.PI * 2); ctx.fill();
+  // Pole with the bag, wheels and base
+  ctx.fillStyle = "#0b0b0e"; ctx.fillRect(x + 8, gy - 108, 4, 82);
+  ctx.fillStyle = "#8a8a94"; ctx.fillRect(x + 9, gy - 107, 2, 80);
+  ctx.fillStyle = "#0b0b0e"; ctx.fillRect(x + 3, gy - 104, 14, 16); ctx.fillStyle = "#e6e8ee"; ctx.fillRect(x + 4, gy - 103, 12, 14);
+  ctx.fillStyle = "#b0121f"; ctx.fillRect(x + 5, gy - 100 + 2 * Math.sin(now), 10, 10);
+  ctx.fillStyle = "#0b0b0e"; ctx.fillRect(x - 16, gy - 9, 34, 5); ctx.fillStyle = "#5a5a64"; ctx.fillRect(x - 15, gy - 8, 32, 3);
+  for (const wx of [x - 13, x + 13]) { ctx.fillStyle = "#121216"; ctx.beginPath(); ctx.arc(wx, gy - 3, 3, 0, Math.PI * 2); ctx.fill(); }
+  ctx.fillStyle = "#0b0b0e"; ctx.fillRect(x - 2, gy - 30, 5, 22); ctx.fillStyle = "#6a6a74"; ctx.fillRect(x - 1, gy - 29, 3, 20);
+  // Screen
+  const sx = x - 24, sy = gy - 62, sw = 44, sh = 32;
+  ctx.fillStyle = "#0b0b0e"; ctx.fillRect(sx - 2, sy - 2, sw + 4, sh + 4);
+  ctx.fillStyle = "#b8bcc4"; ctx.fillRect(sx - 1, sy - 1, sw + 2, sh + 2);
+  ctx.fillStyle = blink ? "#3a0a10" : "#081210"; ctx.fillRect(sx + 1, sy + 1, sw - 2, sh - 2);
+  // Live trace from the doll's own ECG buffer
+  ctx.strokeStyle = d.dead ? "#ff4050" : "#46d07a"; ctx.lineWidth = 1; ctx.beginPath();
+  const n = d.ecg.length;
+  for (let i = 0; i < n; i++) {
+    const v = d.ecg[(d.ecgPos + 1 + i) % n], px = sx + 2 + (i / (n - 1)) * (sw - 16), py = sy + 12 - v * 7;
+    i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+  }
+  ctx.stroke();
+  label(d.dead ? "---" : String(Math.round(d.hr)), sx + sw - 7, sy + 8, 7, d.dead || d.arrest ? "#ff4050" : "#46d07a", "center");
+  label(Math.round(d.o2) + "%", sx + sw - 7, sy + 18, 5.5, "#7ad0ff", "center");
+  label(Math.round(d.bl) + "", sx + 6, sy + sh - 6, 5.5, "#ff7a8a", "center");
+  ctx.fillStyle = blink ? "#ff3040" : alarm ? "#5a1018" : "#1d6a3a"; ctx.beginPath(); ctx.arc(sx + sw - 4, sy + sh - 5, 1.8, 0, Math.PI * 2); ctx.fill();
+}
+
 // The fresh magazine travels up into the gun while reloading (side view).
 function drawReloadMag() {
   if (settings.front || state.tool !== T_GUN || state.reloadT <= 0) return;
@@ -7336,6 +7430,7 @@ const HELP = [
   [T_BAT, "Tippen = Schlag, bricht Knochen"],
   [T_DEFI, "Belebt frisch Tote wieder, mit Glück"],
   [T_ADREN, "Weckt auf, Schmerz weg, nicht zu oft"],
+  [T_MONITOR, "Hält am Leben: Blut und Luft, piept"],
   [-1, "Aufräumen, Zeitlupe und Pause"],
 ];
 
@@ -8213,7 +8308,7 @@ function useButton(i) {
     state.tool = i;
   }
   state.toast = 1.4;
-  state.toastText = i === T_DOLL ? "Tippe, wo sie stehen soll" : i === T_PIN ? "Körperteil ziehen, loslassen = fixieren" : i === T_GUN ? (settings.front ? "Tippe auf die Puppe, dort trifft der Schuss" : "Ziehen = zielen, roter Knopf = Feuer") : i === T_BAT ? "Tippe auf ein Körperteil zum Zuschlagen" : i === T_DEFI ? "Tippe auf eine Puppe, Schock auf die Brust" : i === T_ADREN ? "Tippe auf eine Puppe, weckt sie auf" : TOOL_NAMES[i];
+  state.toastText = i === T_DOLL ? "Tippe, wo sie stehen soll" : i === T_PIN ? "Körperteil ziehen, loslassen = fixieren" : i === T_GUN ? (settings.front ? "Tippe auf die Puppe, dort trifft der Schuss" : "Ziehen = zielen, roter Knopf = Feuer") : i === T_BAT ? "Tippe auf ein Körperteil zum Zuschlagen" : i === T_DEFI ? "Tippe auf eine Puppe, Schock auf die Brust" : i === T_ADREN ? "Tippe auf eine Puppe, weckt sie auf" : i === T_MONITOR ? "Tippe auf eine Puppe: Monitor an oder ab" : TOOL_NAMES[i];
 }
 
 // New doll stands upright on the ground below the tap, no fall, no collapse.
@@ -8297,6 +8392,23 @@ function press() {
       state.selected = hit.d; state.shake = Math.max(state.shake, 0.25); batSound(true);
       worldEvent("shot", state.mx, state.my, hit.d);
     } else batSound(false);
+    return;
+  }
+  if (state.tool === T_MONITOR) {
+    state.pressing = false;
+    let bestD = 70, best = null;
+    for (const d of state.dolls) { const [i, dist] = d.nearestPoint(state.mx, state.my, bestD); if (i >= 0) { bestD = dist; best = d; } }
+    if (!best) { state.toast = 1.2; state.toastText = "Tippe auf eine Puppe"; return; }
+    state.selected = best; state.toast = 1.8;
+    if (best.monitor) { best.monitor = null; state.toastText = "Monitor abgenommen"; best.logEvent("Monitor abgenommen"); clickSound(500, 0.06); }
+    else if (best.dead && best.deadT > 45) state.toastText = "Zu spät für den Monitor";
+    else {
+      const side = best.x[P_WAIST] < W / 2 ? 1 : -1;
+      best.monitor = { x: best.x[P_WAIST] + side * 58, side, alarmT: 0 };
+      best.logEvent("Am Monitor angeschlossen");
+      state.toastText = best.dead ? "Monitor dran, jetzt schocken" : "Am Monitor: Blut und Sauerstoff laufen";
+      monitorBeep(); clickSound(900, 0.05);
+    }
     return;
   }
   if (state.tool === T_DEFI || state.tool === T_ADREN) {
@@ -9099,6 +9211,7 @@ function render() {
   // Powder smoke
   for (const p of smokes) { const k = 1 - p.age / p.life; ctx.fillStyle = `rgba(190,188,182,${p.a * k * k})`; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill(); }
   drawReloadMag();
+  for (const d of state.dolls) if (d.monitor) drawMonitor(d);
   // Aim line, cursor and the long press ring belong to the room.
   if (!settings.front) drawLaser();
   drawCursor();
