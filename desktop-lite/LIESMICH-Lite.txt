@@ -1,0 +1,71 @@
+RAGPIT - Desktop-App (Lite)
+===========================
+
+Ragpit ist eine Pixel-Ragdoll-Sandbox. Diese App braucht keine Installation
+und kein Internet. Sie ist nur wenige MB groß, weil sie die eingebaute
+Web-Ansicht deines Systems nutzt:
+- Windows 10 und 11: Microsoft Edge WebView2, ist dort meistens schon da.
+  Fehlt es, lädst du es kostenlos bei Microsoft: "WebView2 Runtime".
+- Mac: ab macOS 10.15, nichts extra nötig.
+- Linux: das Paket libwebkit2gtk-4.1 (Ubuntu: sudo apt install
+  libwebkit2gtk-4.1-0).
+
+
+STARTEN
+-------
+
+Windows: Entpacke die ZIP und starte "Ragpit.exe".
+         Beim ersten Start warnt Windows vielleicht ("Der Computer wurde
+         durch Windows geschützt"). Klicke dann auf "Weitere Informationen"
+         und "Trotzdem ausführen".
+
+Mac:     Entpacke die ZIP und ziehe "Ragpit.app" in den Ordner Programme.
+         Beim ersten Start: Rechtsklick auf Ragpit.app, dann "Öffnen".
+         Kommt die Meldung "beschädigt", öffne das Terminal und gib ein:
+         xattr -cr /Applications/Ragpit.app
+
+Linux:   Entpacke die ZIP und starte "Ragpit" im Ordner.
+
+Das Spiel startet im Vollbild. F11 schaltet das Vollbild aus und ein.
+Alt+F4 (Windows, Linux) oder Cmd+Q (Mac) beendet das Spiel. Dein Spielstand
+und deine Einstellungen bleiben gespeichert. Lass "resources.neu" immer im
+selben Ordner wie das Programm.
+
+
+MAUS
+----
+
+Linke Maustaste          Werkzeug benutzen, ziehen, zielen, schießen
+Rechte Maustaste         auf eine Puppe: ihr Menü
+Rechte/mittlere ziehen   Ansicht verschieben
+Mausrad                  zoomen
+
+
+TASTATUR
+--------
+
+1 bis 9, 0               Werkzeuge
+G / Umschalt+G           nächste / vorige Waffe
+Leertaste                schießen, halten für Dauerfeuer
+L                        nachladen
+[ und ]                  Menge beim Wasser, Größe beim Feuer
+B                        Bombe
+N                        neue Puppe
+R                        alles zurücksetzen
+W A S D oder Pfeile      Ansicht verschieben
+Q / E                    rauszoomen / reinzoomen
+C                        zurück zur Startansicht
+Tab / Umschalt+Tab       nächste / vorige Puppe wählen
+H                        gewählte Puppe heilen
+Entf                     gewählte Puppe entfernen
+V                        Anzeige: klein, groß, Scan
+F                        Front- oder Seitenansicht
+P                        Pause
+T                        Zeitlupe
+M                        Ton an oder aus
+Esc                      zurück ins Menü, Menüs schließen
+F1                       Steuerung im Spiel anzeigen
+F11                      Vollbild an oder aus
+
+
+Viel Spaß!

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://raw.githubusercontent.com/neutralinojs/neutralinojs/main/schemas/neutralino.config.schema.json",
+  "applicationId": "de.ragpit.game",
+  "applicationName": "Ragpit",
+  "author": "Ragpit",
+  "description": "Pixel-Ragdoll-Sandbox",
+  "version": "1.0.0",
+  "defaultMode": "window",
+  "port": 47311,
+  "documentRoot": "/resources/",
+  "url": "/Ragpit.html",
+  "enableServer": true,
+  "enableNativeAPI": false,
+  "tokenSecurity": "one-time",
+  "logging": { "enabled": false, "writeToLogFile": false },
+  "modes": {
+    "window": {
+      "title": "Ragpit",
+      "width": 1600,
+      "height": 900,
+      "minWidth": 960,
+      "minHeight": 600,
+      "center": true,
+      "fullScreen": true,
+      "resizable": true,
+      "maximizable": true,
+      "exitProcessOnClose": true,
+      "enableInspector": false,
+      "icon": "/resources/icon.png"
+    }
+  },
+  "cli": {
+    "binaryName": "Ragpit",
+    "resourcesPath": "/resources/",
+    "extensionsPath": "/extensions/",
+    "binaryVersion": "6.3.0",
+    "clientVersion": "6.3.0"
+  }
+}
