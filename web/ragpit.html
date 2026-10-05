@@ -3843,7 +3843,7 @@ function togglePanel() {
 const FS_OK = !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
 const FS_BTN = { x: 170, y: 9, w: 34, h: 34 };
 const inFsBtn = (x, y) => FS_OK && x >= FS_BTN.x && x < FS_BTN.x + FS_BTN.w && y >= FS_BTN.y && y < FS_BTN.y + FS_BTN.h;
-const blocksInput = (x, y) => toolbarHit(x, y) >= 0 || inDockTab(x, y) || inZoomBtn(x, y) || !!gunButtonAt(x, y) || inPanel(x, y) || inFsBtn(x, y) || inMenuBtn(x, y) || inExtrasBtn(x, y) || inExtras(x, y) || !!ctxHit(x, y);
+const blocksInput = (x, y) => (!DAMAGE_PANEL && !!vitalsHit(x, y)) || toolbarHit(x, y) >= 0 || inDockTab(x, y) || inZoomBtn(x, y) || !!gunButtonAt(x, y) || inPanel(x, y) || inFsBtn(x, y) || inMenuBtn(x, y) || inExtrasBtn(x, y) || inExtras(x, y) || !!ctxHit(x, y);
 
 function toggleFullscreen() {
   const el = document.documentElement;
@@ -4180,6 +4180,263 @@ function drawPanel(d) {
     }
   }
   PANEL.full = yEnd - py0 + 4;
+  ctx.restore();
+}
+
+// ======================================================================
+// Vitals: the damage overlay. Three sizes, the choice is remembered:
+//  mini  a small pill with the heart, the pulse and the state color,
+//  card  the doll at a glance: face, state, live ECG, four ring gauges and
+//        the one thing that threatens it most,
+//  scan  a full sheet from the right edge: x-ray body chart, all values,
+//        every organ, the wounds counted and what applies right now.
+// Up to three dolls are followed; small tabs switch between them.
+// ======================================================================
+let vitalsMode = "card";
+try { vitalsMode = localStorage.getItem("ragpit.vitals") || "card"; } catch (e) { /* storage is optional */ }
+function setVitalsMode(m) {
+  vitalsMode = m; clickSound(m === "scan" ? 820 : 640, 0.04);
+  try { localStorage.setItem("ragpit.vitals", m); } catch (e) { /* storage is optional */ }
+}
+const VIT_W = 188, SCAN_W = 312;
+const VIT_RINGS = [["BLUT", 1, "#d0283a"], ["O2", 3, "#2ec8c0"], ["WACH", 0, "#4ccf5a"], ["SCHMERZ", 2, "#f08a24"]];
+let vitRects = [];
+const vitalsHit = (x, y) => vitRects.find((r) => hitBox(r, x, y));
+function vitPress(x, y) {
+  const r = vitalsHit(x, y);
+  if (!r) return false;
+  if (r.act) { pop(r.id); r.act(); }
+  return true;
+}
+// A ring gauge: a dark track, the value as an arc, the number in the middle.
+function drawRing(cx, cy, rad, val, color, name, bad) {
+  ctx.lineCap = "butt";
+  ctx.strokeStyle = "#1c1b21"; ctx.lineWidth = 4.5; ctx.beginPath(); ctx.arc(cx, cy, rad, 0, Math.PI * 2); ctx.stroke();
+  const f = clamp(val / 100, 0, 1), blink = bad && Math.sin(performance.now() / 140) > 0;
+  if (f > 0.005) {
+    ctx.save(); ctx.shadowColor = color; ctx.shadowBlur = bad ? 8 : 4;
+    ctx.strokeStyle = blink ? css(lighten(hex(color), 0.4)) : color; ctx.lineWidth = 4.5;
+    ctx.beginPath(); ctx.arc(cx, cy, rad, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * f); ctx.stroke(); ctx.restore();
+  }
+  // ticks every quarter
+  ctx.fillStyle = "#0e0d11";
+  for (let q = 0; q < 4; q++) { const a = -Math.PI / 2 + q * Math.PI / 2; ctx.fillRect(cx + Math.cos(a) * rad - 1, cy + Math.sin(a) * rad - 1, 2, 2); }
+  label(String(Math.round(val)), cx, cy + 0.5, 9, bad ? "#ff8a94" : "#ecece6", "center");
+  label(name, cx, cy + rad + 9, 6, "#7a7682", "center");
+}
+// The frame all sizes share: dark glass, a state colored top line, a red
+// pulsing edge while the doll is dying.
+function vitFrame(x, y, w, h, d) {
+  const sc = d ? stateColor(d) : "#3a3a44", alarm = d && !d.dead && (d.arrest || d.deathEta() < 15);
+  ctx.save(); ctx.shadowColor = "rgba(0,0,0,0.6)"; ctx.shadowBlur = 16; ctx.shadowOffsetY = 3;
+  rr(x, y, w, h, 12);
+  const g = ctx.createLinearGradient(0, y, 0, y + h);
+  g.addColorStop(0, "rgba(22,21,27,0.95)"); g.addColorStop(1, "rgba(10,10,13,0.95)");
+  ctx.fillStyle = g; ctx.fill(); ctx.restore();
+  const pulse = alarm ? 0.5 + 0.5 * Math.sin(performance.now() / 160) : 0;
+  rr(x, y, w, h, 12); ctx.strokeStyle = alarm ? css(mixc(hex("#34323a"), hex("#ff3040"), pulse)) : "#2c2a32"; ctx.lineWidth = 1.6; ctx.stroke();
+  ctx.save(); rr(x, y, w, h, 12); ctx.clip();
+  ctx.fillStyle = sc; ctx.fillRect(x, y, w, 2.5);
+  const tg = ctx.createLinearGradient(0, y, 0, y + 30); tg.addColorStop(0, css(hex(sc), 0.14)); tg.addColorStop(1, css(hex(sc), 0));
+  ctx.fillStyle = tg; ctx.fillRect(x, y, w, 30);
+  ctx.restore();
+}
+// Header: face, name, state and the size buttons.
+function vitHeader(d, x, y, w, scan) {
+  drawFaceIcon(d, x + 10, y + 9, 18);
+  label("PUPPE " + d.id, x + 35, y + 14, 11, "#ecece6");
+  const st = d.arrest && !d.dead ? "STILLSTAND" : d.stateName(), sc = stateColor(d);
+  label(st, x + 35, y + 26, 7, sc);
+  // minimize and expand buttons
+  const bm = { id: "vmin", x: x + w - 54, y: y + 7, w: 22, h: 22, act: () => setVitalsMode("mini") };
+  const be = { id: "vexp", x: x + w - 29, y: y + 7, w: 22, h: 22, act: () => setVitalsMode(scan ? "card" : "scan") };
+  for (const b of [bm, be]) {
+    scaled(b.x + b.w / 2, b.y + b.h / 2, popScale(b.id, 0.15), () => {
+      rr(b.x, b.y, b.w, b.h, 6); ctx.fillStyle = "#18171c"; ctx.fill(); ctx.strokeStyle = "#34323a"; ctx.lineWidth = 1.2; ctx.stroke();
+      ctx.strokeStyle = "#a8a4b0"; ctx.lineWidth = 1.8; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.beginPath();
+      const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+      if (b === bm) { ctx.moveTo(cx - 5, cy + 3); ctx.lineTo(cx + 5, cy + 3); }
+      else if (scan) { ctx.moveTo(cx - 3, cy - 4); ctx.lineTo(cx + 2, cy); ctx.lineTo(cx - 3, cy + 4); }
+      else { ctx.moveTo(cx + 3, cy - 4); ctx.lineTo(cx - 2, cy); ctx.lineTo(cx + 3, cy + 4); }
+      ctx.stroke();
+    });
+    vitRects.push(b);
+  }
+}
+// Tabs for the other followed dolls, under the card or the sheet.
+function vitTabs(watch, sel, x, y) {
+  if (watch.length < 2) return 0;
+  const list = [...watch].sort((a, b) => a.id - b.id);
+  list.forEach((o, n) => {
+    const b = { id: "vtab" + o.id, x: x + n * 50, y, w: 46, h: 20, act: () => { state.selected = o; clickSound(760, 0.04); } };
+    const on = o === sel;
+    scaled(b.x + b.w / 2, b.y + b.h / 2, popScale(b.id, 0.12), () => {
+      rr(b.x, b.y, b.w, b.h, 7); ctx.fillStyle = on ? "rgba(40,16,20,0.95)" : "rgba(16,15,20,0.92)"; ctx.fill();
+      ctx.strokeStyle = on ? "#b8231d" : "#2e2c34"; ctx.lineWidth = 1.3; ctx.stroke();
+      ctx.fillStyle = stateColor(o); ctx.beginPath(); ctx.arc(b.x + 10, b.y + 10, 3, 0, Math.PI * 2); ctx.fill();
+      label("P" + o.id, b.x + 28, b.y + 10.5, 8.5, on ? "#ffd0c8" : "#a8a4b0", "center");
+    });
+    vitRects.push(b);
+  });
+  return 24;
+}
+function drawVitals(sel) {
+  vitRects = [];
+  if (!sel) return;
+  const d = sel, watch = watchList(d), now = performance.now();
+  const kScan = tween("vitScan", vitalsMode === "scan" ? 1 : 0, 14), kMini = tween("vitMini", vitalsMode === "mini" ? 1 : 0, 14);
+  // --- mini pill
+  if (kMini > 0.01) {
+    const w = 96, h = 30, x = W - 8 - w + (1 - kMini) * 30, y = 8;
+    ctx.save(); ctx.globalAlpha *= kMini;
+    vitFrame(x, y, w, h, d);
+    drawHeartIcon(d, x + 16, y + 15, 9);
+    label(d.dead ? "--" : String(Math.round(d.hr)), x + 30, y + 16, 12, d.dead || d.arrest ? "#ff5060" : "#ecece6");
+    label("P" + d.id, x + w - 12, y + 16, 8, "#7a7682", "right");
+    ctx.restore();
+    if (vitalsMode === "mini") vitRects.push({ id: "vpill", x, y, w, h, act: () => setVitalsMode("card") });
+  }
+  // --- card
+  const kCard = Math.max(0, 1 - kMini - kScan);
+  if (kCard > 0.01) {
+    const x = W - 8 - VIT_W + (1 - kCard) * 24, y = 8, w = VIT_W, h = 132;
+    ctx.save(); ctx.globalAlpha *= kCard;
+    vitFrame(x, y, w, h, d);
+    if (vitalsMode === "card") vitHeader(d, x, y, w, false); else { drawFaceIcon(d, x + 10, y + 9, 18); label("PUPPE " + d.id, x + 35, y + 14, 11, "#ecece6"); }
+    // live ECG with the pulse on it
+    const ey = y + 36;
+    drawEcg(d, x + 8, ey, w - 16, 26);
+    rr(x + w - 56, ey + 2, 44, 14, 5); ctx.fillStyle = "rgba(10,10,13,0.85)"; ctx.fill();
+    drawHeartIcon(d, x + w - 46, ey + 9, 6);
+    label(d.dead ? "--" : Math.round(d.hr) + "", x + w - 14, ey + 9.5, 9, d.dead || d.arrest ? "#ff5060" : "#ecece6", "right");
+    // four ring gauges
+    const rw = (w - 16) / 4;
+    VIT_RINGS.forEach(([name, vi], n) => {
+      const v = VITALS[vi], val = v.get(d);
+      drawRing(x + 8 + rw * (n + 0.5), y + 82, 13, val, v.color, name, !d.dead && v.bad(val));
+    });
+    // the one thing that matters most right now
+    const [at, ac] = organAlert(d);
+    ctx.fillStyle = ac; ctx.beginPath(); ctx.arc(x + 14, y + 119, 3, 0, Math.PI * 2); ctx.fill();
+    label(at, x + 22, y + 119.5, fitFont(at, w - 32, 8.5), ac);
+    ctx.restore();
+    if (vitalsMode === "card") {
+      vitTabs(watch, d, x, y + h + 6);
+      // Dead: the threat line opens the death report.
+      if (d.dead) vitRects.push({ id: "vrep2", x, y: y + 108, w, h: 22, act: () => { if (!d.report) d.report = deathReport(d); state.deathReport = d; state.reportT = performance.now(); } });
+      vitRects.push({ id: "vcard", x, y, w, h, act: null });
+    }
+  }
+  // --- scan sheet
+  if (kScan > 0.01) {
+    const w = SCAN_W, x = W - 8 - w + (1 - easeOut(kScan)) * (w + 20), y = 8;
+    // The sheet is as tall as its content: chart, wounds, states and the threat line.
+    const f0 = d.flags(), chipList = STATUS.filter(([key]) => f0[key] && key !== "BLEED" && key !== "BANDAGED").slice(0, 8);
+    let rows = chipList.length ? 1 : 0, lineW = 0;
+    ctx.font = `700 7px ${FONT}`;
+    for (const [, name] of chipList) { const tw = ctx.measureText(name).width + 20; if (lineW + tw > w - 16) { rows++; lineW = 0; } lineW += tw; }
+    const h = Math.min(H - 16, 40 + 196 + 8 + 58 + rows * 18 + (rows ? 6 : 0) + 34);
+    ctx.save(); ctx.globalAlpha *= Math.min(1, kScan * 1.5);
+    vitFrame(x, y, w, h, d);
+    vitHeader(d, x, y, w, true);
+    // x-ray body chart on a grid with a scan line
+    const cx0 = x + 8, cy0 = y + 40, cw = 104, ch = 196;
+    rr(cx0, cy0, cw, ch, 8); ctx.fillStyle = "#07080a"; ctx.fill();
+    ctx.save(); rr(cx0, cy0, cw, ch, 8); ctx.clip();
+    ctx.fillStyle = "rgba(76,207,90,0.05)";
+    for (let gx = cx0 + 6; gx < cx0 + cw; gx += 8) ctx.fillRect(gx, cy0, 1, ch);
+    for (let gy = cy0 + 6; gy < cy0 + ch; gy += 8) ctx.fillRect(cx0, gy, cw, 1);
+    const scanY = (now / 18) % (ch + 30) - 15, sg = ctx.createLinearGradient(0, cy0 + scanY - 12, 0, cy0 + scanY);
+    sg.addColorStop(0, "rgba(76,207,90,0)"); sg.addColorStop(1, "rgba(76,207,90,0.1)");
+    ctx.fillStyle = sg; ctx.fillRect(cx0, cy0 + scanY - 12, cw, 12);
+    ctx.restore();
+    drawBodyChart(d, cx0, cy0 + 2, cw, ch - 4);
+    // all values with trend arrows and lit bars
+    const bx = x + 122, bw = w - 130;
+    VITALS.forEach((v, i) => {
+      const yy = cy0 + i * 22, val = v.get(d), txt = String(v.text(val)), bad = !d.dead && v.bad(val);
+      const dir = d.dead ? 0 : vitalTrend(d, VITAL_KEY[i], val);
+      ctx.font = `700 9px ${FONT}`;
+      const vw = ctx.measureText(txt).width;
+      label(v.name, bx, yy + 5, fitFont(v.name, bw - vw - 14, 7.5), bad ? "#ff8a94" : "#8e8a96");
+      drawTrend(bx + bw - vw - 7, yy + 5, dir, VITAL_GOOD[i]);
+      label(txt, bx + bw, yy + 5, 9, bad ? "#ff5060" : "#ecece6", "right");
+      if (i === 4) drawEcg(d, bx, yy + 10, bw, 12); else drawSegBar(bx, yy + 11, bw, 6, val / 100, v.color, bad);
+    });
+    // organs, each with its own bar
+    let oy = cy0 + 116;
+    label("ORGANE", bx, oy, 7, "#6a6672"); oy += 8;
+    ORGANS.forEach((o, n) => {
+      const hpv = d.attached(o.part) ? d.organ[n] : 0, c = hpv <= 0 ? "#5a1a22" : hpv < 35 ? "#ff4050" : hpv < 60 ? "#f08a24" : hpv < 99 ? "#f2da3a" : "#3e8a4a";
+      label(o.name, bx, oy + 3.5, 6.5, hpv < 60 ? "#e8b0b4" : "#9894a0");
+      rr(bx + 52, oy, bw - 76, 6, 3); ctx.fillStyle = "#18171c"; ctx.fill();
+      if (hpv > 0) { rr(bx + 52, oy, Math.max(4, (bw - 76) * hpv / 100), 6, 3); ctx.fillStyle = c; ctx.fill(); }
+      label(hpv <= 0 ? "X" : Math.round(hpv) + "", bx + bw, oy + 3.5, 6.5, c, "right");
+      oy += 9.6;
+    });
+    // the wounds, counted by kind
+    const cnt = { shot: 0, cut: 0, hit: 0, stump: 0, bleed: 0, band: 0 };
+    for (const wd of d.wounds) {
+      if (!d.attached(wd.part) && !wd.stump) continue;
+      if (wd.stump) cnt.stump++; else if (!wd.exit) cnt[wd.kind === "shot" ? "shot" : wd.kind === "cut" ? "cut" : "hit"]++;
+      if (wd.bleed > 0 && !wd.bandaged) cnt.bleed++;
+      if (wd.bandaged) cnt.band++;
+    }
+    const wy = cy0 + ch + 8;
+    label("WUNDEN", cx0, wy, 7, "#6a6672");
+    [["SCHUSS", cnt.shot, "#e8443a"], ["SCHNITT", cnt.cut, "#c8d0dc"], ["PRELLUNG", cnt.hit, "#b48cff"], ["STUMPF", cnt.stump, "#f272b8"], ["BLUTET", cnt.bleed, "#ff4050"], ["VERBUNDEN", cnt.band, "#ece6d8"]].forEach(([n2, c2, col], i) => {
+      const xx = cx0 + (i % 3) * 98, yy = wy + 10 + Math.floor(i / 3) * 22;
+      rr(xx, yy, 92, 18, 6); ctx.fillStyle = c2 ? css(hex(col), 0.12) : "#141318"; ctx.fill();
+      ctx.strokeStyle = c2 ? css(hex(col), 0.6) : "#24222a"; ctx.lineWidth = 1; ctx.stroke();
+      label(String(c2), xx + 10, yy + 9.5, 10, c2 ? col : "#4a4852", "center");
+      label(n2, xx + 20, yy + 9.5, 6.5, c2 ? "#d8d4dc" : "#56545e");
+    });
+    // what applies right now, the threat, and the report once dead
+    let cxp = cx0, cyp = wy + 58;
+    for (const [key, name, col] of chipList) {
+      ctx.font = `700 7px ${FONT}`;
+      const tw = ctx.measureText(name).width + 16;
+      if (cxp + tw > x + w - 8) { cxp = cx0; cyp += 18; }
+      if (cyp > y + h - 56) break;
+      rr(cxp, cyp, tw, 14, 7); ctx.fillStyle = css(hex(col), 0.12); ctx.fill(); ctx.strokeStyle = css(hex(col), 0.7); ctx.lineWidth = 1; ctx.stroke();
+      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(cxp + 7, cyp + 7, 2, 0, Math.PI * 2); ctx.fill();
+      label(name, cxp + 11, cyp + 7.5, 7, col);
+      cxp += tw + 4;
+    }
+    const [at, ac] = organAlert(d), ay = y + h - 26;
+    rr(cx0, ay - 12, w - 16, 24, 7); ctx.fillStyle = "#0a0a0d"; ctx.fill();
+    ctx.fillStyle = ac; ctx.beginPath(); ctx.arc(cx0 + 10, ay, 3, 0, Math.PI * 2); ctx.fill();
+    if (d.dead) {
+      const rb = { id: "vrep", x: x + w - 98, y: ay - 10, w: 88, h: 20, act: () => { if (!d.report) d.report = deathReport(d); state.deathReport = d; state.reportT = performance.now(); } };
+      label(at, cx0 + 18, ay + 0.5, fitFont(at, rb.x - cx0 - 24, 8.5), ac);
+      scaled(rb.x + rb.w / 2, rb.y + rb.h / 2, popScale("vrep", 0.12), () => {
+        rr(rb.x, rb.y, rb.w, rb.h, 6); ctx.fillStyle = "#8e0f1c"; ctx.fill();
+        label("BERICHT", rb.x + rb.w / 2, rb.y + rb.h / 2 + 0.5, 8.5, "#fff0ec", "center");
+      });
+      if (vitalsMode === "scan") vitRects.push(rb);
+    } else label(at, cx0 + 18, ay + 0.5, fitFont(at, w - 40, 8.5), ac);
+    ctx.restore();
+    if (vitalsMode === "scan") {
+      // tabs sit on the left edge of the sheet, one under the other
+      const list = [...watch].sort((a, b) => a.id - b.id);
+      if (list.length > 1) list.forEach((o, n) => {
+        const b = { id: "vtab" + o.id, x: x - 40, y: y + 8 + n * 26, w: 36, h: 22, act: () => { state.selected = o; clickSound(760, 0.04); } }, on = o === d;
+        rr(b.x, b.y, b.w, b.h, 7); ctx.fillStyle = on ? "rgba(40,16,20,0.95)" : "rgba(16,15,20,0.92)"; ctx.fill();
+        ctx.strokeStyle = on ? "#b8231d" : "#2e2c34"; ctx.lineWidth = 1.3; ctx.stroke();
+        ctx.fillStyle = stateColor(o); ctx.beginPath(); ctx.arc(b.x + 9, b.y + 11, 3, 0, Math.PI * 2); ctx.fill();
+        label(String(o.id), b.x + 24, b.y + 11.5, 9, on ? "#ffd0c8" : "#a8a4b0", "center");
+        vitRects.push(b);
+      });
+      vitRects.push({ id: "vsheet", x, y, w, h, act: null });
+    }
+  }
+}
+// A small marker over the doll the overlay shows, when more than one stands around.
+function drawVitalsMarker(sel) {
+  if (!sel || state.dolls.length < 2 || !state.dolls.includes(sel)) return;
+  const x = sel.x[P_HEAD], y = Math.min(sel.y[P_HEAD], sel.y[P_NECK]) - 22 - Math.sin(performance.now() / 260) * 2;
+  ctx.save(); ctx.globalAlpha *= 0.85; ctx.fillStyle = stateColor(sel);
+  ctx.beginPath(); ctx.moveTo(x - 5, y - 6); ctx.lineTo(x + 5, y - 6); ctx.lineTo(x, y); ctx.closePath(); ctx.fill();
   ctx.restore();
 }
 
@@ -6543,6 +6800,37 @@ function drawDeathReport() {
 }
 
 // One line under the chart: what is worst and how long the doll has left.
+// The one thing that threatens the doll most right now, with its color:
+// the worst organ and the time it leaves, or the cause of death.
+function organAlert(d) {
+  let text, col;
+  if (d.dead) return ["TOD: " + (d.cause || "TOT"), "#e0303f"];
+  let worst = -1;
+  ORGANS.forEach((o, n) => { if (d.attached(o.part) && d.organ[n] < 99 && (worst < 0 || d.organ[n] < d.organ[worst])) worst = n; });
+  const eta = d.deathEta();
+  if (worst < 0 && eta === Infinity) { text = "ORGANE OK"; col = "#4ccf5a"; }
+  else {
+    const o = worst >= 0 ? ORGANS[worst] : null, hp = o ? d.organ[worst] : 100;
+    const organText = (n) => ORGANS[n].name + (d.organ[n] <= 0 ? " ZERSTÖRT" : " " + Math.round(d.organ[n]) + "%");
+    let what = o ? organText(worst) : "BLUTVERLUST";
+    // Name what really sets the time: the stopped heart, the lungs, water,
+    // the bleeding organ, open wounds or the inflamed belly.
+    if (d.etaWhy === "air") what = d.arrest ? "HERZSTILLSTAND" : d.headUnder ? "ERTRINKT" : "LUNGEN VERSAGEN";
+    else if (d.etaWhy === "belly") what = "BAUCHFELLENTZÜNDUNG";
+    else if (d.etaWhy === "burn") what = "VERBRENNUNGSSCHOCK";
+    else if (d.etaWhy === "blood") {
+      let bleeder = -1;
+      ORGANS.forEach((og, n) => { if (og.bleed > 0.1 && d.attached(og.part) && d.organ[n] < 100 && (bleeder < 0 || og.bleed * (100 - d.organ[n]) > ORGANS[bleeder].bleed * (100 - d.organ[bleeder]))) bleeder = n; });
+      what = bleeder >= 0 && d.organBleed > d.woundBleed ? organText(bleeder) : "BLUTVERLUST";
+    }
+    if (eta < 3600) {
+      text = what + " · " + (eta < 120 ? Math.ceil(eta) + "S" : Math.ceil(eta / 60) + " MIN");
+      col = eta < 15 ? "#ff4050" : eta < 120 ? "#f08a24" : "#f2da3a";
+    }
+    else { text = what; col = hp <= 0 ? "#f08a24" : "#f2da3a"; }
+  }
+  return [text, col];
+}
 function drawOrganLine(d, x, y, w, h) {
   rr(x, y, w, h, 6); ctx.fillStyle = "#0a0a0d"; ctx.fill();
   let text, col;
@@ -6555,32 +6843,7 @@ function drawOrganLine(d, x, y, w, h) {
     label("i", bx + 0.5, by + 0.5, 10, "#101013", "center");
     state.infoBtn = { x: x + w - 26, y: y - 4, w: 30, h: h + 8, d };
   }
-  else {
-    let worst = -1;
-    ORGANS.forEach((o, n) => { if (d.attached(o.part) && d.organ[n] < 99 && (worst < 0 || d.organ[n] < d.organ[worst])) worst = n; });
-    const eta = d.deathEta();
-    if (worst < 0 && eta === Infinity) { text = "ORGANE OK"; col = "#4ccf5a"; }
-    else {
-      const o = worst >= 0 ? ORGANS[worst] : null, hp = o ? d.organ[worst] : 100;
-      const organText = (n) => ORGANS[n].name + (d.organ[n] <= 0 ? " ZERSTÖRT" : " " + Math.round(d.organ[n]) + "%");
-      let what = o ? organText(worst) : "BLUTVERLUST";
-      // Name what really sets the time: the stopped heart, the lungs, water,
-      // the bleeding organ, open wounds or the inflamed belly.
-      if (d.etaWhy === "air") what = d.arrest ? "HERZSTILLSTAND" : d.headUnder ? "ERTRINKT" : "LUNGEN VERSAGEN";
-      else if (d.etaWhy === "belly") what = "BAUCHFELLENTZÜNDUNG";
-      else if (d.etaWhy === "burn") what = "VERBRENNUNGSSCHOCK";
-      else if (d.etaWhy === "blood") {
-        let bleeder = -1;
-        ORGANS.forEach((og, n) => { if (og.bleed > 0.1 && d.attached(og.part) && d.organ[n] < 100 && (bleeder < 0 || og.bleed * (100 - d.organ[n]) > ORGANS[bleeder].bleed * (100 - d.organ[bleeder]))) bleeder = n; });
-        what = bleeder >= 0 && d.organBleed > d.woundBleed ? organText(bleeder) : "BLUTVERLUST";
-      }
-      if (eta < 3600) {
-        text = what + " · " + (eta < 120 ? Math.ceil(eta) + "S" : Math.ceil(eta / 60) + " MIN");
-        col = eta < 15 ? "#ff4050" : eta < 120 ? "#f08a24" : "#f2da3a";
-      }
-      else { text = what; col = hp <= 0 ? "#f08a24" : "#f2da3a"; }
-    }
-  }
+  else [text, col] = organAlert(d);
   ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x + 9, y + h / 2, 3, 0, Math.PI * 2); ctx.fill();
   label(text, x + 17, y + h / 2 + 0.5, 9, col);
 }
@@ -9196,6 +9459,7 @@ function press() {
     else state.extrasOpen = false;
     return;
   }
+  if (!DAMAGE_PANEL && vitPress(state.sx, state.sy)) return;
   if (inPanelHead(state.sx, state.sy)) { togglePanel(); return; }
   // A tap on a compact row selects that doll.
   const row = panelOpen && (state.panelRows || []).find((r) => hitBox(r, state.sx, state.sy));
@@ -9742,7 +10006,7 @@ canvas.addEventListener("pointerdown", (ev) => {
     activePointer = null; touches.clear(); pinch = null; state.lp = null; release();
   }
   // Gun buttons work with a second finger while the first one aims.
-  const [gx, gy] = gamePoint(ev), gb = state.extrasOpen || state.aimView || state.ctxMenu ? null : gunButtonAt(gx, gy);
+  const [gx, gy] = gamePoint(ev), gb = state.extrasOpen || state.aimView || state.ctxMenu || (!DAMAGE_PANEL && vitalsHit(gx, gy)) ? null : gunButtonAt(gx, gy);
   // A second finger in the room starts a pinch: the first finger's action
   // stops and both fingers zoom and move the view.
   const roomTouch = state.screen === "game" && !gb && !state.aimView && !state.ctxMenu && !state.extrasOpen && ev.pointerType !== "mouse";
@@ -10454,6 +10718,7 @@ function render() {
   drawReloadMag();
   for (const d of state.dolls) if (d.monitor) drawMonitor(d);
   drawGhosts();
+  if (!DAMAGE_PANEL && !state.decaySim) drawVitalsMarker(state.selected);
   // Aim line, cursor and the long press ring belong to the room.
   if (!settings.front) drawLaser();
   drawCursor();
@@ -10481,6 +10746,7 @@ function render() {
   }
   drawContextBar();
   drawGunControls();
+  if (!DAMAGE_PANEL) drawVitals(sel);
   drawToolbar();
   drawFsButton();
   drawMenuButton();

@@ -120,7 +120,17 @@ Verbrennungen wirken auf den ganzen Körper. Das Panel zeigt, wie viel Haut verb
 
 Der Knopf "EXTRAS" oben öffnet eine Liste: Blut entfernen, Wasser entfernen, Feuer löschen, Eis entfernen, Sonstiges entfernen (Organe und Fleisch am Boden, Hülsen, Magazine, Taser-Drähte und abgetrennte Körperteile), Alle heilen, Puppe entfernen, Alle Puppen weg, Zeitlupe und Pause. "Eis entfernen" lässt das Eis der Map stehen. "Alle heilen" schließt Wunden und füllt alle Werte auf, abgetrennte Glieder bleiben ab.
 
-Das Schadenspanel ist vorerst ausgeschaltet und kommt überarbeitet zurück. Der ganze Code dafür bleibt im Spiel, ein Schalter (DAMAGE_PANEL) blendet es aus. Solange es fehlt, öffnest du den Todesbericht über das Menü der Puppe: gedrückt halten, dann TODESBERICHT. Die Beschreibung unten gilt für das Panel, wenn es wieder an ist.
+Statt des alten Schadenspanels gibt es die neue Vitalanzeige oben rechts. Sie hat drei Größen, das Spiel merkt sich deine Wahl:
+
+Die Pille ist ganz klein: ein schlagendes Pixel-Herz, der Puls und die Puppe, in der Farbe ihres Zustands. Ein Tipp öffnet die Karte.
+
+Die Karte zeigt die Puppe auf einen Blick: Pixel-Gesicht, Name und Zustand, ein großes laufendes EKG mit Puls, darunter vier Ringanzeigen für Blut, Sauerstoff, Bewusstsein und Schmerz mit Zahl in der Mitte. Kritische Werte blinken rot. Unten steht nur die eine Sache, die die Puppe gerade am meisten bedroht, mit der Zeit bis zum Tod, zum Beispiel LEBER 30 % · 11S, oder nach dem Tod die Ursache. Ein Tipp darauf öffnet dann den Todesbericht.
+
+Der Scan klappt als Blatt von rechts herein: links die Körpertafel als Röntgenbild auf grünem Raster mit laufender Scanlinie, rechts alle fünf Werte mit Trendpfeilen und leuchtenden Balken, darunter jedes Organ mit eigenem Balken in Grün, Gelb, Orange oder Rot. Unten zählt das Blatt die Wunden nach Art: Schuss, Schnitt, Prellung, Stumpf, blutend und verbunden. Dazu kommen die Zustände, die gerade gelten, und die größte Bedrohung. Bei einer toten Puppe öffnet BERICHT den Todesbericht. Das Blatt ist so hoch wie sein Inhalt.
+
+Oben in der Anzeige wechselst du mit den Knöpfen zwischen den Größen. Die Anzeige folgt bis zu drei Puppen: Unter der Karte und neben dem Scan sitzen kleine Reiter P1, P2 und P3 mit einem Punkt in der Zustandsfarbe, ein Tipp wählt die Puppe. Stehen mehrere Puppen im Raum, schwebt über der gezeigten Puppe ein kleiner Pfeil in ihrer Zustandsfarbe. Ein dünner Streifen oben färbt jede Größe nach dem Zustand, und der Rand pulsiert rot, wenn die Puppe gleich stirbt oder ihr Herz stillsteht.
+
+Das alte Schadenspanel bleibt im Code, ein Schalter (DAMAGE_PANEL) blendet es aus. Die Beschreibung unten gilt für das alte Panel.
 
 Das Schadenspanel ist auf Deutsch und folgt bis zu drei Puppen gleichzeitig. Die gewählte Puppe steht oben groß, die zwei zuletzt gewählten darunter als kompakte Zeilen. Ein Tipp auf eine Zeile macht diese Puppe zur großen Karte. Gibt es nur eine oder zwei Puppen, zeigt das Panel entsprechend weniger.
 
