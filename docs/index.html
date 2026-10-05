@@ -578,10 +578,13 @@ function paintCell(i) {
       break;
     }
     case FIRE: {
-      const l = life[i] + rnd(12);
-      if (l > 60) { r = 255; g = 230; b = 120; }
-      else if (l > 32) { r = 250; g = 140; b = 40; }
-      else { r = 200; g = 50; b = 24; }
+      // Hot and bright low in a flame, darker and redder at its tip.
+      const l = life[i] + (shade[i] & 15) - 8 + rnd(8), tip = i >= WW && mat[i - WW] !== FIRE;
+      if (l > 62 && !tip) { r = 255; g = 230; b = 140; }
+      else if (l > 42) { r = 255; g = 162; b = 46; }
+      else if (l > 24) { r = 232; g = 92; b = 26; }
+      else { r = 168; g = 38; b = 18; }
+      if (tip) { g = (g * 0.7) | 0; a = 210; }
       break;
     }
     case ICE: {
@@ -752,8 +755,8 @@ const ORGAN_DEATH = {
 
 // Where a fire on the body came from: for a sentence ("von ...") and as a short tag.
 const FIRE_SRC = {
-  lighter: ["einem Feuerzeug", "Feuerzeug"], flame: ["der Flamme", "Flamme"], molotov: ["einem Molotow-Cocktail", "Molotow"],
-  blast: ["der Explosion einer Bombe", "Bombe"], open: ["offenem Feuer im Raum", "Feuer"],
+  flame: ["der Flamme des Feuer-Werkzeugs", "Flamme"], blast: ["der Explosion einer Bombe", "Bombe"],
+  doll: ["einer brennenden Puppe", "andere Puppe"], open: ["offenem Feuer im Raum", "Feuer"],
 };
 
 // ----------------------------------------------------------------- burns
@@ -858,6 +861,8 @@ class Doll {
     this.dead = false; this.headUnder = false; this.taseT = 0; this.hitReact = null; this.deadT = 0; this.dc = null; this.rigorOn = false;
     this.burn = 0; this.bladeTimer = 0; this.freeze = 0; this.frozen = false;
     this.fire = new Array(PART_COUNT).fill(0); this.ember = new Array(PART_COUNT).fill(0);
+    // How much of each part burns (0 to 1) and where along it the fire started.
+    this.fireCov = new Array(PART_COUNT).fill(0); this.fireAt = new Array(PART_COUNT).fill(0.5);
     this.burnDeg = new Array(PART_COUNT).fill(0); this.cloth = new Array(PART_COUNT).fill(1);
     this.hair = 1; this.burnLoss = 0; this.tbsa = 0; this.rollT = 0; this.rollDir = 1;
     this.sinceDamage = 0; this.healing = false;
@@ -1549,7 +1554,6 @@ class Doll {
     // Fire close by: it shies away from the heat and shields its face.
     if (this.burn <= 0) {
       let fxs = null, fd = 110;
-      for (const f of state.fires) { const dd = Math.hypot(f.x - this.x[P_WAIST], f.y - this.y[P_WAIST]) - f.r; if (dd < fd) { fd = dd; fxs = [f.x, f.y]; } }
       for (const o of state.dolls) if (o !== this && o.burn > 0) { const dd = Math.hypot(o.x[P_WAIST] - this.x[P_WAIST], o.y[P_WAIST] - this.y[P_WAIST]) - 20; if (dd < fd) { fd = dd; fxs = [o.x[P_WAIST], o.y[P_WAIST]]; } }
       if (fxs) {
         const away = Math.sign(this.x[P_WAIST] - fxs[0]) || 1, k = 1 - fd / 110;
@@ -2026,6 +2030,8 @@ class Doll {
     this.ko -= 40;
     // The fireball sets the near side of the body alight.
     this.applyHeat(x, y, R * 0.45, 2.5, "blast");
+    // A fireball wraps the near parts at once.
+    for (let k = 0; k < PART_COUNT; k++) if (this.fire[k] > 0) this.fireCov[k] = Math.max(this.fireCov[k], 0.7);
     this.damaged();
     return true;
   }
@@ -2036,9 +2042,11 @@ class Doll {
   }
   // Sets a body part on fire for at least t seconds. Clothes and hair keep
   // it burning longer.
-  ignite(k, t, by = "open") {
+  ignite(k, t, by = "open", at = 0.5) {
     if (k < 0 || this.gone[k] || this.frozen) return;
-    if (!this.fire.some((v) => v > 0)) { this.fireBy = by; this.logEvent(PART_NAME[k] + " fängt Feuer" + (by === "open" ? "" : " · " + FIRE_SRC[by][1])); }
+    if (!this.fire.some((v) => v > 0)) { this.fireBy = by; whooshSound(0.35); this.logEvent(PART_NAME[k] + " fängt Feuer" + (by === "open" ? "" : " · " + FIRE_SRC[by][1])); }
+    // A new fire starts small where it caught and creeps over the part from there.
+    if (this.fire[k] <= 0) { this.fireAt[k] = clamp(at, 0, 1); this.fireCov[k] = Math.max(this.fireCov[k] * 0.5, 0.12); }
     const fuel = (PART_CLOTH[k] !== "skin" ? this.cloth[k] * 3 : 0) + (k === HEAD ? this.hair * 1.5 : 0);
     this.fire[k] = Math.max(this.fire[k], t + fuel);
   }
@@ -2046,13 +2054,19 @@ class Doll {
     for (let n = 0; n < PART_COUNT; n++) if (k < 0 || n === k) this.fire[n] = 0;
     this.burn = this.fire.some((v) => v > 0) ? 1 : 0;
   }
-  // Parts within r of the point catch fire.
-  applyHeat(x, y, r, t = 3, from = "flame") {
+  // Parts within r of the point get heat. Each step a part catches with the
+  // given chance, so a small flame needs a moment. A part that burns already
+  // is spread over faster while the flame stays on it.
+  applyHeat(x, y, r, t = 3, from = "flame", chance = 1) {
     for (let k = 0; k < PART_COUNT; k++) {
       if (this.gone[k]) continue;
       const [ax, ay] = limbStart(this, k), bx = this.x[this.pb[k]], by = this.y[this.pb[k]];
       const [qx, qy] = closestOnSeg(x, y, ax, ay, bx, by), w = k === HEAD ? HEAD_R : RECT[k][0];
-      if (Math.hypot(x - qx, y - qy) <= r + w) this.ignite(k, t, from);
+      if (Math.hypot(x - qx, y - qy) > r + w) continue;
+      if (this.fire[k] > 0) { this.fireCov[k] = Math.min(1, this.fireCov[k] + DT * 0.4 * chance); this.fire[k] = Math.max(this.fire[k], t); continue; }
+      if (Math.random() >= chance) continue;
+      const l2 = (bx - ax) ** 2 + (by - ay) ** 2 || 1;
+      this.ignite(k, t, from, k === HEAD ? 0.5 : ((qx - ax) * (bx - ax) + (qy - ay) * (by - ay)) / l2);
     }
   }
   applyCold(x, y, r) { if (this.near(x, y, r)) { this.freeze = Math.min(1.6, this.freeze + DT * 1.1); this.extinguish(); } }
@@ -2190,7 +2204,12 @@ class Doll {
     let cold = 0, wet = false;
     for (let i = 0; i < this.x.length; i++) {
       const x = this.x[i], y = this.y[i], m = matAt(x, y);
-      if (m === FIRE && this.burnImmune <= 0) this.ignite(this.owner[i], 2.5);
+      // Flames in the room catch after a short touch. The doll's own flames
+      // do not count, it only spreads over itself part by part.
+      if (m === FIRE && this.burnImmune <= 0 && Math.random() < 0.1) {
+        const tagc = mixv[(y | 0) * WW + (x | 0)];
+        if (tagc !== this.id % 250 + 1) this.ignite(this.owner[i], 2.5, tagc ? "doll" : "open");
+      }
       else if (m === WATER || m === BLOOD) { wet = true; this.fire[this.owner[i]] = 0; }
       // Only fresh ice from the ice tool is cold enough to freeze a doll.
       const r = this.rad[i] + 3;
@@ -2309,10 +2328,11 @@ class Doll {
   // burns deeper, fire creeps to the neighbors, rolling on the floor and
   // water put it out.
   updateFire() {
-    let burning = 0;
+    let burning = 0, pc = null;
     const speed = Math.hypot(this.x[P_WAIST] - this.ox[P_WAIST], this.y[P_WAIST] - this.oy[P_WAIST]);
+    const fuelOf = (k) => (PART_CLOTH[k] !== "skin" && this.cloth[k] > 0.05 ? 1 : k === HEAD && this.hair > 0.1 ? 0.8 : 0.25);
     for (let k = 0; k < PART_COUNT; k++) {
-      if (this.fire[k] <= 0) { this.ember[k] = Math.max(0, this.ember[k] - DT * 0.3); continue; }
+      if (this.fire[k] <= 0) { this.ember[k] = Math.max(0, this.ember[k] - DT * 0.3); this.fireCov[k] = Math.max(0, this.fireCov[k] - DT * 0.6); continue; }
       if (this.gone[k] || this.frozen) { this.fire[k] = 0; continue; }
       burning++;
       this.fire[k] -= DT;
@@ -2320,30 +2340,49 @@ class Doll {
       const ax = this.x[this.pa[k]], ay = this.y[this.pa[k]], bx = this.x[this.pb[k]], by = this.y[this.pb[k]];
       // Pressed against the floor while rolling, the flames suffocate.
       const r = this.rad[this.pa[k]] + 3;
-      if (speed > 1 && (solidAt(ax, ay + r) || solidAt(bx, by + r))) this.fire[k] -= DT * 1.6;
+      if (speed > 1 && (solidAt(ax, ay + r) || solidAt(bx, by + r))) { this.fire[k] -= DT * 1.6; this.fireCov[k] = Math.max(0.1, this.fireCov[k] - DT * 0.5); }
+      // The flames creep over the part: quickly over cloth and hair, slowly over bare skin.
+      const fuel = fuelOf(k);
+      this.fireCov[k] = Math.min(1, this.fireCov[k] + DT * (0.04 + 0.26 * fuel));
+      const cov = this.fireCov[k];
       // Clothes and hair burn first and keep the fire going.
       const clothed = PART_CLOTH[k] !== "skin";
       if (clothed && this.cloth[k] > 0) {
-        this.cloth[k] = Math.max(0, this.cloth[k] - DT * (k === FOOT_L || k === FOOT_R ? 0.05 : 0.15));
+        this.cloth[k] = Math.max(0, this.cloth[k] - DT * (k === FOOT_L || k === FOOT_R ? 0.05 : 0.15) * cov);
         this.fire[k] = Math.max(this.fire[k], 0.6);
       }
-      if (k === HEAD && this.hair > 0) this.hair = Math.max(0, this.hair - DT * 0.45);
+      if (k === HEAD && this.hair > 0) this.hair = Math.max(0, this.hair - DT * 0.45 * cov);
       // Clothes shield the skin at first.
       const shield = clothed ? 0.3 + 0.7 * (1 - this.cloth[k]) : 1;
-      this.burnDeg[k] = Math.min(4, this.burnDeg[k] + DT * 0.3 * shield);
+      this.burnDeg[k] = Math.min(4, this.burnDeg[k] + DT * 0.3 * shield * (0.3 + 0.7 * cov));
       this.char[k] = clamp((this.burnDeg[k] - 2.6) / 1.4, 0, 1);
-      this.hurtPart(k, DT * 7 * shield);
-      // Fire creeps along the body to the parts next to it.
-      if (Math.random() < DT * 0.5) {
-        const nb = BURN_NEIGHBORS[k], n = nb[rnd(nb.length)], pc = this.pieces();
-        if (n !== undefined && pc[this.pa[n]] === pc[this.pa[k]]) this.ignite(n, 2);
+      this.hurtPart(k, DT * 7 * shield * cov);
+      // Only a part that burns over most of its length passes the fire on,
+      // upward more readily than down, because heat rises.
+      if (cov > 0.55) {
+        for (const n of BURN_NEIGHBORS[k]) {
+          if (this.fire[n] > 0 || this.gone[n]) continue;
+          const up = this.y[this.pa[n]] + this.y[this.pb[n]] < ay + by - 4;
+          if (Math.random() >= DT * 0.18 * (cov - 0.4) * fuelOf(n) * (up ? 1.6 : 0.5)) continue;
+          if (!pc) pc = this.pieces();
+          if (pc[this.pa[n]] !== pc[this.pa[k]]) continue;
+          // It enters the neighbor at the end that touches this part.
+          const mx = (ax + bx) / 2, my = (ay + by) / 2;
+          const [nax, nay] = limbStart(this, n), atStart = Math.hypot(nax - mx, nay - my) < Math.hypot(this.x[this.pb[n]] - mx, this.y[this.pb[n]] - my);
+          this.ignite(n, 2, this.fireBy || "open", atStart ? 0.1 : 0.9);
+        }
       }
-      // Flames and sparks rise from the part.
-      if (Math.random() < 0.45) {
-        const t = Math.random(), x = lerp(ax, bx, t), y = lerp(ay, by, t) - 8;
-        if (matAt(x, y) === EMPTY) setCell(Math.floor(x) + rnd(7) - 3, Math.floor(y), FIRE, 0, 18 + rnd(26));
+      // Embers and smoke rise from the part. The embers carry the doll's tag,
+      // so they only light other dolls.
+      if (Math.random() < 0.12 * cov) {
+        const t = Math.random(), x = lerp(ax, bx, t), y = lerp(ay, by, t) - 10 - rnd(8);
+        if (matAt(x, y) === EMPTY) setCell(Math.floor(x) + rnd(5) - 2, Math.floor(y), FIRE, this.id % 250 + 1, 14 + rnd(20));
       }
-      if (Math.random() < DT * 4) sparks.push({ x: lerp(ax, bx, Math.random()), y: lerp(ay, by, Math.random()) - 6, vx: rf(-40, 40), vy: rf(-170, -70), life: rf(0.3, 0.7) });
+      if (Math.random() < 0.05 * fuel * cov) {
+        const x = lerp(ax, bx, Math.random()), y = Math.min(ay, by) - 26 - rnd(10);
+        if (matAt(x, y) === EMPTY) setCell(Math.floor(x), Math.floor(y), SMOKE, 0, 60 + rnd(40));
+      }
+      if (Math.random() < DT * 3 * cov) sparks.push({ x: lerp(ax, bx, Math.random()), y: lerp(ay, by, Math.random()) - 6, vx: rf(-40, 40), vy: rf(-170, -70), life: rf(0.3, 0.7) });
       if (this.fire[k] <= 0) this.burnImmune = 0.8;
     }
     this.burn = burning ? 1 : 0;
@@ -2406,7 +2445,7 @@ class Doll {
 
   fullHeal() {
     this.wounds = this.wounds.filter((w) => w.stump);
-    this.fire.fill(0); this.ember.fill(0); this.burnDeg.fill(0); this.cloth.fill(1); this.hair = 1; this.burnLoss = 0; this.tbsa = 0;
+    this.fire.fill(0); this.ember.fill(0); this.fireCov.fill(0); this.burnDeg.fill(0); this.cloth.fill(1); this.hair = 1; this.burnLoss = 0; this.tbsa = 0;
     this.bands = this.bands.filter((b) => b.stump);
     for (const w of this.wounds) w.bleed = 0;
     for (let k = 0; k < PART_COUNT; k++) {
@@ -4953,11 +4992,12 @@ function drawCursor() {
   const { mx, my } = state;
   if (!state.pointerSeen || blocksInput(state.sx, state.sy)) return;
   ctx.strokeStyle = "rgba(255,255,255,0.45)"; ctx.lineWidth = 1.2;
-  if (state.tool === T_FIRE && state.fireMode === 2) {
-    ctx.setLineDash([3, 3]); ctx.strokeStyle = "rgba(255,140,60,0.7)";
-    ctx.beginPath(); ctx.arc(mx, my, 30, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
-  } else if (state.tool === T_WATER || state.tool === T_FIRE || state.tool === T_ICE) {
-    ctx.beginPath(); ctx.arc(mx, my, state.tool === T_WATER || state.fireMode === 0 && state.tool === T_FIRE ? 4 : 8, 0, Math.PI * 2); ctx.stroke();
+  if (state.tool === T_FIRE) {
+    // The ring shows how far the flame reaches.
+    ctx.setLineDash([3, 3]); ctx.strokeStyle = "rgba(255,140,60,0.6)";
+    ctx.beginPath(); ctx.arc(mx, my - FIRE_R[state.fireLevel - 1] * 0.3, FIRE_R[state.fireLevel - 1] + 2, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+  } else if (state.tool === T_WATER || state.tool === T_ICE) {
+    ctx.beginPath(); ctx.arc(mx, my, state.tool === T_WATER ? 4 : 8, 0, Math.PI * 2); ctx.stroke();
   } else if (state.tool === T_BOMB) {
     ctx.setLineDash([4, 4]);
     ctx.beginPath(); ctx.arc(mx, my, 130, 0, Math.PI * 2); ctx.stroke();
@@ -6259,13 +6299,13 @@ const ctxY = () => 66;
 function ctxItems() {
   if (state.tool === T_WATER) return [1, 2, 3, 4, 5].map((n) => ({ kind: "water", n, w: 34, label: String(n) }));
   // The weapon types sit in the dock, in a row under the gun (dockButtons).
-  if (state.tool === T_FIRE) return FIRE_MODES.map((name, n) => ({ kind: "fire", n, w: 96, label: name }));
+  if (state.tool === T_FIRE) return [1, 2, 3, 4, 5].map((n) => ({ kind: "fire", n, w: 34, label: String(n) }));
   return [];
 }
 function ctxLayout() {
   const items = ctxItems();
   if (!items.length) return null;
-  const head = state.tool === T_WATER ? 70 : 0, gap = 6;
+  const head = state.tool === T_WATER || state.tool === T_FIRE ? 70 : 0, gap = 6;
   const total = head + items.reduce((a, it) => a + it.w, 0) + gap * (items.length - 1) + 16;
   const x0 = dockOpen ? DOCK.x + DOCK.w + 10 : 34;
   let x = x0 + 8 + head;
@@ -6347,9 +6387,9 @@ function drawContextBarBody(l) {
   rr(l.x0, y, l.total, CTX_H, 12);
   ctx.fillStyle = "rgba(15,15,19,0.92)"; ctx.fill();
   ctx.strokeStyle = "#383840"; ctx.lineWidth = 1.5; ctx.stroke();
-  if (l.head) label("MENGE", l.x0 + 12, y + CTX_H / 2 + 1, 12, "#8e8e98");
+  if (l.head) label(state.tool === T_FIRE ? "GRÖSSE" : "MENGE", l.x0 + 12, y + CTX_H / 2 + 1, state.tool === T_FIRE ? 11 : 12, "#8e8e98");
   for (const it of l.items) {
-    const isOn = it.kind === "water" ? it.n <= state.waterLevel : it.kind === "fire" ? it.n === state.fireMode : it.n === state.weapon;
+    const isOn = it.kind === "water" ? it.n <= state.waterLevel : it.kind === "fire" ? it.n <= state.fireLevel : it.n === state.weapon;
     const k = tween("cx" + it.kind + it.n, isOn ? 1 : 0, 18), on = k > 0.5;
     const ps = popScale("cx" + it.kind + it.n, 0.08);
     ctx.save(); ctx.translate(it.x + it.w / 2, y + CTX_H / 2); ctx.scale(ps, ps); ctx.translate(-(it.x + it.w / 2), -(y + CTX_H / 2));
@@ -7496,7 +7536,7 @@ function fillRect(r, m, mx = 0, lf = 0) {
 function loadMap(i) {
   state.map = i;
   homeView(state.cam); state.zoomAnim = null;
-  state.fires = []; wires = [];
+  wires = [];
   worldReset();
   // Maps are laid out on the old screen-sized room; it sits in the middle of
   // the big room on its floor. Blocks that reached the old side walls go on
@@ -7579,7 +7619,6 @@ const EXTRA_ITEMS = [
     clearCells((i) => mat[i] === FIRE || mat[i] === SMOKE || mat[i] === STEAM);
     particles = particles.filter((p) => p.m === WATER || p.m === BLOOD);
     for (const d of state.dolls) d.extinguish();
-    state.fires = [];
     return "Feuer gelöscht";
   } },
   { name: "Eis entfernen", color: "#86c4ff", run() {
@@ -9523,7 +9562,7 @@ function drawAimView() {
 
 const state = {
   tool: T_GRAB, mx: W / 2, my: H / 2, sx: W / 2, sy: H / 2, lastX: W / 2, lastY: H / 2,
-  cam: { z: 1, x: OFFX, y: OFFY }, zoomAnim: null, fireMode: 1, fires: [],
+  cam: { z: 1, x: OFFX, y: OFFY }, zoomAnim: null, fireLevel: 3,
   pressing: false, pointerSeen: false, hover: -1, flashBtn: -1, toast: 0, toastText: "",
   dolls: [], selected: null, grabDoll: null, pinDrag: null, swings: [], dockCat: -1, catTool: null, counter: 0, trail: [], shake: 0,
   waterLevel: 3, weapon: 0, fireCd: 0, map: 0, screen: "", screenT: 0, lp: null, ctxMenu: null, aimView: null, xray: false, toolT: 9, pressTarget: null, inGame: false, menuDown: false,
@@ -9639,7 +9678,7 @@ function press() {
   if (c) {
     pop("cx" + c.kind + c.n);
     if (c.kind === "water") { state.waterLevel = c.n; state.toast = 1; state.toastText = "Menge " + c.n; }
-    if (c.kind === "fire") { state.fireMode = c.n; state.toast = 1; state.toastText = FIRE_HINTS[c.n]; }
+    if (c.kind === "fire") { state.fireLevel = c.n; state.toast = 1; state.toastText = "Größe " + c.n; }
     if (c.kind === "gun") { state.weapon = c.n; state.reloadT = 0; state.triggerDown = false; state.climb = 0; state.toast = 1; state.toastText = WEAPONS[c.n].name; }
     return;
   }
@@ -9651,11 +9690,6 @@ function press() {
   state.pressing = true;
   state.lastX = state.mx; state.lastY = state.my;
   if (state.tool === T_BOMB) { explode(state.mx, Math.min(state.my, FLOOR_Y - 2)); state.pressing = false; return; }
-  if (state.tool === T_FIRE && state.fireMode !== 1) {
-    state.pressing = false;
-    if (state.fireMode === 0) lighter(state.mx, state.my); else molotov(state.mx, state.my);
-    return;
-  }
   if (state.tool === T_GUN) {
     // Front view: like the blade, the shot lands right under the finger.
     // With a finger the shot waits a moment: if a second finger follows,
@@ -9842,8 +9876,12 @@ function applyTool() {
     }
     aimAt(mx, my);
   } else if (state.tool === T_FIRE) {
-    paintDisc(mx, my, 8, FIRE, 0.25);
-    for (const d of state.dolls) d.applyHeat(mx, my, 10, 3);
+    // Five sizes like the water: from a small flame that needs a moment to
+    // catch, to a big blaze that lights everything it touches.
+    const lv = state.fireLevel, R = FIRE_R[lv - 1];
+    if (Math.random() < 0.2 + 0.1 * lv) paintDisc(mx, my - R * 0.6, R * 0.35, FIRE, 0.12);
+    for (const d of state.dolls) d.applyHeat(mx, my - R * 0.3, R, 1.5 + lv * 0.5, "flame", FIRE_CATCH[lv - 1]);
+    if (Math.random() < DT * (2 + lv)) sparks.push({ x: mx + rf(-R, R) * 0.5, y: my - R, vx: rf(-30, 30), vy: rf(-150, -60), life: rf(0.2, 0.5) });
   } else if (state.tool === T_ICE) {
     iceSound();
     // Ice grows around the doll, never inside it.
@@ -9859,101 +9897,81 @@ function applyTool() {
 }
 
 // ----------------------------------------------------------------- fire tools
-// Feuerzeug: a small flame that sets exactly the touched part alight.
-// Flamme: hold to burn, as before. Molotow: a bottle bursts into a pool of
-// burning fuel that keeps burning for a while and sets alight what is in it.
-const FIRE_MODES = ["FEUERZEUG", "FLAMME", "MOLOTOW"];
-const FIRE_HINTS = ["Tippe auf ein Körperteil", "Halten zum Brennen", "Tippe, wo die Flasche platzt"];
-function lighter(x, y) {
-  let best = null, bk = -1, bd = 18;
-  for (const d of state.dolls) for (let k = 0; k < PART_COUNT; k++) {
-    if (d.gone[k]) continue;
-    const [ax, ay] = limbStart(d, k), [qx, qy] = closestOnSeg(x, y, ax, ay, d.x[d.pb[k]], d.y[d.pb[k]]);
-    const dist = Math.hypot(qx - x, qy - y) - (k === HEAD ? HEAD_R : RECT[k][0]);
-    if (dist < bd) { bd = dist; best = d; bk = k; }
-  }
-  if (best) { best.ignite(bk, 3, "lighter"); state.selected = best; state.toast = 1; state.toastText = PART_NAME[bk] + " brennt"; }
-  paintDisc(x, y, 3, FIRE, 0.8);
-  whooshSound(0.4);
-}
-function molotov(x, y) {
-  worldEvent("fire", x, y);
-  // The fuel spreads out on the surface below the finger.
-  let gy = Math.floor(y);
-  while (gy < WH - 1 && !solidAt(x, gy + 1)) gy++;
-  state.fires.push({ x, y: gy, r: 34, t: 7 });
-  for (let n = 0; n < 40; n++) spawnParticle(x + rf(-4, 4), y + rf(-4, 4), rf(-260, 260), rf(-320, -40), FIRE);
-  for (let n = 0; n < 14; n++) sparks.push({ x, y, vx: rf(-260, 260), vy: rf(-300, -60), life: rf(0.3, 0.8) });
-  paintDisc(x, y, 14, FIRE, 0.7);
-  for (const d of state.dolls) d.applyHeat(x, y, 30, 5, "molotov");
-  flashes.push({ x, y, ang: 0, age: 0 });
-  state.shake = Math.max(state.shake, 0.18);
-  glassSound(); whooshSound(1);
-}
-// Burning pools from the molotov: flames along the ground, dolls in them catch fire.
-function stepFires() {
-  for (const f of state.fires) {
-    f.t -= DT;
-    const k = Math.min(1, f.t / 2);
-    for (let n = 0; n < 6 * k; n++) {
-      const x = f.x + rf(-f.r, f.r) * (0.6 + 0.4 * k);
-      let y = f.y;
-      while (y > f.y - 30 && solidAt(x, y)) y--;
-      if (isFree(getMat(Math.floor(x), Math.floor(y)))) setCell(Math.floor(x), Math.floor(y), FIRE, 0, 25 + rnd(35));
-    }
-    if (Math.random() < 0.3 * k) for (const d of state.dolls) d.applyHeat(f.x, f.y - 6, f.r * 0.8, 2, "molotov");
-  }
-  state.fires = state.fires.filter((f) => f.t > 0);
-}
-// Flames licking up from every burning part, drawn over the doll.
-// Flames on a burning body, drawn in the same pixel grid as the dolls.
-// Tongues rise from cells all over the burning part and flicker about ten
-// times a second. Pixels go in color buckets, tips first, so the bright core
-// always sits on top and the rim stays red.
-const FLAME_COLS = ["#a8200c", "#e24a16", "#ff8c1e", "#ffc834", "#fff2a8"];
+// The fire tool: how far the flame reaches and the chance per step that a
+// touched part catches, for each of the five sizes.
+const FIRE_R = [4, 7, 11, 16, 22], FIRE_CATCH = [0.008, 0.03, 0.08, 0.2, 0.6];
+// Flames on a burning body: single tongues that rise straight up from the
+// burning stretch of each part, drawn in the same pixel grid as the dolls.
+// Every tongue has its own seed, leans, sways and grows on smooth waves, so
+// no two look alike and the picture never repeats. Pixels go in color
+// buckets, the hot core last, so it always sits on top and the rim stays red.
+const FLAME_COLS = ["#7e1a0c", "#c8340f", "#f06a18", "#ffa42a", "#ffd866", "#fff6d2"];
 const flameBuckets = FLAME_COLS.map(() => []);
 function flameNoise(a, b) {
   let h = Math.imul(a | 0, 374761393) + Math.imul(b | 0, 668265263);
   h = Math.imul(h ^ (h >>> 13), 1274126177);
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
+// Smooth noise from three sines with uneven steps: it never quite repeats.
+const wave = (x) => Math.sin(x) * 0.5 + Math.sin(x * 2.13 + 1.7) * 0.3 + Math.sin(x * 3.71 + 0.3) * 0.2;
+function flameTongue(bx, by, h, bw, seed, now, f) {
+  const P = 2, rows = Math.max(2, Math.round(h / P)), lean = wave(now * 0.8 + seed) * 0.35;
+  for (let r = 0; r < rows; r++) {
+    const v = r / rows;
+    // Near the tip the flame tears into loose licks.
+    if (v > 0.66 && wave(now * 8.5 + seed * 3 + r * 0.6) > 0.35) continue;
+    const half = Math.max(0.6, bw * Math.pow(1 - v, 0.7) * (0.88 + 0.12 * wave(now * 7 + seed + r * 0.25)));
+    const cx = bx + (wave(now * 6 + seed * 2 + r * 0.4) * (1.2 + 2.4 * f) + lean * r * P) * v;
+    const gy = Math.round((by - r * P) / P);
+    const x0 = Math.round((cx - half) / P), x1 = Math.round((cx + half) / P), mid = (x0 + x1) / 2, span = (x1 - x0) / 2 + 0.5;
+    for (let gx = x0; gx <= x1; gx++) {
+      const heat = (1 - v) * (1 - 0.6 * Math.abs(gx - mid) / span) * (0.7 + 0.3 * f);
+      flameBuckets[heat > 0.8 ? 5 : heat > 0.64 ? 4 : heat > 0.48 ? 3 : heat > 0.32 ? 2 : heat > 0.16 ? 1 : 0].push(gx * P, gy * P);
+    }
+  }
+}
+// A soft warm light that breathes with the flames.
+function flameGlow(x, y, r, a) {
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+  g.addColorStop(0, `rgba(255,130,40,${a})`); g.addColorStop(1, "rgba(255,80,0,0)");
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+}
 function drawBodyFlames() {
-  const now = performance.now() / 1000, P = 2;
+  const now = performance.now() / 1000;
   for (const bk of flameBuckets) bk.length = 0;
   ctx.save(); ctx.globalCompositeOperation = "lighter";
-  for (const d of state.dolls) {
-    const seen = new Set();
-    for (let k = 0; k < PART_COUNT; k++) {
-      if (d.fire[k] <= 0 || d.gone[k]) continue;
-      const [ax, ay] = limbStart(d, k), bx = d.x[d.pb[k]], by = d.y[d.pb[k]], f = Math.min(1, d.fire[k] / 1.5);
-      const len = Math.hypot(bx - ax, by - ay) || 1, ux = (bx - ax) / len, uy = (by - ay) / len;
-      const w = (k === HEAD ? HEAD_R : RECT[k][0]) * 0.7, steps = Math.max(2, Math.round(len / (P * 2)));
-      for (let q = 0; q <= steps; q++) for (const o of [-w, -w / 2, 0, w / 2, w]) {
-        const px = lerp(ax, bx, q / steps) - uy * o, py = lerp(ay, by, q / steps) + ux * o;
-        const gx = Math.floor(px / P), gy = Math.floor(py / P), key = gx * 4096 + gy;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        // Each cell flickers on its own beat, weaker fire leaves gaps.
-        const beat = Math.floor(now * 10 + flameNoise(gx, gy) * 7);
-        const n = flameNoise(gx * 31 + d.id, gy * 17 + beat);
-        if (n > 0.25 + 0.75 * f) continue;
-        const hc = 1 + Math.floor(flameNoise(gx + beat, gy - d.id) * (3 + 7.5 * f));
-        for (let j = -1; j < hc; j++) {
-          const c = Math.min(4, Math.floor((1 - (j + 1) / (hc + 1)) * 5));
-          flameBuckets[c].push(gx * P, (gy - j) * P);
-          // The lower half of a tongue is two pixels wide.
-          if (j < hc / 2) flameBuckets[c].push((gx + 1) * P, (gy - j) * P);
-        }
-        // Now and then a spark flies off the tip.
-        if (n < 0.08 * f) flameBuckets[2].push(gx * P + (beat % 3 - 1) * P, (gy - hc - 1 - (beat % 3)) * P);
+  for (const d of state.dolls) for (let k = 0; k < PART_COUNT; k++) {
+    if (d.fire[k] <= 0 || d.gone[k]) continue;
+    const cov = Math.max(0.12, d.fireCov[k]), f = Math.min(1, d.fire[k] / 1.5) * (0.35 + 0.65 * cov);
+    const [ax, ay] = limbStart(d, k), bx = d.x[d.pb[k]], by = d.y[d.pb[k]];
+    const len = Math.hypot(bx - ax, by - ay) || 1, ux = (bx - ax) / len, uy = (by - ay) / len;
+    const head = k === HEAD, w = (head ? HEAD_R : RECT[k][0]) * 0.85;
+    // Only the burning stretch around the spot where it caught has flames.
+    const t0 = head ? 0 : clamp(d.fireAt[k] - cov / 2, 0, 1 - cov), L = head ? w * 2 * Math.max(0.4, cov) : len * cov;
+    const n = Math.max(1, Math.round(L / 8));
+    const cx = head ? bx : lerp(ax, bx, t0 + cov / 2), cy = head ? by : lerp(ay, by, t0 + cov / 2);
+    flameGlow(cx, cy - 6, 16 + 16 * f, (0.1 + 0.05 * wave(now * 7 + k)) * f);
+    for (let i = 0; i < n; i++) {
+      const s1 = flameNoise(d.id * 131 + k * 17 + i, 3), s2 = flameNoise(i * 7 + k * 3, d.id + 11), side = i % 2 ? 1 : -1;
+      let px, py;
+      if (head) { px = bx + ((i + 0.5) / n - 0.5) * L + (s1 - 0.5) * 3; py = by - HEAD_R * (0.3 + 0.4 * s2); }
+      else {
+        const tt = t0 + cov * (i + 0.5 + (s1 - 0.5) * 0.7) / n, o = side * w * (0.2 + 0.55 * s2);
+        px = lerp(ax, bx, tt) - uy * o; py = lerp(ay, by, tt) + ux * o;
       }
+      // Each tongue grows and shrinks on its own slow wave.
+      const h = (9 + 24 * f) * (0.45 + 0.55 * (0.5 + 0.5 * wave(now * (1.6 + s1 * 1.4) + s2 * 40))) * (0.7 + 0.6 * s2);
+      flameTongue(px, py + 2, h, 2.4 + 3.6 * f * (0.6 + 0.7 * s1), s1 * 50 + s2 * 13 + d.id, now, f);
     }
-    for (let k = 0; k < PART_COUNT; k++) {
-      if (d.fire[k] <= 0 || d.gone[k]) continue;
-      const [ax, ay] = limbStart(d, k), bx = d.x[d.pb[k]], by = d.y[d.pb[k]], f = Math.min(1, d.fire[k] / 1.5);
-      const glow = ctx.createRadialGradient((ax + bx) / 2, (ay + by) / 2, 0, (ax + bx) / 2, (ay + by) / 2, 24);
-      glow.addColorStop(0, `rgba(255,120,30,${0.16 * f})`); glow.addColorStop(1, "rgba(255,80,0,0)");
-      ctx.fillStyle = glow; ctx.beginPath(); ctx.arc((ax + bx) / 2, (ay + by) / 2, 24, 0, Math.PI * 2); ctx.fill();
+  }
+  // The flame of the fire tool under the finger, as big as its size.
+  if (state.pressing && state.tool === T_FIRE && !state.decaySim) {
+    const lv = state.fireLevel, R = FIRE_R[lv - 1], n = 1 + lv, f = 0.55 + lv * 0.09;
+    flameGlow(state.mx, state.my - R * 0.4, R * 2.2 + 10, 0.16 + 0.04 * wave(now * 9));
+    for (let i = 0; i < n; i++) {
+      const s1 = flameNoise(i, 77), x = state.mx + (n > 1 ? (i / (n - 1) - 0.5) * R * 1.2 : 0) + (s1 - 0.5) * 2;
+      const h = R * (1.6 + 0.9 * (0.5 + 0.5 * wave(now * (2 + s1) + i * 9))) * (1 - Math.abs(i / Math.max(1, n - 1) - 0.5) * 0.8);
+      flameTongue(x, state.my + 2, h + 4, 1.6 + R * 0.22, s1 * 90 + i, now, f);
     }
   }
   ctx.restore();
@@ -9962,12 +9980,11 @@ function drawBodyFlames() {
     if (!bk.length) continue;
     ctx.fillStyle = FLAME_COLS[c];
     ctx.beginPath();
-    for (let i = 0; i < bk.length; i += 2) ctx.rect(bk[i], bk[i + 1], P, P);
+    for (let i = 0; i < bk.length; i += 2) ctx.rect(bk[i], bk[i + 1], 2, 2);
     ctx.fill();
   }
 }
-// Fire sounds: crackling while something burns, a whoosh when it catches,
-// breaking glass for the molotov.
+// Fire sounds: crackling while something burns, a whoosh when it catches.
 function noiseBurst(dur, freq, q, gain, type = "bandpass") { sfx((t) => nz(t, dur, { type, f: freq, q, g: gain, send: 0.15 })); }
 const fireCrackle = () => noiseBurst(rf(0.01, 0.04), rf(1500, 4500), 2, rf(0.03, 0.08));
 
@@ -10053,9 +10070,9 @@ function collideDolls() {
 function physicsStep() {
   if (state.decaySim) decaySimStep();
   if (state.pressing) applyTool();
-  stepFires();
   stepWires();
-  if (state.dolls.some((d) => d.burn > 0) && Math.random() < DT * 14) fireCrackle();
+  const burning = state.dolls.reduce((a, d) => a + d.fire.filter((v) => v > 0).length, 0) + (state.pressing && state.tool === T_FIRE ? state.fireLevel : 0);
+  if (burning && Math.random() < DT * Math.min(30, 6 + burning * 2)) fireCrackle();
   gunStep();
   worldStep();
   stepGibs();
