@@ -2187,9 +2187,10 @@ class Doll {
     } else if (this.frozen && this.freeze < 0.5) this.frozen = false;
 
     // Decay after death. Ice stops it, cool water slows it.
-    if (this.dead && settings.decay) {
+    if (this.dead && (settings.decay || state.decaySim)) {
       const wet = liquidAt(this.x[P_WAIST], this.y[P_WAIST]);
-      const rate = this.frozen ? 0 : (settings.decayFast ? 10 : 1) * (wet ? 0.6 : 1);
+      // The decay scene sets the clock itself (decaySimStep).
+      const rate = state.decaySim ? 0 : this.frozen ? 0 : (settings.decayFast ? 10 : 1) * (wet ? 0.6 : 1);
       this.deadT += DT * rate;
       this.dc = decayOf(this.deadT);
       // Leaking fluid stains the floor under the trunk.
@@ -7536,9 +7537,10 @@ const titleFx = { drops: [], dust: [], t: 0, dark: 0, fadeIn: 0 };
 for (let n = 0; n < 26; n++) titleFx.dust.push({ x: rf(-60, 60), y: rf(60, 360), v: rf(3, 9), p: rf(0, 6.28) });
 
 function titleButtons() {
-  const x = 56, w = 250, h = 42, gap = 10, y0 = 196, items = [];
+  const items = [], five = state.inGame, x = 56, w = 250, h = five ? 37 : 40, gap = five ? 7 : 9, y0 = five ? 184 : 192;
   if (state.inGame) items.push({ id: "resume", text: "WEITERSPIELEN", primary: true });
   items.push({ id: "maps", text: state.inGame ? "MAP WÄHLEN" : "SPIELEN", primary: !state.inGame });
+  items.push({ id: "decay", text: "VERWESUNG" });
   items.push({ id: "help", text: "ANLEITUNG" });
   items.push({ id: "settings", text: "EINSTELLUNGEN" });
   return items.map((it, n) => ({ ...it, x, y: y0 + n * (h + gap), w, h }));
@@ -8535,7 +8537,7 @@ function drawScreen(dt) {
 function screenTargets() {
   const t = [];
   if (state.screen === "title") {
-    for (const b of titleButtons()) t.push({ id: b.id, box: b, run: () => (b.id === "maps" && !state.inGame ? startPlayShot(b) : setScreen(b.id === "resume" ? "game" : b.id)) });
+    for (const b of titleButtons()) t.push({ id: b.id, box: b, run: () => (b.id === "decay" ? startDecaySim() : b.id === "maps" && !state.inGame ? startPlayShot(b) : setScreen(b.id === "resume" ? "game" : b.id)) });
     return t;
   }
   t.push({ id: "back", box: BACK_BTN, run: () => setScreen(state.screen === "settings" && state.settingsFromGame ? "game" : "title") });
@@ -9034,6 +9036,7 @@ function placeDoll(x, y) {
 
 function press() {
   if (state.screen !== "game") { screenPress(); return; }
+  if (state.decaySim) { decayPress(); return; }
   // An open death report closes on the next tap.
   if (state.deathReport) { state.deathReport = null; clickSound(500, 0.04); return; }
   if (state.aimView) { aimPress(); return; }
@@ -9475,6 +9478,7 @@ function collideDolls() {
 }
 
 function physicsStep() {
+  if (state.decaySim) decaySimStep();
   if (state.pressing) applyTool();
   stepFires();
   stepWires();
@@ -9843,6 +9847,354 @@ function drawDecayFx() {
   }
 }
 
+// ======================================================================
+// Decay simulation: one person, no map. Shoot them, then watch in time
+// lapse as the body rots and the place around it falls apart: the floor
+// cracks and grows over, metal rusts, a tree comes up, seasons turn.
+// ======================================================================
+
+// Scene time tau (seconds since death at 1x) to days: the first minute
+// follows the game's own decay clock up to 30 days, then time speeds up
+// to 30 years at four minutes, and on to about a century.
+function decaySimDays(tau) {
+  if (tau <= 60) return decayHours(tau * 9.5) / 24;
+  if (tau <= 240) return 30 * Math.pow(365, (tau - 60) / 180);
+  return Math.min(36500, 10950 * Math.pow(1.012, tau - 240));
+}
+// The doll's own decay clock for those days (it ends as a skeleton).
+function decaySimDeadT(tau, days) {
+  return tau <= 60 ? tau * 9.5 : 570 + (days * 24 - 720) / 4;
+}
+const DS_SPEEDS = [1, 4, 16];
+function startDecaySim() {
+  const keepSpeed = state.decaySim ? state.decaySim.speed : 1;
+  if (!state.decaySim) state.decayFront = settings.front;
+  settings.front = false;
+  loadMap(0);
+  state.dolls = []; state.selected = null; state.grabDoll = null;
+  const x0 = Math.round(WW / 2);
+  placeDoll(x0, OFFY + 40);
+  const d = state.dolls[0];
+  if (d) d.look = randomLook();
+  state.decaySim = { x0, tau: 0, days: 0, speed: keepSpeed, paused: false, dead: false, wait: 0, shots: 0, parts: [], aim: null, seed: rnd(9999) };
+  state.inGame = false; state.tool = T_GRAB; state.dockCat = -1;
+  // The camera frames the person, a little from below.
+  const c = state.cam; c.z = 1.75; c.x = x0 - W / (2 * c.z); c.y = FLOOR_Y + 42 - H / c.z; state.zoomAnim = null;
+  buildStatic();
+  setScreen("game");
+}
+function endDecaySim() {
+  state.decaySim = null;
+  settings.front = state.decayFront || false;
+  loadMap(state.map);
+  setScreen("title");
+}
+// How fast scene days pass per real second right now.
+function decaySimRate(ds) {
+  const a = decaySimDays(ds.tau), b = decaySimDays(ds.tau + 0.5);
+  return (b - a) * 2 * ds.speed;
+}
+function decaySimStep() {
+  const ds = state.decaySim, d = state.dolls[0];
+  if (!d) return;
+  if (d.dead && !ds.dead) { ds.dead = true; ds.wait = 1.6; }
+  if (ds.dead) {
+    if (ds.wait > 0) ds.wait -= DT;
+    else if (!ds.paused) ds.tau += DT * ds.speed;
+    ds.days = decaySimDays(ds.tau);
+    d.deadT = decaySimDeadT(ds.tau, ds.days);
+    // Blood on the skin rots away with the flesh; the bones come out clean.
+    const clean = 1 - ramp(ds.days, 8, 30);
+    for (let k = 0; k < PART_COUNT; k++) d.stain[k] = Math.min(d.stain[k], 0.75 * clean);
+    if (ds.days > 25) for (const w of d.wounds) { w.streams = []; w.bleed = 0; w.drip = 0; }
+  }
+  // Leaves in autumn, snow in winter, seeds drifting in summer.
+  const env = decayEnv(ds), cx = ds.x0;
+  if (ds.dead && !ds.paused) {
+    const spawn = (kind, n) => { for (let i = 0; i < n; i++) if (Math.random() < DT * 8) ds.parts.push({ kind, x: cx + rf(-280, 280), y: FLOOR_Y - rf(200, 260), vx: rf(-8, 8), vy: kind === "snow" ? rf(14, 26) : rf(18, 34), p: rf(0, 6.28), age: 0 }); };
+    spawn("leaf", Math.round(env.autumn * env.tree * 3));
+    spawn("snow", Math.round(env.winter * 5));
+    spawn("seed", Math.round(env.summer * env.grass * 1.5));
+  }
+  for (const p of ds.parts) { p.age += DT; p.p += DT * 3; p.x += (p.vx + Math.sin(p.p) * (p.kind === "leaf" ? 20 : 6)) * DT; p.y += p.vy * DT; }
+  ds.parts = ds.parts.filter((p) => p.y < FLOOR_Y - 1 && p.age < 14).slice(-160);
+}
+// Everything the scene shows, as numbers from 0 to 1 for the days passed.
+function decayEnv(ds) {
+  const D = ds.dead ? ds.days : 0, rate = ds.dead && !ds.paused ? decaySimRate(ds) : 0;
+  // Seasons from mid July on; when time races they blur into an average.
+  const doy = (200 + D) % 365, peak = (c) => clamp(Math.cos(2 * Math.PI * (doy - c) / 365) * 1.5 - 0.5, 0, 1);
+  const blur = clamp((rate - 30) / 120, 0, 1), sea = (c) => lerp(peak(c), 0.2, blur) * ramp(D, 20, 60);
+  const dayRaw = 0.5 + 0.5 * Math.sin(2 * Math.PI * (D - 0.25)), dayBlur = clamp((rate - 0.4) / 2, 0, 1);
+  const lampLife = 1 - ramp(D, 900, 1500);
+  // The old lamp flickers more and more as it rusts, then goes dark.
+  const flick = D > 300 && lampLife > 0 && Math.random() < 0.15 + 0.5 * ramp(D, 300, 1200) ? 0.25 : 1;
+  return {
+    D, rate, doy,
+    day: lerp(dayRaw, 0.5, dayBlur) * ramp(D, 0.2, 1), lamp: lampLife * flick, lampFall: ramp(D, 2400, 2600),
+    crack: ramp(D, 4, 120), dirt: ramp(D, 12, 240), moss: ramp(D, 40, 700), grass: ramp(D, 50, 900),
+    rust: ramp(D, 3, 2400), holes: ramp(D, 1500, 6000), vine: ramp(D, 200, 3600), tree: ramp(D, 300, 9000),
+    shrooms: ramp(D, 10, 25) * (1 - ramp(D, 70, 140)), blood: ramp(D, 0.4, 5), bloodGone: ramp(D, 120, 1500),
+    fluid: ramp(D, 6, 20) * (1 - ramp(D, 300, 1500)), bleach: ramp(D, 400, 4000), chairFall: ramp(D, 5400, 5800),
+    winter: sea(15), spring: sea(105), summer: sea(196), autumn: sea(288),
+  };
+}
+const DS_STEEL = hex("#6a6e78"), DS_RUST = hex("#8a4018"), DS_RUST2 = hex("#c06a2c");
+const dsRust = (base, r) => mixc(base, DS_RUST, r * 0.85);
+// Rust spots on a metal box, seeded so they stay put and grow with r.
+function dsRustSpots(x, y, w, h, r, seed, holes = 0) {
+  const g = dockRng(seed), n = Math.round(r * (w * h) / 60);
+  for (let i = 0; i < n; i++) {
+    const sx = x + g() * w, sy = y + g() * h, s = 1 + g() * 3 * r;
+    ctx.fillStyle = g() < 0.5 ? css(DS_RUST2, 0.8) : css(DS_RUST, 0.9); ctx.fillRect(sx, sy, s, s * 0.8);
+  }
+  const nh = Math.round(holes * 6);
+  for (let i = 0; i < nh; i++) { ctx.fillStyle = "#0b0a0c"; ctx.fillRect(x + 4 + g() * (w - 8), y + 4 + g() * (h - 8), 2 + g() * 4, 2 + g() * 3); }
+}
+// Grass blades along the floor, seeded, behind or in front of the body.
+function dsGrass(env, x0, x1, seed, front) {
+  if (env.grass < 0.02) return;
+  const g = dockRng(seed), FY = FLOOR_Y, step = front ? 3.2 : 2.6;
+  const col = mixc(mixc(mixc(hex("#4f8a36"), hex("#9a8a3a"), env.autumn), hex("#6e6e58"), env.winter), hex("#6aa83e"), env.spring * 0.5);
+  ctx.lineCap = "round";
+  for (let x = x0; x < x1; x += step) {
+    const r1 = g(), r2 = g(), r3 = g();
+    // grass spreads out from the body over the years
+    const dist = Math.abs(x - (x0 + x1) / 2) / ((x1 - x0) / 2), here = clamp(env.grass * 1.6 - dist * 0.7 - r1 * 0.3, 0, 1);
+    if (here <= 0.02) continue;
+    const h = (front ? 6 : 10) + here * (front ? 16 : 26) * (0.5 + r2) * (1 - env.winter * 0.45);
+    const lean = (r3 - 0.5) * 6 + Math.sin(performance.now() / 900 + x * 0.05) * 1.2;
+    ctx.strokeStyle = css(front ? lighten(col, 0.1 + r1 * 0.15) : darken(col, 0.25 + r1 * 0.2)); ctx.lineWidth = front ? 1.4 : 1.6;
+    ctx.beginPath(); ctx.moveTo(x, FY + 1); ctx.quadraticCurveTo(x + lean * 0.3, FY - h * 0.6, x + lean, FY - h); ctx.stroke();
+    // flowers in spring and early summer
+    if (front && r2 > 0.86 && (env.spring + env.summer * 0.5) > 0.3) { ctx.fillStyle = r1 < 0.5 ? "#f2e070" : "#e8e8f4"; ctx.fillRect(x + lean - 1.2, FY - h - 1.2, 2.4, 2.4); }
+  }
+}
+function drawDecayBack() {
+  const ds = state.decaySim, env = decayEnv(ds), cx = ds.x0, FY = FLOOR_Y, D = env.D;
+  // A dark void, a little lighter by day once the lamp is gone or dim.
+  const light = Math.max(env.day * 0.7, 0);
+  const bg = ctx.createLinearGradient(0, FY - 400, 0, FY);
+  bg.addColorStop(0, css(mixc(hex("#050608"), hex("#1a2028"), light * 0.6)));
+  bg.addColorStop(1, css(mixc(hex("#0e0d10"), hex("#2a2a26"), light * 0.6)));
+  ctx.fillStyle = bg; ctx.fillRect(cx - 900, FY - 700, 1800, 760);
+  // Sky light from above by day.
+  if (light > 0.02) {
+    const sk = ctx.createRadialGradient(cx, FY - 320, 20, cx, FY - 320, 420);
+    sk.addColorStop(0, `rgba(170,190,220,${0.18 * light})`); sk.addColorStop(1, "rgba(170,190,220,0)");
+    ctx.fillStyle = sk; ctx.fillRect(cx - 500, FY - 740, 1000, 760);
+  }
+  // A tree grows up behind the body over the years.
+  if (env.tree > 0.01) {
+    const tx = cx + 92, th = 16 + env.tree * 190, tw = 1.5 + env.tree * 9;
+    ctx.fillStyle = css(mixc(hex("#5a4a2e"), hex("#3a2c1c"), env.tree)); ctx.fillRect(tx - tw / 2, FY - th, tw, th);
+    ctx.strokeStyle = css(hex("#3a2c1c")); ctx.lineCap = "round";
+    const g = dockRng(5);
+    const branches = Math.round(2 + env.tree * 7);
+    for (let i = 0; i < branches; i++) {
+      const by = FY - th * (0.45 + g() * 0.5), dir = g() < 0.5 ? -1 : 1, len = th * (0.18 + g() * 0.25);
+      ctx.lineWidth = Math.max(1, tw * 0.35); ctx.beginPath(); ctx.moveTo(tx, by); ctx.lineTo(tx + dir * len, by - len * 0.6); ctx.stroke();
+    }
+    // Leaves by season: fresh green, deep green, gold and red, bare in winter.
+    const leaf = mixc(mixc(hex("#5a9a3a"), hex("#3e7a2e"), env.summer), hex("#c87a24"), env.autumn);
+    const fullness = (1 - env.winter * 0.95) * (1 - env.autumn * 0.4) * clamp(env.tree * 2, 0, 1);
+    const lg = dockRng(9), n = Math.round(60 + env.tree * 220);
+    for (let i = 0; i < n * fullness; i++) {
+      const a = lg() * Math.PI * 2, r = Math.sqrt(lg()) * th * 0.38;
+      ctx.fillStyle = css(lg() < 0.3 ? lighten(leaf, 0.15) : lg() < 0.1 ? hex("#b8321e") : darken(leaf, lg() * 0.25));
+      ctx.fillRect(tx + Math.cos(a) * r * 1.2, FY - th * 0.82 + Math.sin(a) * r * 0.75, 3, 3);
+    }
+  }
+  // The hanging lamp, its cord and cone; it rusts, flickers, goes dark and falls.
+  const lr = dsRust(DS_STEEL, env.rust), ly = FY - 222;
+  if (env.lampFall < 1) {
+    const drop = easeIn(env.lampFall) * 205;
+    ctx.fillStyle = "#0b0b0e"; ctx.fillRect(cx - 0.8, FY - 700, 1.6, 700 - 222 - 12 + (env.lampFall > 0 ? 0 : 0));
+    ctx.save(); ctx.translate(cx, ly + drop); ctx.rotate(env.lampFall * 1.2);
+    ctx.fillStyle = css(lr); ctx.beginPath(); ctx.moveTo(-6, -12); ctx.lineTo(6, -12); ctx.lineTo(20, 0); ctx.lineTo(-20, 0); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = env.lamp > 0.5 ? "#fff4d0" : "#3a3a40"; ctx.beginPath(); ctx.ellipse(0, 1, 6, 3, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  } else {
+    // fallen: a dented shade lying on the floor
+    ctx.save(); ctx.translate(cx - 58, FY - 6); ctx.rotate(2.6);
+    ctx.fillStyle = css(lr); ctx.beginPath(); ctx.moveTo(-6, -12); ctx.lineTo(6, -12); ctx.lineTo(20, 0); ctx.lineTo(-20, 0); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+  if (env.lamp > 0.02 && env.lampFall < 0.05) {
+    for (let n = 0; n < 5; n++) {
+      const sp = 0.42 + n * 0.04, g = ctx.createLinearGradient(0, ly, 0, FY);
+      g.addColorStop(0, `rgba(255,238,200,${0.07 * env.lamp})`); g.addColorStop(1, `rgba(255,238,200,${0.02 * env.lamp})`);
+      ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(cx - 14, ly); ctx.lineTo(cx + 14, ly); ctx.lineTo(cx + (FY - ly) * sp, FY + 10); ctx.lineTo(cx - (FY - ly) * sp, FY + 10); ctx.closePath(); ctx.fill();
+    }
+  }
+  // Floor: concrete that cracks, turns to dirt and grows moss.
+  const fl = mixc(hex("#5e5e64"), hex("#3a3022"), env.dirt);
+  const fg = ctx.createLinearGradient(0, FY, 0, FY + 60);
+  fg.addColorStop(0, css(lighten(fl, 0.15 + 0.2 * (env.lamp + light) / 2))); fg.addColorStop(1, css(darken(fl, 0.6)));
+  ctx.fillStyle = fg; ctx.fillRect(cx - 900, FY, 1800, 80);
+  ctx.fillStyle = css(mixc(lighten(fl, 0.35), hex("#4a7a30"), env.moss * 0.8)); ctx.fillRect(cx - 900, FY, 1800, 2);
+  if (env.crack > 0.02) {
+    const g = dockRng(13); ctx.strokeStyle = `rgba(10,10,12,${0.7 * env.crack})`; ctx.lineWidth = 1;
+    for (let i = 0; i < 14; i++) {
+      let x = cx - 300 + g() * 600, y = FY + 1; ctx.beginPath(); ctx.moveTo(x, y);
+      const n = 2 + Math.round(g() * 4 * env.crack);
+      for (let k = 0; k < n; k++) { x += (g() - 0.5) * 18; y += g() * 9; ctx.lineTo(x, y); }
+      ctx.stroke();
+    }
+  }
+  if (env.moss > 0.02) {
+    const g = dockRng(17);
+    for (let i = 0; i < 70 * env.moss; i++) { ctx.fillStyle = css(mixc(hex("#3e6a28"), hex("#6a8a3a"), g()), 0.8); ctx.fillRect(cx - 320 + g() * 640, FY - 1 + g() * 4, 2 + g() * 7, 1.5 + g() * 2); }
+  }
+  // Blood under the body dries brown and fades; body fluid leaves a dark stain.
+  const d = state.dolls[0];
+  if (d) {
+    const bx = d.x[P_WAIST];
+    if (env.blood > 0.01) { ctx.fillStyle = css(mixc(hex("#6a0a12"), hex("#3a1a10"), env.blood), 0.75 * (1 - env.bloodGone)); ctx.beginPath(); ctx.ellipse(bx, FY + 1.5, 44 + env.blood * 20, 3.2, 0, 0, Math.PI * 2); ctx.fill(); }
+    if (env.fluid > 0.01) { ctx.fillStyle = `rgba(42,34,14,${0.6 * env.fluid})`; ctx.beginPath(); ctx.ellipse(bx, FY + 2, 70, 4, 0, 0, Math.PI * 2); ctx.fill(); }
+  }
+  // Chair on the left, barrel on the right, both rusting away.
+  const cr = dsRust(DS_STEEL, env.rust), chX = cx - 150;
+  ctx.save(); ctx.translate(chX, FY); ctx.rotate(-env.chairFall * 1.35);
+  ctx.fillStyle = css(darken(cr, 0.2)); ctx.fillRect(-16, -38, 3, 38); ctx.fillRect(13, -38, 3, 38); ctx.fillRect(13, -74, 3, 38);
+  ctx.fillStyle = css(cr); ctx.fillRect(-18, -40, 36, 4); ctx.fillRect(12, -76, 5, 40);
+  dsRustSpots(-18, -76, 36, 76, env.rust, 31);
+  ctx.restore();
+  const bx2 = cx + 150, bw = 44, bh = 66, brl = dsRust(hex("#3e5a6e"), env.rust);
+  ctx.fillStyle = css(brl); ctx.fillRect(bx2 - bw / 2, FY - bh, bw, bh);
+  ctx.fillStyle = css(darken(brl, 0.3)); for (const ry of [8, 30, 54]) ctx.fillRect(bx2 - bw / 2, FY - bh + ry, bw, 3);
+  ctx.fillStyle = css(lighten(brl, 0.15)); ctx.fillRect(bx2 - bw / 2 + 4, FY - bh, 3, bh);
+  dsRustSpots(bx2 - bw / 2, FY - bh, bw, bh, env.rust, 41, env.holes);
+  // Years later a sapling grows out of the rusted barrel.
+  if (env.holes > 0.3) {
+    const sh = (env.holes - 0.3) * 40; ctx.strokeStyle = "#4a7a30"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(bx2, FY - bh); ctx.lineTo(bx2 + 3, FY - bh - sh); ctx.stroke();
+    ctx.fillStyle = css(mixc(hex("#5a9a3a"), hex("#c87a24"), env.autumn)); ctx.fillRect(bx2 + 3, FY - bh - sh - 2, 5, 3); ctx.fillRect(bx2 - 3, FY - bh - sh * 0.6, 5, 3);
+  }
+  dsGrass(env, cx - 330, cx + 330, 101, false);
+}
+function drawDecayFront() {
+  const ds = state.decaySim, env = decayEnv(ds), cx = ds.x0, FY = FLOOR_Y, d = state.dolls[0];
+  if (d && ds.dead) {
+    // Moss and ivy creep over what is left, the bones bleach.
+    const g = dockRng(57);
+    for (let k = 0; k < PART_COUNT; k++) {
+      if (!d.attached(k)) continue;
+      const [ax, ay] = limbStart(d, k), bx = d.x[d.pb[k]], by = d.y[d.pb[k]];
+      for (let i = 0; i < 6; i++) {
+        const t = g(), x = lerp(ax, bx, t) + (g() - 0.5) * 8, y = lerp(ay, by, t) + (g() - 0.5) * 8;
+        if (g() < env.moss * 0.9) { ctx.fillStyle = css(mixc(hex("#3e6a28"), hex("#7a9a3a"), g()), 0.85); ctx.fillRect(x, y, 2 + g() * 2, 2); }
+        if (g() < env.vine) {
+          ctx.strokeStyle = "rgba(54,96,40,0.9)"; ctx.lineWidth = 0.9;
+          ctx.beginPath(); ctx.moveTo(x - 4, y + 2); ctx.quadraticCurveTo(x, y - 4, x + 4, y + 2); ctx.stroke();
+          ctx.fillStyle = css(mixc(hex("#4a8a32"), hex("#b8642a"), env.autumn)); ctx.fillRect(x + 3, y - 2, 3, 2.4);
+        }
+      }
+    }
+    // Mushrooms come up beside the body for a few weeks.
+    if (env.shrooms > 0.02) {
+      const g2 = dockRng(71);
+      for (let i = 0; i < 7; i++) {
+        const x = d.x[P_WAIST] + (g2() - 0.5) * 120, h = (3 + g2() * 6) * env.shrooms;
+        ctx.fillStyle = "#e8e0cc"; ctx.fillRect(x - 0.8, FY - h, 1.6, h);
+        ctx.fillStyle = g2() < 0.5 ? "#c8a070" : "#a8583a"; ctx.beginPath(); ctx.ellipse(x, FY - h, 2.6 + h * 0.3, 1.8 + h * 0.12, 0, Math.PI, 0); ctx.fill();
+      }
+    }
+  }
+  dsGrass(env, cx - 330, cx + 330, 202, true);
+  // Snow lies on the floor, the barrel and the body in winter.
+  if (env.winter > 0.05) {
+    ctx.fillStyle = `rgba(236,240,246,${0.85 * env.winter})`; ctx.fillRect(cx - 900, FY - 2 * env.winter, 1800, 3 * env.winter + 1);
+    ctx.fillRect(cx + 128, FY - 68, 44, 3 * env.winter);
+    if (d) for (const i of [P_HEAD, P_NECK, P_WAIST, P_HIP, P_KNEE_L, P_KNEE_R]) { ctx.beginPath(); ctx.ellipse(d.x[i], d.y[i] - 5, 7, 2.2 * env.winter, 0, 0, Math.PI * 2); ctx.fill(); }
+  }
+  for (const p of ds.parts) {
+    if (p.kind === "snow") { ctx.fillStyle = "rgba(240,244,250,0.9)"; ctx.fillRect(p.x, p.y, 1.6, 1.6); }
+    else if (p.kind === "leaf") { ctx.fillStyle = Math.sin(p.p * 2) > 0 ? "#c8782a" : "#a8401e"; ctx.fillRect(p.x, p.y, 3, 1.5 + Math.abs(Math.sin(p.p)) * 1.5); }
+    else { ctx.fillStyle = "rgba(240,236,210,0.7)"; ctx.fillRect(p.x, p.y, 1.2, 1.2); }
+  }
+  // The edges fade into the dark so only the person and the spot stand out.
+  const v = ctx.createRadialGradient(cx, FY - 80, 120, cx, FY - 80, 330);
+  v.addColorStop(0, "rgba(0,0,0,0)"); v.addColorStop(1, "rgba(0,0,0,0.9)");
+  ctx.fillStyle = v; ctx.fillRect(cx - 900, FY - 700, 1800, 900);
+}
+// ------------------------------------------------------------ decay HUD
+const DS_BTNS = () => {
+  const out = [{ id: "back", x: 16, y: 14, w: 104, h: 32, text: "‹ MENÜ" }, { id: "new", x: W - 120, y: 14, w: 104, h: 32, text: "NEU" }];
+  const bw = 54, y = H - 46, x0 = W - 16 - 4 * (bw + 6) + 6;
+  ["pause", 0, 1, 2].forEach((s, n) => out.push({ id: "speed", s, x: x0 + n * (bw + 6), y, w: bw, h: 32, text: s === "pause" ? "II" : DS_SPEEDS[s] + "×" }));
+  return out;
+};
+function decayTimeText(D) {
+  if (D < 1) return Math.max(1, Math.round(D * 24)) + (Math.round(D * 24) === 1 ? " STUNDE" : " STUNDEN");
+  if (D < 61) return Math.floor(D) + (Math.floor(D) === 1 ? " TAG" : " TAGE");
+  if (D < 730) return Math.floor(D / 30.4) + " MONATE";
+  return Math.floor(D / 365) + " JAHRE";
+}
+function decayStageText(d, D) {
+  if (D < 25) return decayName(d);
+  if (D < 365) return "SKELETT";
+  if (D < 1800) return "VERWITTERT";
+  if (D < 7300) return "ÜBERWUCHERT";
+  return "VERGESSEN";
+}
+const DS_SEASON = (env) => { const s = [["FRÜHLING", env.spring], ["SOMMER", env.summer], ["HERBST", env.autumn], ["WINTER", env.winter]].sort((a, b) => b[1] - a[1])[0]; return s[1] > 0.3 ? s[0] : ""; };
+function drawDecayHud() {
+  const ds = state.decaySim, d = state.dolls[0], env = decayEnv(ds);
+  for (const b of DS_BTNS()) {
+    const on = b.id === "speed" && (b.s === "pause" ? ds.paused : !ds.paused && DS_SPEEDS[b.s] === ds.speed);
+    scaled(b.x + b.w / 2, b.y + b.h / 2, popScale("ds" + b.id + (b.s ?? ""), 0.1), () => {
+      rr(b.x, b.y, b.w, b.h, 7); ctx.fillStyle = "rgba(14,13,17,0.85)"; ctx.fill();
+      ctx.strokeStyle = on ? "#b8231d" : "#34323a"; ctx.lineWidth = on ? 2 : 1.4; ctx.stroke();
+      label(b.text, b.x + b.w / 2, b.y + b.h / 2 + 1, 11, on ? "#ff8a80" : "#cfcfd6", "center");
+    });
+  }
+  if (!ds.dead) {
+    label("VERWESUNG", W / 2, 32, 20, "#ecece4", "center");
+    const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 300);
+    label(d && !d.dead && ds.shots ? "Noch am Leben. Nochmal schießen?" : "Tippe auf die Person, um zu schießen", W / 2, 56, 10, `rgba(236,180,170,${pulse})`, "center", 400);
+  } else {
+    const D = ds.days;
+    label("TOT SEIT", W / 2, 22, 9, "#8a6e74", "center");
+    label(ds.wait > 0 ? "GERADE EBEN" : decayTimeText(D), W / 2, 44, 22, "#ecece4", "center");
+    const sea = DS_SEASON(env);
+    label(decayStageText(d, D) + (sea ? "  ·  " + sea : ""), W / 2, 66, 10, "#c8a0a6", "center");
+    // A time line from the shot to a hundred years, on a log scale.
+    const tx0 = 140, tx1 = W - 300, ty = H - 30, f = (dd) => clamp(Math.log10(1 + dd * 24) / Math.log10(1 + 36500 * 24), 0, 1);
+    ctx.fillStyle = "rgba(14,13,17,0.85)"; rr(tx0 - 10, ty - 16, tx1 - tx0 + 20, 32, 7); ctx.fill();
+    ctx.fillStyle = "#26242a"; ctx.fillRect(tx0, ty - 1, tx1 - tx0, 3);
+    ctx.fillStyle = "#b8231d"; ctx.fillRect(tx0, ty - 1, (tx1 - tx0) * f(D), 3);
+    for (const [dd, t] of [[1, "1T"], [7, "1W"], [30, "1M"], [365, "1J"], [3650, "10J"], [36500, "100J"]]) {
+      const x = tx0 + (tx1 - tx0) * f(dd);
+      ctx.fillStyle = D >= dd ? "#e8443a" : "#4a4852"; ctx.fillRect(x - 0.75, ty - 5, 1.5, 11);
+      label(t, x, ty - 10, 6.5, D >= dd ? "#ff8a80" : "#6a6874", "center");
+    }
+    ctx.fillStyle = "#ffd0c8"; ctx.beginPath(); ctx.arc(tx0 + (tx1 - tx0) * f(D), ty + 0.5, 3.5, 0, Math.PI * 2); ctx.fill();
+  }
+}
+function decayPress() {
+  const ds = state.decaySim;
+  state.pressing = false;
+  for (const b of DS_BTNS()) {
+    if (!hitBox(b, state.sx, state.sy)) continue;
+    pop("ds" + b.id + (b.s ?? "")); clickSound(780, 0.05);
+    if (b.id === "back") endDecaySim();
+    else if (b.id === "new") startDecaySim();
+    else if (b.s === "pause") ds.paused = !ds.paused;
+    else { ds.speed = DS_SPEEDS[b.s]; ds.paused = false; }
+    return;
+  }
+  // A tap on the person fires a shot there.
+  const d = state.dolls[0];
+  if (!d || ds.dead) return;
+  const hit = fingerHit(state.mx, state.my);
+  ds.aim = [state.mx, state.my, performance.now()];
+  shotSound("pistol"); state.shake = Math.max(state.shake, 0.12);
+  flashes.push({ x: state.mx, y: state.my, ang: 0, age: 0, s: 0.6 });
+  if (hit) { hit.d.preciseShot(hit, WEAPONS[0], Math.random() < 0.5 ? 1 : -1); ds.shots++; worldEvent("shot", state.mx, state.my, hit.d); }
+  else { for (let n = 0; n < 5; n++) sparks.push({ x: state.mx, y: state.my, vx: rf(-90, 90), vy: rf(-140, -20), life: rf(0.1, 0.25) }); }
+}
+
 function render() {
   flushPaint();
   ctx.globalCompositeOperation = "source-over";
@@ -9855,8 +10207,8 @@ function render() {
   const worldT = [kz, 0, 0, kz, (rf(-sh, sh) - cam.x * cam.z) * K, (rf(-sh, sh) - cam.y * cam.z) * K];
   ctx.setTransform(...worldT);
   ctx.imageSmoothingEnabled = true;
-  ctx.drawImage(bgCan, 0, 0, WW, WH);
-  ctx.drawImage(decal, 0, 0, WW, WH);
+  if (state.decaySim) drawDecayBack();
+  else { ctx.drawImage(bgCan, 0, 0, WW, WH); ctx.drawImage(decal, 0, 0, WW, WH); }
   // Gibs and dolls are pixel art on their own layer.
   pxBegin();
   for (const g of gibs) rasterGib(g);
@@ -9872,7 +10224,9 @@ function render() {
   // Very close up the body opens and shows its organs.
   if (settings.organs && cam.z > 3) for (const d of state.dolls) drawDollOrgans(d, smooth01((cam.z - 3) / 1.6));
   // Liquids, fire and smoke cover the dolls.
-  ctx.drawImage(wcan, 0, 0, WW, WH);
+  // In the decay scene the blood pool dries and fades away.
+  if (state.decaySim) { ctx.save(); ctx.globalAlpha *= 1 - 0.95 * decayEnv(state.decaySim).blood; ctx.drawImage(wcan, 0, 0, WW, WH); ctx.restore(); }
+  else ctx.drawImage(wcan, 0, 0, WW, WH);
   ctx.fillStyle = COL_P_BLOOD;
   ctx.beginPath();
   for (const p of particles) if (p.m === BLOOD) ctx.rect(p.x - 0.8, p.y - 0.8, 1.6, 1.6);
@@ -9886,6 +10240,7 @@ function render() {
   for (const p of particles) if (p.m !== BLOOD && p.m !== WATER) ctx.rect(p.x - 0.8, p.y - 0.8, 1.6, 1.6);
   ctx.fill();
   drawDecayFx();
+  if (state.decaySim) drawDecayFront();
   // Pins hold body points in place.
   for (const d of state.dolls) for (const [i] of d.pins) {
     if (d.gone[d.owner[i]]) continue;
@@ -9946,7 +10301,7 @@ function render() {
       ctx.restore();
     }
   }
-  ctx.drawImage(lightCan, 0, 0, WW, WH);
+  if (!state.decaySim) ctx.drawImage(lightCan, 0, 0, WW, WH);
   ctx.globalCompositeOperation = "source-over";
   // Powder smoke
   for (const p of smokes) { const k = 1 - p.age / p.life; ctx.fillStyle = `rgba(190,188,182,${p.a * k * k})`; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill(); }
@@ -9959,6 +10314,12 @@ function render() {
   drawLongPress();
   // HUD
   ctx.setTransform(K, 0, 0, K, 0, 0);
+  if (state.decaySim) {
+    drawDecayHud();
+    const en = easeOut(state.screenT / 0.5);
+    if (en < 1) { ctx.fillStyle = css(hex("#000000"), 1 - en); ctx.fillRect(0, 0, W, H); }
+    return;
+  }
   label("RAGPIT", 14, 26, 26, "#8e8e98");
   label((state.tool === T_GUN ? WEAPONS[state.weapon].name : TOOL_NAMES[state.tool]).toUpperCase(), 15, 52, 13, "#5a5a64");
   drawZoomBtn();
