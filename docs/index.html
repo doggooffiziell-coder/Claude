@@ -4176,7 +4176,8 @@ function pcWords(s) {
   let r = pcWordCache.get(s);
   if (r === undefined) {
     r = s.replace(/Tippe/g, "Klicke").replace(/tippe/g, "klicke").replace(/Ein Tipp/g, "Ein Klick").replace(/ein Tipp/g, "ein Klick")
-      .replace(/TIPPE/g, "KLICKE").replace(/unter dem Finger/g, "unter der Maus").replace(/den Finger/g, "die Maus").replace(/dem Finger/g, "der Maus").replace(/Finger/g, "Maus");
+      .replace(/TIPPE/g, "KLICKE").replace(/unter dem Finger/g, "unter der Maus").replace(/den Finger/g, "die Maus").replace(/dem Finger/g, "der Maus").replace(/Finger/g, "Maus")
+      .replace(/roter Knopf = Feuer/g, "Leertaste oder roter Knopf = Feuer");
     if (pcWordCache.size > 2000) pcWordCache.clear();
     pcWordCache.set(s, r);
   }

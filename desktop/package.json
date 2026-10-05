@@ -1,0 +1,17 @@
+{
+  "name": "ragpit",
+  "productName": "Ragpit",
+  "version": "1.0.0",
+  "description": "Pixel-Ragdoll-Sandbox",
+  "main": "main.js",
+  "author": "Ragpit",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "@electron/packager": "^18.3.6",
+    "electron": "44.5.1"
+  }
+}
