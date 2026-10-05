@@ -8397,6 +8397,8 @@ function drawTitle(dt) {
   drawTitleDoll(px1, floor, f.t);
   drawTitleShotFront(px1, floor);
   ctx.restore();
+  // Coming from the view choice, the blood red fades out over the menu.
+  if (f.redIn > 0) { f.redIn = Math.max(0, f.redIn - dt * 1.6); ctx.fillStyle = `rgba(94,6,16,${f.redIn})`; ctx.fillRect(0, 0, W, H); }
   // A red shadow of the vignette closes in once it is dark.
   if (dk > 0.01) {
     const v = ctx.createRadialGradient(W * 0.62, H * 0.5, H * 0.3, W * 0.62, H * 0.5, W * 0.75);
@@ -9366,7 +9368,7 @@ function drawSettingIcon(id, cx, cy) {
 // view? Two dark rooms in the style of the game, each with a doll seen that
 // way, blood on the frame. The choice is saved, the settings can change it.
 function viewCards() {
-  const w = Math.min(300, (W - 90) / 2), h = Math.min(262, H - 150), gap = 26, x0 = W / 2 - w - gap / 2, y = 90;
+  const w = Math.min(300, (W - 90) / 2), h = Math.min(250, H - 180), gap = 26, x0 = W / 2 - w - gap / 2, y = 80;
   return [
     { id: "vfront", front: true, x: x0, y, w, h, title: "FRONT", text: "Die Puppen schauen dich an.", gun: "Waffe: Tippe auf die Puppe, dort trifft der Schuss." },
     { id: "vside", front: false, x: x0 + w + gap, y, w, h, title: "SEITE", text: "Du siehst die Puppen von der Seite.", gun: "Waffe im Raum: ziehen zum Zielen, roter Knopf schießt." },
@@ -9451,20 +9453,150 @@ function drawViewCard(c, t, dt, press) {
     if (on) label("GEWÄHLT", c.x + c.w - 14, c.y + 24, 8, "#ff8a90", "right");
   });
 }
+// The confirm button under the cards.
+const viewConfirmBtn = () => { const c = viewCards()[0]; return { x: W / 2 - 115, y: c.y + c.h + 14, w: 230, h: 38 }; };
+// Where the chest of the doll sits in a card.
+function viewChest(c) {
+  const floor = c.y + c.h - 52, sc = Math.min(0.95, (floor - c.y - 18) / 222);
+  return c.front ? [c.x + c.w / 2 + 2, floor - 128 * sc] : [c.x + c.w / 2 + 22, floor - 126 * sc];
+}
+// Confirmed: the other card falls away, the chosen one moves to the middle,
+// a shot hits the doll, blood sprays over the screen like onto a lens and a
+// curtain of blood runs down until the main menu takes over.
+function startViewAnim() {
+  state.viewAnim = { t0: performance.now(), shot: false, drops: [], blobs: [], cols: [], shake: 0 };
+  clickSound(600, 0.06);
+  whooshSound(0.5);
+}
 function drawViewChoice(dt) {
-  const t = performance.now() / 1000;
+  const t = performance.now() / 1000, va = state.viewAnim, a = va ? (performance.now() - va.t0) / 1000 : 0;
   screenBackground("#100d10", "#18121a");
   // A red shadow at the edges, like the rest of the menu.
   const v = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, W * 0.7);
   v.addColorStop(0, "rgba(90,0,8,0)"); v.addColorStop(1, "rgba(90,0,8,0.28)");
   ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+  const k1 = va ? easeOut(clamp(a / 0.38, 0, 1)) : 0;
+  ctx.save();
+  if (va && va.shake > 0.01 && settings.shake) { const sh = va.shake * 9; ctx.translate(rf(-sh, sh), rf(-sh, sh)); }
+  ctx.save(); ctx.globalAlpha *= 1 - k1;
   withAppear(appear(0, 0.4), () => {
     ctx.font = `700 26px ${FONT}`;
     const tw = ctx.measureText("WIE WILLST DU SPIELEN?").width;
-    drawBloodText("WIE WILLST DU SPIELEN?", W / 2 - tw / 2, 50, 26, true);
+    drawBloodText("WIE WILLST DU SPIELEN?", W / 2 - tw / 2, 44, 26, true);
   }, 10);
-  for (const c of viewCards()) withAppear(appear(c.front ? 0.15 : 0.25, 0.4), () => drawViewCard(c, t, dt, pressAmt(c.id, c)), 14);
-  label("Du kannst das später in den Einstellungen unter FRONTANSICHT ändern.", W / 2, H - 22, 9, "#6a5a60", "center", 400);
+  ctx.restore();
+  let chosen = null;
+  for (const c of viewCards()) {
+    const mine = settings.front === c.front;
+    ctx.save();
+    if (va) {
+      const cx = c.x + c.w / 2, cy = c.y + c.h / 2;
+      if (mine) {
+        // The chosen card moves to the middle and grows a little.
+        chosen = { c, dx: (W / 2 - cx) * k1, s: 1 + 0.14 * k1 };
+        ctx.translate(cx + chosen.dx, cy); ctx.scale(chosen.s, chosen.s); ctx.translate(-cx, -cy);
+      } else {
+        // The other one tips over and falls out of the picture.
+        ctx.globalAlpha *= 1 - k1;
+        ctx.translate(cx, cy + k1 * H * 0.8); ctx.rotate((c.front ? -0.35 : 0.35) * k1); ctx.translate(-cx, -cy);
+      }
+    }
+    withAppear(appear(c.front ? 0.15 : 0.25, 0.4), () => drawViewCard(c, t, dt, va ? 0 : pressAmt(c.id, c)), 14);
+    ctx.restore();
+  }
+  // The confirm button: bloody letters on a dark plate, pulsing gently.
+  const bb = viewConfirmBtn(), pr = va ? 0 : pressAmt("vok", bb);
+  ctx.save(); ctx.globalAlpha *= 1 - k1;
+  withAppear(appear(0.35, 0.4), () => scaled(bb.x + bb.w / 2, bb.y + bb.h / 2, 1 - 0.05 * pr + 0.02 * Math.sin(t * 3), () => {
+    rr(bb.x, bb.y, bb.w, bb.h, 10);
+    ctx.fillStyle = css(mixc(hex("#1c0c10"), hex("#5a0a14"), pr)); ctx.fill();
+    ctx.strokeStyle = "#b8141e"; ctx.lineWidth = 2; ctx.stroke();
+    ctx.font = `700 19px ${FONT}`;
+    const tw = ctx.measureText("BESTÄTIGEN").width;
+    drawBloodText("BESTÄTIGEN", bb.x + bb.w / 2 - tw / 2, bb.y + bb.h / 2 + 1, 19, true, false);
+  }), 8);
+  label("Du kannst das später in den Einstellungen unter FRONTANSICHT ändern.", W / 2, H - 12, 8.5, "#6a5a60", "center", 400);
+  ctx.restore();
+  if (va && chosen) drawViewShot(va, a, chosen, dt);
+  ctx.restore();
+}
+function drawViewShot(va, a, ch, dt) {
+  const { c, dx, s } = ch, cx = c.x + c.w / 2, cy = c.y + c.h / 2;
+  const [px, py] = viewChest(c), hx = cx + dx + (px - cx) * s, hy = cy + (py - cy) * s;
+  // The shot at 0.45 s: bang, a flash, blood out of the chest and onto the screen.
+  if (!va.shot && a >= 0.45) {
+    va.shot = true; va.shake = 1;
+    titleShotSound(); titleImpactSound(); splatSound();
+    const dirX = c.front ? 0 : 1;
+    for (let n = 0; n < 170; n++) {
+      const ang = c.front ? rf(0, Math.PI * 2) : rf(-0.9, 0.9), sp = rf(80, 620);
+      va.drops.push({ x: hx, y: hy, vx: Math.cos(ang) * sp + dirX * 120, vy: Math.sin(ang) * sp - rf(40, 200), r: rf(1, 3.6), life: rf(0.6, 1.3) });
+    }
+    // Blood that hits the "lens": big splats with runs, front view right at you.
+    for (let n = 0; n < (c.front ? 11 : 7); n++) {
+      const bx = c.front ? hx + rf(-W * 0.4, W * 0.4) : hx + rf(10, W * 0.45), by = hy + rf(-H * 0.35, H * 0.3);
+      va.blobs.push({ x: bx, y: by, r: rf(8, 30), at: a + rf(0, 0.18), run: 0, speed: rf(30, 90), seed: n });
+    }
+  }
+  va.shake = Math.max(0, va.shake - dt * 2.4);
+  // Before the shot: the crosshair closes in, or the laser locks on.
+  if (a < 0.45) {
+    const k = clamp((a - 0.2) / 0.25, 0, 1);
+    if (c.front) {
+      ctx.strokeStyle = `rgba(255,40,40,${0.5 + 0.5 * k})`; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(hx, hy, 34 - 22 * k, 0, Math.PI * 2); ctx.stroke();
+    } else {
+      ctx.strokeStyle = `rgba(255,40,40,${0.4 + 0.5 * k})`; ctx.lineWidth = 1 + k;
+      ctx.beginPath(); ctx.moveTo(cx + dx + (c.x + 18 + 60 - cx) * s, hy - 6 * s); ctx.lineTo(hx, hy); ctx.stroke();
+    }
+  }
+  // Flash of the shot.
+  if (va.shot && a < 0.62) {
+    const f = 1 - (a - 0.45) / 0.17;
+    ctx.fillStyle = `rgba(255,220,200,${0.55 * f})`; ctx.fillRect(0, 0, W, H);
+    const g = ctx.createRadialGradient(hx, hy, 0, hx, hy, 90);
+    g.addColorStop(0, `rgba(255,240,200,${f})`); g.addColorStop(1, "rgba(255,80,40,0)");
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(hx, hy, 90, 0, Math.PI * 2); ctx.fill();
+  }
+  // Flying blood.
+  ctx.fillStyle = "#a00e1c";
+  for (const d of va.drops) {
+    d.life -= dt; d.vy += 900 * dt; d.x += d.vx * dt; d.y += d.vy * dt;
+    if (d.life > 0) { ctx.beginPath(); ctx.ellipse(d.x, d.y, d.r, d.r * 1.3, Math.atan2(d.vy, d.vx), 0, Math.PI * 2); ctx.fill(); }
+  }
+  // Splats on the lens grow in, then run down.
+  for (const b of va.blobs) {
+    if (a < b.at) continue;
+    const g = easeOut(clamp((a - b.at) / 0.12, 0, 1));
+    b.run += b.speed * dt * (a > b.at + 0.2 ? 1 : 0);
+    ctx.fillStyle = "rgba(130,8,20,0.9)";
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r * g, 0, Math.PI * 2); ctx.fill();
+    for (let q = 0; q < 5; q++) {
+      const ang = q / 5 * Math.PI * 2 + b.seed, rr2 = b.r * g * (1.2 + 0.4 * flameNoise(q, b.seed));
+      ctx.beginPath(); ctx.arc(b.x + Math.cos(ang) * rr2, b.y + Math.sin(ang) * rr2, b.r * 0.22 * g, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.fillRect(b.x - b.r * 0.18, b.y, b.r * 0.36, b.run);
+    ctx.beginPath(); ctx.arc(b.x, b.y + b.run, b.r * 0.24, 0, Math.PI * 2); ctx.fill();
+  }
+  // From 0.95 s a curtain of blood runs down from the top and covers everything.
+  if (a > 0.95) {
+    if (!va.cols.length) for (let x = -10; x < W + 20; x += rf(10, 26)) va.cols.push({ x, w: rf(16, 34), v: rf(520, 950), d: rf(0, 0.15) });
+    ctx.fillStyle = "#5e0610";
+    for (const col of va.cols) {
+      const len = Math.max(0, (a - 0.95 - col.d) * col.v);
+      if (len <= 0) continue;
+      ctx.fillRect(col.x, -2, col.w, len);
+      ctx.beginPath(); ctx.arc(col.x + col.w / 2, len - 2, col.w / 2, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  // The gaps between the runs fill up, so the screen is fully red at the end.
+  if (a > 1.45) { ctx.fillStyle = `rgba(94,6,16,${clamp((a - 1.45) / 0.45, 0, 1)})`; ctx.fillRect(-20, -20, W + 40, H + 40); }
+  // The menu takes over once the screen is red.
+  if (a > 2.1) {
+    state.viewAnim = null;
+    setScreen("title");
+    titleFx.redIn = 1;
+  }
 }
 
 function drawScreen(dt) {
@@ -9479,7 +9611,10 @@ function drawScreen(dt) {
 function screenTargets() {
   const t = [];
   if (state.screen === "view") {
-    for (const c of viewCards()) t.push({ id: c.id, box: c, run: () => { settings.front = c.front; saveSettings(); setScreen("title"); } });
+    // Tapping a card only picks it. BESTÄTIGEN starts the animation.
+    if (state.viewAnim) return t;
+    for (const c of viewCards()) t.push({ id: c.id, box: c, run: () => { if (settings.front !== c.front) { settings.front = c.front; saveSettings(); } } });
+    t.push({ id: "vok", box: viewConfirmBtn(), run: startViewAnim });
     return t;
   }
   if (state.screen === "title") {
