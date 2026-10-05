@@ -4894,14 +4894,49 @@ function gunSound(power, kind) {
 function tearSound() { sfx((t) => { for (let n = 0; n < 3; n++) nz(t + n * 0.06, 0.07, { type: "bandpass", f: rf(2500, 4000), q: 1.2, g: 0.18 }); }); }
 
 // The high ring in the ears after a shot close by.
+// Ears ringing after the shot: a soft high whistle that swells and fades.
 function shotRing() {
-  if (!settings.sound) return;
-  try {
-    const t = audio.currentTime, g = audio.createGain();
-    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.022, t + 0.08); g.gain.exponentialRampToValueAtTime(0.0001, t + 3.6);
-    g.connect(audio.destination);
-    for (const f of [3420, 3492]) { const o = audio.createOscillator(); o.frequency.value = f; o.connect(g); o.start(t); o.stop(t + 3.7); }
-  } catch (e) { /* sound is optional */ }
+  sfx((t) => {
+    for (const f of [3420, 3496]) {
+      const o = audio.createOscillator(), g = audio.createGain(); o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t + 0.15); g.gain.exponentialRampToValueAtTime(0.012, t + 0.6); g.gain.exponentialRampToValueAtTime(0.0001, t + 3.2);
+      o.connect(g); sfxRoute(g, 0.3); o.start(t + 0.15); o.stop(t + 3.3);
+    }
+  });
+}
+// The cinematic shot on the title: a heavy blast with a long tail and two
+// echoes from the empty room, felt more than heard in the low end.
+function titleShotSound() {
+  sfx((t) => {
+    nz(t, 0.03, { type: "highpass", f: 3000, g: 0.7, send: 0.4 });
+    nz(t, 0.28, { type: "bandpass", f: 900, f2: 380, q: 0.8, g: 0.95, send: 1.2 });
+    nz(t + 0.004, 0.7, { type: "lowpass", f: 500, f2: 80, g: 0.6, send: 1 });
+    tn(t, 0.5, { f: 75, f2: 30, g: 0.9 });
+    for (const [d, g] of [[0.32, 0.25], [0.66, 0.12]]) nz(t + d, 0.45, { type: "bandpass", f: 600, f2: 250, q: 0.7, g, send: 1.2 });
+  });
+}
+// The bullet in slow motion: a deep, drawn-out whiz that passes by.
+function bulletWhizSound(dur) {
+  sfx((t) => {
+    nz(t, dur, { type: "bandpass", f: 2200, f2: 500, q: 3, g: 0.22, a: dur * 0.45, send: 0.5, rate: 0.5 });
+    tn(t, dur, { type: "triangle", f: 260, f2: 110, g: 0.07, a: dur * 0.4, send: 0.4 });
+  });
+}
+// The word cut in two: a bright metallic ring.
+function textSliceSound() {
+  sfx((t) => {
+    nz(t, 0.04, { type: "highpass", f: 5000, g: 0.35, send: 0.6 });
+    tn(t, 0.9, { f: 4600, f2: 4300, g: 0.05, send: 0.9 });
+    tn(t, 0.7, { f: 2300, f2: 2150, g: 0.035, send: 0.9 });
+  });
+}
+// The bullet arrives: a hard wet hit and a crack of bone.
+function titleImpactSound() {
+  sfx((t) => {
+    nz(t, 0.12, { type: "lowpass", f: 1200, f2: 200, g: 0.8, send: 0.5 });
+    tn(t, 0.18, { f: 110, f2: 45, g: 0.7 });
+    for (let n = 0; n < 3; n++) nz(t + 0.01 + n * 0.012, 0.012, { type: "bandpass", f: rf(1500, 2500), q: 3, g: 0.4 });
+  });
 }
 
 // A body hitting the floor: a dull knock with a low drop.
@@ -6883,7 +6918,7 @@ function titleShoot(cx, floor, quiet = false) {
     a0.push(Math.atan2(dx, dy)); len.push(Math.hypot(dx, dy));
   }
   titleShot = { real: 0, t: 0, a0, len, bled: false, landed: false, parts: [], stains: [], splats: [], pool: 0, shake: 0.6, quiet };
-  if (!quiet) gunSound(1);
+  if (!quiet) titleShotSound(); else titleImpactSound();
   shotRing();
   music.duck = 1;
 }
@@ -7019,7 +7054,9 @@ function startPlayShot(b) {
   ctx.font = `700 15px ${FONT}`;
   const tw = ctx.measureText(b.text).width, tx0 = b.x + 16, tx1 = b.x + 20 + tw;
   playShot = { t: 0, b, tx0, tx1, tcx: (tx0 + tx1) / 2, ty: b.y + b.h / 2 + 1, x0: -20, v1: 380, v2: 2600, aim: null, hit: false, after: 0, fade: 0, sparks: [], strip: -1 };
-  gunSound(1);
+  titleShotSound();
+  // The whiz lasts as long as the bullet takes through the word.
+  bulletWhizSound(0.9);
   music.duck = 1;
 }
 const PS_STRIP = 5;
@@ -7050,6 +7087,7 @@ function playShotStep(dt, cx, floor) {
       const sx = p.tx0 + (k + 0.5) * PS_STRIP, sy = playY(p, sx);
       for (let n = 0; n < 3; n++) p.sparks.push({ x: sx, y: sy, vx: rf(80, 260), vy: rf(-160, 120), age: 0 });
     }
+    if (p.strip < 0 && strip >= 0 && x > p.tx0) textSliceSound();
     p.strip = Math.max(p.strip, strip);
     if (x >= p.aim[0]) { p.hit = true; titleShoot(cx, floor, true); }
   } else {
