@@ -2265,7 +2265,7 @@ class Doll {
   // The bag hangs beside the doll and switches sides before it would slide under the panel.
   ivTargetX(i) {
     const x = this.x[i] + 50;
-    return toScreen(x, 0)[0] > PANEL.x - 24 ? Math.max(30, this.x[i] - 50) : x;
+    return DAMAGE_PANEL && toScreen(x, 0)[0] > PANEL.x - 24 ? Math.max(30, this.x[i] - 50) : x;
   }
 
   // Extras: closes every wound and resets all values. Lost limbs stay lost.
@@ -3718,6 +3718,9 @@ function drawToolPix(rows) {
 const TOOL_NAMES = ["Greifen", "Wasser", "Eimer", "Klinge", "Waffe", "Feuer", "Eis", "Bombe", "Infusion", "Neue Puppe", "Reset", "Fixieren", "Verband", "Baseballschläger", "Defibrillator", "Adrenalin", "Monitor"];
 const BTN = 46, BTN_GAP = 6, TOOLBAR_Y = H - 54;
 const PANEL = { x: W - 206, y: 8, w: 198, h: 282 };
+// The damage panel is switched off for now; it comes back reworked. All of
+// its code stays (drawPanel and friends), only drawing and input skip it.
+const DAMAGE_PANEL = false;
 const MINI = [[0, -12], [0, -8], [0, 0], [0, 3], [-5, -3], [-7, 2], [5, -3], [7, 2], [-2, 9], [-3, 15], [-5, 15], [2, 9], [3, 15], [5, 15]];
 const MINI_W = [2, 4.2, 4, 2, 1.8, 2, 1.8, 2.4, 2, 1.4, 2.4, 2, 1.4];
 
@@ -3783,7 +3786,7 @@ let panelOpen = true;
 try { panelOpen = localStorage.getItem("ragpit.panel") !== "closed"; } catch (e) { /* storage is optional */ }
 // The open panel grows with the number of status rows it shows.
 const panelH = () => (panelOpen && state.dolls.length ? PANEL.full || PANEL.h : PANEL_HEAD);
-const inPanel = (x, y) => x >= PANEL.x && x < PANEL.x + PANEL.w && y >= PANEL.y && y < PANEL.y + panelH();
+const inPanel = (x, y) => DAMAGE_PANEL && x >= PANEL.x && x < PANEL.x + PANEL.w && y >= PANEL.y && y < PANEL.y + panelH();
 const inPanelHead = (x, y) => inPanel(x, y) && y < PANEL.y + PANEL_HEAD;
 function togglePanel() {
   panelOpen = !panelOpen;
@@ -5152,8 +5155,8 @@ function onGun(x, y) {
 // Drag in the room to aim, the red button fires, the round button reloads.
 // The fire button has its own finger, so you can aim and shoot at once.
 const FIRE_BTN = { x: W - 64, y: 336, r: 32 };
-const RELOAD_BTN = { x: W - 140, y: 349, r: 20 };
-const MODE_BTN = { x: W - 172, y: 304, w: 60, h: 24 };
+const RELOAD_BTN = { x: W - 142, y: 358, r: 27 };
+const MODE_BTN = { x: W - 172, y: 299, w: 60, h: 24 };
 const inCircle = (b, x, y, pad = 4) => Math.hypot(x - b.x, y - b.y) < b.r + pad;
 const inModeBtn = (x, y) => x >= MODE_BTN.x && x < MODE_BTN.x + MODE_BTN.w && y >= MODE_BTN.y && y < MODE_BTN.y + MODE_BTN.h;
 const gunUi = () => state.screen === "game" && state.tool === T_GUN;
@@ -5486,10 +5489,8 @@ function drawReloadMag() {
   if (p < t0 || p > t1 + 0.02) return;
   const u = easeOut(clamp((p - t0) / (t1 - t0), 0, 1)), [px0, py0, ang] = gunPose();
   const wx = px0 + Math.cos(ang) * 10, wy = py0 + 14, x = wx, y = wy + (1 - u) * 46;
-  ctx.save(); ctx.translate(x, y); ctx.rotate(ang * 0.3);
-  ctx.fillStyle = "#0b0b0e"; ctx.fillRect(-4.5, -1, 9, 17);
-  ctx.fillStyle = wp.rk === "taser" ? "#2a2a30" : "#4a4a54"; ctx.fillRect(-3.5, 0, 7, 15);
-  ctx.fillStyle = "#e0b84a"; ctx.fillRect(-2.5, -2.5, 5, 3);
+  ctx.save(); ctx.translate(x, y + 8); ctx.rotate(ang * 0.3);
+  drawMagSprite(wp, 0, 0, wp.rk === "taser" ? 1.6 : 1.05, 1);
   ctx.restore();
 }
 
@@ -5555,86 +5556,182 @@ function drawGunControls() {
   drawGunControlsBody();
   ctx.restore();
 }
+// ----------------------------------------------------------- ammo pixel art
+// Cartridges and magazines as small pixel sprites in the style of the guns:
+// copper tips, brass cases, red shotgun hulls, a yellow taser cartridge.
+const AMMO_COL = { c: "#b8642e", C: "#e0915a", b: "#c8962c", B: "#f0c860", d: "#7a5a1a", r: "#b8282a", R: "#e05048", k: "#18181c", y: "#d8b020", Y: "#ffe46a", s: "#5a5a64", S: "#8a8a96" };
+const ROUND_PIX = {
+  rifle: [".c.", "Ccc", "Bbb", "Bbb", "Bbb", "Bbb", "Bbb", "ddd"],
+  sniper: [".c.", ".c.", "Ccc", "Bbb", "Bbb", "Bbb", "Bbb", "Bbb", "Bbb", "Bbb", "ddd"],
+  pistol: [".c.", "Ccc", "Bbb", "Bbb", "ddd"],
+  shell: ["Rrrr", "Rrrr", "Rrrr", "Rrrr", "Rrrr", "Rrrr", "Bbbb", "Bbbb", "dddd"],
+  taser: ["kkkkkk", "kYyyyk", "kYyyyk", "kyyyyk", "kkkkkk"],
+};
+const roundKind = (wp) => (wp.rk === "shells" ? "shell" : wp.rk === "taser" ? "taser" : wp.rk === "pistol" ? "pistol" : wp.rk === "bolt" ? "sniper" : "rifle");
+// Draws pixel rows with their bottom left corner at (x, y), p units a pixel.
+// A spent round is drawn as a dark slot of the same shape.
+function drawPixRows(rows, x, y, p, empty = false, pal = AMMO_COL) {
+  const top = y - rows.length * p;
+  for (let r = 0; r < rows.length; r++) for (let c = 0; c < rows[r].length; c++) {
+    const ch = rows[r][c];
+    if (ch === ".") continue;
+    ctx.fillStyle = empty ? "#25252c" : pal[ch];
+    ctx.fillRect(x + c * p, top + r * p, p + 0.4, p + 0.4);
+  }
+}
+// A magazine for the gun in hand, built from simple rules: the AK's curved
+// orange mag, a straight dark rifle mag with witness holes, the pistol mag
+// with its base plate, a short box for the sniper. fill (0..1) shows the
+// rounds through the holes and as a round on top.
+function magRows(wp, fill) {
+  const name = wp.name, rows = [];
+  const spec = name === "AK-47" ? { w: 5, h: 15, curve: 3, body: "o", light: "O", edge: "e", ribs: true }
+    : name === "Glock 17" ? { w: 4, h: 11, curve: 0, body: "g", light: "G", edge: "k", holes: true, plate: true }
+    : name === "Sniper" ? { w: 6, h: 8, curve: 0, body: "m", light: "M", edge: "k", holes: false }
+    : { w: 5, h: 14, curve: 0.6, body: "m", light: "M", edge: "k", holes: true };
+  const W2 = spec.w + Math.ceil(spec.curve) + 3, line = (fn) => { let s = ""; for (let x = 0; x < W2; x++) s += fn(x); return s; };
+  const off = (r) => Math.round(spec.curve * Math.pow(r / spec.h, 1.6)) + 1;
+  // the top round peeks out of the feed lips
+  rows.push(fill > 0 ? line((x) => (x === off(0) + 1 ? "C" : x > off(0) && x < off(0) + spec.w - 1 ? "B" : ".")) : line(() => "."));
+  rows.push(line((x) => (x >= off(0) && x < off(0) + spec.w ? "s" : ".")));
+  let holes = 0;
+  for (let r = 0; r < spec.h - 2; r++) if (spec.holes && r % 3 === 1) holes++;
+  for (let r = 0; r < spec.h; r++) {
+    const o = off(r), rib = spec.ribs && r % 4 === 3, hole = spec.holes && r % 3 === 1 && r < spec.h - 2;
+    // The stack sinks from below as rounds are fired, so the top holes stay full longest.
+    const hi = hole ? Math.floor(r / 3) : -1, shown = hole && hi < Math.round(fill * holes);
+    rows.push(line((x) => {
+      if (x < o || x >= o + spec.w) return ".";
+      if (x === o || x === o + spec.w - 1) return spec.edge;
+      if (hole && x === o + 2) return shown ? "B" : "k";
+      if (rib) return spec.edge;
+      return x === o + 1 ? spec.light : spec.body;
+    }));
+  }
+  const ob = off(spec.h - 1);
+  rows.push(line((x) => (x >= ob - (spec.plate ? 1 : 0) && x < ob + spec.w + (spec.plate ? 1 : 0) ? "k" : ".")));
+  return rows;
+}
+const MAG_COL = { ...AMMO_COL, o: "#b0582a", O: "#e08040", e: "#5a2810", m: "#3e3e46", M: "#62626e", g: "#26262c", G: "#46464f" };
+// The magazine sprite centered at (cx, cy).
+function drawMagSprite(wp, cx, cy, p, fill) {
+  if (wp.rk === "shells") { const rows = ROUND_PIX.shell; drawPixRows(rows, cx - rows[0].length * p / 2, cy + rows.length * p / 2, p, fill <= 0); return; }
+  if (wp.rk === "taser") { const rows = ROUND_PIX.taser; drawPixRows(rows, cx - rows[0].length * p / 2, cy + rows.length * p / 2, p, fill <= 0); return; }
+  const rows = magRows(wp, fill), w = rows[0].length * p, h = rows.length * p;
+  // a dark outline one pixel round the shape
+  for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) drawPixRows(rows.map((r) => r.replace(/[^.]/g, "k")), cx - w / 2 + dx * p * 0.6, cy + h / 2 + dy * p * 0.6, p, false, { k: "#0b0b0e" });
+  drawPixRows(rows, cx - w / 2, cy + h / 2, p, false, MAG_COL);
+}
+// Where the reload is: the old magazine drops out, the new one rises in.
+// Returns the vertical offset of the magazine in the button and its fill.
+function reloadMagMotion(wp) {
+  const ammo = state.ammo[state.weapon], full = ammo / wp.mag;
+  if (state.reloadT <= 0 || !state.reloadLen) return { y: 0, fill: full, jolt: 0 };
+  const p = 1 - state.reloadT / state.reloadLen, steps = reloadSteps(wp);
+  if (wp.rk === "shells") {
+    // Each shell pops in with a little bounce.
+    const st = steps.filter((s) => s[2] === "shell"), last = [...st].reverse().find((s) => p >= s[0]);
+    const k = last ? clamp((p - last[0]) / 0.08, 0, 1) : 1;
+    return { y: -6 * Math.sin(k * Math.PI), fill: 1, jolt: 0 };
+  }
+  const tOut = (steps.find((s) => s[2] === "out") || [0])[0], tIn = (steps.find((s) => s[2] === "in") || [0.6])[0];
+  const tNew = Math.max(tOut + 0.05, tIn - 0.28), rack = steps.find((s) => s[2] === "rack" || (s[2] === "bolt" && s[0] > 0.5));
+  if (p < tOut) return { y: 0, fill: full, jolt: 0 };
+  if (p < tNew) return { y: easeIn((p - tOut) / (tNew - tOut)) * 44, fill: full, jolt: 0 };
+  if (p < tIn) return { y: (1 - easeOut((p - tNew) / (tIn - tNew))) * 44, fill: 1, jolt: 0 };
+  const jolt = rack && p >= rack[0] ? Math.max(0, 1 - (p - rack[0]) / 0.06) : 0;
+  return { y: 0, fill: 1, jolt };
+}
+
+// The rounds in the gun as a row of cartridges, full ones on the left.
+const AMMO_STRIP = () => ({ x: W - 208, y: 262, w: 188, h: 30 });
+function drawAmmoStrip(wp, ammo) {
+  const b = AMMO_STRIP(), rl = state.reloadT > 0, low = ammo / wp.mag < 0.25 && !rl;
+  rr(b.x, b.y, b.w, b.h, 7); ctx.fillStyle = "rgba(14,13,17,0.9)"; ctx.fill();
+  ctx.strokeStyle = low ? css(mixc(hex("#34323a"), hex("#b8231d"), 0.5 + 0.5 * Math.sin(performance.now() / 160))) : "#2e2c34"; ctx.lineWidth = 1.4; ctx.stroke();
+  dockSpecks(b.x + b.w / 2, b.y + b.h / 2, b.h / 2, 83);
+  label(String(ammo), b.x + 12, b.y + 11, 13, low ? "#ff6a5a" : rl ? "#ffe8a0" : "#fff4ec");
+  label("/" + wp.mag, b.x + 12, b.y + 23, 7, "#6a6a74");
+  const rows = ROUND_PIX[roundKind(wp)], cw = rows[0].length, n = wp.mag, x0 = b.x + 44, room = b.w - 52;
+  const p = Math.min(2.2, room / (n * (cw + 1)), (b.h - 8) / rows.length), step = room / n;
+  for (let i = 0; i < n; i++) drawPixRows(rows, x0 + i * step + (step - cw * p) / 2, b.y + b.h - 4, p, i >= ammo);
+  // While reloading the current step is written over the strip.
+  if (rl) {
+    const t = reloadLabel();
+    ctx.font = `700 9px ${FONT}`;
+    const tw = ctx.measureText(t).width + 16, cx = x0 + room / 2;
+    rr(cx - tw / 2, b.y + 6, tw, 18, 6); ctx.fillStyle = "rgba(14,13,17,0.94)"; ctx.fill();
+    ctx.strokeStyle = "#8a7420"; ctx.lineWidth = 1.2; ctx.stroke();
+    label(t, cx, b.y + 15.5, 9, "#e6c850", "center");
+  }
+}
 function drawGunControlsBody() {
-  const wp = WEAPONS[state.weapon], ammo = state.ammo[state.weapon], now = performance.now();
+  const wp = WEAPONS[state.weapon], ammo = state.ammo[state.weapon], now = performance.now(), rl = state.reloadT > 0;
+  drawAmmoStrip(wp, ammo);
   if (!settings.front) {
-    // Fire button with the magazine as a ring around it
-    const f = FIRE_BTN, down = state.triggerDown;
-    ctx.beginPath(); ctx.arc(f.x, f.y, f.r + 5, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(15,15,19,0.88)"; ctx.fill();
-    const fk = tween("fireDown", down ? 1 : 0, 32), rl = state.reloadT > 0;
-    // One segment per round around the button; while reloading a yellow
-    // band runs round instead.
-    ctx.lineCap = "butt"; ctx.lineWidth = 4;
-    const seg = (Math.PI * 2) / wp.mag, gap = Math.min(0.06, seg * 0.3);
-    for (let n = 0; n < wp.mag; n++) {
-      const a0 = -Math.PI / 2 + n * seg + gap / 2;
-      ctx.strokeStyle = n < ammo ? (ammo / wp.mag < 0.25 ? "#ff5040" : "#ecece6") : "#2c2c34";
-      ctx.beginPath(); ctx.arc(f.x, f.y, f.r + 1.5, a0, a0 + seg - gap); ctx.stroke();
-    }
+    // Fire button: a red trigger cap in a dark steel ring; while reloading
+    // a yellow band runs round it.
+    const f = FIRE_BTN, down = state.triggerDown, fk = tween("fireDown", down ? 1 : 0, 32);
+    ctx.beginPath(); ctx.arc(f.x, f.y, f.r + 5, 0, Math.PI * 2); ctx.fillStyle = "rgba(14,13,17,0.92)"; ctx.fill();
+    const ring = ctx.createLinearGradient(0, f.y - f.r, 0, f.y + f.r);
+    ring.addColorStop(0, "#5a5a64"); ring.addColorStop(1, "#24242a");
+    ctx.beginPath(); ctx.arc(f.x, f.y, f.r + 1, 0, Math.PI * 2); ctx.strokeStyle = ring; ctx.lineWidth = 4; ctx.stroke();
+    // knurling on the ring
+    ctx.strokeStyle = "rgba(0,0,0,0.5)"; ctx.lineWidth = 1;
+    for (let n = 0; n < 24; n++) { const a = n * Math.PI / 12; ctx.beginPath(); ctx.moveTo(f.x + Math.cos(a) * (f.r - 1), f.y + Math.sin(a) * (f.r - 1)); ctx.lineTo(f.x + Math.cos(a) * (f.r + 3), f.y + Math.sin(a) * (f.r + 3)); ctx.stroke(); }
     if (rl) {
-      ctx.strokeStyle = "#e6c850"; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(f.x, f.y, f.r + 6, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - state.reloadT / state.reloadLen)); ctx.stroke();
+      ctx.strokeStyle = "#e6c850"; ctx.lineWidth = 3; ctx.lineCap = "butt";
+      ctx.beginPath(); ctx.arc(f.x, f.y, f.r + 1, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - state.reloadT / state.reloadLen)); ctx.stroke();
     }
     const rg = ctx.createRadialGradient(f.x - 8, f.y - 10, 4, f.x, f.y, f.r);
-    rg.addColorStop(0, down ? "#ff6a5a" : "#e8443a"); rg.addColorStop(1, down ? "#9a1a14" : "#7c1410");
-    ctx.beginPath(); ctx.arc(f.x, f.y + 1.5 * fk, f.r - 3 - 2.5 * fk, 0, Math.PI * 2); ctx.fillStyle = rg; ctx.fill();
+    rg.addColorStop(0, down ? "#ff6a5a" : "#e8443a"); rg.addColorStop(1, down ? "#9a1a14" : "#6c100c");
+    ctx.beginPath(); ctx.arc(f.x, f.y + 1.5 * fk, f.r - 4 - 2.5 * fk, 0, Math.PI * 2); ctx.fillStyle = rg; ctx.fill();
     ctx.strokeStyle = "rgba(255,255,255,0.18)"; ctx.lineWidth = 1.2; ctx.stroke();
-    // Crosshair mark and the round count
+    // A small blood smear on the cap.
+    ctx.fillStyle = "rgba(60,4,6,0.45)"; ctx.fillRect(f.x + 9, f.y + 8, 5, 3); ctx.fillRect(f.x + 11, f.y + 11, 2, 4);
     const cy = f.y + 1.5 * fk;
-    label(String(ammo), f.x, cy - 3, 20, rl ? "#ffe8a0" : "#fff4ec", "center");
-    label(rl ? "LÄDT" : ammo <= 0 ? "LEER" : "FEUER", f.x, cy + 15, 8, "rgba(255,240,230,0.85)", "center");
-    // The current step of the reload floats over the button.
-    if (rl) {
-      const t = reloadLabel();
-      ctx.font = `700 9px ${FONT}`;
-      const tw = ctx.measureText(t).width + 16;
-      rr(f.x - tw / 2, f.y - f.r - 30, tw, 18, 9); ctx.fillStyle = "rgba(15,15,19,0.92)"; ctx.fill();
-      ctx.strokeStyle = "#e6c850"; ctx.lineWidth = 1.2; ctx.stroke();
-      label(t, f.x, f.y - f.r - 20.5, 9, "#e6c850", "center");
-    }
+    ctx.strokeStyle = "rgba(255,235,225,0.75)"; ctx.lineWidth = 1.4; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.arc(f.x, cy - 2, 8, 0, Math.PI * 2);
+    ctx.moveTo(f.x - 13, cy - 2); ctx.lineTo(f.x - 5, cy - 2); ctx.moveTo(f.x + 5, cy - 2); ctx.lineTo(f.x + 13, cy - 2);
+    ctx.moveTo(f.x, cy - 15); ctx.lineTo(f.x, cy - 7); ctx.moveTo(f.x, cy + 3); ctx.lineTo(f.x, cy + 6); ctx.stroke();
+    label(rl ? "LÄDT" : ammo <= 0 ? "LEER" : "FEUER", f.x, cy + 16, 7.5, "rgba(255,240,230,0.85)", "center");
   } else {
-    // Rounds left, with a bar for the magazine
-    // Rounds left as a row of cartridges, the reload step written under it.
-    const f = { x: W - 62, y: FIRE_BTN.y }, rl = state.reloadT > 0, bw = 74;
-    rr(f.x - bw / 2 - 14, f.y - 26, bw + 28, rl ? 64 : 52, 12); ctx.fillStyle = "rgba(15,15,19,0.88)"; ctx.fill();
-    ctx.strokeStyle = rl ? "#8a7420" : "#3e3e46"; ctx.lineWidth = 1.4; ctx.stroke();
-    label(String(ammo), f.x, f.y - 9, 18, ammo / wp.mag < 0.25 && !rl ? "#ff6a5a" : rl ? "#ffe8a0" : "#fff4ec", "center");
-    const n = wp.mag, cw = Math.min(8, (bw - (n - 1)) / n), x0 = f.x - (n * cw + (n - 1)) / 2;
-    for (let i = 0; i < n; i++) {
-      const x = x0 + i * (cw + 1), full = i < ammo;
-      ctx.fillStyle = full ? (wp.rk === "shells" ? "#c8302a" : "#d8a84a") : "#2c2c34"; ctx.fillRect(x, f.y + 6, cw, 9);
-      if (full) { ctx.fillStyle = wp.rk === "shells" ? "#e8c050" : "#a87a2a"; ctx.fillRect(x, f.y + 12, cw, 3); }
-    }
-    if (rl) label(reloadLabel(), f.x, f.y + 27, 8.5, "#e6c850", "center");
+    // Front view: no fire button, a box shows the count and the reload step.
+    const f = { x: W - 62, y: FIRE_BTN.y }, bw = 74;
+    rr(f.x - bw / 2 - 14, f.y - 22, bw + 28, rl ? 50 : 40, 10); ctx.fillStyle = "rgba(14,13,17,0.9)"; ctx.fill();
+    ctx.strokeStyle = rl ? "#8a7420" : "#2e2c34"; ctx.lineWidth = 1.4; ctx.stroke();
+    label(String(ammo), f.x, f.y - 4, 18, ammo / wp.mag < 0.25 && !rl ? "#ff6a5a" : rl ? "#ffe8a0" : "#fff4ec", "center");
+    label(rl ? reloadLabel() : "SCHUSS", f.x, f.y + 13, 7.5, rl ? "#e6c850" : "#6a6a74", "center");
   }
-  // Reload button with a magazine icon, pulses when the gun is empty
-  const rs = popScale("reload", 0.12);
-  ctx.save(); ctx.translate(RELOAD_BTN.x, RELOAD_BTN.y); ctx.scale(rs, rs); ctx.translate(-RELOAD_BTN.x, -RELOAD_BTN.y);
-  const r = RELOAD_BTN, empty = ammo <= 0 && state.reloadT <= 0;
-  const pulse = empty ? 0.5 + 0.5 * Math.sin(now * 0.012) : 0;
-  ctx.beginPath(); ctx.arc(r.x, r.y, r.r, 0, Math.PI * 2);
-  ctx.fillStyle = empty ? css(mixc(hex("#26262c"), hex("#8a6a10"), pulse)) : "rgba(15,15,19,0.88)"; ctx.fill();
-  ctx.strokeStyle = empty || state.emptyFlash > 0 ? "#e6c850" : "#3e3e46"; ctx.lineWidth = 1.6; ctx.stroke();
-  if (state.reloadT > 0) {
-    ctx.strokeStyle = "#e6c850"; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(r.x, r.y, r.r - 3, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * reloadProgress()); ctx.stroke();
-  }
-  ctx.save(); ctx.translate(r.x, r.y - 3); ctx.rotate(0.18);
-  ctx.fillStyle = "#cfcfd6"; rr(-5, -9, 10, 15, 2); ctx.fill();
-  ctx.fillStyle = "#e6c850"; rr(-3.5, -12, 7, 4, 1.5); ctx.fill();
-  ctx.fillStyle = "#26262c"; for (let n = 0; n < 3; n++) ctx.fillRect(-3.5, -5 + n * 4, 7, 1.2);
+  // Reload button: the gun's own magazine in pixel art. It drops out and a
+  // full one slides in while reloading; empty, the frame pulses.
+  const rs = popScale("reload", 0.12), r = RELOAD_BTN, bw = 44, bh = 58;
+  ctx.save(); ctx.translate(r.x, r.y); ctx.scale(rs, rs); ctx.translate(-r.x, -r.y);
+  const empty = ammo <= 0 && !rl, pulse = empty ? 0.5 + 0.5 * Math.sin(now * 0.012) : 0;
+  rr(r.x - bw / 2, r.y - bh / 2, bw, bh, 7);
+  const bg = ctx.createLinearGradient(0, r.y - bh / 2, 0, r.y + bh / 2);
+  bg.addColorStop(0, css(mixc(hex("#29272d"), hex("#3a2a14"), pulse))); bg.addColorStop(1, "#141317");
+  ctx.fillStyle = bg; ctx.fill();
+  dockSpecks(r.x, r.y, bh / 2 - 4, 97);
+  ctx.save(); rr(r.x - bw / 2 + 2, r.y - bh / 2 + 2, bw - 4, bh - 4, 5); ctx.clip();
+  const mm = reloadMagMotion(wp), jx = mm.jolt * Math.sin(now * 0.08) * 1.5;
+  drawMagSprite(wp, r.x + jx, r.y - 6 + mm.y, wp.rk === "shells" || wp.rk === "taser" ? 3.4 : 2.1, mm.fill);
+  if (rl) { ctx.fillStyle = "rgba(230,200,80,0.85)"; ctx.fillRect(r.x - bw / 2 + 2, r.y + bh / 2 - 5, (bw - 4) * reloadProgress(), 3); }
   ctx.restore();
-  label("LADEN", r.x, r.y + 13, 7, "#8e8e98", "center");
+  rr(r.x - bw / 2 + 0.75, r.y - bh / 2 + 0.75, bw - 1.5, bh - 1.5, 7);
+  ctx.strokeStyle = empty || state.emptyFlash > 0 ? css(mixc(hex("#b8231d"), hex("#e6c850"), pulse)) : rl ? "#8a7420" : "#34323a"; ctx.lineWidth = 1.6; ctx.stroke();
+  label("LADEN", r.x, r.y + bh / 2 - 8, 6.5, empty ? "#ffd27a" : "#8e8e98", "center");
   ctx.restore();
-  // Fire mode selector
+  // Fire mode selector in the dock style
   const ms = popScale("mode", 0.1);
   ctx.save(); ctx.translate(MODE_BTN.x + MODE_BTN.w / 2, MODE_BTN.y + MODE_BTN.h / 2); ctx.scale(ms, ms); ctx.translate(-MODE_BTN.x - MODE_BTN.w / 2, -MODE_BTN.y - MODE_BTN.h / 2);
   const m = MODE_BTN, auto = modeAuto();
-  rr(m.x, m.y, m.w, m.h, 13);
-  ctx.fillStyle = "rgba(15,15,19,0.88)"; ctx.fill();
-  ctx.strokeStyle = wp.auto ? "#4c4c56" : "#2c2c34"; ctx.lineWidth = 1.4; ctx.stroke();
-  label(auto ? "AUTO" : "EINZEL", m.x + m.w / 2, m.y + m.h / 2 + 1, 10, wp.auto ? (auto ? "#ff7a5a" : "#ecece6") : "#5a5a64", "center");
+  rr(m.x, m.y, m.w, m.h, 6);
+  ctx.fillStyle = "rgba(14,13,17,0.92)"; ctx.fill();
+  ctx.strokeStyle = auto ? "#b8231d" : wp.auto ? "#46444e" : "#2c2c34"; ctx.lineWidth = 1.4; ctx.stroke();
+  // little selector marks: one dot for single, three for auto
+  for (let n = 0; n < (auto ? 3 : 1); n++) { ctx.fillStyle = wp.auto ? (auto ? "#ff7a5a" : "#ecece6") : "#5a5a64"; ctx.fillRect(m.x + 7 + n * 4, m.y + m.h / 2 - 1.5, 3, 3); }
+  label(auto ? "AUTO" : "EINZEL", m.x + m.w / 2 + 6, m.y + m.h / 2 + 1, 9, wp.auto ? (auto ? "#ff7a5a" : "#ecece6") : "#5a5a64", "center");
   ctx.restore();
 }
 
@@ -8147,7 +8244,7 @@ function drawHelp() {
     label(text, x + ib + 12, y + ch * 0.72, 9.5, "#8e8e98", "left", 400);
     ctx.restore();
   });
-  if (appear(8) > 0) label("Zustände: WACH, K.O. und TOT. Tippe auf die Kopfzeile des Panels, um es zuzuklappen.", W / 2, H - 22, 10, "#6a6a74", "center", 400);
+  if (appear(8) > 0) label(DAMAGE_PANEL ? "Zustände: WACH, K.O. und TOT. Tippe auf die Kopfzeile des Panels, um es zuzuklappen." : "Zustände: WACH, K.O. und TOT. Gedrückt halten auf einer Puppe öffnet ihr Menü.", W / 2, H - 22, 10, "#6a6a74", "center", 400);
 }
 
 // ----------------------------------------------------------------- settings
@@ -8165,7 +8262,7 @@ const SETTING_TABS = [
     { id: "decayFast", text: "VERWESUNG IM ZEITRAFFER", sub: "Zehnmal schneller, etwa eine Minute", on: settings.decayFast },
   ] },
   { id: "misc", name: "SONSTIGES", rows: () => [
-    { id: "panel", text: "SCHADENSPANEL", sub: "Offen oder zugeklappt", on: panelOpen },
+    ...(DAMAGE_PANEL ? [{ id: "panel", text: "SCHADENSPANEL", sub: "Offen oder zugeklappt", on: panelOpen }] : []),
     { id: "shake", text: "BILDSCHIRMWACKELN", sub: "Bei Schüssen und Explosionen", on: settings.shake },
   ] },
 ];
@@ -8445,6 +8542,8 @@ function ctxMenuItems() {
   const m = state.ctxMenu, items = [{ id: "aim", name: "SCHUSS PRÄZISIEREN", color: "#e8443a" }];
   if (!m.d.dead) items.push({ id: "heal", name: "HEILEN", color: "#4ccf5a" });
   if (m.d.pins.size) items.push({ id: "pins", name: "PINS LÖSEN", color: "#f272b8" });
+  // Without the damage panel the death report opens from here.
+  if (m.d.dead) items.push({ id: "report", name: "TODESBERICHT", color: "#e0303f" });
   items.push({ id: "del", name: "ENTFERNEN", color: "#f0b030" });
   const w = 196, h = 30 + items.length * 34;
   const x = clamp(m.x + 16, 8, W - w - 8), y = clamp(m.y - h / 2, 50, TOOLBAR_Y - h - 12);
@@ -8475,6 +8574,7 @@ function ctxMenuPress() {
   clickSound(800, 0.05);
   if (it.id === "aim") openAimView(m.d);
   else if (it.id === "heal") { m.d.fullHeal(); state.toast = 1.2; state.toastText = "Puppe " + m.d.id + " geheilt"; }
+  else if (it.id === "report") { if (!m.d.report) m.d.report = deathReport(m.d); state.deathReport = m.d; state.reportT = performance.now(); }
   else if (it.id === "pins") { for (const [i] of m.d.pins) addGhost({ kind: "pin", x: m.d.x[i], y: m.d.y[i], vx: rf(-10, 10), dur: 0.55 }); m.d.pins.clear(); state.toast = 1; state.toastText = "Gelöst"; }
   else if (it.id === "del") {
     state.dolls = state.dolls.filter((o) => o !== m.d);
@@ -9805,7 +9905,7 @@ function render() {
   drawZoomBtn();
   let sel = state.selected;
   if (!sel || !state.dolls.includes(sel)) sel = state.selected = state.dolls[state.dolls.length - 1] || null;
-  drawPanel(sel);
+  if (DAMAGE_PANEL) drawPanel(sel);
   // Front view: the gun fires from below the picture, its flash lights the
   // lower edge of the screen for a moment.
   if (settings.front && state.frontFlash > 0) {
