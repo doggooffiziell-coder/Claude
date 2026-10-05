@@ -92,7 +92,7 @@ Es gibt 15 Maps: Labor, Schwimmbad, Treppenhaus, Halle, Eiskeller, Hochhaus (ein
 
 Mit "Neue Puppe" tippst du auf die Stelle, an der die Puppe stehen soll. Sie steht dort sofort aufrecht auf dem Boden. Der Eimer saugt Wasser und Blut unter deinem Finger auf.
 
-Tippe auf die Kopfzeile des Schadenspanels, um es zuzuklappen oder aufzuklappen. Zugeklappt bleiben Name, Zustand und EKG sichtbar. Das Spiel merkt sich deine Wahl.
+Tippe auf die Kopfzeile des Schadenspanels, um es zuzuklappen oder aufzuklappen. Zugeklappt bleiben Gesicht, Name, Puls und Zustand sichtbar. Das Spiel merkt sich deine Wahl.
 
 Der TASER ist die vierte Waffe in der Leiste oben links: gelb, mit schwarzer Kartusche und einem Schuss pro Ladung. Er schießt zwei Widerhaken an Drähten, so weit die Drähte reichen. Treffen sie, fließt fünf Sekunden Strom: Alle Muskeln verkrampfen, die Puppe wird steif, kippt um wie ein Brett und zittert am ganzen Körper. Zwischen den Haken springen blaue Funkenbögen, und es knattert. Danach ist die Puppe für 8 bis 12 Sekunden bewusstlos. Die Haken hinterlassen nur zwei kleine Einstiche. Im Panel steht während des Stroms ELEKTROSCHOCK. In der Frontansicht und bei "Schuss präzisieren" funktioniert der Taser genauso.
 
@@ -106,7 +106,11 @@ Verbrennungen wirken auf den ganzen Körper. Das Panel zeigt, wie viel Haut verb
 
 Der Knopf "EXTRAS" oben öffnet eine Liste: Blut entfernen, Wasser entfernen, Feuer löschen, Eis entfernen, Sonstiges entfernen (Organe und Fleisch am Boden, Hülsen, Magazine, Taser-Drähte und abgetrennte Körperteile), Alle heilen, Puppe entfernen, Alle Puppen weg, Zeitlupe und Pause. "Eis entfernen" lässt das Eis der Map stehen. "Alle heilen" schließt Wunden und füllt alle Werte auf, abgetrennte Glieder bleiben ab.
 
-Das Schadenspanel ist auf Deutsch. Oben stehen der Name der Puppe und ihr Zustand. Rechts neben der Figur stehen fünf Werte mit Zahl und Balken: Bewusstsein, Blut, Schmerz, Sauerstoff und Puls mit laufendem EKG. Kritische Werte werden rot. Ganz unten erscheinen nur die Zustände, die gerade zutreffen, zum Beispiel BLUTET, BRENNT oder GLIED AB, sonst STABIL. Zugeklappt zeigt die Kopfzeile ein kleines EKG.
+Das Schadenspanel ist auf Deutsch und folgt bis zu drei Puppen gleichzeitig. Die gewählte Puppe steht oben groß, die zwei zuletzt gewählten darunter als kompakte Zeilen. Ein Tipp auf eine Zeile macht diese Puppe zur großen Karte. Gibt es nur eine oder zwei Puppen, zeigt das Panel entsprechend weniger.
+
+Die große Karte hat oben eine Leiste in der Farbe des Zustands: grün für wach, gelb für K.O., rot für tot oder Herzstillstand. Daneben stehen ein kleines Pixel-Gesicht der Puppe in ihren eigenen Farben, ihr Name, ein schlagendes Pixel-Herz mit dem Puls und ein leuchtendes Zustandsfeld. Das Gesicht wird blass, bläulich oder grau wie die Puppe selbst und zeigt geschlossene Augen bei Bewusstlosigkeit und ein X im Tod. Die Körpertafel liegt auf einem grünen Monitorraster mit einer langsam laufenden Scanlinie. Rechts daneben stehen fünf Werte: Bewusstsein, Blut, Schmerz, Sauerstoff und Puls mit laufendem EKG. Die Balken bestehen aus kleinen leuchtenden Segmenten mit einem hellen Ende. Ein kleiner Pfeil zeigt, ob ein Wert gerade schnell steigt oder fällt, grün wenn es besser wird, rot wenn es schlechter wird. Kritische Werte blinken rot. Stirbt die Puppe gleich oder steht ihr Herz still, pulsiert der Rand des ganzen Panels rot. Ganz unten erscheinen nur die Zustände, die gerade zutreffen, als dunkle Felder mit farbigem Punkt. Dringende Zustände wie BLUTET, BRENNT, ERSTICKT oder HERZSTILLSTAND glühen. Folgt das Panel mehreren Puppen, bleibt es bei einer Reihe, und ein Feld wie "+2" zählt den Rest.
+
+Jede kompakte Zeile zeigt Gesicht, Name, Puls mit Herz, den Zustand und vier Mini-Balken mit Zahl: BW für Bewusstsein, BL für Blut, SZ für Schmerz und O2 für Sauerstoff. Ein Streifen links zeigt den Zustand in Farbe. So passt das ganze Panel auch mit drei Puppen über die Waffenknöpfe. Zugeklappt zeigt die Kopfzeile die gewählte Puppe und für jede weitere Puppe einen Punkt in der Farbe ihres Zustands.
 
 Das Schadenspanel zeigt eine Körpertafel von vorn in normalen Proportionen. Jeder Körperteil ist eine eigene Fläche mit schmalem Spalt und färbt sich nach seinem Schaden von Weiß über Gelb und Orange bis Rot. Fehlende Teile erscheinen als gestrichelte Umrisse. Oben läuft ein EKG.
 

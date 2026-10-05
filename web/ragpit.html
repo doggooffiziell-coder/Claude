@@ -3802,30 +3802,144 @@ function fitFont(text, maxW, size, weight = 700) {
   return size;
 }
 
+// The panel follows up to three dolls: the selected one in full, the two
+// last picked before it as compact rows below. A tap on a row selects it.
+function watchList(sel) {
+  let w = (state.watch || []).filter((d) => state.dolls.includes(d));
+  if (sel && w[0] !== sel) w = [sel, ...w.filter((d) => d !== sel)];
+  for (const d of state.dolls) if (w.length < 3 && !w.includes(d)) w.push(d);
+  state.watch = w.slice(0, 3);
+  return state.watch;
+}
+// Which way a value moves: sampled once a second, an arrow when it changes fast.
+function vitalTrend(d, key, val) {
+  const now = performance.now() / 1000, t = d.trend || (d.trend = { t: now, prev: {}, dir: {} });
+  if (now - t.t > 1) { t.t = now; for (const k of Object.keys(t.cur || {})) { const dv = t.cur[k] - (t.prev[k] ?? t.cur[k]); t.dir[k] = dv > 1.5 ? 1 : dv < -1.5 ? -1 : 0; t.prev[k] = t.cur[k]; } }
+  (t.cur || (t.cur = {}))[key] = val;
+  return t.dir[key] || 0;
+}
+const stateColor = (d) => (d.dead ? "#e0303f" : d.arrest ? "#ff3040" : d.isOut() ? "#f0b030" : "#4ccf5a");
+// A small face of the doll in its own colors: pale, blue or grey like the doll.
+function drawFaceIcon(d, x, y, s) {
+  const skin = css(tintFor(d, HEAD, d.look.skin)), hair = css(d.look.hair), u = s / 8;
+  rr(x - 1, y - 1, s + 2, s + 2, 3); ctx.fillStyle = "#0b0b0e"; ctx.fill();
+  ctx.fillStyle = skin; ctx.fillRect(x, y, s, s);
+  if (d.hair > 0.15) { ctx.fillStyle = hair; ctx.fillRect(x, y, s, u * 2.2); ctx.fillRect(x, y, u, u * 3.4); }
+  ctx.fillStyle = "#0b0b0e";
+  if (d.dead) {
+    const ex = x + u * 5.2, ey = y + u * 3.8;
+    ctx.fillRect(ex - u, ey - u, u * 0.8, u * 0.8); ctx.fillRect(ex + u * 0.2, ey + u * 0.2, u * 0.8, u * 0.8);
+    ctx.fillRect(ex + u * 0.2, ey - u, u * 0.8, u * 0.8); ctx.fillRect(ex - u, ey + u * 0.2, u * 0.8, u * 0.8);
+  } else if (d.isOut()) ctx.fillRect(x + u * 4.4, y + u * 4, u * 1.8, u * 0.7);
+  else { ctx.fillStyle = "#f4f4f0"; ctx.fillRect(x + u * 4.2, y + u * 3.4, u * 2.2, u * 1.4); ctx.fillStyle = "#0b0b0e"; ctx.fillRect(x + u * 5.4, y + u * 3.4, u, u * 1.4); }
+  ctx.fillStyle = css(darken(tintFor(d, HEAD, d.look.skin), 0.45)); ctx.fillRect(x + u * 4.6, y + u * 6, u * 2, u * 0.8);
+}
+// A pixel heart that beats with the doll.
+function drawHeartIcon(d, x, y, s) {
+  const p = s / 5, k = 1 + (d.dead ? 0 : d.beatFlash * 0.25);
+  ctx.save(); ctx.translate(x, y); ctx.scale(k, k);
+  ctx.fillStyle = d.dead ? "#5a5a64" : css(mixc(hex("#c8304a"), hex("#ff7a8a"), d.beatFlash));
+  for (const [cx, cy, w] of [[-2, -2, 2], [1, -2, 2], [-2.5, -1, 5], [-2, 0, 4], [-1.5, 1, 3], [-0.5, 2, 1]]) ctx.fillRect(cx * p, cy * p, w * p, p);
+  ctx.restore();
+}
+// A bar of small lit segments with a soft glow at its end.
+function drawSegBar(x, y, w, h, frac, color, bad) {
+  rr(x, y, w, h, h / 2); ctx.fillStyle = "#18181e"; ctx.fill();
+  const fw = w * clamp(frac, 0, 1);
+  if (fw > 1) {
+    const c = hex(color), blink = bad && Math.sin(performance.now() / 140) > 0;
+    ctx.save(); rr(x, y, w, h, h / 2); ctx.clip();
+    const g = ctx.createLinearGradient(x, 0, x + fw, 0);
+    g.addColorStop(0, css(darken(c, 0.25))); g.addColorStop(1, css(blink ? lighten(c, 0.35) : c));
+    ctx.fillStyle = g; ctx.fillRect(x, y, fw, h);
+    ctx.fillStyle = css(lighten(c, 0.5), 0.45); ctx.fillRect(x, y + 1, fw, Math.max(1, h * 0.25));
+    ctx.fillStyle = "rgba(10,10,13,0.55)";
+    for (let sx = x + 5; sx < x + fw; sx += 5) ctx.fillRect(sx, y, 1, h);
+    ctx.restore();
+    ctx.save(); ctx.shadowColor = color; ctx.shadowBlur = 6; ctx.fillStyle = css(lighten(c, 0.3)); ctx.fillRect(x + fw - 1.5, y, 1.5, h); ctx.restore();
+  }
+}
+function drawTrend(x, y, dir, good) {
+  if (!dir) return;
+  ctx.fillStyle = (dir > 0) === good ? "#4ccf5a" : "#ff5060";
+  ctx.beginPath();
+  if (dir > 0) { ctx.moveTo(x - 3, y + 2); ctx.lineTo(x + 3, y + 2); ctx.lineTo(x, y - 2.5); }
+  else { ctx.moveTo(x - 3, y - 2); ctx.lineTo(x + 3, y - 2); ctx.lineTo(x, y + 2.5); }
+  ctx.closePath(); ctx.fill();
+}
+// Which way is good for each vital row (higher is better except pain).
+const VITAL_GOOD = [true, true, false, true, true];
+const VITAL_KEY = ["ko", "bl", "pn", "o2", "hr"];
+// One compact row for a doll that is followed but not selected.
+const MINI_VITALS = [["BW", 0], ["BL", 1], ["SZ", 2], ["O2", 3]];
+function drawPanelRow(d, x, y, w, h) {
+  scaled(x + w / 2, y + h / 2, popScale("prow" + d.id, 0.06), () => drawPanelRowBody(d, x, y, w, h));
+}
+function drawPanelRowBody(d, x, y, w, h) {
+  const sc = stateColor(d);
+  rr(x, y, w, h, 7); ctx.fillStyle = "#121217"; ctx.fill();
+  ctx.strokeStyle = css(hex(sc), 0.28); ctx.lineWidth = 1; ctx.stroke();
+  ctx.save(); rr(x, y, w, h, 7); ctx.clip(); ctx.fillStyle = sc; ctx.fillRect(x, y, 3, h); ctx.restore();
+  drawFaceIcon(d, x + 9, y + 4, 11);
+  label("PUPPE " + d.id, x + 27, y + 10, 9, "#cfcfd6");
+  const st = d.stateName();
+  ctx.font = `700 7px ${FONT}`;
+  const sw = ctx.measureText(st).width + 10;
+  rr(x + w - 6 - sw, y + 4, sw, 12, 6); ctx.fillStyle = sc; ctx.fill();
+  label(st, x + w - 6 - sw / 2, y + 10.5, 7, "#101013", "center");
+  drawHeartIcon(d, x + w - sw - 30, y + 10, 6);
+  label(d.dead ? "--" : String(Math.round(d.hr)), x + w - sw - 25, y + 10.5, 8, d.dead || d.arrest ? "#ff5060" : "#ecece6");
+  const cw = (w - 33 - 3 * 3) / 4;
+  MINI_VITALS.forEach(([name, vi], n) => {
+    const v = VITALS[vi], val = v.get(d), bad = !d.dead && v.bad(val), cx = x + 27 + n * (cw + 3);
+    drawSegBar(cx, y + 18, cw, 9, val / 100, v.color, bad);
+    ctx.save(); ctx.shadowColor = "rgba(0,0,0,0.9)"; ctx.shadowBlur = 2;
+    label(name + " " + Math.round(val), cx + cw / 2, y + 23, 6.5, bad ? "#ffd0d4" : "#f4f4f0", "center");
+    ctx.restore();
+  });
+}
 function drawPanel(d) {
-  state.infoBtn = null;
+  state.infoBtn = null; state.panelRows = [];
   const { x: px0, y: py0, w: pw } = PANEL, ph = tween("panelH", panelH(), 16);
+  const watch = d ? watchList(d) : [], others = watch.filter((o) => o !== d).sort((a, b) => a.id - b.id), multi = others.length > 0;
+  const sc = d ? stateColor(d) : "#3a3a44", alarm = d && !d.dead && (d.arrest || d.deathEta() < 15);
+  // Glassy dark card with a light top edge; it pulses red while the doll is dying.
+  ctx.save(); ctx.shadowColor = "rgba(0,0,0,0.55)"; ctx.shadowBlur = 16; ctx.shadowOffsetY = 3;
   rr(px0, py0, pw, ph, 12);
-  ctx.fillStyle = "rgba(14,14,18,0.95)"; ctx.fill();
-  ctx.strokeStyle = "#34343c"; ctx.lineWidth = 2; ctx.stroke();
+  const bgr = ctx.createLinearGradient(0, py0, 0, py0 + ph);
+  bgr.addColorStop(0, "rgba(24,24,30,0.97)"); bgr.addColorStop(1, "rgba(11,11,14,0.97)");
+  ctx.fillStyle = bgr; ctx.fill(); ctx.restore();
+  const pulse = alarm ? 0.5 + 0.5 * Math.sin(performance.now() / 160) : 0;
+  rr(px0, py0, pw, ph, 12); ctx.strokeStyle = alarm ? css(mixc(hex("#34343c"), hex("#ff3040"), pulse)) : "#30303a"; ctx.lineWidth = 2; ctx.stroke();
+  ctx.save(); rr(px0, py0, pw, ph, 12); ctx.clip();
+  // A thin bar in the state color along the top, a soft glow under it.
+  ctx.fillStyle = sc; ctx.fillRect(px0, py0, pw, 2.5);
+  const tg = ctx.createLinearGradient(0, py0, 0, py0 + 26);
+  tg.addColorStop(0, css(hex(sc), 0.16)); tg.addColorStop(1, css(hex(sc), 0));
+  ctx.fillStyle = tg; ctx.fillRect(px0, py0, pw, 26);
+  ctx.restore();
+  dockDrips(px0 + pw - 70, py0 + 1, 36, 21, 2);
   // Fold arrow on the right of the header: points up when open, down when closed.
-  const ax = px0 + pw - 15, ay = py0 + 19, turn = tween("panelArrow", panelOpen ? 0 : 1, 16) * Math.PI;
+  const ax = px0 + pw - 15, ay = py0 + 20, turn = tween("panelArrow", panelOpen ? 0 : 1, 16) * Math.PI;
   ctx.save(); ctx.translate(ax, ay); ctx.rotate(turn);
   ctx.strokeStyle = "#8e8e98"; ctx.lineWidth = 2.2; ctx.lineCap = "round"; ctx.lineJoin = "round";
   ctx.beginPath(); ctx.moveTo(-5, 2.5); ctx.lineTo(0, -2.5); ctx.lineTo(5, 2.5); ctx.stroke();
   ctx.restore();
   if (!d) { label("KEINE PUPPE", px0 + 12, py0 + 20, 11, "#55555e"); return; }
-  // Header: name and state. Folded, it also shows a small ECG.
-  label("PUPPE " + d.id, px0 + 12, py0 + 20, 11, "#cfcfd6");
-  const st = d.stateName();
-  const stc = st === "TOT" ? "#e0303f" : st === "K.O." ? "#f0b030" : "#4ccf5a";
-  const pillX = px0 + pw - 32 - 54;
-  rr(pillX, py0 + 11, 54, 18, 9); ctx.fillStyle = stc; ctx.fill();
-  label(st, pillX + 27, py0 + 20.5, 10, "#101013", "center");
+  // Header: face, name, heart rate and state.
+  drawFaceIcon(d, px0 + 11, py0 + 9, 20);
+  label("PUPPE " + d.id, px0 + 38, py0 + 15, 11, "#ecece6");
+  drawHeartIcon(d, px0 + 41, py0 + 28, 6);
+  label(d.dead ? "KEIN PULS" : Math.round(d.hr) + " BPM", px0 + 47, py0 + 28.5, 7, d.dead || d.arrest ? "#ff5060" : "#8e8e98");
+  const st = d.stateName(), pillX = px0 + pw - 32 - 50;
+  ctx.save(); ctx.shadowColor = sc; ctx.shadowBlur = 8;
+  rr(pillX, py0 + 11, 50, 18, 9); ctx.fillStyle = sc; ctx.fill(); ctx.restore();
+  label(st, pillX + 25, py0 + 20.5, 10, "#101013", "center");
   const folded = clamp(1 - (ph - PANEL_HEAD) / 40, 0, 1);
   if (folded > 0.01) {
     ctx.save(); ctx.globalAlpha *= folded;
-    drawEcg(d, px0 + 76, py0 + 9, pillX - px0 - 82, 22);
+    // Folded, the other followed dolls show as small dots in their state color.
+    others.forEach((o, n) => { ctx.fillStyle = stateColor(o); ctx.beginPath(); ctx.arc(pillX - 10 - n * 9, py0 + 20, 3, 0, Math.PI * 2); ctx.fill(); });
     ctx.restore();
   }
   if (ph < PANEL_HEAD + 3) return;
@@ -3833,31 +3947,43 @@ function drawPanel(d) {
   ctx.save();
   ctx.beginPath(); ctx.rect(px0, py0 + PANEL_HEAD - 2, pw, ph - PANEL_HEAD); ctx.clip();
   ctx.globalAlpha *= clamp((ph - PANEL_HEAD) / 80, 0, 1);
-  ctx.fillStyle = "#26262e"; ctx.fillRect(px0 + 10, py0 + 36, pw - 20, 1);
-  // Figure with damage per body part, organs and wounds
-  rr(px0 + 8, py0 + 42, 92, 146, 8); ctx.fillStyle = "#0a0a0d"; ctx.fill();
-  drawBodyChart(d, px0 + 8, py0 + 44, 92, 142);
-  // Vital rows: name on the left, value on the right, a bar below.
-  const bx = px0 + 108, bw = pw - 116;
+  const sep = ctx.createLinearGradient(px0 + 10, 0, px0 + pw - 10, 0);
+  sep.addColorStop(0, "rgba(60,60,72,0)"); sep.addColorStop(0.5, "rgba(60,60,72,1)"); sep.addColorStop(1, "rgba(60,60,72,0)");
+  ctx.fillStyle = sep; ctx.fillRect(px0 + 10, py0 + 37, pw - 20, 1);
+  // Figure with damage per body part, organs and wounds, on a faint grid.
+  const chH = multi ? 112 : 146, chW = multi ? 82 : 92;
+  rr(px0 + 8, py0 + 42, chW, chH, 8); ctx.fillStyle = "#08080b"; ctx.fill();
+  ctx.save(); rr(px0 + 8, py0 + 42, chW, chH, 8); ctx.clip();
+  ctx.fillStyle = "rgba(76,207,90,0.05)";
+  for (let gx = px0 + 14; gx < px0 + 8 + chW; gx += 8) ctx.fillRect(gx, py0 + 42, 1, chH);
+  for (let gy = py0 + 48; gy < py0 + 42 + chH; gy += 8) ctx.fillRect(px0 + 8, gy, chW, 1);
+  const scan = (performance.now() / 22) % (chH + 20) - 10;
+  const sg = ctx.createLinearGradient(0, py0 + 42 + scan - 8, 0, py0 + 42 + scan);
+  sg.addColorStop(0, "rgba(76,207,90,0)"); sg.addColorStop(1, "rgba(76,207,90,0.07)");
+  ctx.fillStyle = sg; ctx.fillRect(px0 + 8, py0 + 42 + scan - 8, chW, 8);
+  ctx.restore();
+  rr(px0 + 8, py0 + 42, chW, chH, 8); ctx.strokeStyle = "#1e1e26"; ctx.lineWidth = 1; ctx.stroke();
+  drawBodyChart(d, px0 + 8, py0 + 44, chW, chH - 4);
+  // Vital rows: name and trend on the left, value on the right, a lit bar below.
+  const bx = px0 + 16 + chW, bw = pw - 24 - chW, rh = chH / 5;
   VITALS.forEach((v, i) => {
-    const y = py0 + 44 + i * 29, val = v.get(d), txt = String(v.text(val)), bad = !d.dead && v.bad(val);
+    const y = py0 + 42 + i * rh, val = v.get(d), txt = String(v.text(val)), bad = !d.dead && v.bad(val);
+    const dir = d.dead ? 0 : vitalTrend(d, VITAL_KEY[i], val);
     ctx.font = `700 9px ${FONT}`;
     const vw = ctx.measureText(txt).width;
-    const size = fitFont(v.name, bw - vw - 5, 8);
-    label(v.name, bx, y + 5, size, "#8e8e98");
-    label(txt, bx + bw, y + 5, 9, bad ? "#ff5060" : "#ecece6", "right");
-    if (i === 4) { drawEcg(d, bx, y + 11, bw, 15); return; }
-    rr(bx, y + 12, bw, 7, 3.5); ctx.fillStyle = "#1e1e24"; ctx.fill();
-    const fw = bw * clamp(val / 100, 0, 1);
-    if (fw > 1) {
-      const c = hex(v.color);
-      rr(bx, y + 12, Math.max(7, fw), 7, 3.5); ctx.fillStyle = css(c); ctx.fill();
-      rr(bx + 2, y + 13.3, Math.max(3, fw - 4), 1.8, 0.9); ctx.fillStyle = css(lighten(c, 0.45), 0.7); ctx.fill();
-    }
+    const size = fitFont(v.name, bw - vw - 14, 7.5);
+    label(v.name, bx, y + 5, size, bad ? "#ff8a94" : "#8e8e98");
+    drawTrend(bx + bw - vw - 7, y + 5, dir, VITAL_GOOD[i]);
+    const blink = bad && Math.sin(performance.now() / 140) > 0;
+    label(txt, bx + bw, y + 5, 9, bad ? (blink ? "#ffd0d4" : "#ff5060") : "#ecece6", "right");
+    if (i === 4) { drawEcg(d, bx, y + 10, bw, rh - 11); return; }
+    drawSegBar(bx, y + 11, bw, multi ? 6 : 7, val / 100, v.color, bad);
   });
   // Organ line: the worst organ and the time left, or the cause of death.
-  drawOrganLine(d, px0 + 8, py0 + 193, pw - 16, 20);
-  // Status chips: only what applies right now, wrapped over up to three rows.
+  const oy = py0 + 42 + chH + 5;
+  drawOrganLine(d, px0 + 8, oy, pw - 16, 20);
+  // Status chips: only what applies right now. With other dolls below they
+  // keep to one row and the rest is counted.
   const f = d.flags(), chips = STATUS.filter(([key]) => f[key]);
   // Burns: how much skin is burnt and how deep the worst burn goes.
   if (d.tbsa > 0 || d.burnDeg.some((v, k) => v >= 0.5 && d.attached(k))) {
@@ -3867,22 +3993,49 @@ function drawPanel(d) {
   // A dead body shows its stage of decay and how long it has been dead.
   if (d.dc) chips.unshift(["DECAY", decayName(d) + " · " + decayTime(d), d.dc.skel > 0.5 ? "#e2d8bf" : d.dc.green > 0.3 ? "#a8b86a" : "#b48cff"]);
   if (!chips.length) chips.push([null, d.dead ? "KEINE FUNKTION" : "STABIL", d.dead ? "#5a5a64" : "#4ccf5a"]);
-  let cx = px0 + 8, cy = py0 + 220, rows = 1;
-  for (const [key, name, col] of chips) {
+  const maxRows = multi ? 1 : 3, cy0 = oy + 26;
+  let cx = px0 + 8, cy = cy0, rows = 1;
+  for (let n = 0; n < chips.length; n++) {
+    const [key, name, col] = chips[n];
     ctx.font = `700 8px ${FONT}`;
-    const cw = ctx.measureText(name).width + 16;
-    if (cx + cw > px0 + pw - 8) { cx = px0 + 8; cy += 20; rows++; }
+    const cw = ctx.measureText(name).width + 18;
+    if (cx + cw > px0 + pw - 8) {
+      if (rows >= maxRows) {
+        // No room left: a small chip counts the rest.
+        const more = "+" + (chips.length - n);
+        rr(cx, cy, 24, 16, 8); ctx.strokeStyle = "#5a5a64"; ctx.lineWidth = 1.2; ctx.stroke();
+        label(more, cx + 12, cy + 8.5, 8, "#a8a8b2", "center");
+        break;
+      }
+      cx = px0 + 8; cy += 20; rows++;
+    }
     rr(cx, cy, cw, 16, 8);
     if (key) {
-      ctx.save(); ctx.shadowColor = col; ctx.shadowBlur = 6; ctx.fillStyle = col; ctx.fill(); ctx.restore();
-      label(name, cx + cw / 2, cy + 8.5, 8, "#101013", "center");
+      // Dark chip with a colored dot; the urgent ones glow in their color.
+      const urgent = key === "ARREST" || key === "BLEED" || key === "FIRE" || key === "CHOKE";
+      ctx.fillStyle = css(hex(col), urgent ? 0.22 : 0.1); ctx.fill();
+      ctx.save(); if (urgent) { ctx.shadowColor = col; ctx.shadowBlur = 4 + 4 * Math.abs(Math.sin(performance.now() / 260)); }
+      ctx.strokeStyle = css(hex(col), 0.75); ctx.lineWidth = 1.2; ctx.stroke(); ctx.restore();
+      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(cx + 8, cy + 8, 2.5, 0, Math.PI * 2); ctx.fill();
+      label(name, cx + 13, cy + 8.5, 8, col);
     } else {
       ctx.strokeStyle = col; ctx.lineWidth = 1.2; ctx.stroke();
       label(name, cx + cw / 2, cy + 8.5, 8, col, "center");
     }
     cx += cw + 5;
   }
-  PANEL.full = 220 + rows * 20 + 6;
+  let yEnd = cy + 20;
+  // The other followed dolls, each as a compact row you can tap.
+  if (multi) {
+    label("WEITERE PUPPEN", px0 + 10, yEnd + 4, 6.5, "#5a5a64");
+    yEnd += 10;
+    for (const o of others) {
+      drawPanelRow(o, px0 + 8, yEnd, pw - 16, 30);
+      state.panelRows.push({ x: px0 + 8, y: yEnd, w: pw - 16, h: 30, d: o });
+      yEnd += 33;
+    }
+  }
+  PANEL.full = yEnd - py0 + 4;
   ctx.restore();
 }
 
@@ -8435,6 +8588,9 @@ function press() {
     return;
   }
   if (inPanelHead(state.sx, state.sy)) { togglePanel(); return; }
+  // A tap on a compact row selects that doll.
+  const row = panelOpen && (state.panelRows || []).find((r) => hitBox(r, state.sx, state.sy));
+  if (row) { state.selected = row.d; pop("prow" + row.d.id); clickSound(820, 0.04); return; }
   if (inDockTab(state.sx, state.sy)) { toggleDock(); return; }
   if (state.infoBtn && hitBox(state.infoBtn, state.sx, state.sy)) {
     const d = state.infoBtn.d;
