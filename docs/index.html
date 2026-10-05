@@ -3558,58 +3558,53 @@ const PANEL = { x: W - 206, y: 8, w: 198, h: 282 };
 const MINI = [[0, -12], [0, -8], [0, 0], [0, 3], [-5, -3], [-7, 2], [5, -3], [7, 2], [-2, 9], [-3, 15], [-5, 15], [2, 9], [3, 15], [5, 15]];
 const MINI_W = [2, 4.2, 4, 2, 1.8, 2, 1.8, 2.4, 2, 1.4, 2.4, 2, 1.4];
 
-// The dock at the bottom: tools in groups split by thin dividers.
-const DOCK_GROUPS = [
-  { color: "#ecece6", items: [{ tool: T_GRAB }, { tool: T_PIN }] },
-  { color: "#5aa0f0", items: [{ tool: T_WATER }, { tool: T_BUCKET }] },
-  { color: "#e8443a", items: [{ tool: T_BLADE }, { tool: T_GUN }, { tool: T_BAT }] },
-  { color: "#ff8a2a", items: [{ tool: T_FIRE }, { tool: T_ICE }, { tool: T_BOMB }] },
-  { color: "#4ccf5a", items: [{ tool: T_BANDAGE }, { tool: T_IV }, { tool: T_DEFI }, { tool: T_ADREN }, { tool: T_MONITOR }] },
-  { color: "#e6c850", items: [{ tool: T_DOLL }, { tool: T_RESET }] },
+// Four round category buttons on the left. A tap opens a row of round tool
+// buttons beside the category; picking a tool closes it again. Each
+// category shows the tool last picked from it.
+const DOCK_CATS = [
+  { name: "HAND", color: "#ecece6", tools: [T_GRAB, T_PIN, T_DOLL, T_RESET] },
+  { name: "WAFFEN", color: "#e8443a", tools: [T_BLADE, T_GUN, T_BAT, T_BOMB] },
+  { name: "ELEMENTE", color: "#ff8a2a", tools: [T_WATER, T_BUCKET, T_FIRE, T_ICE] },
+  { name: "MEDIZIN", color: "#4ccf5a", tools: [T_BANDAGE, T_IV, T_DEFI, T_ADREN, T_MONITOR] },
 ];
-// The tools sit in a rail on the left edge: three columns, each group on
-// its own rows with a coloured strip beside it.
-const RAIL_BTN = 38, RAIL_GAP = 4, RAIL_GROUP_GAP = 9, RAIL_X = 10, RAIL_PAD = 6, RAIL_COLS = 3;
+const CAT_R = 25, CAT_STEP = 74, TOOL_R = 21, TOOL_STEP = 50, RAIL_X = 10;
 const DOCK = (() => {
-  const items = [], groups = [];
-  let y = 0;
-  DOCK_GROUPS.forEach((g, gi) => {
-    if (gi) y += RAIL_GROUP_GAP - RAIL_GAP;
-    const y0 = y;
-    g.items.forEach((it, n) => {
-      const col = n % RAIL_COLS;
-      if (n && !col) y += RAIL_BTN + RAIL_GAP;
-      items.push({ ...it, color: g.color, x: RAIL_X + RAIL_PAD + col * (RAIL_BTN + RAIL_GAP), y, w: RAIL_BTN, h: RAIL_BTN });
-    });
-    y += RAIL_BTN + RAIL_GAP;
-    groups.push({ color: g.color, y0, y1: y - RAIL_GAP });
-  });
-  const total = y - RAIL_GAP, w = RAIL_BTN * RAIL_COLS + RAIL_GAP * (RAIL_COLS - 1) + RAIL_PAD * 2;
-  // Centred in the space under the title.
-  const top = Math.round(Math.max(70, (70 + H - total - RAIL_PAD * 2) / 2)) + RAIL_PAD;
-  for (const it of items) it.y += top;
-  for (const g of groups) { g.y0 += top; g.y1 += top; }
-  return { items, groups, x: RAIL_X, y: top - RAIL_PAD, w, h: total + RAIL_PAD * 2 };
+  const w = CAT_R * 2 + 18, h = DOCK_CATS.length * CAT_STEP + 10;
+  const y = Math.round(Math.max(66, (66 + H - h) / 2));
+  const cats = DOCK_CATS.map((c, n) => ({ ...c, n, cx: RAIL_X + w / 2, cy: y + 10 + CAT_STEP * n + CAT_R + 4 }));
+  return { x: RAIL_X, y, w, h, cats };
 })();
-const dockName = (it) => TOOL_NAMES[it.tool];
-const dockOn = (it) => state.tool === it.tool;
+const catOf = (tool) => DOCK_CATS.findIndex((c) => c.tools.includes(tool));
+const catTool = (n) => (state.catTool && state.catTool[n] !== undefined ? state.catTool[n] : DOCK_CATS[n].tools[0]);
+// Everything you can tap in the dock right now: the four categories and,
+// when one is open, its row of tools.
+function dockButtons() {
+  const out = DOCK.cats.map((c) => ({ kind: "cat", n: c.n, x: c.cx, y: c.cy, r: CAT_R, color: c.color, tool: catTool(c.n) }));
+  const n = state.dockCat;
+  if (n !== undefined && n !== null && n >= 0) {
+    const c = DOCK.cats[n], x0 = DOCK.x + DOCK.w + 14 + TOOL_R, k = tween("flyout", 1, 16);
+    c.tools.forEach((t, i) => out.push({ kind: "tool", tool: t, n, x: x0 + i * TOOL_STEP * k, y: c.cy, r: TOOL_R, color: c.color, i }));
+  }
+  return out;
+}
+const dockName = (it) => (it.kind === "cat" ? DOCK_CATS[it.n].name : TOOL_NAMES[it.tool]);
+const dockOn = (it) => (it.kind === "cat" ? catOf(state.tool) === it.n : state.tool === it.tool);
 // The dock folds down under the screen edge with a tap on its tab, so the
 // whole room is free. The choice is remembered per device.
 let dockOpen = true;
 try { dockOpen = localStorage.getItem("ragpit.dock") !== "closed"; } catch (e) { /* storage is optional */ }
 const dockOff = () => (1 - tween("dock", dockOpen ? 1 : 0, 12)) * (DOCK.x + DOCK.w);
 const dockTab = () => ({ x: DOCK.x + DOCK.w - dockOff(), y: DOCK.y + DOCK.h / 2 - 30, w: 16, h: 60 });
-const inDockTab = (x, y) => { const b = dockTab(); return x >= b.x - 4 && x < b.x + b.w + 10 && y >= b.y - 6 && y < b.y + b.h + 6; };
+const inDockTab = (x, y) => { if (state.dockCat >= 0) return false; const b = dockTab(); return x >= b.x - 4 && x < b.x + b.w + 10 && y >= b.y - 6 && y < b.y + b.h + 6; };
 function toggleDock() {
   dockOpen = !dockOpen; pop("dockTab"); clickSound(dockOpen ? 760 : 560, 0.05);
   try { localStorage.setItem("ragpit.dock", dockOpen ? "open" : "closed"); } catch (e) { /* storage is optional */ }
 }
 function toolbarHit(x, y) {
   if (!dockOpen) return -1;
-  if (x < DOCK.x || x >= DOCK.x + DOCK.w || y < DOCK.y || y >= DOCK.y + DOCK.h) return -1;
-  let best = -1, bd = Infinity;
-  DOCK.items.forEach((it, i) => { const d = Math.hypot(x - it.x - it.w / 2, y - it.y - it.h / 2); if (d < bd) { bd = d; best = i; } });
-  return best;
+  const bs = dockButtons();
+  for (let i = bs.length - 1; i >= 0; i--) if (Math.hypot(x - bs[i].x, y - bs[i].y) < bs[i].r + 4) return i;
+  return -1;
 }
 
 // The damage panel folds up to its header row. The choice is remembered per device.
@@ -4040,7 +4035,8 @@ function drawToolbar() {
   ctx.save(); ctx.translate(-off, 0);
   if (off < DOCK.x + DOCK.w - 1) drawDock();
   ctx.restore();
-  drawDockTab();
+  // The fold tab steps aside while a tool row is open.
+  if (!(state.dockCat >= 0)) drawDockTab();
   drawToast(off);
 }
 // The tab on the right edge of the rail: a chevron, and the picked tool
@@ -4069,50 +4065,74 @@ function drawDockTab() {
 }
 function drawDock() {
   const D = DOCK;
-  // Rail body with a soft light along its left edge
+  // A rounded column behind the four categories
   ctx.save(); ctx.shadowColor = "rgba(0,0,0,0.55)"; ctx.shadowBlur = 14; ctx.shadowOffsetX = 3;
-  rr(D.x, D.y, D.w, D.h, 14);
+  rr(D.x, D.y, D.w, D.h, D.w / 2);
   const g = ctx.createLinearGradient(D.x, 0, D.x + D.w, 0);
   g.addColorStop(0, "rgba(26,26,32,0.95)"); g.addColorStop(1, "rgba(12,12,15,0.95)");
   ctx.fillStyle = g; ctx.fill(); ctx.restore();
-  rr(D.x, D.y, D.w, D.h, 14); ctx.strokeStyle = "#2e2e36"; ctx.lineWidth = 1.5; ctx.stroke();
-  ctx.fillStyle = "rgba(255,255,255,0.05)"; ctx.fillRect(D.x + 1.5, D.y + 12, 1, D.h - 24);
-  // A thin strip in the group colour on the left of each group
-  for (const gr of D.groups) {
-    const on = DOCK.items.some((it) => it.color === gr.color && dockOn(it));
-    ctx.fillStyle = css(hex(gr.color), on ? 0.9 : 0.28);
-    rr(D.x + 2, gr.y0 + 4, 2.5, gr.y1 - gr.y0 - 8, 1.2); ctx.fill();
+  rr(D.x, D.y, D.w, D.h, D.w / 2); ctx.strokeStyle = "#2e2e36"; ctx.lineWidth = 1.5; ctx.stroke();
+  const bs = dockButtons(), open = state.dockCat >= 0 && state.dockCat !== undefined && state.dockCat !== null;
+  // The open row: a round-ended pill from the category out to the right
+  if (open) {
+    const tools = bs.filter((b) => b.kind === "tool"), c = DOCK.cats[state.dockCat], k = tween("flyout", 1, 16);
+    const x0 = D.x + D.w + 6, x1 = tools[tools.length - 1].x + TOOL_R + 8;
+    ctx.save(); ctx.globalAlpha *= k;
+    ctx.save(); ctx.shadowColor = "rgba(0,0,0,0.6)"; ctx.shadowBlur = 16;
+    rr(x0, c.cy - TOOL_R - 8, x1 - x0, TOOL_R * 2 + 16, TOOL_R + 8); ctx.fillStyle = "rgba(18,18,23,0.97)"; ctx.fill(); ctx.restore();
+    rr(x0, c.cy - TOOL_R - 8, x1 - x0, TOOL_R * 2 + 16, TOOL_R + 8); ctx.strokeStyle = css(hex(c.color), 0.45); ctx.lineWidth = 1.5; ctx.stroke();
+    // A little notch pointing back at the category
+    ctx.fillStyle = "rgba(18,18,23,0.97)"; ctx.beginPath(); ctx.moveTo(x0 + 1, c.cy - 7); ctx.lineTo(x0 - 6, c.cy); ctx.lineTo(x0 + 1, c.cy + 7); ctx.closePath(); ctx.fill();
+    ctx.restore();
   }
-  DOCK.items.forEach((it, i) => {
-    const by = it.y, on = dockOn(it), BH = it.h;
-    const sel = tween("tb" + i, on ? 1 : 0, 18), hov = tween("tbh" + i, i === state.hover ? 1 : 0, 20);
-    scaled(it.x + it.w / 2, by + BH / 2, popScale("tb" + i, 0.1), () => {
-      rr(it.x, by, it.w, BH, 9);
-      ctx.fillStyle = css(mixc(mixc(hex("#1d1d23"), hex("#26262e"), hov), hex("#2e2e37"), sel)); ctx.fill();
-      if (sel > 0.01) {
-        ctx.save(); ctx.shadowColor = it.color; ctx.shadowBlur = 10 * sel;
-        ctx.strokeStyle = css(hex(it.color), 0.75 * sel); ctx.lineWidth = 1.4; ctx.stroke();
-        ctx.restore();
-      }
-      const cx = it.x + it.w / 2, cy = by + BH / 2;
-      if (it.tool !== T_GUN) {
-        ctx.save(); ctx.globalAlpha *= 0.72 + 0.28 * Math.max(sel, hov);
-        ctx.translate(cx, cy); ctx.scale(0.82, 0.82); drawIconCached(it.tool, 0, 0); ctx.restore();
+  bs.forEach((b, i) => {
+    const on = dockOn(b), sel = tween("tb" + b.kind + (b.kind === "cat" ? b.n : b.tool), on ? 1 : 0, 18), hov = tween("tbh" + i, i === state.hover ? 1 : 0, 20);
+    const isOpen = b.kind === "cat" && state.dockCat === b.n, k = b.kind === "tool" ? tween("flyout", 1, 16) : 1;
+    scaled(b.x, b.y, popScale(b.kind === "cat" ? "cat" + b.n : "tool" + b.tool, 0.12) * (0.6 + 0.4 * k), () => {
+      ctx.save(); ctx.globalAlpha *= k;
+      // Round button with a soft top light
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+      const bg = ctx.createRadialGradient(b.x - b.r * 0.35, b.y - b.r * 0.45, 2, b.x, b.y, b.r);
+      bg.addColorStop(0, css(mixc(mixc(hex("#2c2c34"), hex("#34343e"), hov), hex("#3a3a46"), sel))); bg.addColorStop(1, css(mixc(hex("#17171c"), hex("#1f1f26"), sel)));
+      ctx.fillStyle = bg; ctx.fill();
+      // Ring in the category colour; bright and glowing when it holds the tool in use.
+      ctx.save();
+      if (sel > 0.05 || isOpen) { ctx.shadowColor = b.color; ctx.shadowBlur = 10 * Math.max(sel, isOpen ? 0.6 : 0); }
+      ctx.strokeStyle = css(hex(b.color), b.kind === "cat" ? 0.35 + 0.65 * Math.max(sel, isOpen ? 1 : 0) : 0.15 + 0.85 * sel);
+      ctx.lineWidth = b.kind === "cat" ? 2.4 : 1.8; ctx.beginPath(); ctx.arc(b.x, b.y, b.r - 1, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+      if (b.tool !== T_GUN) {
+        ctx.save(); ctx.globalAlpha *= 0.8 + 0.2 * Math.max(sel, hov);
+        ctx.translate(b.x, b.y); const z = (b.r * 1.55) / 46; ctx.scale(z, z); drawIconCached(b.tool, 0, 0); ctx.restore();
       } else {
-        const sp = WEAPONS[state.weapon].sprite, z = Math.min(1.1, (it.w - 6) / sp[0].length);
-        drawSpriteOutlined(sp, cx - sp[0].length * z / 2, cy - sp.length * z / 2 - 4, z, 0.65 + 0.35 * Math.max(sel, hov));
-        const wp = WEAPONS[state.weapon], ammo = state.ammo[state.weapon], loading = state.reloadT > 0;
-        label(loading ? "LÄDT" : ammo + "/" + wp.mag, cx, by + BH - 8, 6.5, loading ? "#e6c850" : ammo / wp.mag < 0.25 ? "#ff6a5a" : "#7a7a84", "center");
+        const sp = WEAPONS[state.weapon].sprite, z = Math.min(1, (b.r * 1.6) / sp[0].length);
+        drawSpriteOutlined(sp, b.x - sp[0].length * z / 2, b.y - sp.length * z / 2 - 3, z, 0.75 + 0.25 * Math.max(sel, hov));
+        const wp = WEAPONS[state.weapon], ammo = state.ammo[state.weapon];
+        label(state.reloadT > 0 ? "LÄDT" : ammo + "/" + wp.mag, b.x, b.y + b.r * 0.55, 6, state.reloadT > 0 ? "#e6c850" : ammo / wp.mag < 0.25 ? "#ff6a5a" : "#8e8e98", "center");
       }
+      ctx.restore();
     });
+    if (b.kind === "cat") {
+      // Name under the category and a small arrow that shows it opens.
+      label(DOCK_CATS[b.n].name, b.x, b.y + b.r + 9, 7.5, on || isOpen ? DOCK_CATS[b.n].color : "#6a6a74", "center");
+      ctx.fillStyle = isOpen ? DOCK_CATS[b.n].color : "#4a4a54";
+      const ax = b.x + b.r - 3, ay = b.y + b.r - 5;
+      ctx.beginPath(); ctx.arc(ax, ay, 5.5, 0, Math.PI * 2); ctx.fillStyle = "#141418"; ctx.fill();
+      ctx.strokeStyle = isOpen ? DOCK_CATS[b.n].color : "#5a5a64"; ctx.lineWidth = 1.4; ctx.lineCap = "round"; ctx.lineJoin = "round";
+      ctx.beginPath();
+      if (isOpen) { ctx.moveTo(ax + 1.5, ay - 2.5); ctx.lineTo(ax - 1.5, ay); ctx.lineTo(ax + 1.5, ay + 2.5); }
+      else { ctx.moveTo(ax - 1.5, ay - 2.5); ctx.lineTo(ax + 1.5, ay); ctx.lineTo(ax - 1.5, ay + 2.5); }
+      ctx.stroke();
+    }
   });
 }
 function drawToast(off) {
   // Toasts fade in with a small rise and fade out at the end.
   if (state.toast > toastLast + 0.01) toastMax = state.toast;
   toastLast = state.toast;
-  const hover = state.hover >= 0;
-  const text = hover ? dockName(DOCK.items[state.hover]) : state.toast > 0 ? state.toastText : "";
+  const hover = state.hover >= 0 && !!dockButtons()[state.hover];
+  const hb = hover ? dockButtons()[state.hover] : null;
+  const text = hb ? dockName(hb) : state.toast > 0 ? state.toastText : "";
   if (text) {
     const a = hover ? 1 : Math.min(easeOut((toastMax - state.toast) / 0.16), clamp(state.toast / 0.25, 0, 1));
     ctx.save(); ctx.globalAlpha *= a;
@@ -6865,7 +6885,6 @@ const TITLE_TIPS = [
   "Halte eine Puppe fest, sie läuft mit.",
   "Die Pinnadel: ziehen, loslassen, fixiert.",
   "Ein Verband stoppt jede Blutung.",
-  "Tippe dreimal auf die Tür im Labor.",
   "Das i im Panel erklärt jeden Tod.",
   "Zeig mit der Waffe auf eine Puppe.",
   "Zoome ganz nah, dann siehst du die Organe.",
@@ -8094,181 +8113,11 @@ function drawAimView() {
   ctx.restore();
 }
 
-// ======================================================================
-// Easter egg: tap the door at the back three times. An old lab dog opens
-// it and answers every question with yes, no, a laugh or a disgusted sound.
-// ======================================================================
-
-const DOOR = { x: Math.round(W * 0.66), y: FLOOR_Y - 150, w: 70, h: 138 };
-const egg = { taps: [], open: 0, active: false, idle: 0, say: "", sayT: 0, last: "", anim: "", animT: 0, blink: 0 };
-const EGG_ANSWERS = [["YES.", "nod", 35], ["NO.", "shake", 35], ["HO-HO-HO!", "laugh", 15], ["BLEHH!", "yuck", 15]];
-const dogBox = () => ({ x: DOOR.x + 6, y: DOOR.y + 40, w: DOOR.w - 12, h: DOOR.h - 40 });
-
-// Returns true when the tap belonged to the egg.
-function eggPress() {
-  const { mx, my } = state;
-  if (egg.active && egg.open > 0.8 && hitBox(dogBox(), mx, my)) { eggAnswer(); return true; }
-  if (!hitBox(DOOR, mx, my)) return false;
-  if (egg.active) { egg.active = false; eggVoice("bye"); return true; }
-  const now = performance.now();
-  egg.taps = egg.taps.filter((t) => now - t < 1400);
-  egg.taps.push(now);
-  if (egg.taps.length < 3) return false;
-  egg.taps = []; egg.active = true; egg.idle = 0;
-  egg.say = "BEN?"; egg.sayT = 2.2; egg.anim = "hello"; egg.animT = 0;
-  eggVoice("hello");
-  return true;
-}
-
-function eggAnswer() {
-  let pick;
-  do {
-    let r = Math.random() * 100;
-    pick = EGG_ANSWERS.find(([, , w]) => (r -= w) < 0) || EGG_ANSWERS[0];
-  } while (pick[0] === egg.last && Math.random() < 0.6);
-  egg.last = pick[0]; egg.say = pick[0]; egg.sayT = 1.8; egg.anim = pick[1]; egg.animT = 0; egg.idle = 0;
-  eggVoice(pick[1]);
-}
-
-function eggStep(dt) {
-  egg.open = moveToward(egg.open, egg.active ? 1 : 0, dt * 2.5);
-  egg.sayT = Math.max(0, egg.sayT - dt);
-  egg.animT += dt;
-  egg.blink -= dt; if (egg.blink < -3.5) egg.blink = 0.15;
-  if (egg.active) { egg.idle += dt; if (egg.idle > 25) { egg.active = false; eggVoice("bye"); } }
-}
-
-// A low, grumpy dog voice made from two detuned waves.
-// Ben speaks real English words with a deep, slow voice where the phone
-// can speak. Without speech the old growling tones stand in.
-const BEN_WORDS = { hello: "Ben?", nod: "Yes.", shake: "No.", laugh: "Ho, ho, ho!", yuck: "Blehh!" };
-function benSpeak(kind) {
-  const ss = window.speechSynthesis, text = BEN_WORDS[kind];
-  if (!ss || !window.SpeechSynthesisUtterance || !text) return false;
-  try {
-    ss.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    const voices = ss.getVoices(), en = voices.filter((v) => /^en/i.test(v.lang));
-    const v = en.find((v) => /daniel|fred|alex|aaron|arthur|male/i.test(v.name)) || en.find((v) => /en[-_]US/i.test(v.lang)) || en[0];
-    if (v) u.voice = v;
-    u.lang = v ? v.lang : "en-US"; u.pitch = kind === "laugh" ? 0.4 : 0.15; u.rate = kind === "laugh" ? 0.75 : 0.8; u.volume = 1;
-    ss.speak(u);
-    return true;
-  } catch (e) { return false; }
-}
-function eggVoice(kind) {
-  if (!settings.sound) return;
-  if (kind === "bye") { clickSound(300, 0.06); setTimeout(() => clickSound(220, 0.05), 90); return; }
-  if (benSpeak(kind)) return;
-  try {
-    if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
-    if (audio.state === "suspended") audio.resume();
-    const parts = {
-      nod: [[0, 0.28, 150, 115]], shake: [[0, 0.18, 165, 150], [0.22, 0.26, 150, 110]],
-      laugh: [[0, 0.16, 130, 120], [0.22, 0.16, 130, 120], [0.44, 0.22, 130, 105]],
-      yuck: [[0, 0.6, 240, 200]], hello: [[0, 0.16, 160, 170], [0.2, 0.3, 175, 135]],
-    }[kind];
-    const t0 = audio.currentTime;
-    for (const [at, len, f0, f1] of parts) {
-      for (const [type, det, vol] of [["sawtooth", 1, 0.07], ["square", 1.007, 0.04]]) {
-        const o = audio.createOscillator(), g = audio.createGain(), lp = audio.createBiquadFilter();
-        o.type = type; lp.type = "lowpass"; lp.frequency.value = kind === "yuck" ? 1600 : 900;
-        o.frequency.setValueAtTime(f0 * det, t0 + at); o.frequency.linearRampToValueAtTime(f1 * det, t0 + at + len);
-        if (kind === "yuck") { const lfo = audio.createOscillator(), lg = audio.createGain(); lfo.frequency.value = 18; lg.gain.value = 18; lfo.connect(lg); lg.connect(o.frequency); lfo.start(t0 + at); lfo.stop(t0 + at + len); }
-        g.gain.setValueAtTime(0, t0 + at); g.gain.linearRampToValueAtTime(vol, t0 + at + 0.03);
-        g.gain.setValueAtTime(vol, t0 + at + len - 0.05); g.gain.linearRampToValueAtTime(0, t0 + at + len);
-        o.connect(lp); lp.connect(g); g.connect(audio.destination); o.start(t0 + at); o.stop(t0 + at + len + 0.02);
-      }
-    }
-  } catch (e) { /* sound is optional */ }
-}
-
-// The open door with the dog in it, drawn in the game's pixel blocks.
-function drawEgg() {
-  if (egg.open <= 0.001) return;
-  const o = easeOut(egg.open);
-  // Dark room behind the door and the door leaf swinging open
-  const g = ctx.createLinearGradient(0, DOOR.y, 0, DOOR.y + DOOR.h);
-  g.addColorStop(0, "#07070a"); g.addColorStop(1, "#141418");
-  ctx.fillStyle = g; ctx.fillRect(DOOR.x + 2, DOOR.y + 2, DOOR.w - 4, DOOR.h - 4);
-  const leaf = (DOOR.w - 4) * (1 - o * 0.82);
-  ctx.fillStyle = "#2a2a31"; ctx.fillRect(DOOR.x + 2, DOOR.y + 2, leaf, DOOR.h - 4);
-  ctx.fillStyle = "rgba(255,255,255,0.08)"; ctx.fillRect(DOOR.x + 2 + leaf - 8, DOOR.y + 64, 5, 3);
-  // Ben slides into the doorway, the red phone at his ear.
-  const t = egg.animT, cx = DOOR.x + DOOR.w / 2 + (1 - o) * 30, by = DOOR.y + DOOR.h - 2;
-  let hx = 0, hy = 0, mouth = 0, eyes = egg.blink > 0 ? "shut" : "open";
-  if (egg.anim === "hello" && t < 0.8) { hy = -Math.abs(Math.sin(t * 8)) * 1.2; mouth = t < 0.5 && Math.sin(t * 18) > 0 ? 1 : 0; }
-  if (egg.anim === "nod" && t < 0.8) hy = Math.sin(t * 16) * 1.5 + 0.7;
-  if (egg.anim === "shake" && t < 0.9) hx = Math.sin(t * 22) * 1.8;
-  if (egg.anim === "laugh" && t < 1.2) { hy = -Math.abs(Math.sin(t * 14)) * 1.6; mouth = 2; eyes = "happy"; }
-  if (egg.anim === "yuck" && t < 1.3) { mouth = 3; eyes = "squint"; hx = Math.sin(t * 30) * 0.6; }
-  if ((egg.anim === "nod" || egg.anim === "shake") && t < 0.45) mouth = Math.sin(t * 20) > 0 ? 1 : 0;
-  const P = 2;
-  const R = (x, y, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(cx + x * P, by + y * P, w * P, h * P); };
-  const OUT = "#0b0b0e", FUR = "#8b5a2b", FURD = "#5e3a1a", FURL = "#a8743e", CREAM = "#ead7b2", CREAMD = "#c9b08a";
-  const RED = "#d02a30", REDD = "#8a1418", REDL = "#f06a6a";
-  ctx.save(); ctx.globalAlpha *= o;
-  // Sitting body: brown fur, a cream chest, two front paws
-  R(-11, -22, 22, 22, OUT); R(-10, -21, 20, 21, FUR); R(6, -21, 4, 21, FURD); R(-10, -21, 2, 21, FURL);
-  R(-5, -19, 10, 14, CREAM); R(2, -19, 3, 14, CREAMD);
-  R(-10, -5, 8, 5, OUT); R(2, -5, 8, 5, OUT); R(-9, -4, 6, 4, FUR); R(3, -4, 6, 4, FUR);
-  R(-8, -1, 1, 1, FURD); R(-6, -1, 1, 1, FURD); R(4, -1, 1, 1, FURD); R(6, -1, 1, 1, FURD);
-  // The phone cord curls from the receiver down to the chest.
-  ctx.strokeStyle = REDD; ctx.lineWidth = 1.2; ctx.beginPath();
-  for (let n = 0; n <= 14; n++) { const u = n / 14, px = cx + (14 - u * 10) * P + Math.sin(u * 22) * 2.2, py = by + (-26 + u * 16) * P; n ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
-  ctx.stroke();
-  ctx.save(); ctx.translate(hx * P, hy * P);
-  // Long droopy ears
-  R(-16, -46, 6, 24, OUT); R(10, -46, 6, 24, OUT); R(-15, -45, 4, 22, FURD); R(11, -45, 4, 22, FURD); R(-15, -45, 1, 20, FUR);
-  // Big round head with a wrinkled brow
-  // Rounded skull: each outline row a little wider down to the cheeks
-  R(-8, -54, 16, 2, OUT); R(-11, -52, 22, 2, OUT); R(-12, -50, 24, 28, OUT); R(-13, -46, 26, 18, OUT);
-  R(-7, -53, 14, 2, FUR); R(-10, -51, 20, 2, FUR); R(-11, -49, 22, 26, FUR); R(-12, -45, 24, 16, FUR);
-  R(-7, -53, 14, 1, FURL); R(-10, -51, 4, 1, FURL); R(7, -49, 4, 22, FURD);
-  for (const [wx, wy, ww] of [[-6, -48, 12], [-4, -46, 8]]) R(wx, wy, ww, 1, FURD);
-  // Eyes under heavy lids
-  for (const ex of [-8, 3]) {
-    if (eyes === "open") {
-      R(ex - 1, -42, 7, 5, OUT); R(ex, -41, 5, 3, "#f4efe4"); R(ex + 2, -40, 2, 2, "#1a1a1a"); R(ex, -41, 5, 1.4, FURD);
-    } else if (eyes === "shut") { R(ex, -40, 5, 1, OUT); R(ex, -41, 5, 1, FURD); }
-    else if (eyes === "happy") { R(ex, -41, 1, 1, OUT); R(ex + 1, -42, 3, 1, OUT); R(ex + 4, -41, 1, 1, OUT); }
-    else { R(ex, -42, 5, 1, OUT); R(ex + 1, -41, 3, 1, OUT); R(ex, -40, 5, 1, OUT); }
-  }
-  R(-9, -44, 7, 1, FURD); R(2, -44, 7, 1, FURD);
-  // Cream muzzle with heavy jowls and a big shiny nose
-  R(-9, -36, 18, 13, OUT); R(-8, -35, 16, 11, CREAM); R(-10, -30, 4, 8, OUT); R(6, -30, 4, 8, OUT);
-  R(-9, -29, 3, 6, CREAM); R(6, -29, 3, 6, CREAMD); R(3, -35, 5, 11, CREAMD);
-  R(-4, -37, 8, 5, OUT); R(-3, -36, 6, 3, "#1a1414"); R(-2, -36, 2, 1, "#5a4a4a");
-  R(0, -32, 1, 3, FURD);
-  // Mouth: closed, talking, laughing with the tongue, or tongue out in disgust
-  if (mouth === 0) R(-4, -29, 8, 1, FURD);
-  else if (mouth === 1) { R(-3, -30, 6, 3, OUT); R(-2, -29, 4, 1, "#3a0c10"); }
-  else if (mouth === 2) { R(-5, -31, 10, 5, OUT); R(-4, -30, 8, 3, "#3a0c10"); R(-2, -28, 4, 1, "#e46a7a"); }
-  else { R(-3, -30, 6, 2, OUT); R(-2, -29, 4, 5, OUT); R(-1, -29, 2, 4, "#e46a7a"); }
-  // Red receiver held to the right ear by a paw
-  R(11, -50, 6, 20, OUT); R(12, -49, 4, 18, RED); R(12, -49, 1, 18, REDL); R(15, -49, 1, 18, REDD);
-  R(10, -51, 6, 4, OUT); R(10, -33, 6, 4, OUT); R(11, -50, 4, 2, RED); R(11, -32, 4, 2, RED);
-  R(13, -43, 6, 7, OUT); R(14, -42, 4, 5, FUR); R(14, -42, 4, 1, FURL);
-  ctx.restore();
-  ctx.restore();
-  // Speech bubble
-  if (egg.sayT > 0 && egg.say) {
-    const a = Math.min(1, egg.sayT / 0.25) * o;
-    ctx.save(); ctx.globalAlpha *= a;
-    ctx.font = `700 13px ${FONT}`;
-    const tw = ctx.measureText(egg.say).width + 22, bx = clamp(cx - tw / 2 - 26, 8, W - tw - 8), byy = DOOR.y - 6;
-    rr(bx, byy, tw, 28, 10); ctx.fillStyle = "#f4f4ee"; ctx.fill();
-    ctx.beginPath(); ctx.moveTo(bx + tw * 0.62, byy + 27); ctx.lineTo(bx + tw * 0.62 + 10, byy + 27); ctx.lineTo(bx + tw * 0.62 + 12, byy + 38); ctx.closePath(); ctx.fill();
-    label(egg.say, bx + tw / 2, byy + 15, 13, "#16161a", "center");
-    ctx.restore();
-  }
-}
-
 const state = {
   tool: T_GRAB, mx: W / 2, my: H / 2, sx: W / 2, sy: H / 2, lastX: W / 2, lastY: H / 2,
   cam: { z: 1, x: 0, y: 0 }, zoomAnim: null, fireMode: 1, fires: [],
   pressing: false, pointerSeen: false, hover: -1, flashBtn: -1, toast: 0, toastText: "",
-  dolls: [], selected: null, grabDoll: null, pinDrag: null, swings: [], counter: 0, trail: [], shake: 0,
+  dolls: [], selected: null, grabDoll: null, pinDrag: null, swings: [], dockCat: -1, catTool: null, counter: 0, trail: [], shake: 0,
   waterLevel: 3, weapon: 0, fireCd: 0, map: 0, screen: "", screenT: 0, lp: null, ctxMenu: null, aimView: null, xray: false, toolT: 9, pressTarget: null, inGame: false, menuDown: false,
   extrasOpen: false, extrasFlash: -1, extrasFlashT: 0, paused: false, slow: false,
   gunX: W * 0.22, gunY: FLOOR_Y - 130, gunAng: 0, gunDrag: false, aimX: W, aimY: FLOOR_Y - 130,
@@ -8293,8 +8142,19 @@ function resetScene() {
 
 // A dock button picks its tool with a short pop.
 function useDock(n) {
-  pop("tb" + n);
-  useButton(DOCK.items[n].tool);
+  const b = dockButtons()[n];
+  if (!b) return;
+  if (b.kind === "cat") {
+    pop("cat" + b.n); clickSound(700, 0.04);
+    if (state.dockCat === b.n) state.dockCat = -1;
+    else { state.dockCat = b.n; animV["flyout"] = 0; }
+    return;
+  }
+  pop("tool" + b.tool);
+  if (!state.catTool) state.catTool = {};
+  if (b.tool !== T_RESET) state.catTool[b.n] = b.tool;
+  state.dockCat = -1;
+  useButton(b.tool);
 }
 
 function useButton(i) {
@@ -8328,7 +8188,6 @@ function press() {
   if (state.deathReport) { state.deathReport = null; clickSound(500, 0.04); return; }
   if (state.aimView) { aimPress(); return; }
   if (state.ctxMenu) { ctxMenuPress(); return; }
-  if (eggPress()) return;
   if (inZoomBtn(state.sx, state.sy)) { pop("zoom"); const c = state.cam; state.zoomAnim = { t: 0, z0: c.z, x0: c.x, y0: c.y }; return; }
   if (inFsBtn(state.sx, state.sy)) { pop("fs"); toggleFullscreen(); return; }
   if (inExtrasBtn(state.sx, state.sy)) { pop("extras"); state.extrasOpen = !state.extrasOpen; return; }
@@ -8357,6 +8216,8 @@ function press() {
   }
   const b = toolbarHit(state.sx, state.sy);
   if (b >= 0) { useDock(b); return; }
+  // A tap anywhere else only closes an open tool row.
+  if (state.dockCat >= 0 && state.dockCat !== undefined && state.dockCat !== null) { state.dockCat = -1; return; }
   if (blocksInput(state.sx, state.sy)) return;
   state.pressing = true;
   state.lastX = state.mx; state.lastY = state.my;
@@ -9115,8 +8976,6 @@ function render() {
   ctx.imageSmoothingEnabled = true;
   ctx.drawImage(bgCan, 0, 0, W, H);
   ctx.drawImage(decal, 0, 0, W, H);
-  // The door at the back, open when the easter egg is on, sits behind the dolls.
-  drawEgg();
   // Gibs and dolls are pixel art on their own layer.
   ppx.fill(0);
   for (const g of gibs) rasterGib(g);
@@ -9268,7 +9127,7 @@ function loop(now) {
   // Upright phone: nothing runs, the painted portrait screen shows instead.
   if (portraitMQ.matches) { acc = 0; drawPortrait(realDt); requestAnimationFrame(loop); return; }
   acc += state.paused ? 0 : state.aimView ? realDt * 0.25 : state.slow ? realDt * 0.3 : realDt;
-  if (state.screen === "game") { updateLongPress(); eggStep(realDt); zoomStep(realDt); }
+  if (state.screen === "game") { updateLongPress(); zoomStep(realDt); }
   let steps = 0;
   if (state.screen !== "game") {
     acc = 0;
