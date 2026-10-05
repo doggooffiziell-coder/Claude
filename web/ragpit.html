@@ -1934,7 +1934,7 @@ class Doll {
     if (!this.attached(HEAD) || this.cause === "KOPF VERLOREN" || this.cause === "VERBRANNT" || brain <= 0) return "Keine Chance mehr";
     if (this.deadT > 45) return "Zu lange tot";
     if (heart <= 0) return "Das Herz ist zerstört";
-    if (this.bl <= 15) return "Zu wenig Blut, erst Infusion";
+    if (this.bl <= 15) return this.iv > 0 ? "Noch zu wenig Blut, kurz warten" : "Zu wenig Blut: erst Infusion, dann schocken";
     if (Math.random() < 0.3) return "Kein Rhythmus, nochmal!";
     this.dead = false; this.cause = ""; this.report = null; this.dyingTimer = 0; this.deadT = 0; this.dc = null; this.rigorOn = false;
     this.arrest = false; this.noAir = 0; this.o2 = Math.max(this.o2, 60); this.hr = 60;
@@ -3372,24 +3372,24 @@ const TOOL_PIX = {
     "........kk........",
   ],
   [T_BAT]: [
-    "..................",
-    "...........kkkk...",
-    "..........kttttk..",
-    ".........ktuuuutk.",
-    ".........ktuuuuvk.",
-    ".........ktuuuuvk.",
-    "........ktuuuuuvk.",
-    ".......ktuuuvvvk..",
-    "......ktuuuvkkk...",
-    "......ktuuvk......",
-    ".....ktuuvk.......",
-    "....ktuuvk........",
-    "...kCvvvk.........",
-    "..kCDCkk..........",
-    ".kCDDEk...........",
-    "..kEEk............",
-    "...kk.............",
-    "..................",
+    "...kkk............",
+    "..kFFFk......kkk..",
+    ".kFeFHek....k111k.",
+    "kFeFGGFek..k1223k.",
+    "kHeFGGHek.k122221k",
+    "kHeHGGHekk122223k.",
+    ".kFeFHekk1222223k.",
+    "..kFHHk.k122233k..",
+    "...kkk.k12223kk...",
+    "......k12223k.....",
+    "......k1223k......",
+    ".....k1223k.......",
+    "....k1223k........",
+    "...kCC33k.........",
+    ".kkCDDCk..........",
+    "kCCDEEk...........",
+    "kEEEkk............",
+    ".kkk..............",
   ],
   [T_DEFI]: [
     "..........k.......",
@@ -3454,7 +3454,7 @@ function drawToolPix(rows) {
   }
   ctx.restore();
 }
-const TOOL_NAMES = ["Greifen", "Wasser", "Eimer", "Klinge", "Waffe", "Feuer", "Eis", "Bombe", "Infusion", "Neue Puppe", "Reset", "Fixieren", "Verband", "Schläger", "Defibrillator", "Adrenalin"];
+const TOOL_NAMES = ["Greifen", "Wasser", "Eimer", "Klinge", "Waffe", "Feuer", "Eis", "Bombe", "Infusion", "Neue Puppe", "Reset", "Fixieren", "Verband", "Baseballschläger", "Defibrillator", "Adrenalin"];
 const BTN = 46, BTN_GAP = 6, TOOLBAR_Y = H - 54;
 const PANEL = { x: W - 206, y: 8, w: 198, h: 282 };
 const MINI = [[0, -12], [0, -8], [0, 0], [0, 3], [-5, -3], [-7, 2], [5, -3], [7, 2], [-2, 9], [-3, 15], [-5, 15], [2, 9], [3, 15], [5, 15]];
@@ -8023,7 +8023,10 @@ function press() {
       const [i, dist] = d.nearestPoint(state.mx, state.my, bestD);
       if (i >= 0) { bestD = dist; best = d; }
     }
-    if (best && best.dead) { state.selected = best; state.toast = 1.6; state.toastText = "Tot. Keine Rettung mehr"; }
+    // A body that died only moments ago can still take blood, so the
+    // defibrillator has a chance afterwards.
+    if (best && best.dead && best.deadT > 45) { state.selected = best; state.toast = 1.6; state.toastText = "Zu lange tot"; }
+    else if (best && best.dead) { best.attachInfusion(); state.selected = best; state.toast = 1.8; state.toastText = "Infusion läuft, gleich schocken"; }
     else if (best) { best.attachInfusion(); state.selected = best; state.toast = 1.2; state.toastText = "Infusion angelegt"; }
     return;
   }
