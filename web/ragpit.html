@@ -627,18 +627,28 @@ function stepGibs() {
     g.vy += GRAVITY * DT;
     // Fast pieces move in small steps, so they cannot skip through a thin wall.
     const sub = Math.max(1, Math.ceil(Math.max(Math.abs(g.vx), Math.abs(g.vy)) * DT / 3));
-    let nx = g.x, ny = g.y;
+    let nx = g.x, ny = g.y, landed = false;
     for (let k = 0; k < sub; k++) {
       const tx = nx + g.vx * DT / sub, ty = ny + g.vy * DT / sub, rr0 = g.r * 0.7;
       if (solidAt(tx + Math.sign(g.vx) * rr0, ny) || solidAt(tx, ny)) { g.vx *= -0.35; } else nx = tx;
-      if (solidAt(nx, ty + rr0) || solidAt(nx, ty)) break;
+      // Blocked from below counts as landing. Before, a piece resting just
+      // above the floor kept gaining fall speed without moving, never came
+      // to rest and spun on forever, and later shot off with that speed.
+      if (solidAt(nx, ty + rr0) || solidAt(nx, ty)) { landed = g.vy >= 0; break; }
       ny = ty;
     }
-    if (solidAt(nx, ny + g.r * 0.75) && g.vy >= 0) {
+    if ((landed || solidAt(nx, ny + g.r * 0.75)) && g.vy >= 0) {
       if (g.vy > 200 && !g.casing) for (let n = 0; n < 2; n++) spawnParticle(nx, ny - 1, rf(-60, 60), rf(-120, -30), BLOOD);
       // Brass rings on the floor, a magazine clatters.
       if (g.vy > 120) { if (g.mag) magDropSound(); else if (g.casing) casingSound(); }
       g.vy *= -0.3; g.vx *= 0.65; g.vr *= 0.6; ny = g.y;
+      if (Math.abs(g.vy) < 40) g.vy = 0;
+      // Slow on the floor, a casing or a magazine stops turning and settles flat on its side.
+      if ((g.casing || g.mag) && Math.abs(g.vx) < 30) {
+        g.vr *= 0.3;
+        const flat = Math.round(g.rot / Math.PI) * Math.PI;
+        g.rot += (flat - g.rot) * 0.35;
+      }
     }
     g.x = clamp(nx, 1, WW - 1); g.y = ny;
     // A piece that ended up inside a block is lifted back out on top.
@@ -687,12 +697,12 @@ const KNEEL_POSE = dsc([[12, -130], [8, -112], [3, -62], [0, -45], [-2, -84], [4
 const POINT_R = dsc([17, 9, 14, 14, 8, 7, 8, 7, 9, 7, 5, 9, 7, 5]);
 // child, parent, joint on parent end A, min and max degrees
 const JOINTS = [
-  [HEAD, TORSO, true, -35, 35], [PELVIS, TORSO, false, -35, 45],
+  [HEAD, TORSO, true, -35, 35], [PELVIS, TORSO, false, -35, 35],
   // Shoulders turn all the way round. A gap at the top made an arm hung
   // straight up from a pin snap between both limits and shake the body.
   [UARM_L, TORSO, true, 0, 360], [UARM_R, TORSO, true, 0, 360],
   [LARM_L, UARM_L, false, -150, 60], [LARM_R, UARM_R, false, -150, 60],
-  [THIGH_L, PELVIS, false, -120, 30], [THIGH_R, PELVIS, false, -120, 30],
+  [THIGH_L, PELVIS, false, -120, 20], [THIGH_R, PELVIS, false, -120, 20],
   [SHIN_L, THIGH_L, false, -30, 150], [SHIN_R, THIGH_R, false, -30, 150],
   [FOOT_L, SHIN_L, false, -160, -20], [FOOT_R, SHIN_R, false, -160, -20],
 ];
@@ -700,7 +710,11 @@ const JOINTS = [
 const SELF_PAIRS = [];
 for (const a of [P_HEAD, P_NECK]) for (const b of [P_HIP, P_KNEE_L, P_KNEE_R, P_ANKLE_L, P_ANKLE_R, P_TOE_L, P_TOE_R]) SELF_PAIRS.push([a, b]);
 for (const b of [P_KNEE_L, P_KNEE_R, P_ANKLE_L, P_ANKLE_R, P_TOE_L, P_TOE_R]) SELF_PAIRS.push([P_WAIST, b]);
-const IV_TIME = 12, MONITOR_BLOOD = 5;
+// Knees and feet that must stay out of the trunk along its whole length.
+const TRUNK_GUARD = [P_KNEE_L, P_KNEE_R, P_ANKLE_L, P_ANKLE_R, P_TOE_L, P_TOE_R];
+// One blood bag holds 500 ml and runs in over IV_TIME seconds. The monitor
+// cart gives blood without end, MONITOR_BLOOD percent a second (about 30 ml).
+const IV_TIME = 12, IV_ML = 500, MONITOR_BLOOD = 0.6;
 let MUSCLE_HELD = 0.04, LIMIT_SOAK = 0.6;
 const ITERATIONS = 8, HEAD_R = 17 * DS, MAX_STEP = 40, DOLL_GRAVITY = 1300;
 // Impact speeds in units per second. A fall from height h lands at about
@@ -708,7 +722,29 @@ const ITERATIONS = 8, HEAD_R = 17 * DS, MAX_STEP = 40, DOLL_GRAVITY = 1300;
 const SAFE_SPEED = 620, OPEN_SPEED = 1050;
 const IMPACT_MULT = { [HEAD]: 1.6, [TORSO]: 1, [PELVIS]: 0.9, [UARM_L]: 0.7, [UARM_R]: 0.7, [LARM_L]: 0.7, [LARM_R]: 0.7,
   [THIGH_L]: 0.8, [THIGH_R]: 0.8, [SHIN_L]: 0.8, [SHIN_R]: 0.8, [FOOT_L]: 0.6, [FOOT_R]: 0.6 };
-const WOUND_SPEED = 650, SEVER_SPEED = 1450, GIB_SPEED = 2100, MAX_WOUNDS = 40, OUT_BL = 35, AGONY_PN = 65;
+const WOUND_SPEED = 650, SEVER_SPEED = 1450, GIB_SPEED = 2100, MAX_WOUNDS = 40, AGONY_PN = 65;
+// Blood: an adult holds about 5 litres, d.bl is the share left in percent.
+// Up to 15 % lost nothing shows. From 15 % the heart races and the skin pales,
+// from 30 % the doll cannot stand any more, from 40 % it passes out, and at
+// about 55 % lost the body dies. One blood cell on the floor is ML_PER_CELL ml.
+const BLOOD_ML = 5000, ML_PER_CELL = 1, BL_STAND = 70, OUT_BL = 60, BL_DEAD = 45;
+const litres = (pct) => (pct * BLOOD_ML / 100000).toFixed(1).replace(".", ",");
+// Flow of a wound in ml per second at full blood pressure.
+function woundFlow(k, kind, severity, extra, stump) {
+  if (stump) {
+    const c = extra && extra.child;
+    if (c === undefined) return 5;
+    return c === HEAD ? 35 : c === THIGH_L || c === THIGH_R ? 22 : c === UARM_L || c === UARM_R ? 14 : c === SHIN_L || c === SHIN_R ? 11 : 7;
+  }
+  // The carotid artery: about 26 ml a second, in spurts with every beat.
+  if (extra && extra.artery) return 26;
+  const core = k === TORSO || k === PELVIS ? 1.5 : k === HEAD ? 1.3 : 1;
+  if (extra && extra.neck) return 4 * core;
+  if (kind === "shot") return (extra && extra.exit ? 1.8 + severity * 0.6 : 1.2 + severity * 0.4) * core;
+  if (kind === "cut") return (0.5 + ((extra && extra.len) || 1) * 1.1) * core;
+  return severity < 0.9 ? 0 : (0.2 + severity * 0.3) * core;
+}
+const flowOf = (w) => (w.ml !== undefined ? w.ml : w.bleed * 6);
 const COL_SKIN = hex("#ebe7dc"), COL_SKIN_FAR = hex("#c7c2b5"), COL_LINE = hex("#121214");
 const COL_CHAR = hex("#2e2622"), COL_ICE = hex("#a6d6f6"), COL_HURT = hex("#ff6a6a");
 const COL_GORE = hex("#7a0a16"), COL_GORE_DARK = hex("#3a0207"), COL_FLESH = hex("#c43248");
@@ -898,7 +934,7 @@ class Doll {
     // Internal bleeding grows with the damage. A stopped heart bleeds less.
     let bleed = 0;
     // Organs in a lost body part bleed out through the stump instead.
-    ORGANS.forEach((o, n) => { const loss = 1 - this.organ[n] / 100; if (loss > 0.02 && this.attached(o.part)) bleed += o.bleed * Math.pow(loss, 1.3); });
+    ORGANS.forEach((o, n) => { const loss = 1 - this.organ[n] / 100; if (loss > 0.02 && this.attached(o.part)) bleed += o.bleed * 0.35 * Math.pow(loss, 1.3); });
     if (this.arrest || this.dead) bleed *= 0.3;
     this.organBleed = bleed;
     this.bl = Math.max(0, this.bl - bleed * DT);
@@ -944,12 +980,13 @@ class Doll {
     if (this.dead) return 0;
     let eta = Infinity;
     let wound = 0;
-    for (const w of this.wounds) if (this.attached(w.part)) wound += w.bleed * 0.8;
+    const pr = this.bloodPressure();
+    for (const w of this.wounds) if (this.attached(w.part) && !w.bandaged) wound += flowOf(w) * pr / (BLOOD_ML / 100);
     this.woundBleed = wound;
     let loss = this.organBleed + wound + this.burnLoss;
-    if (this.iv > 0) loss -= 8;
-    if (this.monitor) loss -= MONITOR_BLOOD;
-    if (loss > 0.05) { eta = Math.max(0, this.bl - 8) / loss; this.etaWhy = this.burnLoss > this.organBleed + wound ? "burn" : "blood"; }
+    if (this.iv > 0) loss -= IV_ML / IV_TIME / (BLOOD_ML / 100);
+    if (this.monitor && !this.monitor.broken && this.monitor.bag !== false) loss -= MONITOR_BLOOD;
+    if (loss > 0.005) { eta = Math.max(0, this.bl - BL_DEAD) / loss; this.etaWhy = this.burnLoss > this.organBleed + wound ? "burn" : "blood"; }
     // Air: what the lungs bring in against what the body loses.
     const breath = (this.organ[ORGAN.lungL] + this.organ[ORGAN.lungR]) / 200;
     const gain = this.headUnder ? -11 : this.arrest ? 0 : 20 * breath;
@@ -966,10 +1003,57 @@ class Doll {
   // An organ lost health: note what did it.
   orgHit(n) { if (this.src) (this.orgBy || (this.orgBy = []))[n] = this.src; }
 
+  // Is the point on the neck, between the trunk and the head box?
+  onNeck(x, y) {
+    if (!this.attached(HEAD) || this.gone[HEAD]) return false;
+    const ax = this.x[P_NECK], ay = this.y[P_NECK], l = Math.hypot(this.x[P_HEAD] - ax, this.y[P_HEAD] - ay) || 1;
+    const ux = (this.x[P_HEAD] - ax) / l, uy = (this.y[P_HEAD] - ay) / l;
+    const along = (x - ax) * ux + (y - ay) * uy, side = (x - ax) * -uy + (y - ay) * ux;
+    return along > -5 && along < NECK_LEN + 4 && Math.abs(side) < 10;
+  }
+  // Does a bullet on this line pass through the neck? The trunk's round top
+  // reaches up beside the neck, so the hit point alone is not enough.
+  neckOnRay(x, y, dx, dy) {
+    if (!this.attached(HEAD) || this.gone[HEAD]) return false;
+    const ax = this.x[P_NECK], ay = this.y[P_NECK], l = Math.hypot(this.x[P_HEAD] - ax, this.y[P_HEAD] - ay) || 1;
+    const ux = (this.x[P_HEAD] - ax) / l, uy = (this.y[P_HEAD] - ay) / l;
+    const r = segSeg(x - dx * 40, y - dy * 40, x + dx * 40, y + dy * 40, ax + ux * 2, ay + uy * 2, ax + ux * NECK_LEN, ay + uy * NECK_LEN);
+    return r.d < 5.5;
+  }
+  // A wound in the neck. The carotid arteries run on both sides of it: a
+  // bullet or a deep cut often opens one, and then the blood spurts out in
+  // time with the heart, about 26 ml a second.
+  neckWound(kind, s, chance, extra = {}) {
+    const artery = Math.random() < chance;
+    this.addWound(HEAD, 0, s, 2, false, kind, { neck: true, artery, ...extra });
+    if (artery) this.logEvent("Halsschlagader offen" + (this.src && this.src.kind !== "impact" ? " · " + this.src.tag : ""));
+    this.hurtPart(HEAD, 20);
+    this.pn = Math.min(100, this.pn + 35);
+    this.damaged();
+    return artery;
+  }
+  // A bullet through the neck: entry and exit, a good chance to open the
+  // carotid, and a hard one can break the spine and take the head.
+  neckShot(x, y, dx, dy, wp) {
+    fleshHitSound();
+    const side = Math.sign(dx * (this.y[P_HEAD] - this.y[P_NECK]) - dy * (this.x[P_HEAD] - this.x[P_NECK])) || 1;
+    this.neckWound("shot", side * 0.8, 0.5 + wp.dmg * 0.2);
+    this.addWound(HEAD, 0, -side * 0.8, 1.2 + wp.dmg, false, "shot", { exit: true, neck: true });
+    this.burst(x + dx * 8, y + dy * 8, 22 + Math.round(wp.dmg * 14), dx, dy, 360);
+    splatAround(x + dx * 50, y + dy * 50, 9);
+    for (const i of [P_NECK, P_HEAD]) this.push(i, dx * wp.push * 0.5, dy * wp.push * 0.5);
+    this.hits[HEAD]++;
+    this.stagger = Math.max(this.stagger, 1.4);
+    this.ko -= 20 * wp.dmg;
+    this.hitReact = { t: 0.7, k: HEAD, tt: 0, s: side * 0.8 };
+    if (wp.dmg >= 2 && Math.random() < 0.35) { this.severCd = 0; this.sever(HEAD); }
+  }
+
   // Bullet hit: entry and exit wound, blood spray, a shove and a chance to lose the limb.
   shot(k, x, y, dx, dy, wp) {
     if (this.gone[k]) return;
     this.hurtBy("shot", wp.name, wp.dat);
+    if ((k === HEAD || k === TORSO) && (this.onNeck(x, y) || this.neckOnRay(x, y, dx, dy))) { this.neckShot(x, y, dx, dy, wp); return; }
     const [ax, ay, bx, by] = [this.x[this.pa[k]], this.y[this.pa[k]], this.x[this.pb[k]], this.y[this.pb[k]]];
     const sx = bx - ax, sy = by - ay, l2 = sx * sx + sy * sy || 1;
     const t = k === HEAD ? Math.random() : clamp(((x - ax) * sx + (y - ay) * sy) / l2, 0, 1);
@@ -994,7 +1078,7 @@ class Doll {
       this.ko -= 45 * wp.dmg;
       if (Math.random() < wp.headKill) { this.organ[ORGAN.brain] = 0; this.orgHit(ORGAN.brain); }
     } else if (k === TORSO) {
-      this.bl = Math.max(0, this.bl - 4 * wp.dmg);
+      this.bl = Math.max(0, this.bl - 1.5 * wp.dmg);
     } else if (k !== PELVIS && this.dmg[k] >= 100 && this.hits[k] >= 8 && Math.random() < wp.sever) {
       // A limb only comes off after it has taken a lot of hits.
       this.severCd = 0;
@@ -1012,7 +1096,7 @@ class Doll {
     // The second barb lands a hand's width lower on the body.
     const k2 = k === HEAD ? TORSO : k === TORSO ? (Math.random() < 0.5 ? TORSO : PELVIS) : k;
     const t2 = k2 === k ? clamp(t + rf(0.25, 0.4), 0, 0.95) : rf(0.1, 0.5);
-    for (const [pk, pt] of [[k, t], [k2, t2]]) { this.addWound(pk, pt, s, 0.3, false, "hit"); this.wounds[this.wounds.length - 1].bleed = 0; }
+    for (const [pk, pt] of [[k, t], [k2, t2]]) { this.addWound(pk, pt, s, 0.3, false, "hit"); const w = this.wounds[this.wounds.length - 1]; w.bleed = 0; w.ml = 0; }
     this.taseT = 5;
     for (const j of this.joints) j.taseRel = this.jointRel(j);
     this.stagger = Math.max(this.stagger, 5.5);
@@ -1026,6 +1110,18 @@ class Doll {
   preciseShot(hit, wp, dir = 0) {
     const { k, t, s, organs } = hit;
     this.hurtBy("shot", wp.name, wp.dat);
+    if (hit.neck) {
+      // Into the neck from the front: the carotid sits close under the skin.
+      fleshHitSound();
+      this.neckWound("shot", s || 0.4, 0.55 + wp.dmg * 0.2);
+      this.addWound(HEAD, 0, -(s || 0.4), 1.2 + wp.dmg, false, "shot", { exit: true, neck: true });
+      const [x, y] = this.woundPos({ part: HEAD, t: 0, s: s || 0.4, neck: true, stump: false });
+      this.burst(x, y, 14, (dir || 1) * 0.6, -0.4, 220);
+      splatAround(x + rf(-8, 8), y + rf(-6, 8), 7);
+      this.hits[HEAD]++; this.stagger = Math.max(this.stagger, 1.2);
+      this.hitReact = { t: 0.7, k: HEAD, tt: 0, s: s || 0.4 };
+      return [x, y];
+    }
     fleshHitSound();
     this.addWound(k, t, s, 1.1 + wp.dmg * 0.7, false, "shot");
     // The exit hole sits on the back, out of sight in the front view, but it bleeds.
@@ -1052,7 +1148,7 @@ class Doll {
     if (k === HEAD) {
       this.ko -= 45 * wp.dmg;
       if (hit.crit) { this.organ[ORGAN.brain] = 0; this.orgHit(ORGAN.brain); }
-    } else if (k === TORSO) this.bl = Math.max(0, this.bl - 4 * wp.dmg);
+    } else if (k === TORSO) this.bl = Math.max(0, this.bl - 1.5 * wp.dmg);
     else if (k !== PELVIS && this.dmg[k] >= 100 && this.hits[k] >= 8 && Math.random() < wp.sever) { this.severCd = 0; this.sever(k); }
     return [x, y];
   }
@@ -1104,7 +1200,7 @@ class Doll {
     for (let it = 0; it < ITERATIONS; it++) {
       for (let k = 0; k < PART_COUNT; k++) this.solveDistance(this.pa[k], this.pb[k], this.restLen[k]);
       this.solveJoints(this.frozen ? 0.5 : this.taseT > 0 ? 0.45 : this.rigorOn ? 0.45 * this.dc.rigor : 0, false);
-      if (it % 2 === 1) { this.noTunnel(); for (let i = 0; i < this.x.length; i++) this.pushOut(i); this.pushOutSegments(); this.selfCollide(); this.noTunnel(); }
+      if (it % 2 === 1) { this.noTunnel(); for (let i = 0; i < this.x.length; i++) this.pushOut(i); this.pushOutSegments(); this.selfCollide(); this.legsOutOfTrunk(); this.noTunnel(); }
     }
     for (const i of this.pins.keys()) this.holdPin(i);
     // A stiff body moves as one block: whatever the points do apart from
@@ -1438,7 +1534,7 @@ class Doll {
           this.gaspT = (this.gaspT === undefined ? rf(1.5, 3.5) : this.gaspT) - DT;
           if (this.gaspT <= 0) { this.gaspT = rf(2.5, 5); this.push(this.pa[TORSO], 0, -0.9); this.push(P_HEAD, rf(-0.2, 0.2), -0.5); }
         } else {
-          const need = clamp((100 - this.o2) / 60 + (100 - this.bl) / 80, 0, 1), rate = 1.6 + 3.2 * need;
+          const need = clamp((100 - this.o2) / 60 + (100 - this.bl) / 40, 0, 1), rate = 1.6 + 3.2 * need;
           this.push(this.pa[TORSO], 0, Math.sin(now * rate + this.id) * (0.012 + 0.018 * need));
         }
       }
@@ -1608,13 +1704,16 @@ class Doll {
     this.armsBusy = busyHands;
     if (settings.front) this.keepElbowsOut();
 
-    // An awake doll on the floor keeps trying to get up. With a bad leg it
-    // struggles halfway and falls back down.
+    // An awake doll on the floor tries to get up. With a bad leg it struggles
+    // halfway and falls back down, waits longer each time and gives up after
+    // two tries. Once the leg works again (bandaged, healed) it tries anew.
     this.getUpCd = Math.max(0, this.getUpCd - DT);
     this.stillTime = maxV < 2.5 ? this.stillTime + DT : 0;
     const hasLeg = this.attached(PELVIS) && ((this.attached(THIGH_L) && this.attached(SHIN_L)) || (this.attached(THIGH_R) && this.attached(SHIN_R)));
-    const able = hasLeg && this.pn < 90 && this.bl > 38 && this.burn <= 0 && !this.headUnder;
-    if (this.getUp <= 0 && !this.standing && able && this.stillTime > 0.8 && this.getUpCd <= 0) { this.getUp = 1.6; this.getUpCd = 3.2; }
+    const able = hasLeg && this.pn < 90 && this.bl > BL_STAND && this.burn <= 0 && !this.headUnder;
+    if (this.legsWork()) this.getUpFails = 0;
+    const tries = this.legsWork() || (this.getUpFails || 0) < 2;
+    if (this.getUp <= 0 && !this.standing && able && tries && this.stillTime > 0.8 && this.getUpCd <= 0) { this.getUp = 1.6; this.getUpCd = 3.2; }
     if (this.getUp > 0) {
       if (!able) { this.getUp = 0; return; }
       this.getUp -= DT;
@@ -1622,7 +1721,12 @@ class Doll {
       this.stagger = 0;
       if (this.getUp <= 0) this.getUpGrace = 0.8;
       const p = 1 - Math.max(0, this.getUp) / 1.6;
-      if (!this.legsWork() && p > 0.55) { this.getUp = 0; this.stagger = 1; return; }
+      if (!this.legsWork() && p > 0.55) {
+        this.getUpFails = (this.getUpFails || 0) + 1;
+        this.getUp = 0; this.stagger = 1; this.getUpCd = 6 + 6 * this.getUpFails;
+        this.pn = Math.min(100, this.pn + 12);
+        return;
+      }
       let feetX = 0, n = 0, ground = 0;
       for (const k of [FOOT_L, FOOT_R]) if (this.attached(k)) { feetX += this.x[this.pa[k]]; n++; }
       for (let i = 0; i < this.x.length; i++) ground = Math.max(ground, this.y[i] + this.rad[i]);
@@ -1667,7 +1771,7 @@ class Doll {
     this.getUpGrace = Math.max(0, (this.getUpGrace || 0) - DT);
     if (nv > 5 && this.getUpGrace <= 0) this.stagger = Math.max(this.stagger, 1.4);
     if (this.stagger > 0) return;
-    if (this.dead || this.frozen || this.isOut() || this.pn > 90) return;
+    if (this.dead || this.frozen || this.isOut() || this.pn > 90 || this.bl < BL_STAND) return;
     if (!this.legsWork()) return;
     let grounded = false, feetX = 0, feet = 0;
     for (const k of [FOOT_L, FOOT_R]) {
@@ -1883,7 +1987,8 @@ class Doll {
       // Bruises on one spot grow together. Every bullet and every cut keeps its own hole.
       const exit = !!(extra && extra.exit), near = kind === "hit" ? 0.2 : 0.035;
       for (const w of this.wounds) {
-        if (w.part === k && !w.stump && w.kind === kind && !!w.exit === exit && Math.abs(w.t - t) < near && Math.abs(w.s - s) < 0.25) {
+        if (w.part === k && !w.stump && w.kind === kind && !!w.exit === exit && !w.neck && Math.abs(w.t - t) < near && Math.abs(w.s - s) < 0.25) {
+          w.ml = flowOf(w) + woundFlow(k, kind, severity, extra, false) * 0.35;
           w.bleed = Math.min(1, w.bleed + severity * 0.12);
           w.size = Math.min(3.5, w.size + 0.5);
           return;
@@ -1894,8 +1999,9 @@ class Doll {
       const idx = this.wounds.findIndex((w) => !w.stump);
       this.wounds.splice(idx >= 0 ? idx : 0, 1);
     }
-    if (!stump && !(extra && extra.exit)) this.logEvent((WOUND_KIND[kind] || "Wunde") + " " + PART_NAME[k] + (this.src && this.src.kind !== "impact" ? " · " + this.src.tag : ""));
-    this.wounds.push({ part: k, t: clamp(t, 0, 1), s: clamp(s, -1, 1), bleed: severity * 0.25,
+    if (!stump && !(extra && extra.exit)) this.logEvent((WOUND_KIND[kind] || "Wunde") + " " + (extra && extra.neck ? "HALS" : PART_NAME[k]) + (this.src && this.src.kind !== "impact" ? " · " + this.src.tag : ""));
+    const ml = woundFlow(k, kind, severity, extra, stump);
+    this.wounds.push({ part: k, t: clamp(t, 0, 1), s: clamp(s, -1, 1), bleed: ml > 0 ? clamp(ml / 6, 0.15, 1) : 0, ml,
       size: severity < 1.5 ? 1.4 : 2.2, stump, kind, rot: rf(-0.6, 0.6), seed: Math.random() * 6.28, drip: 0, born: performance.now() / 1000, by: this.src, ...extra });
   }
 
@@ -1952,6 +2058,21 @@ class Doll {
   bladeHit(ax, ay, bx, by, speed) {
     if (speed < 200) return false;
     let hit = false;
+    // A cut across the neck: a fast one opens the carotid most of the time.
+    if (this.attached(HEAD) && !this.gone[HEAD] && this.bladeCd[HEAD] <= 0) {
+      const nx = this.x[P_NECK], ny = this.y[P_NECK], l = Math.hypot(this.x[P_HEAD] - nx, this.y[P_HEAD] - ny) || 1;
+      const ex = nx + (this.x[P_HEAD] - nx) / l * NECK_LEN, ey = ny + (this.y[P_HEAD] - ny) / l * NECK_LEN;
+      const r = segSeg(ax, ay, bx, by, nx, ny, ex, ey);
+      if (r.d < 7) {
+        hit = true; this.bladeCd[HEAD] = 0.3;
+        this.hurtBy("cut", "Messer");
+        sliceSound();
+        this.neckWound("cut", Math.random() < 0.5 ? -0.7 : 0.7, speed > 500 ? 0.8 : 0.4, { ang: Math.PI / 2, len: clamp(speed / 700, 0.8, 2.4) });
+        const ll = Math.hypot(bx - ax, by - ay) || 1;
+        this.burst(r.qx, r.qy, 26, (bx - ax) / ll, (by - ay) / ll, 220);
+        if (speed > 1100 && this.severCd <= 0 && Math.random() < 0.6) this.sever(HEAD);
+      }
+    }
     for (let k = 0; k < PART_COUNT; k++) {
       if (this.gone[k]) continue;
       const p0x = this.x[this.pa[k]], p0y = this.y[this.pa[k]];
@@ -2124,7 +2245,7 @@ class Doll {
     if (!this.attached(HEAD) || this.cause === "KOPF VERLOREN" || this.cause === "VERBRANNT" || brain <= 0) return "Keine Chance mehr";
     if (this.deadT > 45) return "Zu lange tot";
     if (heart <= 0) return "Das Herz ist zerstört";
-    if (this.bl <= 15) return this.iv > 0 ? "Noch zu wenig Blut, kurz warten" : "Zu wenig Blut: erst Infusion, dann schocken";
+    if (this.bl <= BL_DEAD + 5) return this.iv > 0 ? "Noch zu wenig Blut, kurz warten" : "Zu wenig Blut: erst Infusionen, dann schocken";
     if (Math.random() < 0.3) return "Kein Rhythmus, nochmal!";
     this.dead = false; this.cause = ""; this.report = null; this.dyingTimer = 0; this.deadT = 0; this.dc = null; this.rigorOn = false;
     this.arrest = false; this.noAir = 0; this.o2 = Math.max(this.o2, 60); this.hr = 60;
@@ -2135,10 +2256,14 @@ class Doll {
   // Adrenaline: wakes it up, the heart races, pain fades for a while. A
   // second shot too soon strains the heart.
   // Heavy blood loss sends the body into shock: a fine, fast trembling.
+  // An unconscious body lies still: the random shaking made it twitch oddly
+  // on the floor. Awake, the tremor is a fine, even trembling of the hands
+  // and the head instead of random jolts.
   shockTremor() {
-    const sh = clamp((50 - this.bl) / 30, 0, 1);
-    if (sh <= 0 || this.dead || this.arrest || this.frozen) return;
-    for (const i of [P_NECK, P_HAND_L, P_HAND_R, P_HEAD]) this.push(i, rf(-0.12, 0.12) * sh, rf(-0.08, 0.08) * sh);
+    const sh = clamp((80 - this.bl) / 20, 0, 1);
+    if (sh <= 0 || this.dead || this.arrest || this.frozen || this.isOut()) return;
+    const t = performance.now() / 1000 * 52 + this.id * 7;
+    [P_HAND_L, P_HAND_R, P_HEAD].forEach((i, n) => this.push(i, Math.sin(t + n * 2.1) * 0.05 * sh, Math.cos(t * 1.13 + n) * 0.035 * sh));
   }
   adrenaline() {
     if (this.dead) return "Zu spät";
@@ -2250,9 +2375,12 @@ class Doll {
 
     if (this.iv > 0) this.updateInfusion();
 
-    // Bleeding: drips from every open wound, spurts from stumps on each heartbeat.
-    let flow = this.bl <= 0 ? 0 : clamp(this.bl / 100, 0.2, 1);
-    if (this.dead) flow *= 0.25;
+    // Bleeding: every open wound loses its real amount of blood, pushed by
+    // the heart. Each ML_PER_CELL ml becomes one drop: it runs down the body
+    // and falls off, and arteries and stumps spurt it out with every beat.
+    // Nothing stops by itself, only a bandage does. A stopped heart leaves a
+    // slow seep that goes on after death.
+    const pr = this.bloodPressure();
     for (const w of this.wounds) {
       if (w.bleed <= 0) continue;
       const loose = !this.attached(w.part);
@@ -2261,11 +2389,13 @@ class Doll {
         w.soak = Math.min(1, (w.soak || 0) + w.bleed * DT * 0.25);
         if (w.band) w.band.soak = Math.max(w.band.soak, w.soak);
         w.bleed = Math.max(0, w.bleed - DT * (w.stump ? 0.45 : 1.1));
+        if (w.bleed <= 0) w.ml = 0;
         continue;
       }
+      // A cut off limb only holds the little blood that was in it.
       if (loose) w.bleed = Math.max(0, w.bleed - 0.07 * DT);
       this.stain[w.part] = Math.min(0.75, this.stain[w.part] + w.bleed * DT * 0.08);
-      const f = loose ? 0.6 : flow;
+      const f = loose ? 0.4 * w.bleed : pr;
       // Blood runs down the body from the wound for as long as it bleeds,
       // a few pixels a second. Turned over or lifted, the old run stays on
       // the skin as a stain and a new one starts downward from the wound.
@@ -2274,25 +2404,40 @@ class Doll {
       // Small turns bend the running blood; it keeps going down from its tip.
       // Only when the body is turned far over does a new run start at the wound.
       if (Math.abs(wrapPi(pa - w.runAng)) > 1.2) { w.runAng = pa; w.newStream = true; w.drip = 0; }
-      w.drip = Math.min(90, (w.drip || 0) + (0.6 + w.bleed) * f * DT * 5);
+      w.drip = Math.min(90, (w.drip || 0) + (0.6 + w.bleed) * Math.max(0.15, f) * DT * 5);
       if (f <= 0) continue;
-      // Where the run leaves the body, drops fall off to the floor.
-      if (w.dripOut && w.dripEnd && Math.random() < (0.5 + w.bleed) * f * DT * 4) spawnParticle(w.dripEnd[0] + rf(-0.8, 0.8), w.dripEnd[1], rf(-4, 4), rf(10, 30), BLOOD);
+      w.acc = Math.min(60, (w.acc || 0) + flowOf(w) * f * DT / ML_PER_CELL);
       const [wx, wy] = this.woundPos(w);
-      if (Math.random() < w.bleed * DT * 12 * f) {
-        const [nx, ny] = this.woundNormal(w), s = rf(10, 50);
-        spawnParticle(wx, wy, nx * s + rf(-12, 12), ny * s, BLOOD);
-      }
-      const pump = loose ? Math.random() < DT * 1.5 : this.beat;
-      if (w.stump && pump) {
-        const [ux, uy] = this.stumpDir(w);
-        const n = 5 + Math.floor(w.bleed * 3);
+      const spurt = (w.stump || w.artery) && !loose && !this.dead && !this.arrest;
+      if (spurt) {
+        // An artery spurts in time with the heart, far and hard while the
+        // pressure holds, weaker as the blood runs out.
+        if (!this.beat) continue;
+        const [ux, uy] = w.stump ? this.stumpDir(w) : this.woundNormal(w);
+        const n = Math.floor(w.acc), reach = (w.artery ? 260 : 200) * (0.35 + 0.65 * pr);
+        w.acc -= n;
         for (let q = 0; q < n; q++) {
-          const a = rf(-0.3, 0.3), s = rf(110, 240) * f;
-          spawnParticle(wx, wy, (ux * Math.cos(a) - uy * Math.sin(a)) * s, (ux * Math.sin(a) + uy * Math.cos(a)) * s, BLOOD);
+          const a = rf(-0.22, 0.22), sp = reach * rf(0.55, 1.05);
+          spawnParticle(wx, wy, (ux * Math.cos(a) - uy * Math.sin(a)) * sp, (ux * Math.sin(a) + uy * Math.cos(a)) * sp - (w.artery ? 40 : 0), BLOOD);
         }
+        continue;
+      }
+      // Seeping wounds: the drops leave where the run leaves the body, or
+      // straight from the wound while the run is short.
+      for (let q = 0; q < 8 && w.acc >= 1; q++) {
+        w.acc -= 1;
+        if (w.dripOut && w.dripEnd) spawnParticle(w.dripEnd[0] + rf(-0.8, 0.8), w.dripEnd[1], rf(-4, 4), rf(10, 30), BLOOD);
+        else { const [nx, ny] = this.woundNormal(w), sp = rf(10, 40) * (0.5 + 0.5 * pr); spawnParticle(wx, wy, nx * sp + rf(-8, 8), ny * sp, BLOOD); }
       }
     }
+  }
+
+  // How hard the blood is pushed out of the wounds: full with a working
+  // heart and enough blood, weaker as the pressure falls, and a slow seep
+  // once the heart stands still, also after death, until little is left.
+  bloodPressure() {
+    if (this.dead || this.arrest) return this.bl > 20 ? 0.12 : 0;
+    return clamp((this.bl - 30) / 45, 0.3, 1) * clamp(this.hr / 72, 0.7, 1.3);
   }
 
   // ------------------------------------------------ infusion
@@ -2418,10 +2563,10 @@ class Doll {
   // for a moment and then holds the bleeding shut.
   bandage(w) {
     const k = w.part, near = k === TORSO || k === PELVIS ? 0.3 : 0.25;
-    let band = this.bands.find((b) => b.part === k && b.stump === w.stump && (k === HEAD || w.stump || Math.abs(b.t - w.t) < near));
-    if (!band) { band = { part: k, t: k === HEAD ? 0.8 : w.t, stump: w.stump, soak: 0 }; this.bands.push(band); }
+    let band = this.bands.find((b) => b.part === k && b.stump === w.stump && !!b.neck === !!w.neck && (k === HEAD || w.stump || Math.abs(b.t - w.t) < near));
+    if (!band) { band = { part: k, t: k === HEAD ? (w.neck ? 0.03 : 0.8) : w.t, stump: w.stump, soak: 0, neck: !!w.neck }; this.bands.push(band); }
     for (const o of this.wounds) {
-      if (o.bandaged || o.part !== k || o.stump !== w.stump) continue;
+      if (o.bandaged || o.part !== k || o.stump !== w.stump || !!o.neck !== !!w.neck) continue;
       if (o !== w && k !== HEAD && !w.stump && Math.abs(o.t - band.t) > near) continue;
       o.bandaged = true; o.band = band; o.soak = clamp(o.bleed * 0.8, 0.12, 0.9);
       band.soak = Math.max(band.soak, o.soak);
@@ -2432,7 +2577,7 @@ class Doll {
     this.wounds = this.wounds.filter((w) => w.stump);
     this.fire.fill(0); this.ember.fill(0); this.fireCov.fill(0); this.burnDeg.fill(0); this.cloth.fill(1); this.hair = 1; this.burnLoss = 0; this.tbsa = 0;
     this.bands = this.bands.filter((b) => b.stump);
-    for (const w of this.wounds) w.bleed = 0;
+    for (const w of this.wounds) { w.bleed = 0; w.ml = 0; }
     for (let k = 0; k < PART_COUNT; k++) {
       this.char[k] = 0; this.stain[k] = 0;
       if (this.attached(k)) { this.dmg[k] = 0; this.hits[k] = 0; }
@@ -2452,17 +2597,17 @@ class Doll {
     this.iv = IV_TIME;
   }
 
-  // A blood bag refills blood, closes wounds and wakes the doll up.
+  // A blood bag gives 500 ml of blood and wakes the doll up. It does not
+  // close wounds: only a bandage stops the bleeding.
   updateInfusion() {
     this.iv = Math.max(0, this.iv - DT);
     const i = this.ivPoint();
     if (this.iv <= 0) addGhost({ kind: "iv", x: this.ivX, y: this.ivY, d: this, tx: this.x[i], ty: this.y[i], level: 0.05, dur: 1.1 });
     this.ivX = lerp(this.ivX, this.ivTargetX(i), 0.08);
     this.ivY = lerp(this.ivY, clamp(this.y[i] - 120, 48, FLOOR_Y - 60), 0.08);
-    this.bl = Math.min(100, this.bl + 8 * DT);
+    this.bl = Math.min(100, this.bl + IV_ML / IV_TIME / (BLOOD_ML / 100) * DT);
     this.pn = Math.max(0, this.pn - 12 * DT);
     if (!this.arrest) this.o2 = Math.min(100, this.o2 + 10 * DT);
-    for (const w of this.wounds) if (this.attached(w.part)) w.bleed = Math.max(0, w.bleed - (w.stump ? 0.3 : 0.5) * DT);
     for (let k = 0; k < PART_COUNT; k++) this.stain[k] = Math.max(0, this.stain[k] - 0.05 * DT);
     if (this.koTimer > 0) this.koTimer -= DT * 2;
     if (!this.dead) this.ko = Math.min(100, this.ko + 9 * DT);
@@ -2473,6 +2618,10 @@ class Doll {
     const bx = this.x[this.pb[w.part]], by = this.y[this.pb[w.part]];
     if (w.part === HEAD) {
       if (w.stump) return [ax, ay];
+      if (w.neck) {
+        const l = Math.hypot(bx - ax, by - ay) || 1, ux = (bx - ax) / l, uy = (by - ay) / l, o = w.s * 4;
+        return [ax + ux * NECK_LEN * 0.55 - uy * o, ay + uy * NECK_LEN * 0.55 + ux * o];
+      }
       const a = w.t * Math.PI * 2;
       return [bx + Math.cos(a) * HEAD_R * 0.62, by + Math.sin(a) * HEAD_R * 0.62];
     }
@@ -2484,7 +2633,7 @@ class Doll {
   }
 
   woundNormal(w) {
-    if (w.part === HEAD) return [Math.cos(w.t * Math.PI * 2), Math.sin(w.t * Math.PI * 2)];
+    if (w.part === HEAD && !w.neck) return [Math.cos(w.t * Math.PI * 2), Math.sin(w.t * Math.PI * 2)];
     const ax = this.x[this.pa[w.part]], ay = this.y[this.pa[w.part]];
     const bx = this.x[this.pb[w.part]], by = this.y[this.pb[w.part]];
     const l = Math.hypot(bx - ax, by - ay) || 1, sg = w.s >= 0 ? 1 : -1;
@@ -2503,9 +2652,14 @@ class Doll {
   updateVitals() {
     this.beat = false;
     this.sinceDamage += DT;
+    // Blood lost through the wounds this step, from their real flow.
     let bleedTotal = 0;
-    for (const w of this.wounds) if (this.attached(w.part)) bleedTotal += w.bleed;
-    this.bl = Math.max(0, this.bl - bleedTotal * DT * (this.dead ? 0.2 : 0.8));
+    const pr = this.bloodPressure();
+    for (const w of this.wounds) if (this.attached(w.part) && !w.bandaged && w.bleed > 0) bleedTotal += flowOf(w);
+    this.bl = Math.max(0, this.bl - bleedTotal * pr / (BLOOD_ML / 100) * DT);
+    // A cut carotid starves the brain: the doll blacks out after 10 to 15 seconds.
+    const artery = !this.dead && this.wounds.some((w) => w.artery && !w.bandaged && w.bleed > 0);
+    this.arteryT = artery ? (this.arteryT || 0) + DT : Math.max(0, (this.arteryT || 0) - DT * 2);
 
     if (this.headUnder && !this.dead) this.o2 = Math.max(0, this.o2 - 11 * DT);
     else if (!this.arrest) this.o2 = Math.min(100, this.o2 + 20 * DT * (this.organ[ORGAN.lungL] + this.organ[ORGAN.lungR]) / 200);
@@ -2518,23 +2672,23 @@ class Doll {
     this.updateOrgans();
     this.noAir = this.o2 <= 0 ? this.noAir + DT : 0;
 
-    this.healing = !this.dead && this.sinceDamage > 4 && this.burn <= 0 && !this.headUnder && this.organBleed < 0.1 && this.burnLoss < 0.1 && !this.arrest &&
+    this.healing = !this.dead && this.sinceDamage > 4 && bleedTotal <= 0 && this.burn <= 0 && !this.headUnder && this.organBleed < 0.1 && this.burnLoss < 0.1 && !this.arrest &&
       (this.bl < 99.9 || this.pn > 0.5 || this.ko < 99 || this.o2 < 99 || bleedTotal > 0 || this.organ.some((v) => v < 100));
     if (this.healing || this.iv > 0) {
       for (let k = 0; k < PART_COUNT; k++) if (this.attached(k)) this.dmg[k] = Math.max(0, this.dmg[k] - (this.iv > 0 ? 12 : 3) * DT);
     }
     if (this.healing) {
-      // Only small wounds close by themselves. A real wound keeps bleeding
-      // until a bandage or a blood bag stops it, and no blood comes back meanwhile.
-      if (bleedTotal < 0.4) this.bl = Math.min(100, this.bl + 1.2 * DT);
+      // Rest eases the pain. Lost blood does not come back by itself, and no
+      // wound closes on its own: only a bandage stops it, blood bags refill.
       this.pn = Math.max(0, this.pn - 6 * DT);
-      for (const w of this.wounds) if (this.attached(w.part) && !w.stump && w.bleed < 0.4) w.bleed = Math.max(0, w.bleed - 0.05 * DT);
     }
     this.pn = Math.max(0, this.pn - 4.5 * DT);
 
     let cap = 100;
-    if (this.bl < 55) cap = (this.bl - 30) * 4;
+    // Blood loss dims the mind from 30 % lost and puts it out at 40 %.
+    if (this.bl < BL_STAND + 2) cap = (this.bl - (OUT_BL - 2)) * 7;
     if (this.o2 < 40) cap = Math.min(cap, this.o2 * 2.5);
+    if (this.arteryT > 0) cap = Math.min(cap, 100 - this.arteryT * 8);
     if (this.frozen) cap = Math.min(cap, 30);
     if (this.pn > 85) cap = Math.min(cap, 60);
     cap = Math.max(0, cap);
@@ -2547,7 +2701,7 @@ class Doll {
     if (this.ko > 30) this.koLatched = false;
     if (this.koTimer > 0) { this.koTimer -= DT; this.ko = Math.min(this.ko, 10); }
 
-    if (!this.dead && (this.bl <= 8 || this.noAir > 6)) {
+    if (!this.dead && (this.bl <= BL_DEAD || this.noAir > 6)) {
       // Name what killed the doll: a stopped heart, no air or blood loss.
       if (this.arrest) this.cause = ORGAN_DEATH.heart;
       else if (this.noAir > 6) this.cause = this.headUnder ? "ERTRUNKEN" : ORGAN_DEATH.lungL;
@@ -2559,7 +2713,9 @@ class Doll {
       this.die();
     }
 
-    let target = 72 + this.pn * 0.5 + Math.max(0, 100 - this.bl) * 0.9;
+    // The heart races to make up for lost blood, near the end it slows down.
+    let target = 72 + this.pn * 0.5 + Math.max(0, 100 - this.bl) * 1.8;
+    if (this.bl < 52) target -= (52 - this.bl) * 9;
     // Adrenaline: the heart races and pain is pushed away for a while.
     if (this.adrenT > 0) { this.adrenT -= DT; target += 50; this.pn = Math.min(this.pn, 35); }
     if (this.o2 < 50) target -= (50 - this.o2) * 1.4;
@@ -2595,6 +2751,8 @@ class Doll {
     const bleeding = this.wounds.some((w) => w.bleed > 0 && this.attached(w.part));
     return {
       OUT: this.isOut(), BLEED: bleeding && this.bl > 0, FIRE: this.burn > 0,
+      ARTERY: this.wounds.some((w) => w.artery && w.bleed > 0 && !w.bandaged) && !this.dead,
+      SHOCK: !this.dead && this.bl < 85,
       CHOKE: this.headUnder && !this.dead, AGONY: this.pn >= AGONY_PN && !this.isOut(),
       HEAL: this.healing || this.iv > 0, BLADE: this.bladeTimer > 0, TORN: this.severed.includes(true), FROZEN: this.frozen,
       BROKEN: this.broken.some((b, k) => b && this.attached(k)), PINNED: this.pins.size > 0,
@@ -2617,6 +2775,32 @@ class Doll {
       if (ws <= 0) continue;
       this.x[a] -= dx * push * wa / ws; this.y[a] -= dy * push * wa / ws;
       this.x[b] += dx * push * wb / ws; this.y[b] += dy * push * wb / ws;
+    }
+  }
+
+  // Knees and feet never pass through the trunk. The points only met the
+  // ends of the trunk before, so a leg could slide through its middle. Each
+  // one is pushed back out to the side it was on a moment ago.
+  legsOutOfTrunk() {
+    if (settings.front || !this.attached(TORSO)) return;
+    const a = P_NECK, b = P_WAIST, ax = this.x[a], ay = this.y[a], bx = this.x[b], by = this.y[b];
+    const sx = bx - ax, sy = by - ay, l2 = sx * sx + sy * sy || 1, len = Math.sqrt(l2);
+    const nx = -sy / len, ny = sx / len, half = WIDTH[TORSO] * 0.42;
+    const osx = this.ox[b] - this.ox[a], osy = this.oy[b] - this.oy[a], ol = Math.hypot(osx, osy) || 1;
+    for (const p of TRUNK_GUARD) {
+      if (!this.attached(this.owner[p])) continue;
+      const px = this.x[p], py = this.y[p], t = ((px - ax) * sx + (py - ay) * sy) / l2;
+      if (t <= 0.08 || t >= 0.95) continue;
+      const side = (px - ax) * nx + (py - ay) * ny, r = half + this.rad[p] * 0.7;
+      if (Math.abs(side) >= r) continue;
+      const oside = ((this.ox[p] - this.ox[a]) * -osy + (this.oy[p] - this.oy[a]) * osx) / ol;
+      const dir = Math.abs(oside) > 0.5 ? Math.sign(oside) : Math.sign(side) || 1;
+      const move = dir * r - side, wp = this.w(p), wt = this.w(a) * (1 - t) + this.w(b) * t, tot = wp + wt;
+      if (tot <= 0) continue;
+      const mp = move * wp / tot, mt = move * wt / tot;
+      this.x[p] += nx * mp; this.y[p] += ny * mp;
+      this.x[a] -= nx * mt * (1 - t); this.y[a] -= ny * mt * (1 - t);
+      this.x[b] -= nx * mt * t; this.y[b] -= ny * mt * t;
     }
   }
 
@@ -2855,7 +3039,7 @@ function tintFor(d, k, c) {
   if (FAR_SIDE[k] && !settings.front) c = darken(c, 0.16);
   // A living body turns pale as it loses blood and bluish without air.
   if (isSkin && !d.dead) {
-    const pale = clamp((75 - d.bl) / 50, 0, 1), blue = clamp((70 - d.o2) / 50, 0, 1);
+    const pale = clamp((95 - d.bl) / 40, 0, 1), blue = clamp((70 - d.o2) / 50, 0, 1);
     if (pale > 0) c = mixc(c, COL_PALE, 0.42 * pale);
     if (blue > 0) c = mixc(c, COL_CYAN, 0.38 * blue);
   }
@@ -3986,7 +4170,7 @@ function drawEcg(d, x, y, w, h) {
 // Vital rows in the panel: German name, color and how a value reads as critical.
 const VITALS = [
   { name: "BEWUSSTSEIN", color: "#4ccf5a", get: (d) => d.ko, text: (v) => Math.round(v) + "%", bad: (v) => v < 20 },
-  { name: "BLUT", color: "#d0283a", get: (d) => d.bl, text: (v) => Math.round(v) + "%", bad: (v) => v < 35 },
+  { name: "BLUT", color: "#d0283a", get: (d) => d.bl, text: (v) => litres(v) + " L", bad: (v) => v < BL_STAND },
   { name: "SCHMERZ", color: "#f08a24", get: (d) => d.pn, text: (v) => Math.round(v) + "%", bad: (v) => v >= 65 },
   { name: "SAUERSTOFF", color: "#2ec8c0", get: (d) => d.o2, text: (v) => Math.round(v) + "%", bad: (v) => v < 30 },
   { name: "PULS", color: "#ec5f92", get: (d) => d.hr, text: (v) => Math.round(v), bad: (v) => v < 1 },
@@ -3994,7 +4178,7 @@ const VITALS = [
 // Status chips in German. Only the ones that apply are shown.
 const STATUS = [
   ["MONITOR", "AM MONITOR", "#46d07a"], ["MONBROKEN", "MONITOR KAPUTT", "#9a9aa4"], ["ARREST", "HERZSTILLSTAND", "#ff3040"], ["HEARTWEAK", "HERZ SCHWACH", "#ff7a8a"],
-  ["OUT", "BEWUSSTLOS", "#a2a2aa"], ["BLEED", "BLUTET", "#d6202f"], ["FIRE", "BRENNT", "#ff5a1e"],
+  ["ARTERY", "HALSSCHLAGADER", "#ff2030"], ["OUT", "BEWUSSTLOS", "#a2a2aa"], ["BLEED", "BLUTET", "#d6202f"], ["SHOCK", "SCHOCK", "#c0a0b0"], ["FIRE", "BRENNT", "#ff5a1e"],
   ["CHOKE", "ERSTICKT", "#2ec8c0"], ["AGONY", "QUALEN", "#f08a24"], ["HEAL", "HEILT", "#f2da3a"],
   ["BLADE", "SCHNITT", "#c8d0dc"], ["TORN", "GLIED AB", "#f272b8"], ["FROZEN", "GEFROREN", "#86c4ff"],
   ["BROKEN", "KNOCHENBRUCH", "#e8dcc0"], ["PINNED", "FIXIERT", "#e8443a"], ["BANDAGED", "VERBUNDEN", "#ece6d8"], ["ZAP", "ELEKTROSCHOCK", "#7ad0ff"],
@@ -4221,7 +4405,7 @@ function drawPanel(d) {
     rr(cx, cy, cw, 16, 8);
     if (key) {
       // Dark chip with a colored dot; the urgent ones glow in their color.
-      const urgent = key === "ARREST" || key === "BLEED" || key === "FIRE" || key === "CHOKE";
+      const urgent = key === "ARREST" || key === "BLEED" || key === "FIRE" || key === "CHOKE" || key === "ARTERY";
       ctx.fillStyle = css(hex(col), urgent ? 0.22 : 0.1); ctx.fill();
       ctx.save(); if (urgent) { ctx.shadowColor = col; ctx.shadowBlur = 4 + 4 * Math.abs(Math.sin(performance.now() / 260)); }
       ctx.strokeStyle = css(hex(col), 0.75); ctx.lineWidth = 1.2; ctx.stroke(); ctx.restore();
@@ -4274,7 +4458,7 @@ function vitPress(x, y) {
   return true;
 }
 // A ring gauge: a dark track, the value as an arc, the number in the middle.
-function drawRing(cx, cy, rad, val, color, name, bad) {
+function drawRing(cx, cy, rad, val, color, name, bad, txt = String(Math.round(val))) {
   ctx.lineCap = "butt";
   ctx.strokeStyle = "#1c1b21"; ctx.lineWidth = 4.5; ctx.beginPath(); ctx.arc(cx, cy, rad, 0, Math.PI * 2); ctx.stroke();
   const f = clamp(val / 100, 0, 1), blink = bad && Math.sin(performance.now() / 140) > 0;
@@ -4286,7 +4470,7 @@ function drawRing(cx, cy, rad, val, color, name, bad) {
   // ticks every quarter
   ctx.fillStyle = "#0e0d11";
   for (let q = 0; q < 4; q++) { const a = -Math.PI / 2 + q * Math.PI / 2; ctx.fillRect(cx + Math.cos(a) * rad - 1, cy + Math.sin(a) * rad - 1, 2, 2); }
-  label(String(Math.round(val)), cx, cy + 0.5, 9, bad ? "#ff8a94" : "#ecece6", "center");
+  label(txt, cx, cy + 0.5, fitFont(txt, rad * 1.7, 9), bad ? "#ff8a94" : "#ecece6", "center");
   label(name, cx, cy + rad + 9, 6, "#7a7682", "center");
 }
 // The frame all sizes share: dark glass, a state colored top line, a red
@@ -4378,7 +4562,8 @@ function drawVitals(sel) {
     const rw = (w - 16) / 4;
     VIT_RINGS.forEach(([name, vi], n) => {
       const v = VITALS[vi], val = v.get(d);
-      drawRing(x + 8 + rw * (n + 0.5), y + 82, 13, val, v.color, name, !d.dead && v.bad(val));
+      // Blood in litres, the rest in percent.
+      drawRing(x + 8 + rw * (n + 0.5), y + 82, 13, val, v.color, vi === 1 ? "BLUT (L)" : name, !d.dead && v.bad(val), vi === 1 ? litres(val) : undefined);
     });
     // the one thing that matters most right now
     const [at, ac] = organAlert(d);
@@ -4401,14 +4586,15 @@ function drawVitals(sel) {
     ctx.font = `700 7px ${FONT}`;
     for (const [, name] of chipList) { const tw = ctx.measureText(name).width + 20; if (lineW + tw > w - 16) { rows++; lineW = 0; } lineW += tw; }
     // The wounds, counted by kind. Only the kinds the doll has are shown.
-    const cnt = { shot: 0, cut: 0, hit: 0, stump: 0, bleed: 0, band: 0 };
+    const cnt = { shot: 0, cut: 0, hit: 0, stump: 0, bleed: 0, band: 0, art: 0 };
     for (const wd of d.wounds) {
       if (!d.attached(wd.part) && !wd.stump) continue;
+      if (wd.artery && !wd.bandaged && wd.bleed > 0) cnt.art++;
       if (wd.stump) cnt.stump++; else if (!wd.exit) cnt[wd.kind === "shot" ? "shot" : wd.kind === "cut" ? "cut" : "hit"]++;
       if (wd.bleed > 0 && !wd.bandaged) cnt.bleed++;
       if (wd.bandaged) cnt.band++;
     }
-    const wList = [["SCHUSS", cnt.shot, "#e8443a"], ["SCHNITT", cnt.cut, "#c8d0dc"], ["PRELLUNG", cnt.hit, "#b48cff"], ["STUMPF", cnt.stump, "#f272b8"], ["BLUTET", cnt.bleed, "#ff4050"], ["VERBUNDEN", cnt.band, "#ece6d8"]].filter((e) => e[1] > 0);
+    const wList = [["ARTERIE", cnt.art, "#ff2030"], ["SCHUSS", cnt.shot, "#e8443a"], ["SCHNITT", cnt.cut, "#c8d0dc"], ["PRELLUNG", cnt.hit, "#b48cff"], ["STUMPF", cnt.stump, "#f272b8"], ["BLUTET", cnt.bleed, "#ff4050"], ["VERBUNDEN", cnt.band, "#ece6d8"]].filter((e) => e[1] > 0);
     const wRows = Math.max(1, Math.ceil(wList.length / 3));
     // Open, the organ list runs a little past the chart.
     const orgEnd = 40 + (organsOpen ? 134 + ORGANS.length * 9.6 : 141);
@@ -4796,7 +4982,7 @@ function drawDockTab() {
 }
 // One weapon type in the row under the gun: its sprite and short name,
 // a blood red frame for the one in hand.
-const WPN_SHORT = ["AK-47", "STG", "GLOCK", "SCHROT", "SNIPER", "TASER"];
+const WPN_SHORT = ["AK-47", "STG", "GLOCK", "P13", "SCHROT", "SNIPER", "TASER"];
 function drawWeaponPick(b, i) {
   const on = dockOn(b), sel = tween("wpsel" + b.n, on ? 1 : 0, 18), hov = tween("tbh" + i, i === state.hover ? 1 : 0, 20), k = tween("wpick", 1, 16);
   scaled(b.x, b.y, popScale("wpn" + b.n, 0.12) * (0.6 + 0.4 * k), () => {
@@ -5064,6 +5250,22 @@ const SPRITE_GLOCK = [
   "qppppp............",
   "kkkkkk............",
 ];
+// P13: the new Bundeswehr pistol, a CZ P-10 C OR in flat dark earth,
+// with serrations front and back and a red dot sight on the slide.
+const SPRITE_P13 = [
+  ".....kkkkk.........",
+  "..b..kllrk......b..",
+  "eFeFeeeeeeeeeFeFeek",
+  "fFfFffffffffffFfFfk",
+  "kkkkkkkkkkkkkkkkkkk",
+  "...ffffffffFfFfFk..",
+  "..Ffffffff.m.f.....",
+  "..Ffffffffffff.....",
+  ".Fffffff...........",
+  ".Fffffff...........",
+  "Fffffff............",
+  "kkkkkk.............",
+];
 // Taser: yellow body, black cartridge with the two barb doors in front.
 const SPRITE_TASER = [
   "yyyyyyyyyyyyyykkkkkk",
@@ -5082,6 +5284,7 @@ const GUN_COLORS = {
   k: hex("#121215"), b: hex("#25252c"), m: hex("#43434c"), l: hex("#7a7a86"),
   w: hex("#8a4a22"), h: hex("#b8702f"), d: hex("#5a2c12"),
   p: hex("#34352f"), q: hex("#5a5c53"), g: hex("#26272a"), r: hex("#ff3a30"),
+  f: hex("#8f7a5c"), F: hex("#6c5a42"), e: hex("#a8916e"),
 };
 // Pump shotgun: wooden stock and pump under a long barrel.
 const SPRITE_SHOTGUN = [
@@ -5114,6 +5317,7 @@ const WEAPONS = [
   { name: "AK-47", dat: "der AK-47", sprite: SPRITE_AK, grip: [12.5, 7], muzzle: [38, 3.5], mag: 30, reload: 2.4, climb: 0.035, auto: true, rate: 10, dmg: 1.0, spread: 0.045, push: 6, sever: 0.25, headKill: 0.3, kick: 0.06, snd: 1, rk: "mag" },
   { name: "Sturmgewehr", dat: "dem Sturmgewehr", sprite: SPRITE_AR, grip: [12.5, 7], muzzle: [38, 3.5], mag: 30, reload: 2.0, climb: 0.022, auto: true, rate: 13, dmg: 0.85, spread: 0.025, push: 5, sever: 0.15, headKill: 0.22, kick: 0.045, snd: 0.8, rk: "mag" },
   { name: "Glock 17", dat: "der Glock 17", sprite: SPRITE_GLOCK, grip: [4, 6], muzzle: [18, 2.5], mag: 17, reload: 1.4, climb: 0.07, auto: false, rate: 6, dmg: 0.65, spread: 0.015, push: 3.5, sever: 0.05, headKill: 0.12, kick: 0.03, snd: 0.6, rk: "pistol" },
+  { name: "P13", dat: "der P13", sprite: SPRITE_P13, grip: [4, 7], muzzle: [19, 3.5], mag: 15, reload: 1.4, climb: 0.06, auto: false, rate: 6.5, dmg: 0.68, spread: 0.01, push: 3.5, sever: 0.05, headKill: 0.14, kick: 0.03, snd: 0.62, rk: "pistol" },
   { name: "Schrotflinte", dat: "der Schrotflinte", sprite: SPRITE_SHOTGUN, grip: [12.5, 6], muzzle: [38, 2], mag: 6, reload: 2.4, climb: 0.09, auto: false, rate: 1.4, dmg: 0.42, pellets: 8, spread: 0.11, push: 4.5, sever: 0.12, headKill: 0.12, kick: 0.11, snd: 1.4, rk: "shells", cycle: "pump" },
   { name: "Sniper", dat: "dem Scharfschützengewehr", sprite: SPRITE_SNIPER, grip: [11.5, 7], muzzle: [49, 4], mag: 5, reload: 2.8, climb: 0.12, auto: false, rate: 1.1, dmg: 2.2, pierce: 3, spread: 0.002, push: 14, sever: 0.5, headKill: 0.95, kick: 0.14, snd: 1.6, rk: "bolt", cycle: "bolt" },
   { name: "Taser", dat: "dem Taser", sprite: SPRITE_TASER, grip: [4, 5], muzzle: [19, 1.5], mag: 1, reload: 1.8, climb: 0, auto: false, rate: 1, dmg: 0, spread: 0.008, push: 0.5, sever: 0, headKill: 0, kick: 0.01, snd: 0.2, taser: true, range: 520, rk: "taser" },
@@ -5328,7 +5532,8 @@ function fingerHit(x, y) {
   const organs = ORGANS.filter((o) => o.part === k && ORGAN_HIT[o.id].some(([ex, ey, ex2, ey2]) => ((cx - ex) / ex2) ** 2 + ((cy - ey) / ey2) ** 2 <= 1)).map((o) => o.id);
   // Low in the belly lie the loops of small bowel.
   if (k === TORSO && cy > ry + rh) organs.push("gut");
-  return { d, k, t, s, organs, name: PART_NAME[k], crit: k === HEAD && Math.hypot(x - bx, y - by) < HEAD_R * 0.35 };
+  const neck = (k === HEAD || k === TORSO) && d.onNeck(x, y);
+  return { d, k, t, s, organs: neck ? [] : organs, name: neck ? "HALS" : PART_NAME[k], neck, crit: !neck && k === HEAD && Math.hypot(x - bx, y - by) < HEAD_R * 0.35 };
 }
 
 // A shot that misses every doll: sparks and a hole in walls, a splash in water.
@@ -5667,7 +5872,7 @@ function drawMonitor(d) {
   ctx.stroke();
   label(d.dead ? "---" : String(Math.round(d.hr)), sx + sw - 7, sy + 8, 7, d.dead || d.arrest ? "#ff4050" : "#46d07a", "center");
   label(Math.round(d.o2) + "%", sx + sw - 7, sy + 18, 5.5, "#7ad0ff", "center");
-  label(Math.round(d.bl) + "", sx + 6, sy + sh - 6, 5.5, "#ff7a8a", "center");
+  label(litres(d.bl), sx + 6, sy + sh - 6, 5.5, "#ff7a8a", "center");
   ctx.fillStyle = blink ? "#ff3040" : alarm ? "#5a1018" : "#1d6a3a"; ctx.beginPath(); ctx.arc(sx + sw - 4, sy + sh - 5, 1.8, 0, Math.PI * 2); ctx.fill();
 }
 // The cart: pole with the bag, wheels, base and the screen frame. m holds
@@ -6832,10 +7037,11 @@ function deathReport(d) {
   if (broken.length) lines.push("Gebrochen: " + broken.join(", "));
   if (bandaged) lines.push(bandaged + " verbunden");
   if (last) lines.push("Zuletzt: " + (WOUND_KIND[last.kind] || "Wunde") + " " + PART_NAME[last.part] + (last.by && last.by.kind !== "impact" ? " · " + last.by.tag : ""));
+  if (d.wounds.some((w) => w.artery)) lines.unshift("Halsschlagader durchtrennt");
   if (!lines.length) lines.push("Keine äußeren Wunden");
   r.wounds = lines;
   // State at death
-  const st = [["BLUT", r.bl + "%", r.bl < 30], ["SAUERSTOFF", r.o2 + "%", r.o2 < 40]];
+  const st = [["BLUT", litres(r.bl) + " von 5,0 L", r.bl < OUT_BL], ["SAUERSTOFF", r.o2 + "%", r.o2 < 40]];
   if (r.tbsa > 0) st.push(["VERBRANNT", r.tbsa + "% Haut", r.tbsa > 30]);
   ORGANS.forEach((o) => { const v = hp(o.id); if (v < 100) st.push([o.name, v <= 0 ? "ZERSTÖRT" : v + "%", v < 40]); });
   r.state = st;
@@ -6863,7 +7069,7 @@ function deathReport(d) {
     if (src && src.kind === "drug") { text = "Eine zweite Spritze Adrenalin kam zu früh. Das Herz raste, wurde geschädigt (Herz " + hp("heart") + "%) und blieb stehen."; how = "Überdosis Adrenalin"; }
     else if (src && hp("heart") < 60) { text = say(src, TORSO, "traf das Herz", "trafen das Herz") + " (Herz " + hp("heart") + "%). Es hörte auf zu schlagen, und das Gehirn bekam keinen Sauerstoff mehr."; how = "Herz getroffen" + tag(src); }
     else if (recent("Elektroschock")) { text = "Ein Stromstoß brachte das Herz aus dem Takt. Es flimmerte nur noch und pumpte kein Blut mehr. Ohne Kreislauf bekam das Gehirn keinen Sauerstoff."; how = "Herzflimmern nach Stromstoß"; }
-    else { text = "Der Körper hatte zu wenig Blut und Sauerstoff (Blut " + r.bl + "%, O2 " + r.o2 + "%). Das geschwächte Herz blieb stehen."; how = "Kreislaufversagen"; }
+    else { text = "Der Körper hatte zu wenig Blut und Sauerstoff (Blut " + litres(r.bl) + " L, O2 " + r.o2 + "%). Das geschwächte Herz blieb stehen."; how = "Kreislaufversagen"; }
   } else if (c === "ERSTICKT") {
     const n = hp("lungL") < hp("lungR") ? ORGAN.lungL : ORGAN.lungR, src = orgBy[n];
     if (src && d.organ[n] < 60) { text = say(src, TORSO, "traf die Lunge", "trafen die Lunge") + " (" + lung + "). Sie lief mit Blut voll, der Sauerstoff im Blut fiel, bis das Herz stehen blieb."; how = "Lunge zerstört" + tag(src); }
@@ -6872,17 +7078,23 @@ function deathReport(d) {
     text = "Der Kopf war zu lange unter Wasser. Nach etwa 6 Sekunden ohne Luft liefen die Lungen voll, und die Puppe starb.";
     how = "Ertrunken · Kopf unter Wasser";
   } else if (c === "VERBLUTET") {
-    const w = d.wounds.filter((x) => !x.bandaged && att(x.part)).sort((a, b) => b.bleed - a.bleed)[0];
-    text = "Die Puppe ist verblutet, nur " + r.bl + "% Blut waren noch übrig.";
+    const w = d.wounds.filter((x) => !x.bandaged && att(x.part)).sort((a, b) => flowOf(b) - flowOf(a))[0];
+    const left = litres(r.bl), lost = (5 - parseFloat(left.replace(",", "."))).toFixed(1).replace(".", ",");
+    text = "Die Puppe ist verblutet. Von 5 Litern Blut waren nur noch " + left + " L übrig, " + lost + " L sind ausgelaufen.";
     if (w) {
-      if (w.stump && w.child !== undefined) {
+      if (w.artery) {
+        const src = w.by;
+        text += " Die Halsschlagader war offen. Das Blut schoss im Takt des Herzens heraus, etwa ein halber Liter in 20 Sekunden." + (src ? " Geöffnet wurde sie " + srcBy(src) + "." : "");
+        how = "Halsschlagader durchtrennt" + tag(src);
+      } else if (w.stump && w.child !== undefined) {
         const cb = cutBy[w.child], src = cb && cb.src;
         text += " Das meiste Blut lief aus dem Stumpf, wo " + PART_NOM[w.child] + " abgetrennt wurde." + (src ? " Er wurde " + srcBy(src) + " abgetrennt." : "");
         how = "Verblutet · " + PART_NAME[w.child] + " abgetrennt" + tag(src);
       } else {
         const src = w.by, noun = w.exit ? "dem Austrittsloch eines Schusses" : w.kind === "shot" ? "einer Schusswunde" : w.kind === "cut" ? "einem Schnitt" : "einer Platzwunde";
-        text += " Das meiste Blut lief aus " + noun + " " + PART_AT[w.part] + "." + (src ? " Die Wunde entstand " + srcBy(src) + "." : "");
-        how = "Verblutet · " + (w.kind === "shot" ? "Schusswunde " : w.kind === "cut" ? "Schnitt " : "Wunde ") + PART_AT[w.part] + tag(src);
+        const at = w.neck ? "am Hals" : PART_AT[w.part];
+        text += " Das meiste Blut lief aus " + noun + " " + at + "." + (src ? " Die Wunde entstand " + srcBy(src) + "." : "");
+        how = "Verblutet · " + (w.kind === "shot" ? "Schusswunde " : w.kind === "cut" ? "Schnitt " : "Wunde ") + at + tag(src);
       }
     } else how = "Verblutet";
     if (!bandaged) text += " Kein Verband hat die Blutung gestoppt.";
@@ -7080,6 +7292,7 @@ function chartPoint(w) {
     if (w.part === HEAD) return [0, -46];
     return w.t < 0.5 ? [rx + rw / 2, ry] : [rx + rw / 2, ry + rh];
   }
+  if (w.part === HEAD && w.neck) return [rx + rw / 2 + w.s * 2, ry + rh + 2];
   if (w.part === HEAD) return [rx + rw / 2 + Math.cos(w.t * 6.28) * 5, ry + rh / 2 + Math.sin(w.t * 6.28) * 6];
   return [rx + rw / 2 + w.s * rw * 0.3, ry + rh * clamp(w.t, 0.08, 0.92)];
 }
