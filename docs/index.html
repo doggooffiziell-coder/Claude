@@ -3731,7 +3731,7 @@ const DOCK_CATS = [
   { name: "MEDIZIN", color: "#4ccf5a", tools: [T_BANDAGE, T_IV, T_DEFI, T_ADREN, T_MONITOR] },
 ];
 // Half sizes: category buttons are 40 px squares, tool buttons 36 px.
-const CAT_R = 20, CAT_STEP = 53, TOOL_R = 18, TOOL_STEP = 42, RAIL_X = 8;
+const CAT_R = 20, CAT_STEP = 53, TOOL_R = 18, TOOL_STEP = 42, RAIL_X = 8, WPN_HW = 26, WPN_STEP = 58;
 const DOCK = (() => {
   const w = CAT_R * 2 + 12, h = DOCK_CATS.length * CAT_STEP + 6;
   const y = Math.round(Math.max(66, (66 + H - h) / 2));
@@ -3748,11 +3748,16 @@ function dockButtons() {
   if (n !== undefined && n !== null && n >= 0) {
     const c = DOCK.cats[n], x0 = DOCK.x + DOCK.w + 15 + TOOL_R, k = tween("flyout", 1, 16);
     c.tools.forEach((t, i) => out.push({ kind: "tool", tool: t, n, x: x0 + i * TOOL_STEP * k, y: c.cy, r: TOOL_R, color: c.color, i }));
+    // With the gun picked, the weapon types open in a second row below.
+    if (state.weaponPick && c.tools.includes(T_GUN)) {
+      const kw = tween("wpick", 1, 16), y = c.cy + CAT_STEP;
+      WEAPONS.forEach((wp, i) => out.push({ kind: "weapon", tool: T_GUN, n: i, x: x0 + 8 + i * WPN_STEP * kw, y, r: TOOL_R, hw: WPN_HW, hh: TOOL_R, color: c.color }));
+    }
   }
   return out;
 }
-const dockName = (it) => (it.kind === "cat" ? DOCK_CATS[it.n].name : TOOL_NAMES[it.tool]);
-const dockOn = (it) => (it.kind === "cat" ? catOf(state.tool) === it.n : state.tool === it.tool);
+const dockName = (it) => (it.kind === "cat" ? DOCK_CATS[it.n].name : it.kind === "weapon" ? WEAPONS[it.n].name : TOOL_NAMES[it.tool]);
+const dockOn = (it) => (it.kind === "cat" ? catOf(state.tool) === it.n : it.kind === "weapon" ? state.weapon === it.n : state.tool === it.tool);
 // The dock folds down under the screen edge with a tap on its tab, so the
 // whole room is free. The choice is remembered per device.
 let dockOpen = true;
@@ -3768,7 +3773,7 @@ function toolbarHit(x, y) {
   if (!dockOpen) return -1;
   const bs = dockButtons();
   // Square buttons, with a few pixels of slack for fingers.
-  for (let i = bs.length - 1; i >= 0; i--) if (Math.abs(x - bs[i].x) < bs[i].r + 4 && Math.abs(y - bs[i].y) < bs[i].r + 5) return i;
+  for (let i = bs.length - 1; i >= 0; i--) if (Math.abs(x - bs[i].x) < (bs[i].hw || bs[i].r) + 3 && Math.abs(y - bs[i].y) < (bs[i].hh || bs[i].r) + 5) return i;
   return -1;
 }
 
@@ -4381,6 +4386,31 @@ function drawDockTab() {
     ctx.restore();
   }
 }
+// One weapon type in the row under the gun: its sprite and short name,
+// a blood red frame for the one in hand.
+const WPN_SHORT = ["AK-47", "STG", "GLOCK", "SCHROT", "SNIPER", "TASER"];
+function drawWeaponPick(b, i) {
+  const on = dockOn(b), sel = tween("wpsel" + b.n, on ? 1 : 0, 18), hov = tween("tbh" + i, i === state.hover ? 1 : 0, 20), k = tween("wpick", 1, 16);
+  scaled(b.x, b.y, popScale("wpn" + b.n, 0.12) * (0.6 + 0.4 * k), () => {
+    ctx.save(); ctx.globalAlpha *= k;
+    const w = b.hw, h = b.hh;
+    rr(b.x - w, b.y - h, w * 2, h * 2, 6);
+    const bg = ctx.createLinearGradient(0, b.y - h, 0, b.y + h);
+    bg.addColorStop(0, css(mixc(mixc(hex("#29272d"), hex("#33313a"), hov), hex("#3a2326"), sel)));
+    bg.addColorStop(1, css(mixc(hex("#141317"), hex("#1c1214"), sel)));
+    ctx.fillStyle = bg; ctx.fill();
+    dockSpecks(b.x, b.y, h, 61 + b.n * 5);
+    ctx.save();
+    if (sel > 0.05) { ctx.shadowColor = "rgba(200,28,24,0.75)"; ctx.shadowBlur = 9 * sel; }
+    rr(b.x - w + 0.75, b.y - h + 0.75, w * 2 - 1.5, h * 2 - 1.5, 6);
+    ctx.strokeStyle = css(mixc(hex("#34323a"), hex("#b8231d"), sel)); ctx.lineWidth = 1.5 + sel * 0.7; ctx.stroke();
+    ctx.restore();
+    const sp = WEAPONS[b.n].sprite, z = Math.min(1.1, (w * 2 - 8) / sp[0].length);
+    drawSpriteOutlined(sp, b.x - sp[0].length * z / 2, b.y - 3 - sp.length * z / 2, z, 0.8 + 0.2 * Math.max(sel, hov));
+    label(WPN_SHORT[b.n], b.x, b.y + h - 6, 5.5, on ? "#ff8a80" : "#8e8e98", "center");
+    ctx.restore();
+  });
+}
 // Small seeded random numbers, so the dock's blood stays put between frames.
 const dockRng = (seed) => () => { seed = (seed * 16807 + 11) % 2147483647; return seed / 2147483647; };
 const BLOOD_D = "#3e0809", BLOOD_M = "#6e1113", BLOOD_L = "#9c1a1a";
@@ -4448,8 +4478,22 @@ function drawDock() {
     ctx.fillStyle = "rgba(17,16,19,0.97)"; ctx.beginPath(); ctx.moveTo(x0 + 1, c.cy - 6); ctx.lineTo(x0 - 5, c.cy); ctx.lineTo(x0 + 1, c.cy + 6); ctx.closePath(); ctx.fill();
     dockDrips(x0, top, x1 - x0, 31 + state.dockCat, 2);
     ctx.restore();
+    // The weapon row: a second panel one row lower, a notch up to the gun.
+    const wpn = bs.filter((b) => b.kind === "weapon");
+    if (wpn.length) {
+      const gun = tools.find((b) => b.tool === T_GUN), kw = tween("wpick", 1, 16);
+      const wx0 = wpn[0].x - WPN_HW - 8, wx1 = wpn[wpn.length - 1].x + WPN_HW + 8, wtop = wpn[0].y - TOOL_R - 7, wh = TOOL_R * 2 + 14;
+      ctx.save(); ctx.globalAlpha *= kw;
+      ctx.save(); ctx.shadowColor = "rgba(0,0,0,0.6)"; ctx.shadowBlur = 14;
+      rr(wx0, wtop, wx1 - wx0, wh, 6); ctx.fillStyle = "rgba(17,16,19,0.97)"; ctx.fill(); ctx.restore();
+      rr(wx0, wtop, wx1 - wx0, wh, 6); ctx.strokeStyle = "rgba(120,26,24,0.6)"; ctx.lineWidth = 1.5; ctx.stroke();
+      if (gun) { ctx.fillStyle = "rgba(17,16,19,0.97)"; ctx.beginPath(); ctx.moveTo(gun.x - 6, wtop + 1); ctx.lineTo(gun.x, wtop - 5); ctx.lineTo(gun.x + 6, wtop + 1); ctx.closePath(); ctx.fill(); }
+      dockDrips(wx0, wtop, wx1 - wx0, 47, 2);
+      ctx.restore();
+    }
   }
   bs.forEach((b, i) => {
+    if (b.kind === "weapon") { drawWeaponPick(b, i); return; }
     const on = dockOn(b), sel = tween("tb" + b.kind + (b.kind === "cat" ? b.n : b.tool), on ? 1 : 0, 18), hov = tween("tbh" + i, i === state.hover ? 1 : 0, 20);
     const isOpen = b.kind === "cat" && state.dockCat === b.n, k = b.kind === "tool" ? tween("flyout", 1, 16) : 1, s = b.r;
     const hot = sel;
@@ -5736,11 +5780,7 @@ const ctxH = () => (state.tool === T_GUN ? 60 : 36);
 const ctxY = () => 66;
 function ctxItems() {
   if (state.tool === T_WATER) return [1, 2, 3, 4, 5].map((n) => ({ kind: "water", n, w: 34, label: String(n) }));
-  if (state.tool === T_GUN) {
-    // As wide as fits between the rail and the panel.
-    const room = W - 216 - (dockOpen ? DOCK.x + DOCK.w + 10 : 34) - 16, w = Math.min(104, Math.floor((room - 6 * (WEAPONS.length - 1)) / WEAPONS.length));
-    return WEAPONS.map((wp, n) => ({ kind: "gun", n, w, label: wp.name.toUpperCase() }));
-  }
+  // The weapon types sit in the dock, in a row under the gun (dockButtons).
   if (state.tool === T_FIRE) return FIRE_MODES.map((name, n) => ({ kind: "fire", n, w: 96, label: name }));
   return [];
 }
@@ -8777,11 +8817,31 @@ function useDock(n) {
   if (!b) return;
   if (b.kind === "cat") {
     pop("cat" + b.n); clickSound(700, 0.04);
+    state.weaponPick = false;
     if (state.dockCat === b.n) state.dockCat = -1;
     else { state.dockCat = b.n; animV["flyout"] = 0; }
     return;
   }
+  if (b.kind === "weapon") {
+    // Picking a weapon type closes both rows; the gun button opens them again.
+    pop("wpn" + b.n); clickSound(820, 0.05);
+    if (state.weapon !== b.n) { state.weapon = b.n; state.reloadT = 0; state.triggerDown = false; state.climb = 0; }
+    state.weaponPick = false; state.dockCat = -1;
+    if (state.tool !== T_GUN) useButton(T_GUN);
+    state.toast = 1.2; state.toastText = WEAPONS[b.n].name;
+    return;
+  }
   pop("tool" + b.tool);
+  if (b.tool === T_GUN) {
+    // The gun picks itself and shows the weapon types below; a second tap hides them.
+    if (!state.catTool) state.catTool = {};
+    state.catTool[b.n] = T_GUN;
+    if (state.tool !== T_GUN) useButton(T_GUN);
+    state.weaponPick = !state.weaponPick; animV["wpick"] = 0;
+    clickSound(760, 0.04);
+    return;
+  }
+  state.weaponPick = false;
   if (!state.catTool) state.catTool = {};
   if (b.tool !== T_RESET) state.catTool[b.n] = b.tool;
   state.dockCat = -1;
@@ -8851,7 +8911,7 @@ function press() {
   const b = toolbarHit(state.sx, state.sy);
   if (b >= 0) { useDock(b); return; }
   // A tap anywhere else only closes an open tool row.
-  if (state.dockCat >= 0 && state.dockCat !== undefined && state.dockCat !== null) { state.dockCat = -1; return; }
+  if (state.dockCat >= 0 && state.dockCat !== undefined && state.dockCat !== null) { state.dockCat = -1; state.weaponPick = false; return; }
   if (blocksInput(state.sx, state.sy)) return;
   state.pressing = true;
   state.lastX = state.mx; state.lastY = state.my;
