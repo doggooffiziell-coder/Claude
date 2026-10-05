@@ -3558,8 +3558,8 @@ const PANEL = { x: W - 206, y: 8, w: 198, h: 282 };
 const MINI = [[0, -12], [0, -8], [0, 0], [0, 3], [-5, -3], [-7, 2], [5, -3], [7, 2], [-2, 9], [-3, 15], [-5, 15], [2, 9], [3, 15], [5, 15]];
 const MINI_W = [2, 4.2, 4, 2, 1.8, 2, 1.8, 2.4, 2, 1.4, 2.4, 2, 1.4];
 
-// Four round category buttons on the left. A tap opens a row of round tool
-// buttons beside the category; picking a tool closes it again. Each
+// Four square category buttons in a slim rail on the left. A tap opens a row
+// of tool buttons beside the category; picking a tool closes it again. Each
 // category shows the tool last picked from it.
 const DOCK_CATS = [
   { name: "HAND", color: "#ecece6", tools: [T_GRAB, T_PIN, T_DOLL, T_RESET] },
@@ -3567,11 +3567,12 @@ const DOCK_CATS = [
   { name: "ELEMENTE", color: "#ff8a2a", tools: [T_WATER, T_BUCKET, T_FIRE, T_ICE] },
   { name: "MEDIZIN", color: "#4ccf5a", tools: [T_BANDAGE, T_IV, T_DEFI, T_ADREN, T_MONITOR] },
 ];
-const CAT_R = 25, CAT_STEP = 74, TOOL_R = 21, TOOL_STEP = 50, RAIL_X = 10;
+// Half sizes: category buttons are 40 px squares, tool buttons 36 px.
+const CAT_R = 20, CAT_STEP = 53, TOOL_R = 18, TOOL_STEP = 42, RAIL_X = 8;
 const DOCK = (() => {
-  const w = CAT_R * 2 + 18, h = DOCK_CATS.length * CAT_STEP + 10;
+  const w = CAT_R * 2 + 12, h = DOCK_CATS.length * CAT_STEP + 6;
   const y = Math.round(Math.max(66, (66 + H - h) / 2));
-  const cats = DOCK_CATS.map((c, n) => ({ ...c, n, cx: RAIL_X + w / 2, cy: y + 10 + CAT_STEP * n + CAT_R + 4 }));
+  const cats = DOCK_CATS.map((c, n) => ({ ...c, n, cx: RAIL_X + w / 2, cy: y + 7 + CAT_STEP * n + CAT_R }));
   return { x: RAIL_X, y, w, h, cats };
 })();
 const catOf = (tool) => DOCK_CATS.findIndex((c) => c.tools.includes(tool));
@@ -3582,7 +3583,7 @@ function dockButtons() {
   const out = DOCK.cats.map((c) => ({ kind: "cat", n: c.n, x: c.cx, y: c.cy, r: CAT_R, color: c.color, tool: catTool(c.n) }));
   const n = state.dockCat;
   if (n !== undefined && n !== null && n >= 0) {
-    const c = DOCK.cats[n], x0 = DOCK.x + DOCK.w + 14 + TOOL_R, k = tween("flyout", 1, 16);
+    const c = DOCK.cats[n], x0 = DOCK.x + DOCK.w + 15 + TOOL_R, k = tween("flyout", 1, 16);
     c.tools.forEach((t, i) => out.push({ kind: "tool", tool: t, n, x: x0 + i * TOOL_STEP * k, y: c.cy, r: TOOL_R, color: c.color, i }));
   }
   return out;
@@ -3603,7 +3604,8 @@ function toggleDock() {
 function toolbarHit(x, y) {
   if (!dockOpen) return -1;
   const bs = dockButtons();
-  for (let i = bs.length - 1; i >= 0; i--) if (Math.hypot(x - bs[i].x, y - bs[i].y) < bs[i].r + 4) return i;
+  // Square buttons, with a few pixels of slack for fingers.
+  for (let i = bs.length - 1; i >= 0; i--) if (Math.abs(x - bs[i].x) < bs[i].r + 4 && Math.abs(y - bs[i].y) < bs[i].r + 5) return i;
   return -1;
 }
 
@@ -4063,68 +4065,123 @@ function drawDockTab() {
     ctx.restore();
   }
 }
+// Small seeded random numbers, so the dock's blood stays put between frames.
+const dockRng = (seed) => () => { seed = (seed * 16807 + 11) % 2147483647; return seed / 2147483647; };
+const BLOOD_D = "#3e0809", BLOOD_M = "#6e1113", BLOOD_L = "#9c1a1a";
+// Dried blood running down from a top edge, drawn as 2 px blocks.
+function dockDrips(x, y, w, seed, n) {
+  const r = dockRng(seed);
+  for (let i = 0; i < n; i++) {
+    const dx = Math.round(x + 5 + r() * (w - 12)), wd = r() < 0.5 ? 2 : 3, len = 3 + Math.floor(r() * 5) * 2;
+    ctx.fillStyle = BLOOD_D; ctx.fillRect(dx - 3, y - 1, wd + 6, 3);
+    ctx.fillStyle = BLOOD_M; ctx.fillRect(dx, y, wd, len); ctx.fillRect(dx - 1, y + len - 1, wd + 2, 3);
+    ctx.fillStyle = BLOOD_L; ctx.fillRect(dx, y + 1, 1, len - 1);
+  }
+}
+// A faint smudge and a few specks of blood near one corner of a button.
+function dockSpecks(cx, cy, s, seed) {
+  const r = dockRng(seed), sx = r() < 0.5 ? -1 : 1, sy = r() < 0.6 ? 1 : -1, n = 3 + Math.floor(r() * 4);
+  ctx.save(); rr(cx - s, cy - s, s * 2, s * 2, 6); ctx.clip();
+  ctx.fillStyle = "rgba(110,17,19,0.28)";
+  const mx = Math.round(cx + sx * (s - 7)), my = Math.round(cy + sy * (s - 6));
+  ctx.fillRect(mx - 5, my - 3, 10, 6); ctx.fillRect(mx - 3, my - 5, 6, 10);
+  ctx.restore();
+  for (let i = 0; i < n; i++) {
+    const px = Math.round(cx + sx * (s - 2 - r() * 12)), py = Math.round(cy + sy * (s - 2 - r() * 10)), z = r() < 0.45 ? 2 : 1;
+    ctx.fillStyle = r() < 0.5 ? BLOOD_M : BLOOD_L; ctx.fillRect(px, py, z, z);
+  }
+}
+// One drop swells under an edge and falls off now and then.
+function dockDrop(x, y, seed) {
+  const now = performance.now() / 1000, ph = (now / 4.2 + seed * 0.37) % 1;
+  const len = Math.round(1 + Math.min(ph, 0.8) * 6);
+  ctx.fillStyle = BLOOD_M; ctx.fillRect(x, y, 2, len); ctx.fillRect(x - 1, y + len - 1, 4, 3);
+  ctx.fillStyle = BLOOD_L; ctx.fillRect(x, y + len - 1, 1, 1);
+  if (ph > 0.8) {
+    const f = (ph - 0.8) / 0.2;
+    ctx.save(); ctx.globalAlpha *= 1 - f; ctx.fillStyle = BLOOD_M;
+    ctx.fillRect(x, Math.round(y + len + 3 + f * f * 46), 2, 3); ctx.restore();
+  }
+}
 function drawDock() {
   const D = DOCK;
-  // A rounded column behind the four categories
-  ctx.save(); ctx.shadowColor = "rgba(0,0,0,0.55)"; ctx.shadowBlur = 14; ctx.shadowOffsetX = 3;
-  rr(D.x, D.y, D.w, D.h, D.w / 2);
+  // A slim dark rail with rounded corners behind the four categories
+  ctx.save(); ctx.shadowColor = "rgba(0,0,0,0.55)"; ctx.shadowBlur = 12; ctx.shadowOffsetX = 3;
+  rr(D.x, D.y, D.w, D.h, 6);
   const g = ctx.createLinearGradient(D.x, 0, D.x + D.w, 0);
-  g.addColorStop(0, "rgba(26,26,32,0.95)"); g.addColorStop(1, "rgba(12,12,15,0.95)");
+  g.addColorStop(0, "rgba(27,25,29,0.96)"); g.addColorStop(1, "rgba(13,12,15,0.96)");
   ctx.fillStyle = g; ctx.fill(); ctx.restore();
-  rr(D.x, D.y, D.w, D.h, D.w / 2); ctx.strokeStyle = "#2e2e36"; ctx.lineWidth = 1.5; ctx.stroke();
+  rr(D.x, D.y, D.w, D.h, 6); ctx.strokeStyle = "#2c2a30"; ctx.lineWidth = 1.5; ctx.stroke();
+  // Grime: faint scratches and four rivets
+  const gr = dockRng(7);
+  ctx.fillStyle = "rgba(255,255,255,0.035)";
+  for (let i = 0; i < 6; i++) ctx.fillRect(Math.round(D.x + 3 + gr() * (D.w - 14)), Math.round(D.y + 10 + gr() * (D.h - 20)), 4 + Math.round(gr() * 6), 1);
+  for (const [rx, ry] of [[D.x + 3, D.y + 3], [D.x + D.w - 5, D.y + 3], [D.x + 3, D.y + D.h - 5], [D.x + D.w - 5, D.y + D.h - 5]]) {
+    ctx.fillStyle = "#3a3840"; ctx.fillRect(rx, ry, 2, 2); ctx.fillStyle = "#0a0a0c"; ctx.fillRect(rx + 1, ry + 2, 2, 1);
+  }
   const bs = dockButtons(), open = state.dockCat >= 0 && state.dockCat !== undefined && state.dockCat !== null;
-  // The open row: a round-ended pill from the category out to the right
+  // The open row: a dark panel from the category out to the right
   if (open) {
     const tools = bs.filter((b) => b.kind === "tool"), c = DOCK.cats[state.dockCat], k = tween("flyout", 1, 16);
-    const x0 = D.x + D.w + 6, x1 = tools[tools.length - 1].x + TOOL_R + 8;
+    const x0 = D.x + D.w + 6, x1 = tools[tools.length - 1].x + TOOL_R + 7, top = c.cy - TOOL_R - 7, ph = TOOL_R * 2 + 14;
     ctx.save(); ctx.globalAlpha *= k;
-    ctx.save(); ctx.shadowColor = "rgba(0,0,0,0.6)"; ctx.shadowBlur = 16;
-    rr(x0, c.cy - TOOL_R - 8, x1 - x0, TOOL_R * 2 + 16, TOOL_R + 8); ctx.fillStyle = "rgba(18,18,23,0.97)"; ctx.fill(); ctx.restore();
-    rr(x0, c.cy - TOOL_R - 8, x1 - x0, TOOL_R * 2 + 16, TOOL_R + 8); ctx.strokeStyle = css(hex(c.color), 0.45); ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.save(); ctx.shadowColor = "rgba(0,0,0,0.6)"; ctx.shadowBlur = 14;
+    rr(x0, top, x1 - x0, ph, 6); ctx.fillStyle = "rgba(17,16,19,0.97)"; ctx.fill(); ctx.restore();
+    rr(x0, top, x1 - x0, ph, 6); ctx.strokeStyle = "rgba(120,26,24,0.6)"; ctx.lineWidth = 1.5; ctx.stroke();
     // A little notch pointing back at the category
-    ctx.fillStyle = "rgba(18,18,23,0.97)"; ctx.beginPath(); ctx.moveTo(x0 + 1, c.cy - 7); ctx.lineTo(x0 - 6, c.cy); ctx.lineTo(x0 + 1, c.cy + 7); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "rgba(17,16,19,0.97)"; ctx.beginPath(); ctx.moveTo(x0 + 1, c.cy - 6); ctx.lineTo(x0 - 5, c.cy); ctx.lineTo(x0 + 1, c.cy + 6); ctx.closePath(); ctx.fill();
+    dockDrips(x0, top, x1 - x0, 31 + state.dockCat, 2);
     ctx.restore();
   }
   bs.forEach((b, i) => {
     const on = dockOn(b), sel = tween("tb" + b.kind + (b.kind === "cat" ? b.n : b.tool), on ? 1 : 0, 18), hov = tween("tbh" + i, i === state.hover ? 1 : 0, 20);
-    const isOpen = b.kind === "cat" && state.dockCat === b.n, k = b.kind === "tool" ? tween("flyout", 1, 16) : 1;
+    const isOpen = b.kind === "cat" && state.dockCat === b.n, k = b.kind === "tool" ? tween("flyout", 1, 16) : 1, s = b.r;
+    const hot = sel;
     scaled(b.x, b.y, popScale(b.kind === "cat" ? "cat" + b.n : "tool" + b.tool, 0.12) * (0.6 + 0.4 * k), () => {
       ctx.save(); ctx.globalAlpha *= k;
-      // Round button with a soft top light
-      ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
-      const bg = ctx.createRadialGradient(b.x - b.r * 0.35, b.y - b.r * 0.45, 2, b.x, b.y, b.r);
-      bg.addColorStop(0, css(mixc(mixc(hex("#2c2c34"), hex("#34343e"), hov), hex("#3a3a46"), sel))); bg.addColorStop(1, css(mixc(hex("#17171c"), hex("#1f1f26"), sel)));
+      // Square button, a touch lighter at the top, red tinted when in use
+      rr(b.x - s, b.y - s, s * 2, s * 2, 6);
+      const bg = ctx.createLinearGradient(0, b.y - s, 0, b.y + s);
+      bg.addColorStop(0, css(mixc(mixc(hex("#29272d"), hex("#33313a"), hov), hex("#3a2326"), sel)));
+      bg.addColorStop(1, css(mixc(hex("#141317"), hex("#1c1214"), sel)));
       ctx.fillStyle = bg; ctx.fill();
-      // Ring in the category colour; bright and glowing when it holds the tool in use.
+      ctx.fillStyle = "rgba(255,255,255,0.05)"; ctx.fillRect(b.x - s + 5, b.y - s + 1.5, s * 2 - 10, 1);
+      dockSpecks(b.x, b.y, s, 3 + (b.kind === "cat" ? b.n * 13 : b.tool * 7));
+      // Frame: dull grey, blood red with a glow for the tool in use
       ctx.save();
-      if (sel > 0.05 || isOpen) { ctx.shadowColor = b.color; ctx.shadowBlur = 10 * Math.max(sel, isOpen ? 0.6 : 0); }
-      ctx.strokeStyle = css(hex(b.color), b.kind === "cat" ? 0.35 + 0.65 * Math.max(sel, isOpen ? 1 : 0) : 0.15 + 0.85 * sel);
-      ctx.lineWidth = b.kind === "cat" ? 2.4 : 1.8; ctx.beginPath(); ctx.arc(b.x, b.y, b.r - 1, 0, Math.PI * 2); ctx.stroke();
+      if (hot > 0.05) { ctx.shadowColor = "rgba(200,28,24,0.75)"; ctx.shadowBlur = 9 * hot; }
+      rr(b.x - s + 0.75, b.y - s + 0.75, s * 2 - 1.5, s * 2 - 1.5, 6);
+      ctx.strokeStyle = css(mixc(hex(isOpen ? "#6c6a74" : "#34323a"), hex("#b8231d"), hot)); ctx.lineWidth = 1.5 + hot * 0.7; ctx.stroke();
       ctx.restore();
       if (b.tool !== T_GUN) {
-        ctx.save(); ctx.globalAlpha *= 0.8 + 0.2 * Math.max(sel, hov);
-        ctx.translate(b.x, b.y); const z = (b.r * 1.55) / 46; ctx.scale(z, z); drawIconCached(b.tool, 0, 0); ctx.restore();
+        ctx.save(); ctx.globalAlpha *= 0.82 + 0.18 * Math.max(sel, hov);
+        ctx.translate(b.x, b.y); const z = (s * 1.45) / 46; ctx.scale(z, z); drawIconCached(b.tool, 0, 0); ctx.restore();
       } else {
-        const sp = WEAPONS[state.weapon].sprite, z = Math.min(1, (b.r * 1.6) / sp[0].length);
+        const sp = WEAPONS[state.weapon].sprite, z = Math.min(1, (s * 1.7) / sp[0].length);
         drawSpriteOutlined(sp, b.x - sp[0].length * z / 2, b.y - sp.length * z / 2 - 3, z, 0.75 + 0.25 * Math.max(sel, hov));
         const wp = WEAPONS[state.weapon], ammo = state.ammo[state.weapon];
-        label(state.reloadT > 0 ? "LÄDT" : ammo + "/" + wp.mag, b.x, b.y + b.r * 0.55, 6, state.reloadT > 0 ? "#e6c850" : ammo / wp.mag < 0.25 ? "#ff6a5a" : "#8e8e98", "center");
+        label(state.reloadT > 0 ? "LÄDT" : ammo + "/" + wp.mag, b.x, b.y + s * 0.6, 6, state.reloadT > 0 ? "#e6c850" : ammo / wp.mag < 0.25 ? "#ff6a5a" : "#8e8e98", "center");
       }
+      // The tool in use bleeds a little drop from its bottom edge.
+      if (b.kind === "tool" && sel > 0.5) dockDrop(Math.round(b.x + s * 0.45), Math.round(b.y + s), b.tool);
       ctx.restore();
     });
     if (b.kind === "cat") {
-      // Name under the category and a small arrow that shows it opens.
-      label(DOCK_CATS[b.n].name, b.x, b.y + b.r + 9, 7.5, on || isOpen ? DOCK_CATS[b.n].color : "#6a6a74", "center");
-      ctx.fillStyle = isOpen ? DOCK_CATS[b.n].color : "#4a4a54";
-      const ax = b.x + b.r - 3, ay = b.y + b.r - 5;
-      ctx.beginPath(); ctx.arc(ax, ay, 5.5, 0, Math.PI * 2); ctx.fillStyle = "#141418"; ctx.fill();
-      ctx.strokeStyle = isOpen ? DOCK_CATS[b.n].color : "#5a5a64"; ctx.lineWidth = 1.4; ctx.lineCap = "round"; ctx.lineJoin = "round";
-      ctx.beginPath();
-      if (isOpen) { ctx.moveTo(ax + 1.5, ay - 2.5); ctx.lineTo(ax - 1.5, ay); ctx.lineTo(ax + 1.5, ay + 2.5); }
-      else { ctx.moveTo(ax - 1.5, ay - 2.5); ctx.lineTo(ax + 1.5, ay); ctx.lineTo(ax - 1.5, ay + 2.5); }
-      ctx.stroke();
+      const cc = DOCK_CATS[b.n].color;
+      // Category colour as a pixel bar on the left, an arrow on the right, the name below.
+      const lit = Math.max(hot, isOpen ? 1 : 0), bh = Math.round(10 + 8 * lit);
+      ctx.fillStyle = css(hex(cc), 0.35 + 0.65 * lit); ctx.fillRect(Math.round(b.x - s - 4), Math.round(b.y - bh / 2), 2, bh);
+      const ax = Math.round(b.x + s + 2), ay = Math.round(b.y);
+      ctx.fillStyle = isOpen ? cc : "#4c4a54";
+      if (isOpen) { ctx.fillRect(ax + 2, ay - 4, 2, 2); ctx.fillRect(ax, ay - 2, 2, 2); ctx.fillRect(ax + 2, ay, 2, 2); }
+      else { ctx.fillRect(ax, ay - 4, 2, 2); ctx.fillRect(ax + 2, ay - 2, 2, 2); ctx.fillRect(ax, ay, 2, 2); }
+      label(DOCK_CATS[b.n].name, b.x, b.y + s + 7.5, 6.5, on || isOpen ? cc : "#64626c", "center");
     }
   });
+  // Dried blood over the top edge, a drop hanging from the bottom
+  dockDrips(D.x, D.y, D.w, 5, 4);
+  ctx.fillStyle = BLOOD_D; ctx.fillRect(Math.round(D.x + D.w * 0.55) - 3, D.y + D.h - 1, 9, 2);
+  dockDrop(Math.round(D.x + D.w * 0.55), D.y + D.h, 2);
 }
 function drawToast(off) {
   // Toasts fade in with a small rise and fade out at the end.
