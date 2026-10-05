@@ -735,6 +735,12 @@ const ORGAN_DEATH = {
   liver: "LEBERBLUTUNG", stomach: "BAUCHFELLENTZÜNDUNG", kidneys: "NIERENBLUTUNG", gut: "BAUCHFELLENTZÜNDUNG",
 };
 
+// Where a fire on the body came from: for a sentence ("von ...") and as a short tag.
+const FIRE_SRC = {
+  lighter: ["einem Feuerzeug", "Feuerzeug"], flame: ["der Flamme", "Flamme"], molotov: ["einem Molotow-Cocktail", "Molotow"],
+  blast: ["der Explosion einer Bombe", "Bombe"], open: ["offenem Feuer im Raum", "Feuer"],
+};
+
 // ----------------------------------------------------------------- burns
 // Fire burns part by part. Clothes and hair catch first and feed the
 // flames, the skin under them burns through four degrees: 1 red, 2 blisters,
@@ -870,12 +876,13 @@ class Doll {
       if (Math.abs(depth - o.s) > o.w || Math.random() > chance) return;
       const near = k === HEAD ? 1 : 1 - dt / o.r * 0.5;
       this.organ[n] = Math.max(0, this.organ[n] - amount * near * rf(0.75, 1.2));
+      this.orgHit(n);
     });
   }
 
   // Blunt force shakes every organ in the part a little.
   bruiseOrgans(k, amount) {
-    ORGANS.forEach((o, n) => { if (o.part === k && this.organ[n] > 0) this.organ[n] = Math.max(0, this.organ[n] - amount * rf(0.5, 1)); });
+    ORGANS.forEach((o, n) => { if (o.part === k && this.organ[n] > 0) { this.organ[n] = Math.max(0, this.organ[n] - amount * rf(0.5, 1)); this.orgHit(n); } });
   }
 
   // Effects of the organs on blood, air, heart and mind, once per step.
@@ -947,11 +954,17 @@ class Doll {
     return eta;
   }
 
-  hurtPart(k, amount) { if (k >= 0) this.dmg[k] = Math.min(100, this.dmg[k] + amount); }
+  hurtPart(k, amount) { if (k >= 0) { this.dmg[k] = Math.min(100, this.dmg[k] + amount); if (this.src) (this.partBy || (this.partBy = []))[k] = this.src; } }
+  // Remembers what hurts the doll right now. Wounds, organs and lost parts
+  // keep it, so the death report can name the weapon.
+  hurtBy(kind, tag, name = "") { this.src = { kind, tag, name, t: this.lifeT || 0 }; }
+  // An organ lost health: note what did it.
+  orgHit(n) { if (this.src) (this.orgBy || (this.orgBy = []))[n] = this.src; }
 
   // Bullet hit: entry and exit wound, blood spray, a shove and a chance to lose the limb.
   shot(k, x, y, dx, dy, wp) {
     if (this.gone[k]) return;
+    this.hurtBy("shot", wp.name, wp.dat);
     const [ax, ay, bx, by] = [this.x[this.pa[k]], this.y[this.pa[k]], this.x[this.pb[k]], this.y[this.pb[k]]];
     const sx = bx - ax, sy = by - ay, l2 = sx * sx + sy * sy || 1;
     const t = k === HEAD ? Math.random() : clamp(((x - ax) * sx + (y - ay) * sy) / l2, 0, 1);
@@ -974,7 +987,7 @@ class Doll {
     this.hitOrgans(k, t, 75 * wp.dmg, 0.85);
     if (k === HEAD) {
       this.ko -= 45 * wp.dmg;
-      if (Math.random() < wp.headKill) this.organ[ORGAN.brain] = 0;
+      if (Math.random() < wp.headKill) { this.organ[ORGAN.brain] = 0; this.orgHit(ORGAN.brain); }
     } else if (k === TORSO) {
       this.bl = Math.max(0, this.bl - 4 * wp.dmg);
     } else if (k !== PELVIS && this.dmg[k] >= 100 && this.hits[k] >= 8 && Math.random() < wp.sever) {
@@ -989,6 +1002,7 @@ class Doll {
   // When the current stops, the doll is knocked out for a while.
   tase(k, t, s, ox, oy) {
     if (this.gone[k]) return;
+    this.hurtBy("shock", "Taser", "des Tasers");
     this.logEvent("Elektroschock " + PART_NAME[k]);
     // The second barb lands a hand's width lower on the body.
     const k2 = k === HEAD ? TORSO : k === TORSO ? (Math.random() < 0.5 ? TORSO : PELVIS) : k;
@@ -1006,6 +1020,7 @@ class Doll {
   // Returns where it hit in the room.
   preciseShot(hit, wp, dir = 0) {
     const { k, t, s, organs } = hit;
+    this.hurtBy("shot", wp.name, wp.dat);
     fleshHitSound();
     this.addWound(k, t, s, 1.1 + wp.dmg * 0.7, false, "shot");
     // The exit hole sits on the back, out of sight in the front view, but it bleeds.
@@ -1028,10 +1043,10 @@ class Doll {
     const leg = k === THIGH_L || k === THIGH_R || k === SHIN_L || k === SHIN_R || k === FOOT_L || k === FOOT_R;
     if (k === HEAD || leg) this.stagger = Math.max(before, 1.2);
     else { this.stagger = before; this.flinch = 0.4; }
-    for (const id of organs) this.organ[ORGAN[id]] = Math.max(0, this.organ[ORGAN[id]] - 85 * wp.dmg * rf(0.85, 1.15));
+    for (const id of organs) { this.organ[ORGAN[id]] = Math.max(0, this.organ[ORGAN[id]] - 85 * wp.dmg * rf(0.85, 1.15)); this.orgHit(ORGAN[id]); }
     if (k === HEAD) {
       this.ko -= 45 * wp.dmg;
-      if (hit.crit) this.organ[ORGAN.brain] = 0;
+      if (hit.crit) { this.organ[ORGAN.brain] = 0; this.orgHit(ORGAN.brain); }
     } else if (k === TORSO) this.bl = Math.max(0, this.bl - 4 * wp.dmg);
     else if (k !== PELVIS && this.dmg[k] >= 100 && this.hits[k] >= 8 && Math.random() < wp.sever) { this.severCd = 0; this.sever(k); }
     return [x, y];
@@ -1821,6 +1836,8 @@ class Doll {
   onImpact(i, speed) {
     const k = this.owner[i];
     if (this.gone[k] || speed < SAFE_SPEED) return;
+    // A blow within a second of a shot, a cut, a swing or a blast belongs to it.
+    if (!this.src || (this.lifeT || 0) - this.src.t > 1) this.hurtBy("impact", "Aufprall");
     const over = (speed - SAFE_SPEED) / 100, dmg = over * over * 3 * (IMPACT_MULT[k] || 1);
     bodyThudSound(speed);
     this.hurtPart(k, dmg);
@@ -1873,9 +1890,9 @@ class Doll {
       const idx = this.wounds.findIndex((w) => !w.stump);
       this.wounds.splice(idx >= 0 ? idx : 0, 1);
     }
-    if (!stump && !(extra && extra.exit)) this.logEvent((WOUND_KIND[kind] || "Wunde") + " " + PART_NAME[k]);
+    if (!stump && !(extra && extra.exit)) this.logEvent((WOUND_KIND[kind] || "Wunde") + " " + PART_NAME[k] + (this.src && this.src.kind !== "impact" ? " · " + this.src.tag : ""));
     this.wounds.push({ part: k, t: clamp(t, 0, 1), s: clamp(s, -1, 1), bleed: severity * 0.25,
-      size: severity < 1.5 ? 1.4 : 2.2, stump, kind, rot: rf(-0.6, 0.6), seed: Math.random() * 6.28, drip: 0, born: performance.now() / 1000, ...extra });
+      size: severity < 1.5 ? 1.4 : 2.2, stump, kind, rot: rf(-0.6, 0.6), seed: Math.random() * 6.28, drip: 0, born: performance.now() / 1000, by: this.src, ...extra });
   }
 
   sever(k) {
@@ -1886,7 +1903,8 @@ class Doll {
     this.inv.push(this.inv[jp]); this.owner.push(k); this.impactCd.push(0.3); this.rad.push(this.rad[jp]);
     this.pa[k] = np;
     this.severed[k] = true;
-    this.logEvent(PART_NAME[k] + " abgetrennt");
+    (this.cutBy || (this.cutBy = []))[k] = { src: this.src, gib: false };
+    this.logEvent(PART_NAME[k] + " abgetrennt" + (this.src ? " · " + this.src.tag : ""));
     this.dmg[k] = 100;
     this.hurtPart(PARENT[k], 35);
     for (const j of this.joints) if (j.child === k) j.active = false;
@@ -1914,6 +1932,7 @@ class Doll {
     this.sever(k);
     for (let c = 0; c < PART_COUNT; c++) if (PARENT[c] === k) { this.severCd = 0; this.sever(c); }
     this.gone[k] = true;
+    (this.cutBy || (this.cutBy = []))[k] = { src: this.src, gib: true };
     this.wounds = this.wounds.filter((w) => w.part !== k);
     if (this.grabbed === this.pa[k] || this.grabbed === this.pb[k]) this.grabbed = -1;
     const count = k === HEAD ? 16 : 9;
@@ -1947,6 +1966,7 @@ class Doll {
       hit = true;
       if (this.bladeCd[k] > 0) continue;
       this.bladeCd[k] = 0.15;
+      this.hurtBy("cut", "Messer");
       this.hurtPart(k, 30);
       sliceSound();
       // The cut runs along the blade's path. A slow push leaves a short stab.
@@ -1975,6 +1995,7 @@ class Doll {
       this.ox[i] = this.x[i] - vx; this.oy[i] = this.y[i] - vy;
     }
     if (!touched) return false;
+    this.hurtBy("blast", "Bombe");
     for (let k = 0; k < PART_COUNT; k++) {
       if (this.gone[k]) continue;
       const mx = (this.x[this.pa[k]] + this.x[this.pb[k]]) / 2, my = (this.y[this.pa[k]] + this.y[this.pb[k]]) / 2;
@@ -1989,7 +2010,7 @@ class Doll {
     this.pn = 100;
     this.ko -= 40;
     // The fireball sets the near side of the body alight.
-    this.applyHeat(x, y, R * 0.45, 2.5);
+    this.applyHeat(x, y, R * 0.45, 2.5, "blast");
     this.damaged();
     return true;
   }
@@ -2000,9 +2021,9 @@ class Doll {
   }
   // Sets a body part on fire for at least t seconds. Clothes and hair keep
   // it burning longer.
-  ignite(k, t) {
+  ignite(k, t, by = "open") {
     if (k < 0 || this.gone[k] || this.frozen) return;
-    if (!this.fire.some((v) => v > 0)) this.logEvent(PART_NAME[k] + " fängt Feuer");
+    if (!this.fire.some((v) => v > 0)) { this.fireBy = by; this.logEvent(PART_NAME[k] + " fängt Feuer" + (by === "open" ? "" : " · " + FIRE_SRC[by][1])); }
     const fuel = (PART_CLOTH[k] !== "skin" ? this.cloth[k] * 3 : 0) + (k === HEAD ? this.hair * 1.5 : 0);
     this.fire[k] = Math.max(this.fire[k], t + fuel);
   }
@@ -2011,12 +2032,12 @@ class Doll {
     this.burn = this.fire.some((v) => v > 0) ? 1 : 0;
   }
   // Parts within r of the point catch fire.
-  applyHeat(x, y, r, t = 3) {
+  applyHeat(x, y, r, t = 3, from = "flame") {
     for (let k = 0; k < PART_COUNT; k++) {
       if (this.gone[k]) continue;
       const [ax, ay] = limbStart(this, k), bx = this.x[this.pb[k]], by = this.y[this.pb[k]];
       const [qx, qy] = closestOnSeg(x, y, ax, ay, bx, by), w = k === HEAD ? HEAD_R : RECT[k][0];
-      if (Math.hypot(x - qx, y - qy) <= r + w) this.ignite(k, t);
+      if (Math.hypot(x - qx, y - qy) <= r + w) this.ignite(k, t, from);
     }
   }
   applyCold(x, y, r) { if (this.near(x, y, r)) { this.freeze = Math.min(1.6, this.freeze + DT * 1.1); this.extinguish(); } }
@@ -2055,6 +2076,7 @@ class Doll {
   batHit(k, t, s, dir) {
     const i = k === HEAD ? this.pb[HEAD] : t < 0.5 ? this.pa[k] : this.pb[k];
     const leg = k === THIGH_L || k === THIGH_R || k === SHIN_L || k === SHIN_R || k === FOOT_L || k === FOOT_R;
+    this.hurtBy("bat", "Baseballschläger");
     this.onImpact(i, rf(980, 1180));
     for (const j of [this.pa[k], this.pb[k]]) this.push(j, dir * 7, -2.2);
     if (k === HEAD) this.push(P_NECK, dir * 3, -1);
@@ -2079,6 +2101,7 @@ class Doll {
       return "Herz schlägt wieder";
     }
     if (!this.dead) {
+      this.hurtBy("shock", "Defibrillator", "des Defibrillators");
       this.pn = Math.min(100, this.pn + 25); this.hurtPart(TORSO, 6); this.damaged();
       this.logEvent("Elektroschock Brust");
       return this.isOut() ? "Schock, bleibt bewusstlos" : "Autsch! Sie lebt doch";
@@ -2105,7 +2128,7 @@ class Doll {
   }
   adrenaline() {
     if (this.dead) return "Zu spät";
-    if (this.adrenT > 12) { this.organ[ORGAN.heart] = Math.max(0, this.organ[ORGAN.heart] - 40); this.pn = Math.min(100, this.pn + 30); this.logEvent("Überdosis Adrenalin"); return "Überdosis! Herz geschädigt"; }
+    if (this.adrenT > 12) { this.hurtBy("drug", "Adrenalin"); this.orgHit(ORGAN.heart); this.organ[ORGAN.heart] = Math.max(0, this.organ[ORGAN.heart] - 40); this.pn = Math.min(100, this.pn + 30); this.logEvent("Überdosis Adrenalin"); return "Überdosis! Herz geschädigt"; }
     this.adrenT = 25; this.ko = Math.min(100, this.ko + 70); this.koTimer = 0; this.koLatched = false;
     this.pn = Math.max(0, this.pn - 40); this.fear = Math.max(this.fear || 0, 0.6); this.stagger = 0;
     this.logEvent("Adrenalin");
@@ -2380,6 +2403,7 @@ class Doll {
     this.burn = 0; this.freeze = 0; this.frozen = false;
     this.stagger = 0; this.sinceDamage = 10;
     this.organ = ORGANS.map(() => 100); this.arrest = false; this.cause = ""; this.sepsis = 0; this.report = null; this.firstHurt = undefined; this.log = []; this.orgDown = null;
+    this.src = null; this.partBy = []; this.orgBy = []; this.cutBy = []; this.fireBy = null;
     this.broken.fill(false);
   }
 
@@ -3971,9 +3995,11 @@ function drawFaceIcon(d, x, y, s) {
   if (d.hair > 0.15) { ctx.fillStyle = hair; ctx.fillRect(x, y, s, u * 2.2); ctx.fillRect(x, y, u, u * 3.4); }
   ctx.fillStyle = "#0b0b0e";
   if (d.dead) {
-    const ex = x + u * 5.2, ey = y + u * 3.8;
-    ctx.fillRect(ex - u, ey - u, u * 0.8, u * 0.8); ctx.fillRect(ex + u * 0.2, ey + u * 0.2, u * 0.8, u * 0.8);
-    ctx.fillRect(ex + u * 0.2, ey - u, u * 0.8, u * 0.8); ctx.fillRect(ex - u, ey + u * 0.2, u * 0.8, u * 0.8);
+    // A closed X for an eye: two crossing strokes.
+    const ex = x + u * 5.2, ey = y + u * 3.9, r = u * 1.15;
+    ctx.save(); ctx.strokeStyle = "#0b0b0e"; ctx.lineWidth = Math.max(1.2, u * 0.62); ctx.lineCap = "square";
+    ctx.beginPath(); ctx.moveTo(ex - r, ey - r); ctx.lineTo(ex + r, ey + r); ctx.moveTo(ex + r, ey - r); ctx.lineTo(ex - r, ey + r); ctx.stroke();
+    ctx.restore();
   } else if (d.isOut()) ctx.fillRect(x + u * 4.4, y + u * 4, u * 1.8, u * 0.7);
   else { ctx.fillStyle = "#f4f4f0"; ctx.fillRect(x + u * 4.2, y + u * 3.4, u * 2.2, u * 1.4); ctx.fillStyle = "#0b0b0e"; ctx.fillRect(x + u * 5.4, y + u * 3.4, u, u * 1.4); }
   ctx.fillStyle = css(darken(tintFor(d, HEAD, d.look.skin), 0.45)); ctx.fillRect(x + u * 4.6, y + u * 6, u * 2, u * 0.8);
@@ -4192,7 +4218,7 @@ function drawPanel(d) {
 //        every organ, the wounds counted and what applies right now.
 // Up to three dolls are followed; small tabs switch between them.
 // ======================================================================
-let vitalsMode = "card";
+let vitalsMode = "card", organsOpen = false;
 try { vitalsMode = localStorage.getItem("ragpit.vitals") || "card"; } catch (e) { /* storage is optional */ }
 function setVitalsMode(m) {
   vitalsMode = m; clickSound(m === "scan" ? 820 : 640, 0.04);
@@ -4335,7 +4361,20 @@ function drawVitals(sel) {
     let rows = chipList.length ? 1 : 0, lineW = 0;
     ctx.font = `700 7px ${FONT}`;
     for (const [, name] of chipList) { const tw = ctx.measureText(name).width + 20; if (lineW + tw > w - 16) { rows++; lineW = 0; } lineW += tw; }
-    const h = Math.min(H - 16, 40 + 196 + 8 + 58 + rows * 18 + (rows ? 6 : 0) + 34);
+    // The wounds, counted by kind. Only the kinds the doll has are shown.
+    const cnt = { shot: 0, cut: 0, hit: 0, stump: 0, bleed: 0, band: 0 };
+    for (const wd of d.wounds) {
+      if (!d.attached(wd.part) && !wd.stump) continue;
+      if (wd.stump) cnt.stump++; else if (!wd.exit) cnt[wd.kind === "shot" ? "shot" : wd.kind === "cut" ? "cut" : "hit"]++;
+      if (wd.bleed > 0 && !wd.bandaged) cnt.bleed++;
+      if (wd.bandaged) cnt.band++;
+    }
+    const wList = [["SCHUSS", cnt.shot, "#e8443a"], ["SCHNITT", cnt.cut, "#c8d0dc"], ["PRELLUNG", cnt.hit, "#b48cff"], ["STUMPF", cnt.stump, "#f272b8"], ["BLUTET", cnt.bleed, "#ff4050"], ["VERBUNDEN", cnt.band, "#ece6d8"]].filter((e) => e[1] > 0);
+    const wRows = Math.max(1, Math.ceil(wList.length / 3));
+    // Open, the organ list runs a little past the chart.
+    const orgEnd = 40 + (organsOpen ? 134 + ORGANS.length * 9.6 : 141);
+    const top = Math.max(40 + 196, orgEnd) + 8;
+    const h = Math.min(H - 16, top + 14 + wRows * 22 + rows * 18 + (rows ? 6 : 0) + 34);
     ctx.save(); ctx.globalAlpha *= Math.min(1, kScan * 1.5);
     vitFrame(x, y, w, h, d);
     vitHeader(d, x, y, w, true);
@@ -4363,36 +4402,52 @@ function drawVitals(sel) {
       label(txt, bx + bw, yy + 5, 9, bad ? "#ff5060" : "#ecece6", "right");
       if (i === 4) drawEcg(d, bx, yy + 10, bw, 12); else drawSegBar(bx, yy + 11, bw, 6, val / 100, v.color, bad);
     });
-    // organs, each with its own bar
-    let oy = cy0 + 116;
-    label("ORGANE", bx, oy, 7, "#6a6672"); oy += 8;
-    ORGANS.forEach((o, n) => {
-      const hpv = d.attached(o.part) ? d.organ[n] : 0, c = hpv <= 0 ? "#5a1a22" : hpv < 35 ? "#ff4050" : hpv < 60 ? "#f08a24" : hpv < 99 ? "#f2da3a" : "#3e8a4a";
+    // Organs: closed, a header with one dot per organ. Open, each with its bar.
+    const hpOf = (n) => (d.attached(ORGANS[n].part) ? d.organ[n] : 0);
+    const orgCol = (v) => (v <= 0 ? "#5a1a22" : v < 35 ? "#ff4050" : v < 60 ? "#f08a24" : v < 99 ? "#f2da3a" : "#3e8a4a");
+    const hurt = ORGANS.filter((o, n) => hpOf(n) < 99).length;
+    const ob = { id: "vorg", x: bx - 4, y: cy0 + 113, w: bw + 8, h: organsOpen ? 16 : 28, act: () => { organsOpen = !organsOpen; clickSound(organsOpen ? 820 : 640, 0.04); } };
+    scaled(ob.x + ob.w / 2, ob.y + ob.h / 2, popScale("vorg", 0.06), () => {
+      rr(ob.x, ob.y, ob.w, ob.h, 6); ctx.fillStyle = "#121116"; ctx.fill(); ctx.strokeStyle = hurt ? "#3a2a30" : "#24222a"; ctx.lineWidth = 1; ctx.stroke();
+      label("ORGANE", bx, cy0 + 121, 7, "#9894a0");
+      label(hurt ? hurt + " VERLETZT" : "ALLE OK", bx + bw - 12, cy0 + 121, 6.5, hurt ? "#f2a0a6" : "#4ccf5a", "right");
+      // chevron: right when closed, down when open
+      const vx = bx + bw - 3, vy = cy0 + 121;
+      ctx.strokeStyle = "#a8a4b0"; ctx.lineWidth = 1.4; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.beginPath();
+      if (organsOpen) { ctx.moveTo(vx - 3, vy - 1.5); ctx.lineTo(vx, vy + 1.5); ctx.lineTo(vx + 3, vy - 1.5); }
+      else { ctx.moveTo(vx - 1.5, vy - 3); ctx.lineTo(vx + 1.5, vy); ctx.lineTo(vx - 1.5, vy + 3); }
+      ctx.stroke();
+      if (!organsOpen) {
+        const gap = bw / ORGANS.length;
+        ORGANS.forEach((o, n) => { rr(bx + n * gap + 1, cy0 + 130, gap - 3, 6, 2.5); ctx.fillStyle = orgCol(hpOf(n)); ctx.fill(); });
+      }
+    });
+    if (vitalsMode === "scan") vitRects.push(ob);
+    let oy = cy0 + 134;
+    if (organsOpen) ORGANS.forEach((o, n) => {
+      const hpv = hpOf(n), c = orgCol(hpv);
       label(o.name, bx, oy + 3.5, 6.5, hpv < 60 ? "#e8b0b4" : "#9894a0");
       rr(bx + 52, oy, bw - 76, 6, 3); ctx.fillStyle = "#18171c"; ctx.fill();
       if (hpv > 0) { rr(bx + 52, oy, Math.max(4, (bw - 76) * hpv / 100), 6, 3); ctx.fillStyle = c; ctx.fill(); }
       label(hpv <= 0 ? "X" : Math.round(hpv) + "", bx + bw, oy + 3.5, 6.5, c, "right");
       oy += 9.6;
     });
-    // the wounds, counted by kind
-    const cnt = { shot: 0, cut: 0, hit: 0, stump: 0, bleed: 0, band: 0 };
-    for (const wd of d.wounds) {
-      if (!d.attached(wd.part) && !wd.stump) continue;
-      if (wd.stump) cnt.stump++; else if (!wd.exit) cnt[wd.kind === "shot" ? "shot" : wd.kind === "cut" ? "cut" : "hit"]++;
-      if (wd.bleed > 0 && !wd.bandaged) cnt.bleed++;
-      if (wd.bandaged) cnt.band++;
-    }
-    const wy = cy0 + ch + 8;
+    // the wounds the doll has, nothing for kinds it does not have
+    const wy = y + top;
     label("WUNDEN", cx0, wy, 7, "#6a6672");
-    [["SCHUSS", cnt.shot, "#e8443a"], ["SCHNITT", cnt.cut, "#c8d0dc"], ["PRELLUNG", cnt.hit, "#b48cff"], ["STUMPF", cnt.stump, "#f272b8"], ["BLUTET", cnt.bleed, "#ff4050"], ["VERBUNDEN", cnt.band, "#ece6d8"]].forEach(([n2, c2, col], i) => {
+    if (!wList.length) {
+      rr(cx0, wy + 10, w - 16, 18, 6); ctx.fillStyle = "#141318"; ctx.fill(); ctx.strokeStyle = "#24222a"; ctx.lineWidth = 1; ctx.stroke();
+      label("KEINE WUNDEN", cx0 + 10, wy + 19.5, 6.5, "#7a7682");
+    }
+    wList.forEach(([n2, c2, col], i) => {
       const xx = cx0 + (i % 3) * 98, yy = wy + 10 + Math.floor(i / 3) * 22;
-      rr(xx, yy, 92, 18, 6); ctx.fillStyle = c2 ? css(hex(col), 0.12) : "#141318"; ctx.fill();
-      ctx.strokeStyle = c2 ? css(hex(col), 0.6) : "#24222a"; ctx.lineWidth = 1; ctx.stroke();
-      label(String(c2), xx + 10, yy + 9.5, 10, c2 ? col : "#4a4852", "center");
-      label(n2, xx + 20, yy + 9.5, 6.5, c2 ? "#d8d4dc" : "#56545e");
+      rr(xx, yy, 92, 18, 6); ctx.fillStyle = css(hex(col), 0.12); ctx.fill();
+      ctx.strokeStyle = css(hex(col), 0.6); ctx.lineWidth = 1; ctx.stroke();
+      label(String(c2), xx + 10, yy + 9.5, 10, col, "center");
+      label(n2, xx + 20, yy + 9.5, 6.5, "#d8d4dc");
     });
     // what applies right now, the threat, and the report once dead
-    let cxp = cx0, cyp = wy + 58;
+    let cxp = cx0, cyp = wy + 14 + wRows * 22;
     for (const [key, name, col] of chipList) {
       ctx.font = `700 7px ${FONT}`;
       const tw = ctx.measureText(name).width + 16;
@@ -4434,9 +4489,15 @@ function drawVitals(sel) {
 // A small marker over the doll the overlay shows, when more than one stands around.
 function drawVitalsMarker(sel) {
   if (!sel || state.dolls.length < 2 || !state.dolls.includes(sel)) return;
-  const x = sel.x[P_HEAD], y = Math.min(sel.y[P_HEAD], sel.y[P_NECK]) - 22 - Math.sin(performance.now() / 260) * 2;
-  ctx.save(); ctx.globalAlpha *= 0.85; ctx.fillStyle = stateColor(sel);
-  ctx.beginPath(); ctx.moveTo(x - 5, y - 6); ctx.lineTo(x + 5, y - 6); ctx.lineTo(x, y); ctx.closePath(); ctx.fill();
+  // The tip points down at the top of the head, wherever the head is.
+  const head = sel.attached(HEAD) && !sel.gone[HEAD];
+  const x = head ? sel.x[P_HEAD] : sel.x[P_NECK];
+  const top = head ? Math.min(sel.y[P_HEAD] - HEAD_R, sel.y[P_NECK]) : sel.y[P_NECK] - 6;
+  const y = top - 9 - Math.sin(performance.now() / 260) * 2;
+  ctx.save(); ctx.globalAlpha *= 0.9;
+  ctx.beginPath(); ctx.moveTo(x - 7.5, y - 9); ctx.lineTo(x + 7.5, y - 9); ctx.lineTo(x, y); ctx.closePath();
+  ctx.fillStyle = stateColor(sel); ctx.fill();
+  ctx.strokeStyle = "rgba(8,8,10,0.75)"; ctx.lineWidth = 1.4; ctx.lineJoin = "round"; ctx.stroke();
   ctx.restore();
 }
 
@@ -5010,12 +5071,12 @@ const SPRITE_SNIPER = [
   ".........kkk.....................................",
 ];
 const WEAPONS = [
-  { name: "AK-47", sprite: SPRITE_AK, grip: [12.5, 7], muzzle: [38, 3.5], mag: 30, reload: 2.4, climb: 0.035, auto: true, rate: 10, dmg: 1.0, spread: 0.045, push: 6, sever: 0.25, headKill: 0.3, kick: 0.06, snd: 1, rk: "mag" },
-  { name: "Sturmgewehr", sprite: SPRITE_AR, grip: [12.5, 7], muzzle: [38, 3.5], mag: 30, reload: 2.0, climb: 0.022, auto: true, rate: 13, dmg: 0.85, spread: 0.025, push: 5, sever: 0.15, headKill: 0.22, kick: 0.045, snd: 0.8, rk: "mag" },
-  { name: "Glock 17", sprite: SPRITE_GLOCK, grip: [4, 6], muzzle: [18, 2.5], mag: 17, reload: 1.4, climb: 0.07, auto: false, rate: 6, dmg: 0.65, spread: 0.015, push: 3.5, sever: 0.05, headKill: 0.12, kick: 0.03, snd: 0.6, rk: "pistol" },
-  { name: "Schrotflinte", sprite: SPRITE_SHOTGUN, grip: [12.5, 6], muzzle: [38, 2], mag: 6, reload: 2.4, climb: 0.09, auto: false, rate: 1.4, dmg: 0.42, pellets: 8, spread: 0.11, push: 4.5, sever: 0.12, headKill: 0.12, kick: 0.11, snd: 1.4, rk: "shells", cycle: "pump" },
-  { name: "Sniper", sprite: SPRITE_SNIPER, grip: [11.5, 7], muzzle: [49, 4], mag: 5, reload: 2.8, climb: 0.12, auto: false, rate: 1.1, dmg: 2.2, pierce: 3, spread: 0.002, push: 14, sever: 0.5, headKill: 0.95, kick: 0.14, snd: 1.6, rk: "bolt", cycle: "bolt" },
-  { name: "Taser", sprite: SPRITE_TASER, grip: [4, 5], muzzle: [19, 1.5], mag: 1, reload: 1.8, climb: 0, auto: false, rate: 1, dmg: 0, spread: 0.008, push: 0.5, sever: 0, headKill: 0, kick: 0.01, snd: 0.2, taser: true, range: 520, rk: "taser" },
+  { name: "AK-47", dat: "der AK-47", sprite: SPRITE_AK, grip: [12.5, 7], muzzle: [38, 3.5], mag: 30, reload: 2.4, climb: 0.035, auto: true, rate: 10, dmg: 1.0, spread: 0.045, push: 6, sever: 0.25, headKill: 0.3, kick: 0.06, snd: 1, rk: "mag" },
+  { name: "Sturmgewehr", dat: "dem Sturmgewehr", sprite: SPRITE_AR, grip: [12.5, 7], muzzle: [38, 3.5], mag: 30, reload: 2.0, climb: 0.022, auto: true, rate: 13, dmg: 0.85, spread: 0.025, push: 5, sever: 0.15, headKill: 0.22, kick: 0.045, snd: 0.8, rk: "mag" },
+  { name: "Glock 17", dat: "der Glock 17", sprite: SPRITE_GLOCK, grip: [4, 6], muzzle: [18, 2.5], mag: 17, reload: 1.4, climb: 0.07, auto: false, rate: 6, dmg: 0.65, spread: 0.015, push: 3.5, sever: 0.05, headKill: 0.12, kick: 0.03, snd: 0.6, rk: "pistol" },
+  { name: "Schrotflinte", dat: "der Schrotflinte", sprite: SPRITE_SHOTGUN, grip: [12.5, 6], muzzle: [38, 2], mag: 6, reload: 2.4, climb: 0.09, auto: false, rate: 1.4, dmg: 0.42, pellets: 8, spread: 0.11, push: 4.5, sever: 0.12, headKill: 0.12, kick: 0.11, snd: 1.4, rk: "shells", cycle: "pump" },
+  { name: "Sniper", dat: "dem Scharfschützengewehr", sprite: SPRITE_SNIPER, grip: [11.5, 7], muzzle: [49, 4], mag: 5, reload: 2.8, climb: 0.12, auto: false, rate: 1.1, dmg: 2.2, pierce: 3, spread: 0.002, push: 14, sever: 0.5, headKill: 0.95, kick: 0.14, snd: 1.6, rk: "bolt", cycle: "bolt" },
+  { name: "Taser", dat: "dem Taser", sprite: SPRITE_TASER, grip: [4, 5], muzzle: [19, 1.5], mag: 1, reload: 1.8, climb: 0, auto: false, rate: 1, dmg: 0, spread: 0.008, push: 0.5, sever: 0, headKill: 0, kick: 0.01, snd: 0.2, taser: true, range: 520, rk: "taser" },
 ];
 let wires = [];
 let tracers = [], flashes = [], sparks = [], smokes = [];
@@ -6672,6 +6733,42 @@ function drawChartOrgans(d, cx, cy, s, mode) {
 // Everything about a death, written down at the moment it happens: what
 // killed the doll, how it came to that, its wounds and its state.
 const WOUND_KIND = { shot: "Schusswunde", cut: "Schnitt", hit: "Prellung" };
+// Body parts in sentences: where a wound sits, and the part that came off.
+const PART_AT = {
+  [HEAD]: "am Kopf", [TORSO]: "an der Brust", [PELVIS]: "am Unterbauch", [UARM_L]: "am linken Oberarm", [UARM_R]: "am rechten Oberarm",
+  [LARM_L]: "am linken Unterarm", [LARM_R]: "am rechten Unterarm", [THIGH_L]: "am linken Oberschenkel", [THIGH_R]: "am rechten Oberschenkel",
+  [SHIN_L]: "am linken Unterschenkel", [SHIN_R]: "am rechten Unterschenkel", [FOOT_L]: "am linken Fuß", [FOOT_R]: "am rechten Fuß",
+};
+const PART_NOM = {
+  [HEAD]: "der Kopf", [UARM_L]: "der linke Oberarm", [UARM_R]: "der rechte Oberarm", [LARM_L]: "der linke Unterarm", [LARM_R]: "der rechte Unterarm",
+  [THIGH_L]: "der linke Oberschenkel", [THIGH_R]: "der rechte Oberschenkel", [SHIN_L]: "der linke Unterschenkel", [SHIN_R]: "der rechte Unterschenkel",
+  [FOOT_L]: "der linke Fuß", [FOOT_R]: "der rechte Fuß", [PELVIS]: "der Unterbauch",
+};
+// What did the harm, as the subject of a sentence, and whether it is plural.
+function srcSubject(src, n = 1) {
+  if (!src) return ["Eine schwere Verletzung", false];
+  const many = n > 1;
+  switch (src.kind) {
+    case "shot": return [many ? n + " Schüsse aus " + src.name : "Ein Schuss aus " + src.name, many];
+    case "cut": return ["Ein Schnitt mit dem Messer", false];
+    case "bat": return ["Ein Schlag mit dem Baseballschläger", false];
+    case "blast": return ["Die Explosion einer Bombe", false];
+    case "shock": return ["Der Stromstoß " + src.name, false];
+    case "drug": return ["Zu viel Adrenalin", false];
+    default: return ["Ein harter Aufprall", false];
+  }
+}
+// The same as a phrase after "wurde": "mit dem Messer", "durch einen Schuss aus ...".
+function srcBy(src) {
+  switch (src.kind) {
+    case "shot": return "durch einen Schuss aus " + src.name;
+    case "cut": return "mit dem Messer";
+    case "bat": return "mit dem Baseballschläger";
+    case "blast": return "durch die Explosion einer Bombe";
+    case "shock": return "durch den Stromstoß " + src.name;
+    default: return "durch einen harten Aufprall";
+  }
+}
 const fmtTime = (t) => (t < 60 ? Math.round(t) + " s" : Math.floor(t / 60) + ":" + String(Math.round(t % 60)).padStart(2, "0") + " min");
 function deathReport(d) {
   const att = (k) => d.attached(k) || d.severed[k];
@@ -6681,11 +6778,9 @@ function deathReport(d) {
   // Wounds, counted by kind, the worst bleeders named.
   const n = { shot: 0, exit: 0, cut: 0, hit: 0 }, lost = [], bandaged = d.wounds.filter((w) => w.bandaged).length;
   for (const w of d.wounds) {
-    if (w.stump) { if (w.child !== undefined) lost.push(PART_NAME[w.child]); continue; }
+    if (w.stump) { if (w.child !== undefined) { const cb = (d.cutBy || [])[w.child]; lost.push(PART_NAME[w.child] + (cb && cb.src ? " · " + cb.src.tag : "")); } continue; }
     if (w.kind === "shot" && w.exit) n.exit++; else n[w.kind] = (n[w.kind] || 0) + 1;
   }
-  const bleeders = d.wounds.filter((w) => !w.bandaged && w.bleed > 0.05 && att(w.part)).sort((a, b) => b.bleed - a.bleed).slice(0, 2)
-    .map((w) => (w.stump ? "Stumpf" : w.exit ? "Austritt" : WOUND_KIND[w.kind] || "Wunde") + " " + PART_NAME[w.part]);
   const last = [...d.wounds].reverse().find((w) => !w.stump && !w.exit);
   const lines = [];
   if (n.shot) lines.push(n.shot + (n.shot > 1 ? " Schusswunden" : " Schusswunde") + (n.exit ? ", " + n.exit + " Austritt" : ""));
@@ -6696,7 +6791,7 @@ function deathReport(d) {
   for (let k = 0; k < PART_COUNT; k++) if (d.broken[k] && d.attached(k)) broken.push(PART_NAME[k]);
   if (broken.length) lines.push("Gebrochen: " + broken.join(", "));
   if (bandaged) lines.push(bandaged + " verbunden");
-  if (last) lines.push("Zuletzt: " + (WOUND_KIND[last.kind] || "Wunde") + " " + PART_NAME[last.part]);
+  if (last) lines.push("Zuletzt: " + (WOUND_KIND[last.kind] || "Wunde") + " " + PART_NAME[last.part] + (last.by && last.by.kind !== "impact" ? " · " + last.by.tag : ""));
   if (!lines.length) lines.push("Keine äußeren Wunden");
   r.wounds = lines;
   // State at death
@@ -6704,23 +6799,68 @@ function deathReport(d) {
   if (r.tbsa > 0) st.push(["VERBRANNT", r.tbsa + "% Haut", r.tbsa > 30]);
   ORGANS.forEach((o) => { const v = hp(o.id); if (v < 100) st.push([o.name, v <= 0 ? "ZERSTÖRT" : v + "%", v < 40]); });
   r.state = st;
-  // What happened, in plain words
+  // What happened, in plain words, with the weapon that did it.
   const lung = "Lunge L " + hp("lungL") + "%, R " + hp("lungR") + "%";
-  const top = bleeders.length ? bleeders.join(" und ") : "mehrere kleine Wunden";
-  const T = {
-    "GEHIRN ZERSTÖRT": "Ein Treffer am Kopf hat das Gehirn zerstört. Atmung und Herzschlag hörten im selben Moment auf.",
-    "KOPF VERLOREN": "Der Kopf wurde vom Körper getrennt. Der Tod trat sofort ein.",
-    "HERZSTILLSTAND": "Das Herz hörte auf zu schlagen (Herz " + hp("heart") + "%). Ohne Kreislauf bekam das Gehirn keinen Sauerstoff mehr.",
-    "ERSTICKT": "Die Lungen nahmen keinen Sauerstoff mehr auf (" + lung + "). Der Sauerstoff im Blut fiel, bis das Herz stehen blieb.",
-    "ERTRUNKEN": "Der Kopf war zu lange unter Wasser. Nach etwa 6 Sekunden ohne Luft liefen die Lungen voll, und die Puppe starb.",
-    "VERBLUTET": "Die Puppe hat zu viel Blut verloren, nur " + r.bl + "% waren noch übrig. Die stärkste Blutung kam aus: " + top + "." + (bandaged ? "" : " Kein Verband hat sie gestoppt."),
-    "LEBERBLUTUNG": "Die Leber wurde verletzt (" + hp("liver") + "%) und blutete in den Bauch. Diese innere Blutung stoppt kein Verband, nur eine Infusion gewinnt Zeit.",
-    "NIERENBLUTUNG": "Die Nieren wurden verletzt (" + hp("kidneys") + "%) und bluteten nach innen. Von außen war die Blutung kaum zu sehen.",
-    "BAUCHFELLENTZÜNDUNG": "Magen oder Darm wurden verletzt (Magen " + hp("stomach") + "%, Darm " + hp("gut") + "%). Ihr Inhalt lief in den Bauch und löste eine tödliche Entzündung aus.",
-    "VERBRANNT": "Kopf und Brust sind bis auf die Knochen verkohlt. So schwere Verbrennungen überlebt kein Körper.",
-    "VERBRENNUNGSSCHOCK": r.tbsa + "% der Haut sind verbrannt. Der Körper verlor über die Wunden so viel Flüssigkeit, dass der Kreislauf zusammenbrach.",
-  };
-  r.text = T[r.cause] || "Die Puppe starb ohne erkennbare Ursache.";
+  const orgBy = d.orgBy || [], partBy = d.partBy || [], cutBy = d.cutBy || [];
+  const shots = (k) => d.wounds.filter((w) => w.part === k && w.kind === "shot" && !w.exit && !w.stump && w.by && w.by.kind === "shot").length;
+  const say = (src, k, one, many) => { const [t, pl] = srcSubject(src, k === undefined ? 1 : shots(k)); return t + " " + (pl ? many : one); };
+  const tag = (src) => (src ? " · " + src.tag : "");
+  const recent = (word) => (d.log || []).slice(-8).some(([, t]) => t.startsWith(word));
+  let text = "", how = "";
+  const c = r.cause;
+  if (c === "KOPF VERLOREN") {
+    const cb = cutBy[HEAD] || { src: partBy[HEAD] }, src = cb.src;
+    const cut = src && src.kind === "cut", verb = cb.gib ? "den Kopf zerfetzt." : cut ? "den Kopf vom Körper getrennt." : "den Kopf abgerissen.";
+    text = say(src, HEAD, "hat " + verb, "haben " + verb);
+    text += " Der Tod trat sofort ein.";
+    how = (cb.gib ? "Kopf zerfetzt" : cut ? "Kopf abgetrennt" : "Kopf abgerissen") + tag(src);
+  } else if (c === "GEHIRN ZERSTÖRT") {
+    const src = orgBy[ORGAN.brain] || partBy[HEAD];
+    text = say(src, HEAD, "traf den Kopf und zerstörte das Gehirn.", "trafen den Kopf und zerstörten das Gehirn.") + " Atmung und Herzschlag hörten im selben Moment auf.";
+    how = (!src ? "Gehirn zerstört" : src.kind === "shot" ? "Kopfschuss" : src.kind === "cut" ? "Stich in den Kopf" : src.kind === "bat" ? "Schlag auf den Kopf" : src.kind === "blast" ? "Schädel zertrümmert" : "Schädelbruch") + tag(src);
+  } else if (c === "HERZSTILLSTAND") {
+    const src = orgBy[ORGAN.heart];
+    if (src && src.kind === "drug") { text = "Eine zweite Spritze Adrenalin kam zu früh. Das Herz raste, wurde geschädigt (Herz " + hp("heart") + "%) und blieb stehen."; how = "Überdosis Adrenalin"; }
+    else if (src && hp("heart") < 60) { text = say(src, TORSO, "traf das Herz", "trafen das Herz") + " (Herz " + hp("heart") + "%). Es hörte auf zu schlagen, und das Gehirn bekam keinen Sauerstoff mehr."; how = "Herz getroffen" + tag(src); }
+    else if (recent("Elektroschock")) { text = "Ein Stromstoß brachte das Herz aus dem Takt. Es flimmerte nur noch und pumpte kein Blut mehr. Ohne Kreislauf bekam das Gehirn keinen Sauerstoff."; how = "Herzflimmern nach Stromstoß"; }
+    else { text = "Der Körper hatte zu wenig Blut und Sauerstoff (Blut " + r.bl + "%, O2 " + r.o2 + "%). Das geschwächte Herz blieb stehen."; how = "Kreislaufversagen"; }
+  } else if (c === "ERSTICKT") {
+    const n = hp("lungL") < hp("lungR") ? ORGAN.lungL : ORGAN.lungR, src = orgBy[n];
+    if (src && d.organ[n] < 60) { text = say(src, TORSO, "traf die Lunge", "trafen die Lunge") + " (" + lung + "). Sie lief mit Blut voll, der Sauerstoff im Blut fiel, bis das Herz stehen blieb."; how = "Lunge zerstört" + tag(src); }
+    else { text = "Die Lungen nahmen keinen Sauerstoff mehr auf (" + lung + "). Der Sauerstoff im Blut fiel, bis das Herz stehen blieb."; how = "Erstickt"; }
+  } else if (c === "ERTRUNKEN") {
+    text = "Der Kopf war zu lange unter Wasser. Nach etwa 6 Sekunden ohne Luft liefen die Lungen voll, und die Puppe starb.";
+    how = "Ertrunken · Kopf unter Wasser";
+  } else if (c === "VERBLUTET") {
+    const w = d.wounds.filter((x) => !x.bandaged && att(x.part)).sort((a, b) => b.bleed - a.bleed)[0];
+    text = "Die Puppe ist verblutet, nur " + r.bl + "% Blut waren noch übrig.";
+    if (w) {
+      if (w.stump && w.child !== undefined) {
+        const cb = cutBy[w.child], src = cb && cb.src;
+        text += " Das meiste Blut lief aus dem Stumpf, wo " + PART_NOM[w.child] + " abgetrennt wurde." + (src ? " Er wurde " + srcBy(src) + " abgetrennt." : "");
+        how = "Verblutet · " + PART_NAME[w.child] + " abgetrennt" + tag(src);
+      } else {
+        const src = w.by, noun = w.exit ? "dem Austrittsloch eines Schusses" : w.kind === "shot" ? "einer Schusswunde" : w.kind === "cut" ? "einem Schnitt" : "einer Platzwunde";
+        text += " Das meiste Blut lief aus " + noun + " " + PART_AT[w.part] + "." + (src ? " Die Wunde entstand " + srcBy(src) + "." : "");
+        how = "Verblutet · " + (w.kind === "shot" ? "Schusswunde " : w.kind === "cut" ? "Schnitt " : "Wunde ") + PART_AT[w.part] + tag(src);
+      }
+    } else how = "Verblutet";
+    if (!bandaged) text += " Kein Verband hat die Blutung gestoppt.";
+  } else if (c === "LEBERBLUTUNG" || c === "NIERENBLUTUNG") {
+    const liver = c === "LEBERBLUTUNG", n = liver ? ORGAN.liver : ORGAN.kidneys, src = orgBy[n], name = liver ? "die Leber" : "die Nieren";
+    text = (src ? say(src, ORGANS[n].part, "verletzte " + name, "verletzten " + name) : (liver ? "Die Leber wurde verletzt" : "Die Nieren wurden verletzt")) + " (" + hp(liver ? "liver" : "kidneys") + "%).";
+    text += liver ? " Sie blutete in den Bauch. Diese innere Blutung stoppt kein Verband, nur eine Infusion gewinnt Zeit." : " Sie bluteten nach innen. Von außen war die Blutung kaum zu sehen.";
+    how = (liver ? "Leber getroffen" : "Nieren getroffen") + tag(src);
+  } else if (c === "BAUCHFELLENTZÜNDUNG") {
+    const n = hp("stomach") < hp("gut") ? ORGAN.stomach : ORGAN.gut, src = orgBy[n];
+    text = (src ? say(src, ORGANS[n].part, "riss " + (n === ORGAN.gut ? "den Darm" : "den Magen") + " auf", "rissen " + (n === ORGAN.gut ? "den Darm" : "den Magen") + " auf") : "Magen oder Darm wurden verletzt") + " (Magen " + hp("stomach") + "%, Darm " + hp("gut") + "%). Der Inhalt lief in den Bauch und löste eine tödliche Entzündung aus.";
+    how = (n === ORGAN.gut ? "Darm verletzt" : "Magen verletzt") + tag(src);
+  } else if (c === "VERBRANNT" || c === "VERBRENNUNGSSCHOCK") {
+    const f = FIRE_SRC[d.fireBy] || FIRE_SRC.open;
+    text = (c === "VERBRANNT" ? "Kopf und Brust sind bis auf die Knochen verkohlt. So schwere Verbrennungen überlebt kein Körper." : r.tbsa + "% der Haut sind verbrannt. Der Körper verlor über die Wunden so viel Flüssigkeit, dass der Kreislauf zusammenbrach.") + " Das Feuer kam von " + f[0] + ".";
+    how = (c === "VERBRANNT" ? "Verkohlt" : "Verbrennungsschock") + " · " + f[1];
+  } else { text = "Die Puppe starb ohne erkennbare Ursache."; how = "Ursache unklar"; }
+  r.text = text; r.how = how;
   r.time = "Tot nach " + fmtTime(r.life) + (r.since === null ? " · ohne Verletzung" : r.since < 1 ? " · sofort beim ersten Treffer" : " · " + fmtTime(r.since) + " nach der ersten Verletzung");
   // The last things that happened, with the time before death.
   const log = (d.log || []).slice(-6);
@@ -6750,7 +6890,7 @@ function drawDeathReport() {
   const w = Math.min(470, W - 40), x = W / 2 - w / 2;
   const para = wrapText(r.text, w - 36, 10), rows = Math.max(r.wounds.length, r.state.length);
   const ev = r.events || [], evH = ev.length ? 22 + Math.ceil(ev.length / 2) * 15 : 0;
-  const h = 118 + para.length * 14 + rows * 15 + evH + 26, y = Math.max(8, H / 2 - h / 2 - 12);
+  const hw = r.how ? 18 : 0, h = 118 + hw + para.length * 14 + rows * 15 + evH + 26, y = Math.max(8, H / 2 - h / 2 - 12);
   ctx.globalAlpha *= k;
   ctx.translate(W / 2, y + h / 2); ctx.scale(0.94 + 0.06 * k, 0.94 + 0.06 * k); ctx.translate(-W / 2, -y - h / 2);
   // The card, with blood running from its top edge
@@ -6770,12 +6910,20 @@ function drawDeathReport() {
   label("TODESBERICHT", x + 18, y + 22, 10, "#c0404c");
   label("PUPPE " + r.id, x + w - 18, y + 22, 10, "#8a7a80", "right");
   label(r.cause, x + 18, y + 48, fitFont(r.cause, w - 36, 22), "#ff4050");
-  label(r.time, x + 18, y + 70, fitFont(r.time, w - 36, 9, 400), "#9a8a90", "left", 400);
-  ctx.fillStyle = "#3a1a20"; ctx.fillRect(x + 18, y + 82, w - 36, 1);
+  // How exactly: the part, the injury and the weapon in one line.
+  if (r.how) {
+    ctx.font = `700 11px ${FONT}`;
+    const tw = Math.min(w - 36, ctx.measureText(r.how).width + 20);
+    rr(x + 18, y + 62, tw, 18, 6); ctx.fillStyle = "rgba(142,15,28,0.28)"; ctx.fill(); ctx.strokeStyle = "#8e0f1c"; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = "#ff4050"; ctx.fillRect(x + 25, y + 69, 3, 3);
+    label(r.how, x + 33, y + 71.5, fitFont(r.how, tw - 22, 11), "#ffd8d4");
+  }
+  label(r.time, x + 18, y + 70 + hw, fitFont(r.time, w - 36, 9, 400), "#9a8a90", "left", 400);
+  ctx.fillStyle = "#3a1a20"; ctx.fillRect(x + 18, y + 82 + hw, w - 36, 1);
   // What happened
-  para.forEach((ln, i) => label(ln, x + 18, y + 98 + i * 14, 10, "#e2d8da", "left", 400));
+  para.forEach((ln, i) => label(ln, x + 18, y + 98 + hw + i * 14, 10, "#e2d8da", "left", 400));
   // Wounds on the left, the state at death on the right
-  const cy = y + 98 + para.length * 14 + 8, cw = (w - 46) / 2;
+  const cy = y + 98 + hw + para.length * 14 + 8, cw = (w - 46) / 2;
   label("VERLETZUNGEN", x + 18, cy, 8.5, "#c0404c");
   label("ZUSTAND BEIM TOD", x + 28 + cw, cy, 8.5, "#c0404c");
   r.wounds.forEach((t, i) => label(t, x + 18, cy + 16 + i * 15, fitFont(t, cw, 9, 400), "#cfc4c6", "left", 400));
@@ -9709,7 +9857,7 @@ function lighter(x, y) {
     const dist = Math.hypot(qx - x, qy - y) - (k === HEAD ? HEAD_R : RECT[k][0]);
     if (dist < bd) { bd = dist; best = d; bk = k; }
   }
-  if (best) { best.ignite(bk, 3); state.selected = best; state.toast = 1; state.toastText = PART_NAME[bk] + " brennt"; }
+  if (best) { best.ignite(bk, 3, "lighter"); state.selected = best; state.toast = 1; state.toastText = PART_NAME[bk] + " brennt"; }
   paintDisc(x, y, 3, FIRE, 0.8);
   whooshSound(0.4);
 }
@@ -9722,7 +9870,7 @@ function molotov(x, y) {
   for (let n = 0; n < 40; n++) spawnParticle(x + rf(-4, 4), y + rf(-4, 4), rf(-260, 260), rf(-320, -40), FIRE);
   for (let n = 0; n < 14; n++) sparks.push({ x, y, vx: rf(-260, 260), vy: rf(-300, -60), life: rf(0.3, 0.8) });
   paintDisc(x, y, 14, FIRE, 0.7);
-  for (const d of state.dolls) d.applyHeat(x, y, 30, 5);
+  for (const d of state.dolls) d.applyHeat(x, y, 30, 5, "molotov");
   flashes.push({ x, y, ang: 0, age: 0 });
   state.shake = Math.max(state.shake, 0.18);
   glassSound(); whooshSound(1);
@@ -9738,7 +9886,7 @@ function stepFires() {
       while (y > f.y - 30 && solidAt(x, y)) y--;
       if (isFree(getMat(Math.floor(x), Math.floor(y)))) setCell(Math.floor(x), Math.floor(y), FIRE, 0, 25 + rnd(35));
     }
-    if (Math.random() < 0.3 * k) for (const d of state.dolls) d.applyHeat(f.x, f.y - 6, f.r * 0.8, 2);
+    if (Math.random() < 0.3 * k) for (const d of state.dolls) d.applyHeat(f.x, f.y - 6, f.r * 0.8, 2, "molotov");
   }
   state.fires = state.fires.filter((f) => f.t > 0);
 }
