@@ -8536,6 +8536,19 @@ function drawTitleProps(px1, floor, dk, t, dt) {
 let portraitDoll = null;
 const PD_X = 240, PD_Y = 300;
 const portraitDrops = [];
+// Each doll picture on a menu gets its own small canvas. Drawing the shared
+// pixel layer twice in one frame showed the last doll in both cards on the
+// iPhone, because Safari reads the layer when it paints, not when asked.
+const dollPics = new Map();
+function dollPic(key, sx, sy, sw, sh) {
+  sx = Math.floor(sx); sy = Math.floor(sy); sw = Math.ceil(sw); sh = Math.ceil(sh);
+  let c = dollPics.get(key);
+  if (!c || c.width !== sw || c.height !== sh) { c = document.createElement("canvas"); c.width = sw; c.height = sh; dollPics.set(key, c); }
+  const g = c.getContext("2d");
+  g.clearRect(0, 0, sw, sh);
+  g.putImageData(pixImg, -sx, -sy, sx, sy, sw, sh);
+  return c;
+}
 // The view choice uses its own doll in warm colours that always looks at you;
 // the pale shirt of the portrait doll glowed bluish white under the lamp.
 let viewDoll = null;
@@ -8584,16 +8597,17 @@ function drawPortraitDoll(cx, floor, t, scale, dt, card = false) {
   const front = settings.front;
   settings.front = true;
   try { rasterDoll(d); } finally { settings.front = front; }
-  pixCtx.putImageData(pixImg, 0, 0);
+  // The next game frame uploads the whole layer again.
   pxLast = [0, 0, DW - 1, DH - 1];
   const L = 70 * DS, R = 70 * DS, T = 205 * DS, B = 14 * DS, z = scale / DS;
   const sx = (PD_X - L) / PIX, sy = (PD_Y - T) / PIX, sw = (L + R) / PIX, shh = (T + B) / PIX;
+  const pic = dollPic(card ? "view" : "portrait", sx, sy, sw, shh);
   // A soft rim of lamp light behind the body.
   const glow = ctx.createRadialGradient(cx, floor - 110 * scale, 10, cx, floor - 110 * scale, 120 * scale);
   glow.addColorStop(0, "rgba(255,236,200,0.10)"); glow.addColorStop(1, "rgba(255,236,200,0)");
   ctx.fillStyle = glow; ctx.fillRect(cx - 130 * scale, floor - 240 * scale, 260 * scale, 240 * scale);
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(pixCan, sx, sy, sw, shh, cx - L * z, floor - T * z, (L + R) * z, (T + B) * z);
+  ctx.drawImage(pic, 0, 0, pic.width, pic.height, cx - L * z, floor - T * z, (L + R) * z, (T + B) * z);
   ctx.imageSmoothingEnabled = true;
   // Drops fall from under the hand into the pool at the feet.
   const hx = cx + (d.x[P_HAND_R] - PD_X) * z, hy = floor + (d.y[P_HAND_R] + 6 - PD_Y) * z;
@@ -8627,15 +8641,15 @@ function drawTitleDoll(cx, floor, t, scale = TD_SCALE) {
   const front = settings.front;
   settings.front = false;
   try { rasterDoll(d); } finally { settings.front = front; }
-  pixCtx.putImageData(pixImg, 0, 0);
   // The next game frame clears and uploads the whole layer again.
   pxLast = [0, 0, DW - 1, DH - 1];
   // The doll is DS times larger than the old title person, so the cut-out
   // grows with it and the picture is drawn smaller again.
   const L = 75 * DS, R = 225 * DS, T = 222 * DS, B = 14 * DS, z = scale / DS;
   const sx = (TD_X - L) / PIX, sy = (TD_Y - T) / PIX, sw = (L + R) / PIX, shh = (T + B) / PIX;
+  const pic = dollPic("title", sx, sy, sw, shh);
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(pixCan, sx, sy, sw, shh, cx - L * z, floor - T * z, (L + R) * z, (T + B) * z);
+  ctx.drawImage(pic, 0, 0, pic.width, pic.height, cx - L * z, floor - T * z, (L + R) * z, (T + B) * z);
   ctx.imageSmoothingEnabled = true;
 }
 // Title doll point (after the mirror) in screen units.
