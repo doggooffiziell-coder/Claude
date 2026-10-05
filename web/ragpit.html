@@ -83,7 +83,12 @@ const safeTop = () => {
   p.remove();
   return v;
 };
+// The PC version (see pc/) sets RAGPIT_PC before the game starts. It uses a
+// taller picture, so the buttons take less of a big screen, and adds mouse
+// and keyboard controls.
+const PC = !!window.RAGPIT_PC, BASE_H = PC ? 576 : 432;
 const idealWidth = () => {
+  if (PC) return Math.min(1440, Math.max(768, Math.round(BASE_H * innerWidth / Math.max(1, innerHeight) / 48) * 48));
   let w = innerWidth, h = innerHeight;
   const st = document.getElementById("stage");
   if (innerHeight > innerWidth) { w = innerHeight - 2 * Math.max(6, safeTop()); h = innerWidth; }
@@ -95,7 +100,7 @@ const idealWidth = () => {
   const a = Math.max(w, h) / Math.max(1, Math.min(w, h));
   return Math.min(1248, Math.max(768, Math.round(432 * a / 48) * 48));
 };
-const W = idealWidth(), H = 432;
+const W = idealWidth(), H = BASE_H;
 // The room is bigger than the screen: half again as wide and as high. The
 // camera shows a screen-sized part of it and zooms out to show all of it.
 // W and H are the screen, WW and WH the room. Maps are laid out on the old
@@ -103,7 +108,10 @@ const W = idealWidth(), H = 432;
 // on its floor (OFFX, OFFY).
 const WW = Math.round(W * 1.5 / 48) * 48, WH = Math.round(H * 1.5), N = WW * WH, OFFX = (WW - W) / 2, OFFY = WH - H;
 
-const BASE_FLOOR = 372, FLOOR_Y = BASE_FLOOR + OFFY;
+// Maps are drawn for a 432 high screen. A taller screen (PC) lowers them so
+// their floor keeps the same distance from the bottom edge.
+const MOFFY = OFFY + (H - 432);
+const BASE_FLOOR = 372, FLOOR_Y = BASE_FLOOR + MOFFY;
 const CHUNK = 16, CW = WW / CHUNK, CH = Math.ceil(WH / CHUNK);
 const DT = 1 / 60;
 const GRAVITY = 840;
@@ -4146,7 +4154,21 @@ function rr(x, y, w, h, r) {
   ctx.closePath();
 }
 
+// On the PC the hints speak of clicks and the mouse instead of taps and fingers.
+const pcWordCache = new Map();
+function pcWords(s) {
+  if (!PC || typeof s !== "string") return s;
+  let r = pcWordCache.get(s);
+  if (r === undefined) {
+    r = s.replace(/Tippe/g, "Klicke").replace(/tippe/g, "klicke").replace(/Ein Tipp/g, "Ein Klick").replace(/ein Tipp/g, "ein Klick")
+      .replace(/TIPPE/g, "KLICKE").replace(/unter dem Finger/g, "unter der Maus").replace(/den Finger/g, "die Maus").replace(/dem Finger/g, "der Maus").replace(/Finger/g, "Maus");
+    if (pcWordCache.size > 2000) pcWordCache.clear();
+    pcWordCache.set(s, r);
+  }
+  return r;
+}
 function label(s, x, y, size, color, align = "left", weight = 700) {
+  s = pcWords(s);
   ctx.font = `${weight} ${size}px ${FONT}`;
   ctx.textAlign = align;
   ctx.textBaseline = "middle";
@@ -4200,6 +4222,7 @@ const STATUS = [
 
 // Shrinks a label until it fits the width.
 function fitFont(text, maxW, size, weight = 700) {
+  text = pcWords(text);
   for (; size > 5; size -= 0.5) {
     ctx.font = `${weight} ${size}px ${FONT}`;
     if (ctx.measureText(text).width <= maxW) break;
@@ -5779,9 +5802,9 @@ function onGun(x, y) {
 
 // Drag in the room to aim, the red button fires, the round button reloads.
 // The fire button has its own finger, so you can aim and shoot at once.
-const FIRE_BTN = { x: W - 64, y: 336, r: 32 };
-const RELOAD_BTN = { x: W - 142, y: 358, r: 27 };
-const MODE_BTN = { x: W - 172, y: 299, w: 60, h: 24 };
+const FIRE_BTN = { x: W - 64, y: H - 96, r: 32 };
+const RELOAD_BTN = { x: W - 142, y: H - 74, r: 27 };
+const MODE_BTN = { x: W - 172, y: H - 133, w: 60, h: 24 };
 const inCircle = (b, x, y, pad = 4) => Math.hypot(x - b.x, y - b.y) < b.r + pad;
 const inModeBtn = (x, y) => x >= MODE_BTN.x && x < MODE_BTN.x + MODE_BTN.w && y >= MODE_BTN.y && y < MODE_BTN.y + MODE_BTN.h;
 const gunUi = () => state.screen === "game" && state.tool === T_GUN;
@@ -7134,6 +7157,7 @@ function deathReport(d) {
   return r;
 }
 function wrapText(text, maxW, size, weight = 400) {
+  text = pcWords(text);
   ctx.font = `${weight} ${size}px ${FONT}`;
   const out = [];
   let line = "";
@@ -7734,7 +7758,7 @@ function mapRect(r) {
   let x0 = r[0] + OFFX, x1 = r[0] + r[2] + OFFX;
   if (r[0] <= 0) x0 = 0;
   if (r[0] + r[2] >= W - 0.5) x1 = WW;
-  return [x0, r[1] + OFFY, x1 - x0, r[3]];
+  return [x0, r[1] + MOFFY, x1 - x0, r[3]];
 }
 // Where a map puts a doll: an x position, or [x, y] to start below a ceiling.
 const mapDollSpot = (e) => (Array.isArray(e) ? e : [e, 40]);
@@ -7762,7 +7786,7 @@ function loadMap(i) {
   gibs = []; effects = []; tracers = []; flashes = []; sparks = []; smokes = []; bagJets = [];
   dctx.clearRect(0, 0, decal.width, decal.height);
   state.dolls = []; state.selected = null; state.grabDoll = null; state.counter = 0;
-  for (const e of m.dolls) { const [x, y] = mapDollSpot(e); placeDoll(x + OFFX, y + OFFY); }
+  for (const e of m.dolls) { const [x, y] = mapDollSpot(e); placeDoll(x + OFFX, y + MOFFY); }
   state.toast = 0;
   buildStatic();
 }
@@ -7995,6 +8019,8 @@ function setScreen(name) {
   if (state.screen === name) return;
   if (state.screen === "settings") state.settingsFromGame = false;
   state.screen = name; state.screenT = 0; state.pressTarget = null;
+  // The first time in the game on the PC: where the controls are.
+  if (PC && name === "game" && !state.pcHint) { state.pcHint = true; state.toast = 4; state.toastText = "F1: Steuerung · Rechte Maustaste: Ansicht ziehen"; }
 }
 
 // ======================================================================
@@ -8194,7 +8220,7 @@ function paintMapPreview(i, x, y, w, h) {
     let gy = BASE_FLOOR;
     for (const r of b.walls.concat(b.ice, b.water)) if (dx >= r[0] && dx <= r[0] + r[2] && r[1] < gy && r[1] > sy0) gy = r[1];
     ctx.save(); ctx.translate(x, y);
-    drawBlockPerson((dx + OFFX) * sx, (gy + OFFY) * sy, Math.min(sx, sy) * 1.3, MENU_LOOKS[(n + i) % MENU_LOOKS.length]);
+    drawBlockPerson((dx + OFFX) * sx, (gy + MOFFY) * sy, Math.min(sx, sy) * 1.3, MENU_LOOKS[(n + i) % MENU_LOOKS.length]);
     ctx.restore();
   });
   // soft vignette
@@ -8339,8 +8365,10 @@ function screenBackground(top = "#121216", bottom = "#1c1c22") {
 const titleFx = { drops: [], dust: [], t: 0, dark: 0, fadeIn: 0 };
 for (let n = 0; n < 26; n++) titleFx.dust.push({ x: rf(-60, 60), y: rf(60, 360), v: rf(3, 9), p: rf(0, 6.28) });
 
+// On a taller screen (PC) the menu moves down to the middle and the room's floor with it.
+const TDY = (H - 432) / 2;
 function titleButtons() {
-  const items = [], five = state.inGame, x = 56, w = 250, h = five ? 35 : 40, gap = five ? 6 : 8, y0 = five ? 178 : 184;
+  const items = [], five = state.inGame, x = 56, w = 250, h = five ? 35 : 40, gap = five ? 6 : 8, y0 = (five ? 178 : 184) + TDY;
   if (state.inGame) items.push({ id: "resume", text: "WEITERSPIELEN", primary: true });
   items.push({ id: "maps", text: state.inGame ? "MAP WÄHLEN" : "SPIELEN", primary: !state.inGame });
   items.push({ id: "decay", text: "VERWESUNG" });
@@ -8352,7 +8380,7 @@ function titleButtons() {
 function drawTitle(dt) {
   const f = titleFx;
   f.t += dt;
-  const px1 = Math.max(W * 0.66, 420), floor = 372;
+  const px1 = Math.max(W * 0.66, 420), floor = 372 + (H - 432);
   playShotStep(dt, px1, floor);
   titleShotStep(dt, px1, floor);
   f.fadeIn = Math.max(0, f.fadeIn - dt);
@@ -8422,11 +8450,11 @@ function drawTitle(dt) {
   // Title with dripping blood; the red line draws itself from the left.
   // The shot knocks a red ghost of the title sideways for a moment.
   const glitch = titleShot && titleShot.real > 0.05 && titleShot.real < 0.5 ? 1 - titleShot.real / 0.5 : 0;
-  if (glitch > 0) label("RAGPIT", 52 + 5 * glitch + rf(-1, 1), 104 + rf(-1, 1), 68, css([220, 20, 36], 0.7 * glitch));
-  withAppear(appear(0, 0.4), () => label("RAGPIT", 52, 104, 68, css(mixc([236, 236, 228], [246, 214, 208], dk))), 14);
+  if (glitch > 0) label("RAGPIT", 52 + 5 * glitch + rf(-1, 1), 104 + TDY + rf(-1, 1), 68, css([220, 20, 36], 0.7 * glitch));
+  withAppear(appear(0, 0.4), () => label("RAGPIT", 52, 104 + TDY, 68, css(mixc([236, 236, 228], [246, 214, 208], dk))), 14);
   const line = easeOut((state.screenT - 0.15) / 0.45);
-  ctx.fillStyle = "#8e0f1c"; ctx.fillRect(56, 132, 300 * line, 4);
-  if (line >= 1 && Math.random() < dt * 2.2) f.drops.push({ x: rf(60, 350), y: 136, v: 0, len: 0, age: 0 });
+  ctx.fillStyle = "#8e0f1c"; ctx.fillRect(56, 132 + TDY, 300 * line, 4);
+  if (line >= 1 && Math.random() < dt * 2.2) f.drops.push({ x: rf(60, 350), y: 136 + TDY, v: 0, len: 0, age: 0 });
   for (const d of f.drops) {
     d.age += dt;
     if (d.age < 0.6) d.len = d.age * 14;
@@ -8435,10 +8463,10 @@ function drawTitle(dt) {
   f.drops = f.drops.filter((d) => d.y < H);
   for (const d of f.drops) {
     ctx.fillStyle = "#9c0e1c";
-    if (d.age < 0.6) { ctx.fillRect(d.x - 1, 134, 2, d.len); ctx.beginPath(); ctx.arc(d.x, 134 + d.len, 2.2, 0, Math.PI * 2); ctx.fill(); }
+    if (d.age < 0.6) { ctx.fillRect(d.x - 1, 134 + TDY, 2, d.len); ctx.beginPath(); ctx.arc(d.x, 134 + TDY + d.len, 2.2, 0, Math.PI * 2); ctx.fill(); }
     else { ctx.beginPath(); ctx.ellipse(d.x, d.y, 1.8, 3, 0, 0, Math.PI * 2); ctx.fill(); }
   }
-  withAppear(appear(2), () => label("PIXEL RAGDOLL SANDBOX", 56, 158, 12, "#7a7a84"));
+  withAppear(appear(2), () => label("PIXEL RAGDOLL SANDBOX", 56, 158 + TDY, 12, "#7a7a84"));
   titleButtons().forEach((b, n) => withAppear(appear(3 + n), () => {
     if (playShot && b.id === "maps") drawSplitLabel(b, b.text);
     else drawTitleItem(b, pressAmt(b.id, b));
@@ -8460,10 +8488,10 @@ function drawTitle(dt) {
 
 const TITLE_TIPS = [
   "Adrenalin zweimal in 13 s kostet das Herz 40 %.",
-  "Defi nur bis 45 s nach dem Tod, mit über 15 % Blut.",
+  "Defi nur bis 45 s nach dem Tod, mit über 2,5 L Blut.",
   "Ein Organ unter 60 % heilt nie mehr von selbst.",
   "Zerstörter Darm: etwa 10 Minuten bis zum Tod.",
-  "Unter 38 % Blut steht keine Puppe mehr auf.",
+  "Ab 1,5 Liter Blutverlust steht keine Puppe mehr auf.",
   "Der Sniper durchschlägt drei Puppen hintereinander.",
   "Die Schrotflinte feuert auch mitten im Nachladen.",
   "Am Monitor überlebt man sogar eine Leberblutung.",
@@ -9111,7 +9139,7 @@ const HELP_TABS = [
   { id: "h-body", name: "KÖRPER", topics: [
     ["ORGANE UND TODESZEIT", "Jedes Organ hat eigene Lebenspunkte. Leicht verletzte Organe heilen langsam, mit Infusion schneller. Fällt ein Organ unter 60 %, heilt es nie mehr. Ein zerstörter Magen oder Darm vergiftet den Bauch: Pro zerstörtem Organ bleiben etwa 10 Minuten bis zur tödlichen Bauchfellentzündung."],
     ["DAS HERZ", "Unter 60 % pumpt das Herz schwach: weniger Sauerstoff, Brustschmerz, die Puppe bleibt matt. Unter 35 % kann es jederzeit flimmern und stehen bleiben. Adrenalin im Blut macht das zweieinhalbmal wahrscheinlicher. Eine Infusion repariert kein Herz."],
-    ["BLUT UND SCHOCK", "Offene Wunden bluten, bis ein Verband oder eine Infusion sie stoppt, Blutungen in den Organen stoppt kein Verband. Unter 50 % Blut zittert die Puppe im Schock, unter 38 % steht sie nicht mehr auf. Stümpfe spritzen bei jedem Herzschlag. Die Haut wird blass ohne Blut und bläulich ohne Sauerstoff."],
+    ["BLUT UND SCHOCK", "Jede Puppe hat 5 Liter Blut. Offene Wunden bluten, bis ein Verband sie stoppt, sonst hört nichts auf. Ab 15 % Verlust rast das Herz, ab 30 % steht sie nicht mehr auf, ab 40 % ist sie bewusstlos, bei etwa 55 % stirbt sie. Ein Blutbeutel gibt 500 ml. Die Halsschlagader verliert 26 ml pro Sekunde."],
   ] },
   { id: "h-med", name: "MEDIZIN", topics: [
     ["WIEDERBELEBUNG", "Der Defibrillator holt eine Puppe nur zurück, wenn sie höchstens 45 Sekunden tot ist, Herz und Gehirn nicht zerstört sind und sie über 15 % Blut hat. Sonst zuerst Infusion, dann schocken. Selbst dann klappen nur etwa 7 von 10 Schocks. Steht das Herz einer lebenden Puppe still, startet ein Schock es neu."],
@@ -9129,6 +9157,11 @@ const HELP_TABS = [
     ["VERWESUNG", "Nach dem Tod wird die Puppe blass, bekommt Leichenflecken auf der unteren Seite und erstarrt. Die Starre löst sich wieder, der Körper wird grün, bläht sich auf, verwest und wird zum Skelett. Im Zeitraffer unter GAMEPLAY geht das zehnmal schneller, im Modus VERWESUNG über Jahre."],
   ] },
 ];
+if (PC) HELP_TABS.push({ id: "h-keys", name: "STEUERUNG", topics: [
+  ["MAUS", "Linke Maustaste: das gewählte Werkzeug benutzen, ziehen, zielen, schießen. Rechte Maustaste auf eine Puppe: ihr Menü mit SCHUSS PRÄZISIEREN, HEILEN und mehr. Rechte oder mittlere Maustaste ziehen: die Ansicht verschieben. Mausrad: zoomen."],
+  ["WERKZEUGE", "1 bis 9 und 0: Werkzeuge. G: nächste Waffe, Umschalt+G: vorige. Leertaste: schießen, halten für Dauerfeuer. L: nachladen. [ und ]: Menge beim Wasser, Größe beim Feuer. B: Bombe. N: neue Puppe. R: alles zurücksetzen."],
+  ["SPIEL UND KAMERA", "W A S D oder Pfeile: Ansicht verschieben. Q und E: zoomen, C: zurück zur Startansicht. Tab: nächste Puppe wählen. H: gewählte Puppe heilen, Entf: entfernen. V: Anzeige klein, groß oder Scan. F: Front- oder Seitenansicht. P: Pause, T: Zeitlupe, M: Ton. Esc: zurück ins Menü, F1: diese Hilfe."],
+] });
 function helpTabs() {
   const w = 112, h = 30, gap = 6, x0 = W / 2 - (HELP_TABS.length * w + (HELP_TABS.length - 1) * gap) / 2;
   return HELP_TABS.map((t, n) => ({ ...t, x: x0 + n * (w + gap), y: 70, w, h }));
@@ -9382,7 +9415,8 @@ function drawSettingIcon(id, cx, cy) {
 // view? Two dark rooms in the style of the game, each with a doll seen that
 // way, blood on the frame. The choice is saved, the settings can change it.
 function viewCards() {
-  const w = Math.min(300, (W - 90) / 2), h = Math.min(250, H - 180), gap = 26, x0 = W / 2 - w - gap / 2, y = 80;
+  // On a taller screen (PC) the cards grow a little and the block sits in the middle.
+  const w = Math.min(PC ? 360 : 300, (W - 90) / 2), h = Math.min(PC ? 300 : 250, H - 180), gap = 26, x0 = W / 2 - w - gap / 2, y = 80 + Math.max(0, (H - 432) / 2 - 20);
   return [
     { id: "vfront", front: true, x: x0, y, w, h, title: "FRONT", text: "Die Puppen schauen dich an.", gun: "Waffe: Tippe auf die Puppe, dort trifft der Schuss." },
     { id: "vside", front: false, x: x0 + w + gap, y, w, h, title: "SEITE", text: "Du siehst die Puppen von der Seite.", gun: "Waffe im Raum: ziehen zum Zielen, roter Knopf schießt." },
@@ -9496,7 +9530,7 @@ function drawViewChoice(dt) {
   withAppear(appear(0, 0.4), () => {
     ctx.font = `700 26px ${FONT}`;
     const tw = ctx.measureText("WIE WILLST DU SPIELEN?").width;
-    drawBloodText("WIE WILLST DU SPIELEN?", W / 2 - tw / 2, 44, 26, true);
+    drawBloodText("WIE WILLST DU SPIELEN?", W / 2 - tw / 2, viewCards()[0].y - 36, 26, true);
   }, 10);
   ctx.restore();
   let chosen = null;
@@ -10664,9 +10698,19 @@ function gamePoint(ev) {
   const r = canvas.getBoundingClientRect();
   return [(ev.clientX - r.left) / r.width * W, (ev.clientY - r.top) / r.height * H];
 }
+// Right or middle mouse button: drag to move the view, a right click on a
+// doll opens its menu.
+let mousePan = null;
 canvas.addEventListener("pointerdown", (ev) => {
   ev.preventDefault();
   lastPointerType = ev.pointerType || "mouse";
+  if (ev.pointerType === "mouse" && ev.button !== 0) {
+    if (state.screen !== "game" || state.aimView || state.decaySim) return;
+    const [gx, gy] = gamePoint(ev);
+    mousePan = { id: ev.pointerId, sx: gx, sy: gy, cx: state.cam.x, cy: state.cam.y, moved: false, button: ev.button };
+    try { canvas.setPointerCapture(ev.pointerId); } catch (e) { /* pointer capture is optional */ }
+    return;
+  }
   // A new first finger means every earlier touch has ended, even if its end got lost.
   if (ev.isPrimary && activePointer !== null && ev.pointerId !== activePointer) {
     activePointer = null; touches.clear(); pinch = null; state.lp = null; release();
@@ -10702,6 +10746,17 @@ canvas.addEventListener("pointerdown", (ev) => {
   press();
 });
 canvas.addEventListener("pointermove", (ev) => {
+  if (mousePan && ev.pointerId === mousePan.id) {
+    const [gx, gy] = gamePoint(ev), c = state.cam;
+    if (Math.hypot(gx - mousePan.sx, gy - mousePan.sy) > 4) mousePan.moved = true;
+    if (mousePan.moved) {
+      state.zoomAnim = null;
+      c.x = clamp(mousePan.cx - (gx - mousePan.sx) / c.z, 0, WW - W / c.z);
+      c.y = clamp(mousePan.cy - (gy - mousePan.sy) / c.z, 0, WH - H / c.z);
+    }
+    toGame(ev);
+    return;
+  }
   if (touches.has(ev.pointerId)) touches.set(ev.pointerId, gamePoint(ev));
   if (pinch) { if (touches.size === 2) pinchMove(); return; }
   if (ev.pointerId === firePointer) return;
@@ -10711,6 +10766,17 @@ canvas.addEventListener("pointermove", (ev) => {
   state.hover = ev.pointerType === "mouse" ? toolbarHit(state.sx, state.sy) : -1;
 });
 const endPointer = (ev) => {
+  if (mousePan && ev.pointerId === mousePan.id) {
+    const mp = mousePan;
+    mousePan = null;
+    if (!mp.moved && mp.button === 2 && state.screen === "game") {
+      // A right click on a doll opens the same menu as a long press.
+      toGame(ev);
+      const hit = fingerHit(state.mx, state.my);
+      if (hit) { state.ctxMenu = { d: hit.d, x: state.sx, y: state.sy, t: performance.now() }; state.selected = hit.d; clickSound(660, 0.05); }
+    }
+    return;
+  }
   touches.delete(ev.pointerId);
   if (pinch) {
     // The pinch ends when the first finger lifts. The other finger does nothing more.
@@ -10740,16 +10806,87 @@ canvas.addEventListener("wheel", (ev) => {
 document.addEventListener("touchmove", (ev) => ev.preventDefault(), { passive: false });
 document.addEventListener("gesturestart", (ev) => ev.preventDefault());
 
+// Keyboard: tools, the gun, the camera and the game. Keys held for moving the
+// view are kept in heldKeys and applied every frame in keyPanStep.
+const heldKeys = new Set();
+const PAN_KEYS = { arrowleft: [-1, 0], a: [-1, 0], arrowright: [1, 0], d: [1, 0], arrowup: [0, -1], w: [0, -1], arrowdown: [0, 1], s: [0, 1] };
+function keyPanStep(dt) {
+  if (state.screen !== "game" || state.aimView) return;
+  let dx = 0, dy = 0;
+  for (const k of heldKeys) { const v = PAN_KEYS[k]; if (v) { dx += v[0]; dy += v[1]; } }
+  const zIn = heldKeys.has("e") || heldKeys.has("+"), zOut = heldKeys.has("q") || heldKeys.has("-");
+  const c = state.cam;
+  if (zIn || zOut) {
+    state.zoomAnim = null;
+    const [wx, wy] = toWorld(W / 2, H / 2);
+    setZoom(c.z * Math.exp((zIn ? 1 : -1) * dt * 1.6), W / 2, H / 2, wx, wy);
+  }
+  if (!dx && !dy) return;
+  state.zoomAnim = null;
+  const sp = 520 * dt / c.z;
+  c.x = clamp(c.x + dx * sp, 0, WW - W / c.z);
+  c.y = clamp(c.y + dy * sp, 0, WH - H / c.z);
+}
+function escapeKey() {
+  if (state.deathReport) { state.deathReport = null; return; }
+  if (state.ctxMenu) { state.ctxMenu = null; return; }
+  if (state.extrasOpen) { state.extrasOpen = false; return; }
+  if (state.aimView) { closeAimView(); return; }
+  if (state.decaySim) return;
+  if (state.screen === "game") { setScreen("title"); return; }
+  if (state.screen === "maps" || state.screen === "help") setScreen("title");
+  else if (state.screen === "settings") setScreen(state.settingsFromGame ? "game" : "title");
+}
 window.addEventListener("keydown", (ev) => {
-  if (ev.key >= "1" && ev.key <= "9") useButton(+ev.key - 1);
-  else if (ev.key === "0") useButton(9);
-  else if (ev.key === "r" || ev.key === "R") useButton(T_RESET);
-  else if (ev.key === "n" || ev.key === "N") useButton(T_DOLL);
-  else if (ev.key === "b" || ev.key === "B") useButton(T_BOMB);
-  else if (ev.key === " " && state.tool === T_GUN && !ev.repeat) { ev.preventDefault(); pullTrigger(); }
-  else if ((ev.key === "l" || ev.key === "L") && state.tool === T_GUN) startReload();
+  if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+  const key = ev.key.toLowerCase();
+  if (key === "tab" || key === " " || key.startsWith("arrow") || key === "f1") ev.preventDefault();
+  if (key === "escape") { escapeKey(); return; }
+  if (key === "f1" || key === "?") { state.helpTab = PC ? "h-keys" : state.helpTab; setScreen("help"); return; }
+  if (state.screen !== "game") return;
+  if (PAN_KEYS[key] || key === "q" || key === "e" || key === "+" || key === "-") { heldKeys.add(key); return; }
+  if (ev.repeat && key !== " ") return;
+  const sel = state.selected && state.dolls.includes(state.selected) ? state.selected : null;
+  if (key >= "1" && key <= "9") useButton(+key - 1);
+  else if (key === "0") useButton(9);
+  else if (key === "r") useButton(T_RESET);
+  else if (key === "n") useButton(T_DOLL);
+  else if (key === "b") useButton(T_BOMB);
+  else if (key === " " && state.tool === T_GUN && !ev.repeat) pullTrigger();
+  else if (key === "l" && state.tool === T_GUN) startReload();
+  else if (key === "g") {
+    // Next or previous weapon; the gun is picked first if another tool is in hand.
+    if (state.tool !== T_GUN) useButton(T_GUN);
+    else {
+      state.weapon = (state.weapon + (ev.shiftKey ? WEAPONS.length - 1 : 1)) % WEAPONS.length;
+      state.reloadT = 0; state.triggerDown = false; state.climb = 0;
+    }
+    state.toast = 1; state.toastText = WEAPONS[state.weapon].name; clickSound(760, 0.04);
+  } else if (key === "[" || key === "]") {
+    const d = key === "]" ? 1 : -1;
+    if (state.tool === T_WATER) { state.waterLevel = clamp(state.waterLevel + d, 1, 5); state.toast = 1; state.toastText = "Menge " + state.waterLevel; }
+    if (state.tool === T_FIRE) { state.fireLevel = clamp(state.fireLevel + d, 1, 5); state.toast = 1; state.toastText = "Größe " + state.fireLevel; }
+  } else if (key === "c" || key === "home") { const c = state.cam; state.zoomAnim = { t: 0, z0: c.z, x0: c.x, y0: c.y }; }
+  else if (key === "tab") {
+    if (!state.dolls.length) return;
+    const n = state.dolls.indexOf(sel), d = state.dolls[(n + (ev.shiftKey ? state.dolls.length - 1 : 1)) % state.dolls.length];
+    state.selected = d; state.toast = 1; state.toastText = "Puppe " + d.id; clickSound(760, 0.04);
+  } else if (key === "h" && sel) { sel.fullHeal(); state.toast = 1; state.toastText = "Puppe " + sel.id + " geheilt"; }
+  else if ((key === "delete" || key === "backspace") && sel) {
+    state.dolls = state.dolls.filter((o) => o !== sel);
+    if (state.grabDoll === sel) state.grabDoll = null;
+    state.selected = null; state.toast = 1; state.toastText = "Puppe " + sel.id + " entfernt";
+  } else if (key === "v") setVitalsMode(vitalsMode === "mini" ? "card" : vitalsMode === "card" ? "scan" : "mini");
+  else if (key === "f") { settings.front = !settings.front; saveSettings(); state.toast = 1.2; state.toastText = settings.front ? "Frontansicht" : "Seitenansicht"; }
+  else if (key === "p") { state.paused = !state.paused; state.toast = 1; state.toastText = state.paused ? "Pause" : "Weiter"; }
+  else if (key === "t") { state.slow = !state.slow; state.toast = 1; state.toastText = state.slow ? "Zeitlupe an" : "Zeitlupe aus"; }
+  else if (key === "m") { settings.sound = !settings.sound; settings.music = settings.sound; saveSettings(); musicStart(); state.toast = 1; state.toastText = settings.sound ? "Ton an" : "Ton aus"; }
 });
-window.addEventListener("keyup", (ev) => { if (ev.key === " ") state.triggerDown = false; });
+window.addEventListener("keyup", (ev) => {
+  heldKeys.delete(ev.key.toLowerCase());
+  if (ev.key === " ") state.triggerDown = false;
+});
+window.addEventListener("blur", () => { heldKeys.clear(); state.triggerDown = false; });
 
 // ---------------------------------------------------------------- layout
 
@@ -10777,7 +10914,7 @@ window.addEventListener("resize", () => {
   // Turned sideways or the free area changed a lot: restart once with a room that fits.
   clearTimeout(refitTimer);
   refitTimer = setTimeout(() => {
-    if (innerWidth > innerHeight && Math.abs(idealWidth() - W) >= 96) location.reload();
+    if (!PC && innerWidth > innerHeight && Math.abs(idealWidth() - W) >= 96) location.reload();
   }, 400);
 });
 window.addEventListener("orientationchange", () => setTimeout(fit, 200));
@@ -10949,7 +11086,7 @@ function startDecaySim() {
   loadMap(0);
   state.dolls = []; state.selected = null; state.grabDoll = null;
   const x0 = Math.round(WW / 2);
-  placeDoll(x0, OFFY + 40);
+  placeDoll(x0, MOFFY + 40);
   const d = state.dolls[0];
   if (d) d.look = randomLook();
   state.decaySim = { x0, tau: 0, days: 0, speed: keepSpeed, paused: false, dead: false, wait: 0, shots: 0, parts: [], aim: null, seed: rnd(9999) };
@@ -11446,9 +11583,9 @@ function loop(now) {
   state.extrasFlashT = Math.max(0, state.extrasFlashT - realDt);
   state.toast = Math.max(0, state.toast - realDt);
   // Upright phone: nothing runs, the painted portrait screen shows instead.
-  if (portraitMQ.matches) { acc = 0; drawPortrait(realDt); requestAnimationFrame(loop); return; }
+  if (portraitMQ.matches && !PC) { acc = 0; drawPortrait(realDt); requestAnimationFrame(loop); return; }
   acc += state.paused ? 0 : state.aimView ? realDt * 0.25 : state.slow ? realDt * 0.3 : realDt;
-  if (state.screen === "game") { updateLongPress(); zoomStep(realDt); }
+  if (state.screen === "game") { updateLongPress(); zoomStep(realDt); keyPanStep(realDt); }
   let steps = 0;
   if (state.screen !== "game") {
     acc = 0;

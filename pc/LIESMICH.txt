@@ -1,0 +1,65 @@
+RAGPIT - PC-Version
+===================
+
+Ragpit ist eine Pixel-Ragdoll-Sandbox. Diese Version läuft auf Windows,
+Mac und Linux, ohne Installation und ohne Internet.
+
+
+STARTEN
+-------
+
+1. Entpacke die ZIP-Datei in einen Ordner deiner Wahl.
+2. Starte das Spiel:
+   - Windows: Doppelklick auf "Ragpit starten (Windows).bat"
+   - Mac:     Doppelklick auf "Ragpit starten (Mac).command"
+              Beim ersten Start: Rechtsklick auf die Datei, dann "Öffnen".
+   - Linux:   ./ragpit-linux.sh im Terminal ausführen
+
+Das Spiel öffnet sich im Vollbild in einem eigenen Fenster mit Edge, Chrome,
+Brave oder Chromium. Ohne diese Browser öffnet es dein normaler Browser.
+Du kannst auch einfach "Ragpit.html" doppelklicken.
+
+F11 schaltet das Vollbild aus und ein. Alt+F4 (Windows) oder Cmd+Q (Mac)
+schließt das Spiel. Dein Spielstand und deine Einstellungen bleiben
+gespeichert.
+
+
+MAUS
+----
+
+Linke Maustaste          Werkzeug benutzen, ziehen, zielen, schießen
+Rechte Maustaste         auf eine Puppe: ihr Menü (Schuss präzisieren,
+                         Heilen, Pins lösen, Entfernen, Todesbericht)
+Rechte/mittlere ziehen   Ansicht verschieben
+Mausrad                  zoomen
+
+
+TASTATUR
+--------
+
+1 bis 9, 0               Werkzeuge
+G / Umschalt+G           nächste / vorige Waffe
+Leertaste                schießen, halten für Dauerfeuer
+L                        nachladen
+[ und ]                  Menge beim Wasser, Größe beim Feuer
+B                        Bombe
+N                        neue Puppe
+R                        alles zurücksetzen
+
+W A S D oder Pfeile      Ansicht verschieben
+Q / E                    rauszoomen / reinzoomen
+C                        zurück zur Startansicht
+
+Tab / Umschalt+Tab       nächste / vorige Puppe wählen
+H                        gewählte Puppe heilen
+Entf                     gewählte Puppe entfernen
+V                        Anzeige: klein, groß, Scan
+F                        Front- oder Seitenansicht
+P                        Pause
+T                        Zeitlupe
+M                        Ton an oder aus
+Esc                      zurück ins Menü, Fenster und Menüs schließen
+F1                       Steuerung im Spiel anzeigen
+
+
+Viel Spaß!
