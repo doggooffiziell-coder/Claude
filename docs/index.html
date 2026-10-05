@@ -1293,6 +1293,45 @@ class Doll {
     this.ox[i] = this.x[i] - nvx; this.oy[i] = this.y[i] - nvy;
   }
 
+  // From the front each arm hangs from its own shoulder, but the physics
+  // joins both arms at the neck. Reaching for the belly or the face would pull
+  // the elbows into the middle and cross the upper arms over the chest. So the
+  // elbows stay out at their own side of the trunk, and only the forearms
+  // reach inward, like a real person holding a wound.
+  keepElbowsOut() {
+    if (this.dead || this.isOut() || !this.attached(TORSO)) return;
+    const nkx = this.x[P_NECK], nky = this.y[P_NECK], wsx = this.x[P_WAIST], wsy = this.y[P_WAIST];
+    const tl = Math.hypot(wsx - nkx, wsy - nky) || 1, tx = (wsx - nkx) / tl, ty = (wsy - nky) / tl, nx = -ty, ny = tx;
+    const minOut = RECT[TORSO][0] + RECT[UARM_L][0] * 0.6;
+    for (const ua of [UARM_L, UARM_R]) {
+      if (!this.attached(ua) || this.crippled[ua]) continue;
+      const el = this.pb[ua];
+      if (this.fixed(el)) continue;
+      const side = (ua === UARM_L ? 1 : -1) * (this.facing || 1);
+      const lat = ((this.x[el] - nkx) * nx + (this.y[el] - nky) * ny) * side;
+      if (lat < minOut) this.reach(el, this.x[el] + nx * side * (minOut - lat), this.y[el] + ny * side * (minOut - lat), 0.35);
+      // The elbow also stays below the shoulder line unless the arm is raised on purpose.
+      const down = (this.x[el] - nkx) * tx + (this.y[el] - nky) * ty;
+      if (down < 4 && !this.armTargets) this.reach(el, this.x[el] + tx * (4 - down), this.y[el] + ty * (4 - down), 0.2);
+    }
+  }
+
+  // Front view poses led by the hands, the elbows stay out (keepElbowsOut):
+  // "face" crosses the forearms high in front of chest and chin as a cover,
+  // "hug" crosses them lower with each hand on the other upper arm.
+  frontHands(kind) {
+    const nkx = this.x[P_NECK], nky = this.y[P_NECK], wsx = this.x[P_WAIST], wsy = this.y[P_WAIST];
+    const tl = Math.hypot(wsx - nkx, wsy - nky) || 1, tx = (wsx - nkx) / tl, ty = (wsy - nky) / tl, nx = -ty, ny = tx;
+    for (const [ua, la] of [[UARM_L, LARM_L], [UARM_R, LARM_R]]) {
+      if (!this.attached(la) || this.crippled[la] || this.crippled[ua]) continue;
+      const side = (ua === UARM_L ? 1 : -1) * (this.facing || 1), h = this.pb[la];
+      let gx, gy;
+      const high = kind === "face", out = RECT[TORSO][0] - (high ? 3 : 1), down = (high ? 1 : 16) + (ua === UARM_L ? 0 : 6);
+      gx = nkx + tx * down - nx * side * out; gy = nky + ty * down - ny * side * out;
+      this.steer(h, gx, gy, 2.6, 0.25);
+    }
+  }
+
   // Sets target angles for both arms, worked by the muscles like any pose.
   // a: how far the upper arm swings up from hanging down (forward from the
   // side; outward from the front, inward when negative). bend: elbow bend.
@@ -1451,7 +1490,7 @@ class Doll {
     this.retreatX = null;
     if (this.startle > 0 && !busyHands && hands.length) {
       // Flinch: the arms come up in front of the face.
-      if (settings.front) this.armPose(1.6, 2.7); else this.armPose(2.0, 1.9);
+      if (settings.front) this.frontHands("face"); else this.armPose(2.0, 1.9);
       busyHands = true;
     }
     // Fire close by: it shies away from the heat and shields its face.
@@ -1464,7 +1503,7 @@ class Doll {
         this.fear = Math.min(1, this.fear + DT * 0.8 * k); this.lookAt = fxs; this.lookT = 0.3;
         // It steps back from the heat (balance walks it there).
         if (this.standing) this.retreatX = this.x[P_WAIST] + away * 60;
-        if (!busyHands && hands.length) { if (settings.front) this.armPose(1.6, 2.7); else this.armPose(2.0, 1.9); busyHands = true; }
+        if (!busyHands && hands.length) { if (settings.front) this.frontHands("face"); else this.armPose(2.0, 1.9); busyHands = true; }
       }
     }
     this.shockTremor();
@@ -1473,7 +1512,7 @@ class Doll {
     if ((this.freeze > 0.12 || wet) && !this.headUnder) {
       const sh = Math.min(1, this.freeze + (wet ? 0.4 : 0));
       for (const i of [P_NECK, P_ELBOW_L, P_ELBOW_R]) this.push(i, rf(-0.3, 0.3) * sh, rf(-0.15, 0.15) * sh);
-      if (!busyHands && hands.length && this.standing) { if (settings.front) this.armPose(0.9, 2.3); else this.armPose(0.6, 2.2); busyHands = true; }
+      if (!busyHands && hands.length && this.standing) { if (settings.front) this.frontHands("hug"); else this.armPose(0.6, 2.2); busyHands = true; }
     }
     // Standing calm: breathing and a slow shift of weight from foot to foot.
     if (this.standing && !busyHands && this.pn < 30) {
@@ -1525,6 +1564,7 @@ class Doll {
       }
     }
     this.armsBusy = busyHands;
+    if (settings.front) this.keepElbowsOut();
 
     // An awake doll on the floor keeps trying to get up. With a bad leg it
     // struggles halfway and falls back down.
@@ -3106,7 +3146,8 @@ function rasterDoll(d) {
       if (k === LARM_L || k === LARM_R) {
         // Square hand
         const l = Math.hypot(bx - ax, by - ay) || 1, ux = (bx - ax) / l, uy = (by - ay) / l;
-        rasterRect(bx, by, bx + ux * 8 / PIX, by + uy * 8 / PIX, 5.5 * sw / PIX, 0, 0, order, tintFor(d, k, d.look.skin), d.stain[k]);
+        // A hand a little narrower and a shade darker than the forearm, so it reads as a hand.
+        rasterRect(bx, by, bx + ux * 9 * DS / PIX, by + uy * 9 * DS / PIX, 4.5 * DS * sw / PIX, 0, 0, order, darken(tintFor(d, k, d.look.skin), 0.07), d.stain[k]);
       }
     }
     RFX_LIVOR = 0; RFX_MARBLE = 0; RFX_HOLES = 0; RFX_BURN = null;
