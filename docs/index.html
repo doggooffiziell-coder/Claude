@@ -306,23 +306,32 @@ function worldStep() {
 
 // Communicating vessels: water from a high surface flows to the lowest
 // connected surface nearby, so a pool levels out within a second or two.
+// Blood pools level the same way, a bit slower since blood is thicker.
 // It runs every second step with twice the tries, and when the room holds no
 // pool it only looks again a quarter second later.
 const colTop = new Int16Array(WW);
+const isLiq = (m) => m === WATER || m === BLOOD;
 let levelIdle = 0;
 function levelWater() {
   if ((tick & 1) || tick < levelIdle) return;
-  let any = false;
-  for (let x = 0; x < WW; x++) {
-    let y = 0;
-    while (y < WH && isFree(mat[y * WW + x])) y++;
-    colTop[x] = y;
-    if (y < WH && mat[y * WW + x] === WATER) any = true;
+  // The top of every column, row by row (fast on the grid in memory).
+  colTop.fill(WH);
+  let left = WW, any = false;
+  for (let y = 0; y < WH && left > 0; y++) {
+    const row = y * WW;
+    for (let x = 0; x < WW; x++) {
+      if (colTop[x] !== WH) continue;
+      const m = mat[row + x];
+      if (isFree(m)) continue;
+      colTop[x] = y; left--;
+      if (isLiq(m)) any = true;
+    }
   }
   if (!any) { levelIdle = tick + 15; return; }
-  for (let n = 0; n < 800; n++) {
-    const x = rnd(WW), h = colTop[x];
-    if (h >= WH || mat[h * WW + x] !== WATER || h === 0) continue;
+  for (let n = 0; n < 900; n++) {
+    const x = rnd(WW), h = colTop[x], top = h < WH ? mat[h * WW + x] : EMPTY;
+    if (h >= WH || !isLiq(top) || h === 0) continue;
+    if (top === BLOOD && rnd(3) === 0) continue;
     const d = Math.random() < 0.5 ? 1 : -1;
     let bestX = -1, bestT = h + 2;
     for (let c = x, k = 0; k < 160; k++) {
@@ -333,7 +342,7 @@ function levelWater() {
       const r0 = Math.max(colTop[c], colTop[nc]);
       let joined = false;
       for (let r = r0; r < r0 + 5 && r < WH; r++) {
-        if (mat[r * WW + c] === WATER && mat[r * WW + nc] === WATER) { joined = true; break; }
+        if (isLiq(mat[r * WW + c]) && isLiq(mat[r * WW + nc])) { joined = true; break; }
       }
       if (!joined) break;
       if (colTop[nc] > bestT) { bestT = colTop[nc]; bestX = nc; }
@@ -368,13 +377,14 @@ function liquid(x, y, i, m) {
     }
   }
   let dir = Math.random() < 0.5 ? 1 : -1;
-  // Surface water runs downhill along the surface, so mounds flatten into a level pool.
-  if (m === WATER && y > 0 && isFree(mat[i - WW])) {
+  // Surface liquid runs downhill along the surface, so mounds flatten into a
+  // level pool. Blood does it too, only less often.
+  if ((m === WATER || rnd(2) === 0) && y > 0 && isFree(mat[i - WW])) {
     const j = rollTarget(x, y, dir);
     if (j >= 0) { swap(i, j); life[j] = 0; return; }
   }
   // Look sideways for a drop and flow toward it. Water looks far, blood is thick.
-  const look = m === WATER ? 48 : 4;
+  const look = m === WATER ? 48 : 20;
   const row = y * WW;
   for (let k = 0; k < 2; k++) {
     let nx = x, s = 0, found = false;
@@ -384,14 +394,14 @@ function liquid(x, y, i, m) {
       nx = tx; s++;
       if (hasBelow && isFree(mat[row + WW + tx])) { found = true; break; }
     }
-    if (found) { swap(i, row + x + dir * Math.min(s, m === WATER ? 8 : 1)); return; }
+    if (found) { swap(i, row + x + dir * Math.min(s, m === WATER ? 8 : 3)); return; }
     dir = -dir;
   }
   // No drop in reach: spread at random. Every hop tires the cell, so pools come to rest.
   const tired = life[i];
-  if (tired < (m === WATER ? 140 : 48) && (m === WATER || rnd(4) === 0)) {
-    // Water slides several cells per step along the surface, blood one.
-    const reach = m === WATER ? 3 + rnd(6) : 1;
+  if (tired < (m === WATER ? 140 : 100) && (m === WATER || rnd(2) === 0)) {
+    // Water slides several cells per step along the surface, blood a few.
+    const reach = m === WATER ? 3 + rnd(6) : 1 + rnd(3);
     for (let k = 0; k < 2; k++) {
       let tx = x, n = 0;
       while (n < reach) {
@@ -525,11 +535,14 @@ function settle(fx, fy, m, mx, vx = 0) {
     if (!ok) y--;
   }
   if (!ok) return;
-  if (m === WATER) {
+  {
+    // A landing drop runs down the slope of the pool before it rests, blood
+    // a shorter way than water, so drops do not stack into heaps.
+    const far = m === WATER ? 28 : 10;
     let dir = Math.abs(vx) > 20 ? Math.sign(vx) : (Math.random() < 0.5 ? 1 : -1), flat = 0, turned = false;
     for (let n = 0; n < 160; n++) {
       if (y + 1 < WH && isFree(getMat(x, y + 1))) { y++; flat = 0; continue; }
-      if (flat < 28 && isFree(getMat(x + dir, y))) { x += dir; flat++; continue; }
+      if (flat < far && isFree(getMat(x + dir, y))) { x += dir; flat++; continue; }
       if (!turned && isFree(getMat(x - dir, y))) { dir = -dir; turned = true; flat = 0; continue; }
       break;
     }
