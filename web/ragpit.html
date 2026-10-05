@@ -754,7 +754,7 @@ function decayTime(d) {
   const h = decayHours(d.deadT);
   return h < 1 ? Math.max(1, Math.round(h * 60)) + " MIN" : h < 48 ? Math.round(h) + " STD" : Math.round(h / 24) + " TAGE";
 }
-const COL_PALE = hex("#d4cfc4"), COL_GREEN = hex("#8a9a5a"), COL_ROT = hex("#4a3e28"), COL_SKEL = hex("#e2d8bf");
+const COL_CYAN = hex("#8094b4"), COL_PALE = hex("#d4cfc4"), COL_GREEN = hex("#8a9a5a"), COL_ROT = hex("#4a3e28"), COL_SKEL = hex("#e2d8bf");
 const COL_DIRT = hex("#3a3222"), COL_DEAD = hex("#9a9a94"), COL_MARBLE = hex("#2e3a2c"), COL_LIVOR = hex("#6a3a5a"), COL_RAG = hex("#1e1a12");
 // How much a part swells with gas, or shrinks to bone at the end.
 function swellOf(d, k) {
@@ -1161,7 +1161,7 @@ class Doll {
     this.x[i] = this.ox[i] = px; this.y[i] = this.oy[i] = py;
   }
   togglePin(i) {
-    if (this.pins.has(i)) { this.pins.delete(i); return false; }
+    if (this.pins.has(i)) { this.pins.delete(i); addGhost({ kind: "pin", x: this.x[i], y: this.y[i], vx: rf(-10, 10), dur: 0.55 }); return false; }
     this.pins.set(i, [this.x[i], this.y[i]]);
     if (this.grabbed === i) this.grabbed = -1;
     this.holdPin(i);
@@ -1332,8 +1332,20 @@ class Doll {
     }
     this.armsBusy = false; this.armTargets = null;
     if (this.isOut()) {
-      // Slow breathing lifts the chest a little.
-      if (this.attached(TORSO)) this.push(this.pa[TORSO], 0, Math.sin(performance.now() * 0.0018 + this.id) * 0.012);
+      // Breathing lifts the chest: slow and even when stable, fast and
+      // shallow in shock or without air. A stopped heart leaves only rare,
+      // deep gasps.
+      if (this.attached(TORSO)) {
+        const now = performance.now() / 1000;
+        if (this.arrest) {
+          this.gaspT = (this.gaspT === undefined ? rf(1.5, 3.5) : this.gaspT) - DT;
+          if (this.gaspT <= 0) { this.gaspT = rf(2.5, 5); this.push(this.pa[TORSO], 0, -0.9); this.push(P_HEAD, rf(-0.2, 0.2), -0.5); }
+        } else {
+          const need = clamp((100 - this.o2) / 60 + (100 - this.bl) / 80, 0, 1), rate = 1.6 + 3.2 * need;
+          this.push(this.pa[TORSO], 0, Math.sin(now * rate + this.id) * (0.012 + 0.018 * need));
+        }
+      }
+      this.shockTremor();
       return;
     }
     // Blinking every few seconds, fear and startle fading out again.
@@ -1440,6 +1452,7 @@ class Doll {
         if (!busyHands && hands.length) { if (settings.front) this.armPose(1.6, 2.7); else this.armPose(2.0, 1.9); busyHands = true; }
       }
     }
+    this.shockTremor();
     // Cold or soaking wet: it shivers and hugs itself.
     const wet = liquidAt(this.x[P_WAIST], this.y[P_WAIST]);
     if ((this.freeze > 0.12 || wet) && !this.headUnder) {
@@ -1784,7 +1797,7 @@ class Doll {
     }
     if (!stump && !(extra && extra.exit)) this.logEvent((WOUND_KIND[kind] || "Wunde") + " " + PART_NAME[k]);
     this.wounds.push({ part: k, t: clamp(t, 0, 1), s: clamp(s, -1, 1), bleed: severity * 0.25,
-      size: severity < 1.5 ? 1.4 : 2.2, stump, kind, rot: rf(-0.6, 0.6), seed: Math.random() * 6.28, drip: 0, ...extra });
+      size: severity < 1.5 ? 1.4 : 2.2, stump, kind, rot: rf(-0.6, 0.6), seed: Math.random() * 6.28, drip: 0, born: performance.now() / 1000, ...extra });
   }
 
   sever(k) {
@@ -1941,6 +1954,7 @@ class Doll {
     m.x = lerp(m.x, clamp(tx, 30, W - 30), 0.06);
     // Dragged too far away, the lines tear off.
     if (Math.hypot(this.x[P_WAIST] - m.x, this.y[P_WAIST] - (m.y || this.y[P_WAIST])) > 260) {
+      addGhost({ kind: "monitor", x: m.x, gy: (m.y || FLOOR_Y - 40) + 40, side: m.side, dur: 1.2 });
       this.monitor = null; state.toast = 1.6; state.toastText = "Monitor abgerissen!"; this.logEvent("Monitor abgerissen"); return;
     }
     if (!this.dead) {
@@ -2002,6 +2016,12 @@ class Doll {
   }
   // Adrenaline: wakes it up, the heart races, pain fades for a while. A
   // second shot too soon strains the heart.
+  // Heavy blood loss sends the body into shock: a fine, fast trembling.
+  shockTremor() {
+    const sh = clamp((50 - this.bl) / 30, 0, 1);
+    if (sh <= 0 || this.dead || this.arrest || this.frozen) return;
+    for (const i of [P_NECK, P_HAND_L, P_HAND_R, P_HEAD]) this.push(i, rf(-0.12, 0.12) * sh, rf(-0.08, 0.08) * sh);
+  }
   adrenaline() {
     if (this.dead) return "Zu spät";
     if (this.adrenT > 12) { this.organ[ORGAN.heart] = Math.max(0, this.organ[ORGAN.heart] - 40); this.pn = Math.min(100, this.pn + 30); this.logEvent("Überdosis Adrenalin"); return "Überdosis! Herz geschädigt"; }
@@ -2291,6 +2311,7 @@ class Doll {
   updateInfusion() {
     this.iv = Math.max(0, this.iv - DT);
     const i = this.ivPoint();
+    if (this.iv <= 0) addGhost({ kind: "iv", x: this.ivX, y: this.ivY, d: this, tx: this.x[i], ty: this.y[i], level: 0.05, dur: 1.1 });
     this.ivX = lerp(this.ivX, this.ivTargetX(i), 0.08);
     this.ivY = lerp(this.ivY, clamp(this.y[i] - 120, 48, FLOOR_Y - 60), 0.08);
     this.bl = Math.min(100, this.bl + 8 * DT);
@@ -2533,11 +2554,14 @@ function taperFill(ax, ay, bx, by, ra, rb, c, alpha = 1) {
 }
 
 // ======================================================================
-// Pixel layer: dolls and gibs are drawn as chunky pixel art.
+// Pixel layer: dolls and gibs are drawn as pixel art.
 // One pixel covers PIX world units, then the layer scales up without smoothing.
+// The small hand-made shapes (faces, wounds, the blood bag) keep their old
+// size: one of their pixels is PQ layer pixels. Gun sprites use SPX world
+// units per sprite pixel.
 // ======================================================================
 
-const PIX = 3, DW = W / PIX, DH = H / PIX;
+const PIX = 1.5, PQ = 2, SPX = PIX * PQ, DW = W / PIX, DH = H / PIX;
 const pixCan = document.createElement("canvas");
 pixCan.width = DW; pixCan.height = DH;
 const pixCtx = pixCan.getContext("2d");
@@ -2546,6 +2570,25 @@ const tmask = new Uint8Array(DW * DH), tcol = new Uint8ClampedArray(DW * DH * 3)
 const LIGHT = (() => { const v = [-0.45, -0.72, 0.62], l = Math.hypot(...v); return v.map((c) => c / l); })();
 const PX_BLACK = hex("#0b0b0e"), PX_BONE = hex("#ece6d4"), PX_FLESH = hex("#c8344c");
 let bbx0 = 0, bby0 = 0, bbx1 = 0, bby1 = 0;
+// Only the part of the layer that was drawn in this frame or the last one is
+// cleared and uploaded again.
+let pxBox = null, pxLast = [0, 0, DW - 1, DH - 1];
+function pxMark(x0, y0, x1, y1) {
+  x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0)); x1 = Math.min(DW - 1, Math.ceil(x1)); y1 = Math.min(DH - 1, Math.ceil(y1));
+  if (x1 < x0 || y1 < y0) return;
+  if (!pxBox) pxBox = [x0, y0, x1, y1];
+  else { pxBox[0] = Math.min(pxBox[0], x0); pxBox[1] = Math.min(pxBox[1], y0); pxBox[2] = Math.max(pxBox[2], x1); pxBox[3] = Math.max(pxBox[3], y1); }
+}
+function pxBegin() {
+  if (pxLast) { const [x0, y0, x1, y1] = pxLast; for (let y = y0; y <= y1; y++) ppx.fill(0, (y * DW + x0) * 4, (y * DW + x1 + 1) * 4); }
+  pxBox = null;
+}
+function pxEnd() {
+  let b = pxBox;
+  if (pxLast) b = b ? [Math.min(b[0], pxLast[0]), Math.min(b[1], pxLast[1]), Math.max(b[2], pxLast[2]), Math.max(b[3], pxLast[3])] : pxLast;
+  if (b) pixCtx.putImageData(pixImg, 0, 0, b[0], b[1], b[2] - b[0] + 1, b[3] - b[1] + 1);
+  pxLast = pxBox;
+}
 
 function tset(i, c, order) {
   tmask[i] = order;
@@ -2613,21 +2656,28 @@ const PART_CLOTH = { [HEAD]: "skin", [TORSO]: "shirt", [PELVIS]: "pants", [UARM_
 
 // Color of a surface after the doll's condition: death, burns, ice, fresh pain.
 function tintFor(d, k, c) {
+  const isSkin = c === d.look.skin, isHair = c === d.look.hair;
   if (FAR_SIDE[k] && !settings.front) c = darken(c, 0.16);
+  // A living body turns pale as it loses blood and bluish without air.
+  if (isSkin && !d.dead) {
+    const pale = clamp((75 - d.bl) / 50, 0, 1), blue = clamp((70 - d.o2) / 50, 0, 1);
+    if (pale > 0) c = mixc(c, COL_PALE, 0.42 * pale);
+    if (blue > 0) c = mixc(c, COL_CYAN, 0.38 * blue);
+  }
   const dc = d.dc;
   if (d.dead && !dc) c = mixc(c, COL_DEAD, 0.28);
   else if (dc) {
-    if (c === d.look.skin) {
+    if (isSkin) {
       c = mixc(c, COL_PALE, 0.45 * dc.pale);
       c = mixc(c, COL_GREEN, 0.55 * dc.green);
       c = mixc(c, COL_ROT, 0.7 * dc.rot);
       c = mixc(c, COL_SKEL, ramp(dc.skel, 0.35, 0.85));
-    } else if (c === d.look.hair) c = mixc(c, COL_DEAD, 0.2 + 0.3 * dc.rot);
+    } else if (isHair) c = mixc(c, COL_DEAD, 0.2 + 0.3 * dc.rot);
     else { c = mixc(c, COL_DEAD, 0.18); c = mixc(c, COL_DIRT, 0.45 * dc.rot); }
   }
   // Burns: the skin by its degree, clothes scorched, hair singed.
-  if (c === d.look.skin) c = burnSkin(c, d.burnDeg[k]);
-  else if (c === d.look.hair) c = mixc(c, COL_SCORCH, (1 - d.hair) * 0.8);
+  if (isSkin) c = burnSkin(c, d.burnDeg[k]);
+  else if (isHair) c = mixc(c, COL_SCORCH, (1 - d.hair) * 0.8);
   else if (d.cloth[k] < 1 || d.burnDeg[k] > 0.3) c = mixc(c, COL_SCORCH, Math.min(0.75, (1 - d.cloth[k]) * 0.6 + d.burnDeg[k] * 0.08));
   if (d.frozen) c = mixc(c, COL_ICE, 0.55);
   if (d.hurtFlash > 0) c = mixc(c, COL_HURT, d.hurtFlash * 0.3);
@@ -2645,33 +2695,44 @@ function rasterRect(ax, ay, bx, by, hw, e0, e1, order, base, stain) {
   const pts = [[-e0, -hw], [l + e1, -hw], [l + e1, hw], [-e0, hw]].map(([u, v]) => [ax + dx * u + nx * v, ay + dy * u + ny * v]);
   const x0 = Math.max(bbx0, Math.floor(Math.min(...pts.map((p) => p[0])))), x1 = Math.min(bbx1, Math.ceil(Math.max(...pts.map((p) => p[0]))));
   const y0 = Math.max(bby0, Math.floor(Math.min(...pts.map((p) => p[1])))), y1 = Math.min(bby1, Math.ceil(Math.max(...pts.map((p) => p[1]))));
-  const light = lighten(base, 0.2), dark = darken(base, 0.24);
+  // The few colors a plain pixel can take, worked out once per part:
+  // body, lit edge or shaded edge, each with grain and a dark rim where it
+  // crosses another part, all with the blood stain mixed in.
+  const pal = [], st = stain > 0.02 ? stain * 0.6 : 0;
+  for (const edge of [base, lighten(base, 0.2), darken(base, 0.24)]) for (let g = 0; g < 3; g++) for (let cr = 0; cr < 2; cr++) {
+    let c = g === 1 ? darken(edge, 0.05) : g === 2 ? lighten(edge, 0.04) : edge;
+    if (cr) c = darken(c, 0.25);
+    if (st) c = mixc(c, COL_GORE, st);
+    pal.push(c);
+  }
+  const fx = RFX_LIVOR > 0.02 || RFX_MARBLE > 0.02 || RFX_HOLES > 0.02 || RFX_BURN;
   for (let y = y0; y <= y1; y++) {
     for (let x = x0; x <= x1; x++) {
       const px0 = x + 0.5 - ax, py0 = y + 0.5 - ay;
       const u = px0 * dx + py0 * dy, v = px0 * nx + py0 * ny;
       if (u < -e0 || u > l + e1 || v < -hw || v > hw) continue;
-      let c = base;
-      if (hw - Math.abs(v) < 1) c = v * ny < 0 ? light : dark;
+      const edge = hw - Math.abs(v) < 1 ? (v * ny < 0 ? 1 : 2) : 0;
       const grain = ((x * 73) ^ (y * 151)) & 7;
-      if (grain === 0) c = darken(c, 0.05); else if (grain === 1) c = lighten(c, 0.04);
-      const i = y * DW + x;
-      if (tmask[i] && tmask[i] !== order && hw - Math.abs(v) < 1.2) c = darken(c, 0.25);
-      if (stain > 0.02) c = mixc(c, COL_GORE, stain * 0.6);
-      if (RFX_LIVOR > 0.02) { const low = (v * ny) / hw; if (low > 0) c = mixc(c, COL_LIVOR, RFX_LIVOR * 0.6 * low); }
-      if (RFX_MARBLE > 0.02) { const h = Math.sin(x * 1.7 + Math.sin(y * 0.9) * 2.2) * Math.sin(y * 1.3 + x * 0.3); if (Math.abs(h) < 0.12 * RFX_MARBLE) c = mixc(c, COL_MARBLE, 0.6); }
-      if (RFX_HOLES > 0.02 && (((x * 2654435761) ^ (y * 40503)) >>> 0) % 100 < RFX_HOLES * 26) c = COL_RAG;
-      if (RFX_BURN) {
-        // Burnt clothes open in blotches with charred, glowing edges and
-        // show the burnt skin under them.
-        const n = 0.5 + 0.25 * (Math.sin(x * 0.83 + y * 0.21) + Math.sin(y * 0.97 - x * 0.37 + 1.7)), hb = (((x * 1597334677) ^ (y * 3812015801)) >>> 0) % 100;
-        let skin = !RFX_BURN.clothed;
-        if (RFX_BURN.clothed && n > RFX_BURN.cloth) skin = true;
-        else if (RFX_BURN.clothed && n > RFX_BURN.cloth - 0.07) c = RFX_BURN.ember > 0.3 && hb % 3 === 0 ? COL_EMBER : COL_SCORCH;
-        if (skin && RFX_BURN.clothed) c = (hw - Math.abs(v) < 1) ? darken(RFX_BURN.skin, 0.2) : RFX_BURN.skin;
-        if (skin && RFX_BURN.deg > 1.4) {
-          if (RFX_BURN.deg < 3.2 && hb < (RFX_BURN.deg - 1.4) * 14) c = COL_BLISTER;
-          if (RFX_BURN.deg > 2.9 && Math.abs(Math.sin(x * 1.3 + Math.sin(y * 0.7) * 2)) < 0.12 * (RFX_BURN.deg - 2.9)) c = RFX_BURN.ember > 0.3 && hb % 2 === 0 ? COL_EMBER : COL_SCORCH;
+      const i = y * DW + x, cross = tmask[i] && tmask[i] !== order && hw - Math.abs(v) < 1.2 ? 1 : 0;
+      let c = pal[edge * 6 + (grain === 0 ? 1 : grain === 1 ? 2 : 0) * 2 + cross];
+      if (fx) {
+        // Decay and burn patterns keep the size they had on the coarser grid.
+        const X = Math.floor(x / PQ), Y = Math.floor(y / PQ);
+        if (RFX_LIVOR > 0.02) { const low = (v * ny) / hw; if (low > 0) c = mixc(c, COL_LIVOR, RFX_LIVOR * 0.6 * low); }
+        if (RFX_MARBLE > 0.02) { const h = Math.sin(X * 1.7 + Math.sin(Y * 0.9) * 2.2) * Math.sin(Y * 1.3 + X * 0.3); if (Math.abs(h) < 0.12 * RFX_MARBLE) c = mixc(c, COL_MARBLE, 0.6); }
+        if (RFX_HOLES > 0.02 && (((X * 2654435761) ^ (Y * 40503)) >>> 0) % 100 < RFX_HOLES * 26) c = COL_RAG;
+        if (RFX_BURN) {
+          // Burnt clothes open in blotches with charred, glowing edges and
+          // show the burnt skin under them.
+          const n = 0.5 + 0.25 * (Math.sin(X * 0.83 + Y * 0.21) + Math.sin(Y * 0.97 - X * 0.37 + 1.7)), hb = (((X * 1597334677) ^ (Y * 3812015801)) >>> 0) % 100;
+          let skin = !RFX_BURN.clothed;
+          if (RFX_BURN.clothed && n > RFX_BURN.cloth) skin = true;
+          else if (RFX_BURN.clothed && n > RFX_BURN.cloth - 0.07) c = RFX_BURN.ember > 0.3 && hb % 3 === 0 ? COL_EMBER : COL_SCORCH;
+          if (skin && RFX_BURN.clothed) c = (hw - Math.abs(v) < 1) ? darken(RFX_BURN.skin, 0.2) : RFX_BURN.skin;
+          if (skin && RFX_BURN.deg > 1.4) {
+            if (RFX_BURN.deg < 3.2 && hb < (RFX_BURN.deg - 1.4) * 14) c = COL_BLISTER;
+            if (RFX_BURN.deg > 2.9 && Math.abs(Math.sin(X * 1.3 + Math.sin(Y * 0.7) * 2)) < 0.12 * (RFX_BURN.deg - 2.9)) c = RFX_BURN.ember > 0.3 && hb % 2 === 0 ? COL_EMBER : COL_SCORCH;
+          }
         }
       }
       tset(i, c, order);
@@ -2680,7 +2741,7 @@ function rasterRect(ax, ay, bx, by, hw, e0, e1, order, base, stain) {
 }
 
 // Wound colors in the pixel layer.
-const WC_HOLE = hex("#1a0306"), WC_COLLAR = hex("#6e0c18"), WC_BRUISE = hex("#4a1a34"), WC_TORN = hex("#9a1828");
+const WC_HOLE = hex("#1a0306"), WC_COLLAR = hex("#6e0c18"), WC_BRUISE_NEW = hex("#8a2a36"), WC_BRUISE_MID = hex("#4a1a34"), WC_BRUISE_OLD = hex("#7a7a3a"), WC_TORN = hex("#9a1828");
 const WC_LIP = hex("#d4566a"), WC_CORE = hex("#2c0409"), WC_RUN = hex("#860c18"), WC_DRIED = hex("#560a12"), WC_DROP = hex("#b0141f");
 
 // One wound in pixel art, only on the pixels of its own body part:
@@ -2691,7 +2752,7 @@ const PX_GAUZE = hex("#ece8de"), PX_GAUZE_DK = hex("#c4bcac"), PX_SOAK = hex("#a
 // a small spot of blood that soaked through in the middle.
 function rasterBand(d, b, order) {
   const k = b.part;
-  let mx, my, ux, uy, half = 1.6;
+  let mx, my, ux, uy, half = 1.6 * PQ;
   if (k === HEAD) {
     const nx = d.x[d.pa[HEAD]], ny = d.y[d.pa[HEAD]], hx = d.x[d.pb[HEAD]], hy = d.y[d.pb[HEAD]];
     const l = Math.hypot(hx - nx, hy - ny) || 1;
@@ -2705,16 +2766,16 @@ function rasterBand(d, b, order) {
     let t0 = b.t, t1 = b.t;
     for (const w of d.wounds) if (w.band === b) { t0 = Math.min(t0, w.t); t1 = Math.max(t1, w.t); }
     const tc = (t0 + t1) / 2;
-    half = b.burn ? Math.min(4, l / PIX / 2.6) : Math.min(5, Math.max(1.6, (t1 - t0) * l / PIX / 2 + 1));
+    half = b.burn ? Math.min(4 * PQ, l / PIX / 2.6) : Math.min(5 * PQ, Math.max(1.6 * PQ, (t1 - t0) * l / PIX / 2 + PQ));
     mx = lerp(ax, bx, tc) / PIX; my = lerp(ay, by, tc) / PIX;
   }
   const wet = d.wounds.some((w) => w.band === b && w.bleed > 0);
-  const reach = 10, spot = 0.4 + b.soak * 1.1;
+  const reach = 10 * PQ, spot = (0.4 + b.soak * 1.1) * PQ;
   for (let y = Math.floor(my - reach); y <= my + reach; y++) for (let x = Math.floor(mx - reach); x <= mx + reach; x++) {
     if (x < bbx0 || x > bbx1 || y < bby0 || y > bby1 || tmask[y * DW + x] !== order) continue;
     const u = (x + 0.5 - mx) * ux + (y + 0.5 - my) * uy;
     if (Math.abs(u) > half) continue;
-    let c = Math.abs(u) > half - 0.7 ? PX_GAUZE_DK : PX_GAUZE;
+    let c = Math.abs(u) > half - 0.7 * PQ ? PX_GAUZE_DK : PX_GAUZE;
     if (((x + y * 3) & 3) === 0) c = mixc(c, PX_GAUZE_DK, 0.4);
     const v = (x + 0.5 - mx) * -uy + (y + 0.5 - my) * ux;
     if (Math.hypot(u, v) < spot) c = mixc(c, wet ? PX_SOAK : PX_SOAK_DRY, 0.7);
@@ -2723,17 +2784,27 @@ function rasterBand(d, b, order) {
 }
 function rasterWound(d, w, order) {
   const [wx, wy] = d.woundPos(w);
-  const cx = Math.floor(wx / PIX), cy = Math.floor(wy / PIX);
-  const at = (x, y) => (x >= bbx0 && x <= bbx1 && y >= bby0 && y <= bby1 && tmask[y * DW + x] === order ? y * DW + x : -1);
-  const put = (x, y, c) => { const i = at(x, y); if (i >= 0) tset(i, c, order); };
+  // Wound shapes are drawn in face pixels (PQ layer pixels each), placed on
+  // the fine grid so they move smoothly with the body.
+  const fl = (v) => Math.floor(v * PQ) / PQ;
+  const cx = fl(wx / SPX), cy = fl(wy / SPX);
+  const at1 = (X, Y) => (X >= bbx0 && X <= bbx1 && Y >= bby0 && Y <= bby1 && tmask[Y * DW + X] === order ? Y * DW + X : -1);
+  const at = (x, y) => at1(Math.floor(x * PQ), Math.floor(y * PQ));
+  const put = (x, y, c) => { const X = Math.floor(x * PQ), Y = Math.floor(y * PQ); for (let b = 0; b < PQ; b++) for (let a = 0; a < PQ; a++) { const i = at1(X + a, Y + b); if (i >= 0) tset(i, c, order); } };
   // Wrapped wounds are hidden under their bandage (rasterBand).
   if (w.bandaged) return;
   const tint = (x, y, c, a) => {
-    const i = at(x, y); if (i < 0) return;
-    tcol[i * 3] += (c[0] - tcol[i * 3]) * a; tcol[i * 3 + 1] += (c[1] - tcol[i * 3 + 1]) * a; tcol[i * 3 + 2] += (c[2] - tcol[i * 3 + 2]) * a;
+    const X = Math.floor(x * PQ), Y = Math.floor(y * PQ);
+    for (let q = 0; q < PQ * PQ; q++) {
+      const i = at1(X + (q % PQ), Y + ((q / PQ) | 0)); if (i < 0) continue;
+      tcol[i * 3] += (c[0] - tcol[i * 3]) * a; tcol[i * 3 + 1] += (c[1] - tcol[i * 3 + 1]) * a; tcol[i * 3 + 2] += (c[2] - tcol[i * 3 + 2]) * a;
+    }
   };
   const hash = (n) => { const v = Math.sin(w.seed * 91.7 + n * 12.9898) * 43758.5453; return v - Math.floor(v); };
   const open = w.bleed > 0;
+  // Bruises age: fresh and red, then dark purple, much later yellow-green.
+  const age = w.born === undefined ? 30 : performance.now() / 1000 - w.born;
+  const WC_BRUISE = age < 12 ? mixc(WC_BRUISE_NEW, WC_BRUISE_MID, age / 12) : age < 90 ? WC_BRUISE_MID : mixc(WC_BRUISE_MID, WC_BRUISE_OLD, Math.min(1, (age - 90) / 120));
   let lowX = cx, lowY = cy;
   if (w.kind === "shot" && !w.exit) {
     // Entry: a small dark hole, a ring of scraped skin, a faint bruise.
@@ -2755,9 +2826,9 @@ function rasterWound(d, w, order) {
     const a = w.ang !== undefined ? w.ang : Math.PI / 2 + w.rot;
     const dx = ux * Math.cos(a) - uy * Math.sin(a), dy = ux * Math.sin(a) + uy * Math.cos(a);
     const half = (w.len || 1.6) * (w.size > 2 ? 1.25 : 1), px = -dy, py = dx;
-    const fx = wx / PIX, fy = wy / PIX;
+    const fx = wx / SPX, fy = wy / SPX;
     for (let u = -half; u <= half + 0.01; u += 0.5) {
-      const x = Math.floor(fx + dx * u), y = Math.floor(fy + dy * u), gape = 1 - Math.abs(u) / (half + 0.5);
+      const x = fl(fx + dx * u), y = fl(fy + dy * u), gape = 1 - Math.abs(u) / (half + 0.5);
       tint(x + Math.round(px), y + Math.round(py), WC_COLLAR, 0.45 * gape);
       tint(x - Math.round(px), y - Math.round(py), WC_COLLAR, 0.45 * gape);
       if (gape > 0.45) put(x + Math.round(px * 0.8), y + Math.round(py * 0.8), open ? WC_LIP : WC_TORN);
@@ -2824,10 +2895,10 @@ function rasterRuns(d) {
       const cur = w.streams[w.streams.length - 1], hash = r[3], target = Math.min(90, Math.floor(w.drip || 0));
       for (let step = 0; step < 3 && cur.length < target; step++) {
         let x, y;
-        if (cur.length) [x, y] = runToWorld(d, cur[cur.length - 1]); else { x = (r[0] + 0.5) * PIX; y = (r[1] + 0.5) * PIX; }
+        if (cur.length) [x, y] = runToWorld(d, cur[cur.length - 1]); else { x = (r[0] + 0.5) * SPX; y = (r[1] + 0.5) * SPX; }
         const n = cur.length + 1;
-        if (n > 1 && hash(n + 30) < 0.22) x += (hash(n + 50) < 0.5 ? -1 : 1) * PIX;
-        y += PIX;
+        if (n > 1 && hash(n + 30) < 0.22) x += (hash(n + 50) < 0.5 ? -1 : 1) * SPX;
+        y += SPX;
         const px = Math.floor(x / PIX), py = Math.floor(y / PIX), i = py * DW + px;
         const k = px >= bbx0 && px <= bbx1 && py >= bby0 && py <= bby1 ? partOf[tmask[i]] : undefined;
         if (k === undefined) { w.dripOut = true; w.dripEnd = [x, y]; break; }
@@ -2835,8 +2906,8 @@ function rasterRuns(d) {
       }
       if (cur.length >= target && cur.length) {
         // The run has reached its length for now; check if it hangs over the edge.
-        const [x, y] = runToWorld(d, cur[cur.length - 1]), px = Math.floor(x / PIX), py = Math.floor((y + PIX) / PIX);
-        if (px < bbx0 || px > bbx1 || py > bby1 || partOf[tmask[py * DW + px]] === undefined) { w.dripOut = true; w.dripEnd = [x, y + PIX]; }
+        const [x, y] = runToWorld(d, cur[cur.length - 1]), px = Math.floor(x / PIX), py = Math.floor((y + SPX) / PIX);
+        if (px < bbx0 || px > bbx1 || py > bby1 || partOf[tmask[py * DW + px]] === undefined) { w.dripOut = true; w.dripEnd = [x, y + SPX]; }
       }
     }
     // Draw every run where its own part is visible. Older runs and those of
@@ -2845,11 +2916,15 @@ function rasterRuns(d) {
       const live = open && si === w.streams.length - 1;
       st.forEach((pt, n) => {
         if (d.gone[pt[0]]) return;
-        const [x, y] = runToWorld(d, pt), px = Math.floor(x / PIX), py = Math.floor(y / PIX);
-        if (px < bbx0 || px > bbx1 || py < bby0 || py > bby1) return;
-        const i = py * DW + px;
-        if (tmask[i] !== orderOf[pt[0]]) return;
-        tset(i, live ? (n === st.length - 1 ? WC_DROP : WC_RUN) : WC_DRIED, tmask[i]);
+        // Each point of a run is a small square of PQ by PQ pixels.
+        const [x, y] = runToWorld(d, pt), px = Math.round(x / PIX) - (PQ >> 1), py = Math.round(y / PIX) - (PQ >> 1);
+        const c = live ? (n === st.length - 1 ? WC_DROP : WC_RUN) : WC_DRIED;
+        for (let q = 0; q < PQ * PQ; q++) {
+          const X = px + (q % PQ), Y = py + ((q / PQ) | 0);
+          if (X < bbx0 || X > bbx1 || Y < bby0 || Y > bby1) continue;
+          const i = Y * DW + X;
+          if (tmask[i] === orderOf[pt[0]]) tset(i, c, tmask[i]);
+        }
       });
     });
   }
@@ -2881,6 +2956,8 @@ function limbStart(d, k) {
   return [ax, ay];
 }
 
+// Room around the joints for limb width, hands, hair and stumps: 30 world units.
+const BB_PAD = Math.ceil(30 / PIX);
 function rasterDoll(d) {
   // Bounding box of the doll in pixels, with room for the head and outline.
   let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
@@ -2888,8 +2965,9 @@ function rasterDoll(d) {
     minx = Math.min(minx, d.x[i]); maxx = Math.max(maxx, d.x[i]);
     miny = Math.min(miny, d.y[i]); maxy = Math.max(maxy, d.y[i]);
   }
-  bbx0 = Math.max(0, Math.floor(minx / PIX) - 16); bbx1 = Math.min(DW - 1, Math.ceil(maxx / PIX) + 16);
-  bby0 = Math.max(0, Math.floor(miny / PIX) - 16); bby1 = Math.min(DH - 1, Math.ceil(maxy / PIX) + 16);
+  bbx0 = Math.max(0, Math.floor(minx / PIX) - BB_PAD); bbx1 = Math.min(DW - 1, Math.ceil(maxx / PIX) + BB_PAD);
+  bby0 = Math.max(0, Math.floor(miny / PIX) - BB_PAD); bby1 = Math.min(DH - 1, Math.ceil(maxy / PIX) + BB_PAD);
+  pxMark(bbx0, bby0, bbx1, bby1);
   for (let y = bby0; y <= bby1; y++) tmask.fill(0, y * DW + bbx0, y * DW + bbx1 + 1);
 
   const P = (i) => [d.x[i] / PIX, d.y[i] / PIX];
@@ -2924,26 +3002,34 @@ function rasterDoll(d) {
       if (hairOn) rasterRect(hx1 - ux * hbn, hy1 - uy * hbn, hx1, hy1, HEAD_HW * sw / PIX + 0.3, 0, 0.3, order, hairBase, 0);
       if (settings.front && hairOn && d.hair > 0.5) {
         // Seen from the front, the hair also frames both sides of the face.
-        const sx = -uy, sy = ux, side = HEAD_HW / PIX - 0.6, sl = h0 * 0.42;
+        const sx = -uy, sy = ux, side = HEAD_HW / PIX - 0.6 * PQ, sl = h0 * 0.42;
         for (const sd of [-1, 1]) {
           const px1 = hx1 + sx * sd * side, py1 = hy1 + sy * sd * side;
-          rasterRect(px1 - ux * sl, py1 - uy * sl, px1, py1, 0.9, 0, 0, order, hairBase, 0);
+          rasterRect(px1 - ux * sl, py1 - uy * sl, px1, py1, 0.9 * PQ, 0, 0, order, hairBase, 0);
         }
       }
       // Face on the side the doll looks at.
       const fx = -uy * d.facing, fy = ux * d.facing;
-      const put = (x, y, c) => { x = Math.floor(x); y = Math.floor(y); if (x >= bbx0 && x <= bbx1 && y >= bby0 && y <= bby1 && tmask[y * DW + x]) tset(y * DW + x, c, tmask[y * DW + x]); };
-      const ex = hx0 + ux * (h0 * 0.58) + fx * (HEAD_HW / PIX - 1.6), ey = hy0 + uy * (h0 * 0.58) + fy * (HEAD_HW / PIX - 1.6);
-      const mx = hx0 + ux * (h0 * 0.25) + fx * (HEAD_HW / PIX - 1.4), my = hy0 + uy * (h0 * 0.25) + fy * (HEAD_HW / PIX - 1.4);
+      // The face keeps its hand-made shapes: one face pixel is PQ by PQ layer pixels.
+      const qx0 = hx0 / PQ, qy0 = hy0 / PQ, qh0 = h0 / PQ, QW = HEAD_HW / SPX;
+      const put = (x, y, c) => {
+        x = Math.floor(x * PQ); y = Math.floor(y * PQ);
+        for (let q = 0; q < PQ * PQ; q++) {
+          const X = x + (q % PQ), Y = y + ((q / PQ) | 0);
+          if (X >= bbx0 && X <= bbx1 && Y >= bby0 && Y <= bby1 && tmask[Y * DW + X]) tset(Y * DW + X, c, tmask[Y * DW + X]);
+        }
+      };
+      const ex = qx0 + ux * (qh0 * 0.58) + fx * (QW - 1.6), ey = qy0 + uy * (qh0 * 0.58) + fy * (QW - 1.6);
+      const mx = qx0 + ux * (qh0 * 0.25) + fx * (QW - 1.4), my = qy0 + uy * (qh0 * 0.25) + fy * (QW - 1.4);
       if (skull > 0.5) {
         // Skull: dark eye sockets, the nose hole and a row of teeth.
         const sock = hex("#1a140c"), tooth = hex("#efe6cc");
-        const cxh = hx0 + ux * (h0 * 0.58), cyh = hy0 + uy * (h0 * 0.58);
+        const cxh = qx0 + ux * (qh0 * 0.58), cyh = qy0 + uy * (qh0 * 0.58);
         const sockets = settings.front ? [-1, 1].map((sd) => [cxh + fx * sd * 2, cyh + fy * sd * 2]) : [[ex, ey]];
         for (const [qx, qy] of sockets) { put(qx, qy, sock); put(qx + 1, qy, sock); put(qx, qy + 1, sock); put(qx + 1, qy + 1, sock); }
         const nx2 = settings.front ? cxh - ux * 1.6 : ex - ux * 1.6 + fx * 0.6, ny2 = settings.front ? cyh - uy * 1.6 : ey - uy * 1.6 + fy * 0.6;
         put(nx2, ny2, sock);
-        const tcx = settings.front ? hx0 + ux * (h0 * 0.2) : mx, tcy = settings.front ? hy0 + uy * (h0 * 0.2) : my;
+        const tcx = settings.front ? qx0 + ux * (qh0 * 0.2) : mx, tcy = settings.front ? qy0 + uy * (qh0 * 0.2) : my;
         const sx2 = -uy, sy2 = ux;
         for (let n = -2; n <= 2; n++) put(tcx + sx2 * n, tcy + sy2 * n, n & 1 ? sock : tooth);
       } else {
@@ -2959,7 +3045,7 @@ function rasterDoll(d) {
         }
         if (settings.front) {
           // Front view: two eyes and the mouth in the middle of the face.
-          const cxh = hx0 + ux * (h0 * 0.58), cyh = hy0 + uy * (h0 * 0.58);
+          const cxh = qx0 + ux * (qh0 * 0.58), cyh = qy0 + uy * (qh0 * 0.58);
           for (const sd of [-1, 1]) {
             const qx = cxh + fx * sd * 1.9, qy = cyh + fy * sd * 1.9;
             if (d.dead) { put(qx - 0.5, qy - 0.5, PX_BLACK); put(qx + 0.5, qy + 0.5, PX_BLACK); }
@@ -2971,7 +3057,7 @@ function rasterDoll(d) {
               if (hurt) put(qx - fx * sd * 0.6 + ux * 1.2, qy - fy * sd * 0.6 + uy * 1.2, lid);
             }
           }
-          const mcx = hx0 + ux * (h0 * 0.25), mcy = hy0 + uy * (h0 * 0.25);
+          const mcx = qx0 + ux * (qh0 * 0.25), mcy = qy0 + uy * (qh0 * 0.25);
           put(mcx - fx * 0.5, mcy - fy * 0.5, lip); put(mcx + fx * 0.5, mcy + fy * 0.5, lip);
           if (scared || hurt) { put(mcx - fx * 0.5 - ux, mcy - fy * 0.5 - uy, PX_BLACK); put(mcx + fx * 0.5 - ux, mcy + fy * 0.5 - uy, PX_BLACK); }
         } else {
@@ -3000,7 +3086,7 @@ function rasterDoll(d) {
         // right under the ankle, in line with the shin.
         const [kx2, ky2] = P(d.pb[k === FOOT_L ? THIGH_L : THIGH_R]);
         const sl = Math.hypot(ax - kx2, ay - ky2) || 1, ux2 = (ax - kx2) / sl, uy2 = (ay - ky2) / sl;
-        rasterRect(ax - ux2 * 0.4, ay - uy2 * 0.4, ax + ux2 * 2.2, ay + uy2 * 2.2, 6.5 / PIX, 0, 0, order, base, d.stain[k]);
+        rasterRect(ax - ux2 * 0.4 * PQ, ay - uy2 * 0.4 * PQ, ax + ux2 * 2.2 * PQ, ay + uy2 * 2.2 * PQ, 6.5 / PIX, 0, 0, order, base, d.stain[k]);
       } else rasterRect(ax, ay, bx, by, hw * sw / PIX, e0 / PIX, e1 / PIX, order, base, d.stain[k]);
       if (k === LARM_L || k === LARM_R) {
         // Square hand
@@ -3032,16 +3118,16 @@ function rasterDoll(d) {
     if (w.bandaged) {
       // A wrapped stump: a rounded cap of gauze over the end, a shaded rim
       // and a small spot of blood soaked through at the tip.
-      rasterDisc(cx + ux * 0.4, cy + uy * 0.4, r + 0.3, PX_GAUZE_DK, 250);
-      rasterDisc(cx + ux * 0.2, cy + uy * 0.2, r - 0.2, PX_GAUZE, 250);
-      rasterDisc(cx + ux * (r * 0.5), cy + uy * (r * 0.5), Math.min(1.2, 0.5 + (w.soak || 0) * 0.7), w.bleed > 0 ? PX_SOAK : PX_SOAK_DRY, 250);
+      rasterDisc(cx + ux * 0.4 * PQ, cy + uy * 0.4 * PQ, r + 0.3 * PQ, PX_GAUZE_DK, 250);
+      rasterDisc(cx + ux * 0.2 * PQ, cy + uy * 0.2 * PQ, r - 0.2 * PQ, PX_GAUZE, 250);
+      rasterDisc(cx + ux * (r * 0.5), cy + uy * (r * 0.5), Math.min(1.2, 0.5 + (w.soak || 0) * 0.7) * PQ, w.bleed > 0 ? PX_SOAK : PX_SOAK_DRY, 250);
       continue;
     }
-    rasterDisc(cx, cy, r + 0.4, w.bleed > 0 ? PX_FLESH : hex("#82323a"), 250);
-    rasterDisc(cx + ux * 0.4, cy + uy * 0.4, r * 0.6, COL_GORE, 250);
-    const bl = Math.max(2, r * 0.9);
-    for (let s = 0; s <= bl; s += 0.5) rasterDisc(cx + ux * s, cy + uy * s, Math.max(0.7, r * 0.3), PX_BONE, 250);
-    rasterDisc(cx + ux * bl, cy + uy * bl, Math.max(0.9, r * 0.38), PX_BONE, 250);
+    rasterDisc(cx, cy, r + 0.4 * PQ, w.bleed > 0 ? PX_FLESH : hex("#82323a"), 250);
+    rasterDisc(cx + ux * 0.4 * PQ, cy + uy * 0.4 * PQ, r * 0.6, COL_GORE, 250);
+    const bl = Math.max(2 * PQ, r * 0.9);
+    for (let s = 0; s <= bl; s += 0.5) rasterDisc(cx + ux * s, cy + uy * s, Math.max(0.7 * PQ, r * 0.3), PX_BONE, 250);
+    rasterDisc(cx + ux * bl, cy + uy * bl, Math.max(0.9 * PQ, r * 0.38), PX_BONE, 250);
   }
   // Copy into the layer with a one pixel outline around the silhouette.
   // A frozen doll gets a pale ice rim instead of black.
@@ -3053,7 +3139,7 @@ function rasterDoll(d) {
         ppx[o] = tcol[i * 3]; ppx[o + 1] = tcol[i * 3 + 1]; ppx[o + 2] = tcol[i * 3 + 2]; ppx[o + 3] = 255;
       } else if ((x > bbx0 && tmask[i - 1]) || (x < bbx1 && tmask[i + 1]) || (y > bby0 && tmask[i - DW]) || (y < bby1 && tmask[i + DW])) {
         ppx[o] = rim[0]; ppx[o + 1] = rim[1]; ppx[o + 2] = rim[2]; ppx[o + 3] = 255;
-      } else if (d.frozen && x > bbx0 + 1 && x < bbx1 - 1 && (tmask[i - 2] || tmask[i + 2])) {
+      } else if (d.frozen && x > bbx0 + 2 && x < bbx1 - 2 && (tmask[i - 2] || tmask[i + 2] || tmask[i - 3] || tmask[i + 3])) {
         ppx[o] = 120; ppx[o + 1] = 170; ppx[o + 2] = 210; ppx[o + 3] = 255;
       }
       if (d.frozen && tmask[i] && ((x * 7 + y * 13 + (tick >> 3)) % 37) === 0) { ppx[o] = 255; ppx[o + 1] = 255; ppx[o + 2] = 255; }
@@ -3062,16 +3148,19 @@ function rasterDoll(d) {
 }
 
 function rasterInfusion(d) {
-  const put = (x, y, c) => { x |= 0; y |= 0; if (x >= 0 && y >= 0 && x < DW && y < DH) { const o = (y * DW + x) * 4; ppx[o] = c[0]; ppx[o + 1] = c[1]; ppx[o + 2] = c[2]; ppx[o + 3] = 255; } };
-  const bx = Math.round(d.ivX / PIX), by = Math.round(d.ivY / PIX);
-  const i = d.ivPoint(), tx = d.x[i] / PIX, ty = d.y[i] / PIX;
+  // The bag is drawn in coarse pixels (PQ layer pixels each), the tube fine.
+  const putF = (x, y, c) => { x |= 0; y |= 0; if (x >= 0 && y >= 0 && x < DW && y < DH) { const o = (y * DW + x) * 4; ppx[o] = c[0]; ppx[o + 1] = c[1]; ppx[o + 2] = c[2]; ppx[o + 3] = 255; } };
+  const put = (x, y, c) => { x = Math.floor(x) * PQ; y = Math.floor(y) * PQ; for (let q = 0; q < PQ * PQ; q++) putF(x + (q % PQ), y + ((q / PQ) | 0), c); };
+  const bx = Math.round(d.ivX / SPX), by = Math.round(d.ivY / SPX);
+  const i = d.ivPoint(), tx = d.x[i] / SPX, ty = d.y[i] / SPX;
+  pxMark(Math.min(bx - 4, tx - 2) * PQ, (by - 4) * PQ, Math.max(bx + 5, tx + 2) * PQ, (Math.max(by + 12, ty) + 9) * PQ);
   // Tube sags between the bag and the arm.
   const sx = bx + 0.5, sy = by + 11, mx = (sx + tx) / 2, my = Math.max(sy, ty) + 6;
-  const n = Math.ceil(Math.hypot(tx - sx, ty - sy) * 2) + 8;
+  const n = Math.ceil(Math.hypot(tx - sx, ty - sy) * 2 * PQ) + 8;
   for (let s2 = 0; s2 <= n; s2++) {
     const t = s2 / n, u = 1 - t;
     const x = u * u * sx + 2 * u * t * mx + t * t * tx, y = u * u * sy + 2 * u * t * my + t * t * ty;
-    put(x, y + 1, PX_BLACK); put(x, y, hex("#9a1020"));
+    putF(x * PQ, y * PQ + 1, PX_BLACK); putF(x * PQ, y * PQ, hex("#9a1020"));
   }
   // Hook, bag body with blood level, label and drip chamber.
   const level = d.iv / IV_TIME;
@@ -3095,7 +3184,8 @@ function rasterGib(g) {
   const cx = g.x / PIX, cy = g.y / PIX, r = g.r / PIX;
   const put = (x, y, c) => { if (x >= 0 && y >= 0 && x < DW && y < DH) { const o = (y * DW + x) * 4; ppx[o] = c[0]; ppx[o + 1] = c[1]; ppx[o + 2] = c[2]; ppx[o + 3] = 255; } };
   const ca = Math.cos(g.rot), sa = Math.sin(g.rot);
-  const rx = g.mag ? 3.2 : g.casing ? 1.2 : g.bone ? r * 1.6 : r * 1.25, ry = g.mag ? 1.3 : g.casing ? 0.5 : g.bone ? Math.max(0.6, r * 0.45) : r * 0.85;
+  const rx = g.mag ? 3.2 * PQ : g.casing ? 1.2 * PQ : g.bone ? r * 1.6 : r * 1.25, ry = g.mag ? 1.3 * PQ : g.casing ? 0.5 * PQ : g.bone ? Math.max(0.6 * PQ, r * 0.45) : r * 0.85;
+  pxMark(cx - rx - 2, cy - rx - 2, cx + rx + 2, cy + rx + 2);
   for (let pass = 0; pass < 2; pass++) {
     const grow = pass === 0 ? 1 : 0;
     for (let y = Math.floor(cy - rx - 1); y <= Math.ceil(cy + rx + 1); y++) {
@@ -4398,7 +4488,7 @@ function aimAt(x, y) {
 
 function muzzlePoint(px0, py0, ang, wp) {
   const flip = Math.cos(ang) < 0 ? -1 : 1;
-  const u = (wp.muzzle[0] - wp.grip[0]) * PIX, v = (wp.muzzle[1] - wp.grip[1]) * PIX * flip;
+  const u = (wp.muzzle[0] - wp.grip[0]) * SPX, v = (wp.muzzle[1] - wp.grip[1]) * SPX * flip;
   return [px0 + Math.cos(ang) * u - Math.sin(ang) * v, py0 + Math.sin(ang) * u + Math.cos(ang) * v];
 }
 
@@ -4735,11 +4825,12 @@ function rasterGun() {
   const wp = WEAPONS[state.weapon];
   const [px0, py0, ang] = gunPose();
   const cx = px0 / PIX, cy = py0 / PIX, ca = Math.cos(ang), sa = Math.sin(ang), flip = ca < 0 ? -1 : 1;
-  const rows = wp.sprite, R = rows[0].length + 2;
+  const rows = wp.sprite, R = (rows[0].length + 2) * PQ;
+  pxMark(cx - R - 1, cy - R - 1, cx + R + 1, cy + R + 1);
   const put = (x, y, c) => { if (x >= 0 && y >= 0 && x < DW && y < DH) { const o = (y * DW + x) * 4; ppx[o] = c[0]; ppx[o + 1] = c[1]; ppx[o + 2] = c[2]; ppx[o + 3] = 255; } };
   const sample = (x, y) => {
     const ex = x + 0.5 - cx, ey = y + 0.5 - cy;
-    const u = ex * ca + ey * sa + wp.grip[0], v = (-ex * sa + ey * ca) * flip + wp.grip[1];
+    const u = (ex * ca + ey * sa) / PQ + wp.grip[0], v = ((-ex * sa + ey * ca) * flip) / PQ + wp.grip[1];
     const iu = Math.floor(u), iv = Math.floor(v);
     if (iv < 0 || iv >= rows.length || iu < 0 || iu >= rows[0].length) return null;
     const ch = rows[iv][iu];
@@ -4759,7 +4850,7 @@ function onGun(x, y) {
   const wp = WEAPONS[state.weapon], [px0, py0, ang] = gunPose();
   const cx = Math.cos(ang), sx = Math.sin(ang);
   const u = (x - px0) * cx + (y - py0) * sx, v = -(x - px0) * sx + (y - py0) * cx;
-  const back = -wp.grip[0] * PIX - 6, front = (wp.sprite[0].length - wp.grip[0]) * PIX + 6;
+  const back = -wp.grip[0] * SPX - 6, front = (wp.sprite[0].length - wp.grip[0]) * SPX + 6;
   return u > back && u < front && Math.abs(v) < 20;
 }
 
@@ -4851,19 +4942,8 @@ function drawMonitor(d) {
   ctx.strokeStyle = "#9a1020"; ctx.beginPath(); ctx.moveTo(x + 10, gy - 94); ctx.quadraticCurveTo((x + ax) / 2, Math.max(gy - 94, ay) + 18, ax, ay); ctx.stroke();
   ctx.strokeStyle = "#2a2a30"; ctx.beginPath(); ctx.moveTo(x - 4, gy - 52); ctx.quadraticCurveTo((x + cx) / 2, Math.max(gy - 52, cy) + 22, cx, cy); ctx.stroke();
   ctx.fillStyle = "#e8e8e0"; ctx.beginPath(); ctx.arc(cx, cy, 1.8, 0, Math.PI * 2); ctx.fill();
-  // Pole with the bag, wheels and base
-  ctx.fillStyle = "#0b0b0e"; ctx.fillRect(x + 8, gy - 108, 4, 82);
-  ctx.fillStyle = "#8a8a94"; ctx.fillRect(x + 9, gy - 107, 2, 80);
-  ctx.fillStyle = "#0b0b0e"; ctx.fillRect(x + 3, gy - 104, 14, 16); ctx.fillStyle = "#e6e8ee"; ctx.fillRect(x + 4, gy - 103, 12, 14);
-  ctx.fillStyle = "#b0121f"; ctx.fillRect(x + 5, gy - 100 + 2 * Math.sin(now), 10, 10);
-  ctx.fillStyle = "#0b0b0e"; ctx.fillRect(x - 16, gy - 9, 34, 5); ctx.fillStyle = "#5a5a64"; ctx.fillRect(x - 15, gy - 8, 32, 3);
-  for (const wx of [x - 13, x + 13]) { ctx.fillStyle = "#121216"; ctx.beginPath(); ctx.arc(wx, gy - 3, 3, 0, Math.PI * 2); ctx.fill(); }
-  ctx.fillStyle = "#0b0b0e"; ctx.fillRect(x - 2, gy - 30, 5, 22); ctx.fillStyle = "#6a6a74"; ctx.fillRect(x - 1, gy - 29, 3, 20);
-  // Screen
+  drawMonitorCart(x, gy, blink ? "#3a0a10" : "#081210");
   const sx = x - 24, sy = gy - 62, sw = 44, sh = 32;
-  ctx.fillStyle = "#0b0b0e"; ctx.fillRect(sx - 2, sy - 2, sw + 4, sh + 4);
-  ctx.fillStyle = "#b8bcc4"; ctx.fillRect(sx - 1, sy - 1, sw + 2, sh + 2);
-  ctx.fillStyle = blink ? "#3a0a10" : "#081210"; ctx.fillRect(sx + 1, sy + 1, sw - 2, sh - 2);
   // Live trace from the doll's own ECG buffer
   ctx.strokeStyle = d.dead ? "#ff4050" : "#46d07a"; ctx.lineWidth = 1; ctx.beginPath();
   const n = d.ecg.length;
@@ -4877,6 +4957,118 @@ function drawMonitor(d) {
   label(Math.round(d.bl) + "", sx + 6, sy + sh - 6, 5.5, "#ff7a8a", "center");
   ctx.fillStyle = blink ? "#ff3040" : alarm ? "#5a1018" : "#1d6a3a"; ctx.beginPath(); ctx.arc(sx + sw - 4, sy + sh - 5, 1.8, 0, Math.PI * 2); ctx.fill();
 }
+// The cart: pole with the bag, wheels, base and the screen frame.
+function drawMonitorCart(x, gy, screen) {
+  const now = performance.now() / 1000;
+  ctx.fillStyle = "#0b0b0e"; ctx.fillRect(x + 8, gy - 108, 4, 82);
+  ctx.fillStyle = "#8a8a94"; ctx.fillRect(x + 9, gy - 107, 2, 80);
+  ctx.fillStyle = "#0b0b0e"; ctx.fillRect(x + 3, gy - 104, 14, 16); ctx.fillStyle = "#e6e8ee"; ctx.fillRect(x + 4, gy - 103, 12, 14);
+  ctx.fillStyle = "#b0121f"; ctx.fillRect(x + 5, gy - 100 + 2 * Math.sin(now), 10, 10);
+  ctx.fillStyle = "#0b0b0e"; ctx.fillRect(x - 16, gy - 9, 34, 5); ctx.fillStyle = "#5a5a64"; ctx.fillRect(x - 15, gy - 8, 32, 3);
+  for (const wx of [x - 13, x + 13]) { ctx.fillStyle = "#121216"; ctx.beginPath(); ctx.arc(wx, gy - 3, 3, 0, Math.PI * 2); ctx.fill(); }
+  ctx.fillStyle = "#0b0b0e"; ctx.fillRect(x - 2, gy - 30, 5, 22); ctx.fillStyle = "#6a6a74"; ctx.fillRect(x - 1, gy - 29, 3, 20);
+  // Screen
+  const sx = x - 24, sy = gy - 62, sw = 44, sh = 32;
+  ctx.fillStyle = "#0b0b0e"; ctx.fillRect(sx - 2, sy - 2, sw + 4, sh + 4);
+  ctx.fillStyle = "#b8bcc4"; ctx.fillRect(sx - 1, sy - 1, sw + 2, sh + 2);
+  ctx.fillStyle = screen; ctx.fillRect(sx + 1, sy + 1, sw - 2, sh - 2);
+}
+
+// Things leave the room with a short animation instead of vanishing: the
+// empty blood bag, a monitor taken off, a pulled pin, the defibrillator
+// paddles and the adrenaline syringe.
+let ghosts = [];
+function addGhost(g) { g.age = 0; ghosts.push(g); if (ghosts.length > 24) ghosts.shift(); }
+function drawGhosts() {
+  ghosts = ghosts.filter((g) => (g.age += frameDt) < g.dur);
+  for (const g of ghosts) {
+    const p = g.age / g.dur;
+    ctx.save();
+    GHOST_DRAW[g.kind](g, p);
+    ctx.restore();
+  }
+}
+// A little white puff where something disappears.
+function ghostPuff(x, y, p, r = 10) {
+  if (p <= 0 || p >= 1) return;
+  ctx.save(); ctx.globalAlpha *= (1 - p) * 0.7; ctx.strokeStyle = "#e8e8f0"; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.arc(x, y, 3 + r * easeOut(p), 0, Math.PI * 2); ctx.stroke();
+  for (let n = 0; n < 6; n++) {
+    const a = n * 1.047 + 0.3, d = 4 + r * 1.3 * easeOut(p);
+    ctx.fillStyle = "#e8e8f0"; ctx.fillRect(x + Math.cos(a) * d - 0.8, y + Math.sin(a) * d - 0.8, 1.6, 1.6);
+  }
+  ctx.restore();
+}
+// The blood bag in world units, its top at y and centred on x.
+function drawBag(x, y, level) {
+  const S = SPX;
+  ctx.fillStyle = "#77777f"; ctx.fillRect(x - S / 2, y - 3 * S, S, 3 * S);
+  ctx.fillStyle = "#0b0b0e"; ctx.fillRect(x - 3.5 * S, y + S, 8 * S, 8 * S); ctx.fillRect(x - 2.5 * S, y, 6 * S, 10 * S);
+  ctx.fillStyle = "#dfe3ea"; ctx.fillRect(x - 2.5 * S, y + S, 6 * S, 8 * S);
+  const h = Math.round(level * 8) * S;
+  ctx.fillStyle = "#b0121f"; ctx.fillRect(x - 2.5 * S, y + 9 * S - h, 6 * S, h);
+  ctx.fillStyle = "#f6f6f6"; ctx.fillRect(x - 1.5 * S, y + 3 * S, 4 * S, S);
+  ctx.fillStyle = "#0b0b0e"; ctx.fillRect(x - S / 2, y + 10 * S, 2 * S, S);
+}
+const GHOST_DRAW = {
+  // The tube pulls back into the empty bag, then the bag rises and fades.
+  iv(g, p) {
+    const bx = g.x, by = g.y, d = g.d, alive = d && state.dolls.includes(d);
+    const tx = alive ? d.x[d.ivPoint()] : g.tx, ty = alive ? d.y[d.ivPoint()] : g.ty;
+    const r = easeIn(clamp(p / 0.45, 0, 1)), sx = bx + SPX / 2, sy = by + 11 * SPX;
+    if (r < 1) {
+      const ex = lerp(tx, sx, r), ey = lerp(ty, sy, r), mx = (sx + ex) / 2, my = Math.max(sy, ey) + 14 * (1 - r);
+      ctx.strokeStyle = "#9a1020"; ctx.lineWidth = 1.4; ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.quadraticCurveTo(mx, my, ex, ey); ctx.stroke();
+    }
+    const q = clamp((p - 0.35) / 0.65, 0, 1), lift = easeIn(q) * 34;
+    ctx.globalAlpha *= 1 - smooth01(q);
+    ctx.translate(bx + SPX / 2, by + 5 * SPX - lift); ctx.scale(1 - 0.35 * q, 1 + 0.15 * q); ctx.translate(-(bx + SPX / 2), -(by + 5 * SPX));
+    drawBag(bx + SPX / 2, by, g.level);
+    if (q > 0.55) { ctx.restore(); ctx.save(); ghostPuff(bx + SPX / 2, by + 4 * SPX - 34, (q - 0.55) / 0.45, 12); }
+  },
+  // The cart rolls away to its side and fades out.
+  monitor(g, p) {
+    const roll = easeIn(p) * 110 * g.side;
+    ctx.globalAlpha *= 1 - smooth01(clamp((p - 0.45) / 0.55, 0, 1));
+    ctx.translate(g.x + roll, g.gy); ctx.rotate(-g.side * 0.05 * Math.sin(p * Math.PI)); ctx.translate(-(g.x + roll), -g.gy);
+    drawMonitorCart(Math.round(g.x + roll), g.gy, "#040606");
+  },
+  // The pin jumps out, turns and fades.
+  pin(g, p) {
+    const e = easeOut(p);
+    ctx.globalAlpha *= 1 - p;
+    ctx.translate(g.x + g.vx * e, g.y - 22 * e + 30 * p * p); ctx.rotate(g.vx * 0.2 * e); ctx.scale(1 - 0.3 * p, 1 - 0.3 * p);
+    drawPin(0, 0);
+  },
+  // Two paddles press on the chest, then lift off and fade.
+  paddles(g, p) {
+    const inP = easeOut(clamp(p / 0.18, 0, 1)), out = clamp((p - 0.45) / 0.55, 0, 1);
+    ctx.globalAlpha *= inP * (1 - smooth01(out));
+    for (const sd of [-1, 1]) {
+      const x = g.x + sd * (9 + 6 * easeOut(out)), y = g.y - 26 * easeIn(out) - (1 - inP) * 10;
+      ctx.save(); ctx.translate(x, y); ctx.rotate(sd * 0.25 * out);
+      ctx.fillStyle = "#0b0b0e"; ctx.fillRect(-6, -3.5, 12, 7); ctx.fillRect(-2, -10, 4, 7);
+      ctx.fillStyle = "#3a3a44"; ctx.fillRect(-5, -2.5, 10, 4); ctx.fillStyle = "#d8d8de"; ctx.fillRect(-5, 1.5, 10, 1.2);
+      ctx.fillStyle = "#e0a020"; ctx.fillRect(-1.2, -9, 2.4, 5);
+      ctx.restore();
+    }
+  },
+  // The syringe slides in, the plunger empties it, then it pulls out and fades.
+  syringe(g, p) {
+    const inP = easeOut(clamp(p / 0.2, 0, 1)), push = clamp((p - 0.2) / 0.35, 0, 1), out = clamp((p - 0.6) / 0.4, 0, 1);
+    const dist = 16 - 10 * inP + 18 * easeIn(out);
+    ctx.globalAlpha *= clamp(p / 0.08, 0, 1) * (1 - smooth01(out));
+    ctx.translate(g.x, g.y); ctx.rotate(g.ang); ctx.translate(dist, 0);
+    ctx.strokeStyle = "#c8ccd4"; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.moveTo(-8, 0); ctx.lineTo(0, 0); ctx.stroke();
+    ctx.fillStyle = "#0b0b0e"; ctx.fillRect(0, -3, 18, 6);
+    ctx.fillStyle = "#e6eaf0"; ctx.fillRect(1, -2, 16, 4);
+    ctx.fillStyle = "#e6c850"; ctx.fillRect(1, -2, 14 * (1 - push) + 1, 4);
+    const pl = 16 - 14 * push;
+    ctx.fillStyle = "#0b0b0e"; ctx.fillRect(pl, -1, 10, 2); ctx.fillRect(pl + 9, -3.5, 2, 7);
+    ctx.fillStyle = "#8a8e98"; ctx.fillRect(pl + 1, -0.5, 8, 1);
+  },
+};
 
 // The fresh magazine travels up into the gun while reloading (side view).
 function drawReloadMag() {
@@ -6520,6 +6712,7 @@ function tween(key, target, rate = 14) {
   return v;
 }
 const easeOut = (t) => 1 - Math.pow(1 - clamp(t, 0, 1), 3);
+const easeIn = (t) => { t = clamp(t, 0, 1); return t * t; };
 // Entry of the n-th element after a screen change: 0 hidden, 1 in place.
 const appear = (n, dur = 0.3, step = 0.05) => easeOut((state.screenT - n * step) / dur);
 // Draws something faded in and lifted while it appears.
@@ -7016,6 +7209,8 @@ function drawTitleDoll(cx, floor, t, scale = TD_SCALE) {
   settings.front = false;
   try { rasterDoll(d); } finally { settings.front = front; }
   pixCtx.putImageData(pixImg, 0, 0);
+  // The next game frame clears and uploads the whole layer again.
+  pxLast = [0, 0, DW - 1, DH - 1];
   // The doll is DS times larger than the old title person, so the cut-out
   // grows with it and the picture is drawn smaller again.
   const L = 75 * DS, R = 225 * DS, T = 222 * DS, B = 14 * DS, z = scale / DS;
@@ -7842,7 +8037,7 @@ function ctxMenuPress() {
   clickSound(800, 0.05);
   if (it.id === "aim") openAimView(m.d);
   else if (it.id === "heal") { m.d.fullHeal(); state.toast = 1.2; state.toastText = "Puppe " + m.d.id + " geheilt"; }
-  else if (it.id === "pins") { m.d.pins.clear(); state.toast = 1; state.toastText = "Gelöst"; }
+  else if (it.id === "pins") { for (const [i] of m.d.pins) addGhost({ kind: "pin", x: m.d.x[i], y: m.d.y[i], vx: rf(-10, 10), dur: 0.55 }); m.d.pins.clear(); state.toast = 1; state.toastText = "Gelöst"; }
   else if (it.id === "del") {
     state.dolls = state.dolls.filter((o) => o !== m.d);
     if (state.selected === m.d) state.selected = null;
@@ -8303,7 +8498,7 @@ function press() {
     for (const d of state.dolls) { const [i, dist] = d.nearestPoint(state.mx, state.my, bestD); if (i >= 0) { bestD = dist; best = d; } }
     if (!best) { state.toast = 1.2; state.toastText = "Tippe auf eine Puppe"; return; }
     state.selected = best; state.toast = 1.8;
-    if (best.monitor) { best.monitor = null; state.toastText = "Monitor abgenommen"; best.logEvent("Monitor abgenommen"); clickSound(500, 0.06); }
+    if (best.monitor) { const m = best.monitor; addGhost({ kind: "monitor", x: m.x, gy: (m.y || FLOOR_Y - 40) + 40, side: m.side, dur: 1.2 }); best.monitor = null; state.toastText = "Monitor abgenommen"; best.logEvent("Monitor abgenommen"); clickSound(500, 0.06); }
     else if (best.dead && best.deadT > 45) state.toastText = "Zu spät für den Monitor";
     else {
       const side = best.x[P_WAIST] < W / 2 ? 1 : -1;
@@ -8320,8 +8515,18 @@ function press() {
     for (const d of state.dolls) { const [i, dist] = d.nearestPoint(state.mx, state.my, bestD); if (i >= 0) { bestD = dist; best = d; } }
     if (!best) { state.toast = 1.2; state.toastText = "Tippe auf eine Puppe"; return; }
     state.selected = best; state.toast = 1.6;
-    if (state.tool === T_DEFI) { state.toastText = best.defib(); defibSound(); state.shake = Math.max(state.shake, 0.15); }
-    else { state.toastText = best.adrenaline(); syringeSound(); }
+    if (state.tool === T_DEFI) {
+      addGhost({ kind: "paddles", x: lerp(best.x[P_NECK], best.x[P_WAIST], 0.4), y: lerp(best.y[P_NECK], best.y[P_WAIST], 0.4), dur: 0.9 });
+      state.toastText = best.defib(); defibSound(); state.shake = Math.max(state.shake, 0.15);
+    } else {
+      // The shot goes into the thigh, or the upper arm when the leg is gone.
+      const k = best.attached(THIGH_L) ? THIGH_L : best.attached(THIGH_R) ? THIGH_R : UARM_L;
+      if (!best.dead && best.attached(k)) {
+        const [ax, ay] = limbStart(best, k), bx = best.x[best.pb[k]], by = best.y[best.pb[k]];
+        addGhost({ kind: "syringe", x: lerp(ax, bx, 0.45), y: lerp(ay, by, 0.45), ang: Math.atan2(by - ay, bx - ax) - Math.PI / 2 * (best.facing || 1), dur: 1.1 });
+      }
+      state.toastText = best.adrenaline(); syringeSound();
+    }
     return;
   }
   if (state.tool === T_IV) {
@@ -8521,7 +8726,7 @@ function flameNoise(a, b) {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 function drawBodyFlames() {
-  const now = performance.now() / 1000, P = PIX;
+  const now = performance.now() / 1000, P = 2;
   for (const bk of flameBuckets) bk.length = 0;
   ctx.save(); ctx.globalCompositeOperation = "lighter";
   for (const d of state.dolls) {
@@ -8531,7 +8736,7 @@ function drawBodyFlames() {
       const [ax, ay] = limbStart(d, k), bx = d.x[d.pb[k]], by = d.y[d.pb[k]], f = Math.min(1, d.fire[k] / 1.5);
       const len = Math.hypot(bx - ax, by - ay) || 1, ux = (bx - ax) / len, uy = (by - ay) / len;
       const w = (k === HEAD ? HEAD_R : RECT[k][0]) * 0.7, steps = Math.max(2, Math.round(len / (P * 2)));
-      for (let q = 0; q <= steps; q++) for (const o of [-w, 0, w]) {
+      for (let q = 0; q <= steps; q++) for (const o of [-w, -w / 2, 0, w / 2, w]) {
         const px = lerp(ax, bx, q / steps) - uy * o, py = lerp(ay, by, q / steps) + ux * o;
         const gx = Math.floor(px / P), gy = Math.floor(py / P), key = gx * 4096 + gy;
         if (seen.has(key)) continue;
@@ -8540,7 +8745,7 @@ function drawBodyFlames() {
         const beat = Math.floor(now * 10 + flameNoise(gx, gy) * 7);
         const n = flameNoise(gx * 31 + d.id, gy * 17 + beat);
         if (n > 0.25 + 0.75 * f) continue;
-        const hc = 1 + Math.floor(flameNoise(gx + beat, gy - d.id) * (2 + 5 * f));
+        const hc = 1 + Math.floor(flameNoise(gx + beat, gy - d.id) * (3 + 7.5 * f));
         for (let j = -1; j < hc; j++) {
           const c = Math.min(4, Math.floor((1 - (j + 1) / (hc + 1)) * 5));
           flameBuckets[c].push(gx * P, (gy - j) * P);
@@ -9019,12 +9224,12 @@ function render() {
   ctx.drawImage(bgCan, 0, 0, W, H);
   ctx.drawImage(decal, 0, 0, W, H);
   // Gibs and dolls are pixel art on their own layer.
-  ppx.fill(0);
+  pxBegin();
   for (const g of gibs) rasterGib(g);
   for (const d of state.dolls) rasterDoll(d);
   for (const d of state.dolls) if (d.iv > 0) rasterInfusion(d);
   if (state.tool === T_GUN && !settings.front) rasterGun();
-  pixCtx.putImageData(pixImg, 0, 0);
+  pxEnd();
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(pixCan, 0, 0, W, H);
   ctx.imageSmoothingEnabled = true;
@@ -9113,6 +9318,7 @@ function render() {
   for (const p of smokes) { const k = 1 - p.age / p.life; ctx.fillStyle = `rgba(190,188,182,${p.a * k * k})`; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill(); }
   drawReloadMag();
   for (const d of state.dolls) if (d.monitor) drawMonitor(d);
+  drawGhosts();
   // Aim line, cursor and the long press ring belong to the room.
   if (!settings.front) drawLaser();
   drawCursor();
