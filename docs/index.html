@@ -110,10 +110,16 @@ const idealWidth = () => {
   const a = Math.max(w, h) / Math.max(1, Math.min(w, h));
   return Math.min(1248, Math.max(768, Math.round(432 * a / 48) * 48));
 };
-const W = idealWidth(), H = 432, N = W * H;
+const W = idealWidth(), H = 432;
+// The room is bigger than the screen: half again as wide and as high. The
+// camera shows a screen-sized part of it and zooms out to show all of it.
+// W and H are the screen, WW and WH the room. Maps are laid out on the old
+// screen-sized room (BASE_FLOOR) and sit in the middle of the bigger one,
+// on its floor (OFFX, OFFY).
+const WW = Math.round(W * 1.5 / 48) * 48, WH = Math.round(H * 1.5), N = WW * WH, OFFX = (WW - W) / 2, OFFY = WH - H;
 
-const FLOOR_Y = 372;
-const CHUNK = 16, CW = W / CHUNK, CH = Math.ceil(H / CHUNK);
+const BASE_FLOOR = 372, FLOOR_Y = BASE_FLOOR + OFFY;
+const CHUNK = 16, CW = WW / CHUNK, CH = Math.ceil(WH / CHUNK);
 const DT = 1 / 60;
 const GRAVITY = 840;
 const EMPTY = 0, WALL = 1, WATER = 2, BLOOD = 3, FIRE = 4, ICE = 5, STEAM = 6, SMOKE = 7;
@@ -143,11 +149,13 @@ const mat = new Uint8Array(N), mixv = new Uint8Array(N), life = new Uint8Array(N
 const shade = new Uint8Array(N), stamp = new Uint8Array(N), rest = new Uint8Array(N);
 const paintMark = new Uint8Array(N);
 const wcan = document.createElement("canvas");
-wcan.width = W; wcan.height = H;
+wcan.width = WW; wcan.height = WH;
 const wctx = wcan.getContext("2d");
-const wimg = wctx.createImageData(W, H);
+const wimg = wctx.createImageData(WW, WH);
 const wpx = wimg.data;
 let worldDirty = true;
+// Rows of the liquid layer painted since the last upload; only those go up.
+let wDirtyY0 = 0, wDirtyY1 = WH - 1;
 let paintList = [];
 let chunkNow = new Uint8Array(CW * CH), chunkNext = new Uint8Array(CW * CH);
 let tick = 0, curStamp = 1;
@@ -167,26 +175,26 @@ for (let s = 0; s < 256; s++) {
 
 const isFree = (m) => m === EMPTY || m >= STEAM;
 function getMat(x, y) {
-  if (x < 0 || x >= W || y < 0 || y >= H) return WALL;
-  return mat[y * W + x];
+  if (x < 0 || x >= WW || y < 0 || y >= WH) return WALL;
+  return mat[y * WW + x];
 }
 const matAt = (x, y) => getMat(Math.floor(x), Math.floor(y));
 const solidAt = (x, y) => { const m = matAt(x, y); return m === WALL || m === ICE; };
 const liquidAt = (x, y) => { const m = matAt(x, y); return m === WATER || m === BLOOD; };
-const coldIceAt = (x, y) => matAt(x, y) === ICE && life[Math.floor(y) * W + Math.floor(x)] > 0;
+const coldIceAt = (x, y) => matAt(x, y) === ICE && life[Math.floor(y) * WW + Math.floor(x)] > 0;
 
 function worldReset() {
   mat.fill(EMPTY); mixv.fill(0); life.fill(0); stamp.fill(0); rest.fill(0);
   chunkNow.fill(0); chunkNext.fill(0); paintMark.fill(0); paintList = [];
-  for (let y = FLOOR_Y; y < H; y++) for (let x = 0; x < W; x++) mat[y * W + x] = WALL;
+  for (let y = FLOOR_Y; y < WH; y++) for (let x = 0; x < WW; x++) mat[y * WW + x] = WALL;
   particles = [];
   for (let i = 0; i < N; i++) paintCell(i);
-  worldDirty = true;
+  worldDirty = true; wDirtyY0 = 0; wDirtyY1 = WH - 1;
 }
 
 function setCell(x, y, m, mx = 0, lf = 0) {
-  if (x < 0 || x >= W || y < 0 || y >= H) return;
-  const i = y * W + x;
+  if (x < 0 || x >= WW || y < 0 || y >= WH) return;
+  const i = y * WW + x;
   mat[i] = m; mixv[i] = mx; life[i] = lf;
   touch(i);
 }
@@ -215,13 +223,13 @@ function splash(x, y, vx, vy) {
   if (m !== WATER && m !== BLOOD) return;
   const sp = Math.hypot(vx, vy);
   if (sp > 300) splashSound(Math.min(1, sp / 1200));
-  const mx = mixv[y * W + x];
+  const mx = mixv[y * WW + x];
   setCell(x, y, EMPTY);
   spawnParticle(x + 0.5, y - 0.5, vx * 0.5 + rf(-50, 50), -Math.abs(vy) * 0.45 - rf(40, 120), m, m === WATER ? mx : 255);
 }
 
 function touch(i) {
-  const x = i % W, y = (i / W) | 0;
+  const x = i % WW, y = (i / WW) | 0;
   const cx = x >> 4, cy = y >> 4;
   chunkNext[cy * CW + cx] = 1;
   const lx = x & 15, ly = y & 15;
@@ -232,15 +240,15 @@ function touch(i) {
   // Wake resting neighbours that could move into this cell.
   rest[i] = 0;
   if (x > 0) rest[i - 1] = 0;
-  if (x < W - 1) rest[i + 1] = 0;
+  if (x < WW - 1) rest[i + 1] = 0;
   if (y > 0) {
-    const u = i - W;
+    const u = i - WW;
     rest[u] = 0;
     if (x > 0) rest[u - 1] = 0;
-    if (x < W - 1) rest[u + 1] = 0;
+    if (x < WW - 1) rest[u + 1] = 0;
   }
   if (!paintMark[i]) { paintMark[i] = 1; paintList.push(i); }
-  if (y + 1 < H && !paintMark[i + W]) { paintMark[i + W] = 1; paintList.push(i + W); }
+  if (y + 1 < WH && !paintMark[i + WW]) { paintMark[i + WW] = 1; paintList.push(i + WW); }
 }
 
 function swap(i, j) {
@@ -253,10 +261,10 @@ function swap(i, j) {
 
 function neighbor(x, y, n) {
   switch (n) {
-    case 0: return x > 0 ? y * W + x - 1 : -1;
-    case 1: return x < W - 1 ? y * W + x + 1 : -1;
-    case 2: return y > 0 ? (y - 1) * W + x : -1;
-    default: return y < H - 1 ? (y + 1) * W + x : -1;
+    case 0: return x > 0 ? y * WW + x - 1 : -1;
+    case 1: return x < WW - 1 ? y * WW + x + 1 : -1;
+    case 2: return y > 0 ? (y - 1) * WW + x : -1;
+    default: return y < WH - 1 ? (y + 1) * WW + x : -1;
   }
 }
 
@@ -269,7 +277,7 @@ function worldStep() {
     let any = false;
     for (let cx = 0; cx < CW; cx++) if (chunkNow[cy * CW + cx]) { any = true; break; }
     if (!any) continue;
-    const y0 = cy * CHUNK, y1 = Math.min(y0 + CHUNK, H) - 1;
+    const y0 = cy * CHUNK, y1 = Math.min(y0 + CHUNK, WH) - 1;
     for (let y = y1; y >= y0; y--) {
       for (let ci = 0; ci < CW; ci++) {
         const cx = leftFirst ? ci : CW - 1 - ci;
@@ -277,7 +285,7 @@ function worldStep() {
         const x0 = cx * CHUNK;
         for (let k = 0; k < CHUNK; k++) {
           const x = leftFirst ? x0 + k : x0 + CHUNK - 1 - k;
-          const i = y * W + x, m = mat[i];
+          const i = y * WW + x, m = mat[i];
           if (m === EMPTY || m === WALL || m === ICE) continue;
           if (stamp[i] === curStamp) continue;
           if (rest[i] > 3 && ((tick + i) & 15) !== 0) {
@@ -300,52 +308,52 @@ function worldStep() {
 // connected surface nearby, so a pool levels out within a second or two.
 // It runs every second step with twice the tries, and when the room holds no
 // pool it only looks again a quarter second later.
-const colTop = new Int16Array(W);
+const colTop = new Int16Array(WW);
 let levelIdle = 0;
 function levelWater() {
   if ((tick & 1) || tick < levelIdle) return;
   let any = false;
-  for (let x = 0; x < W; x++) {
+  for (let x = 0; x < WW; x++) {
     let y = 0;
-    while (y < H && isFree(mat[y * W + x])) y++;
+    while (y < WH && isFree(mat[y * WW + x])) y++;
     colTop[x] = y;
-    if (y < H && mat[y * W + x] === WATER) any = true;
+    if (y < WH && mat[y * WW + x] === WATER) any = true;
   }
   if (!any) { levelIdle = tick + 15; return; }
   for (let n = 0; n < 800; n++) {
-    const x = rnd(W), h = colTop[x];
-    if (h >= H || mat[h * W + x] !== WATER || h === 0) continue;
+    const x = rnd(WW), h = colTop[x];
+    if (h >= WH || mat[h * WW + x] !== WATER || h === 0) continue;
     const d = Math.random() < 0.5 ? 1 : -1;
     let bestX = -1, bestT = h + 2;
     for (let c = x, k = 0; k < 160; k++) {
       const nc = c + d;
-      if (nc < 0 || nc >= W) break;
+      if (nc < 0 || nc >= WW) break;
       // Neighbors must share water just below the lower of their two
       // surfaces. A few rows of slack let small air pockets through.
       const r0 = Math.max(colTop[c], colTop[nc]);
       let joined = false;
-      for (let r = r0; r < r0 + 5 && r < H; r++) {
-        if (mat[r * W + c] === WATER && mat[r * W + nc] === WATER) { joined = true; break; }
+      for (let r = r0; r < r0 + 5 && r < WH; r++) {
+        if (mat[r * WW + c] === WATER && mat[r * WW + nc] === WATER) { joined = true; break; }
       }
       if (!joined) break;
       if (colTop[nc] > bestT) { bestT = colTop[nc]; bestX = nc; }
       c = nc;
     }
     if (bestX < 0) continue;
-    const from = h * W + x, to = (bestT - 1) * W + bestX;
+    const from = h * WW + x, to = (bestT - 1) * WW + bestX;
     swap(from, to); life[to] = 0;
     colTop[x] = h + 1; colTop[bestX] = bestT - 1;
   }
 }
 
 function liquid(x, y, i, m) {
-  const hasBelow = y + 1 < H;
+  const hasBelow = y + 1 < WH;
   if (hasBelow) {
-    const b = i + W;
+    const b = i + WW;
     if (isFree(mat[b])) {
       // Over open air the cell turns back into a falling drop, so water
       // pours off ledges with real gravity instead of sliding down slowly.
-      if (y + 3 < H && isFree(mat[b + W]) && isFree(mat[b + 2 * W]) &&
+      if (y + 3 < WH && isFree(mat[b + WW]) && isFree(mat[b + 2 * WW]) &&
           spawnParticle(x + 0.5, y + 0.5, rf(-6, 6), rf(40, 90), m, m === WATER ? mixv[i] : 255)) {
         mat[i] = EMPTY; mixv[i] = 0; life[i] = 0; touch(i);
         return;
@@ -355,26 +363,26 @@ function liquid(x, y, i, m) {
     let d = Math.random() < 0.5 ? 1 : -1;
     for (let k = 0; k < 2; k++) {
       const nx = x + d;
-      if (nx >= 0 && nx < W && isFree(mat[b + d]) && isFree(mat[i + d])) { swap(i, b + d); life[b + d] = 0; return; }
+      if (nx >= 0 && nx < WW && isFree(mat[b + d]) && isFree(mat[i + d])) { swap(i, b + d); life[b + d] = 0; return; }
       d = -d;
     }
   }
   let dir = Math.random() < 0.5 ? 1 : -1;
   // Surface water runs downhill along the surface, so mounds flatten into a level pool.
-  if (m === WATER && y > 0 && isFree(mat[i - W])) {
+  if (m === WATER && y > 0 && isFree(mat[i - WW])) {
     const j = rollTarget(x, y, dir);
     if (j >= 0) { swap(i, j); life[j] = 0; return; }
   }
   // Look sideways for a drop and flow toward it. Water looks far, blood is thick.
   const look = m === WATER ? 48 : 4;
-  const row = y * W;
+  const row = y * WW;
   for (let k = 0; k < 2; k++) {
     let nx = x, s = 0, found = false;
     while (s < look) {
       const tx = nx + dir;
-      if (tx < 0 || tx >= W || !isFree(mat[row + tx])) break;
+      if (tx < 0 || tx >= WW || !isFree(mat[row + tx])) break;
       nx = tx; s++;
-      if (hasBelow && isFree(mat[row + W + tx])) { found = true; break; }
+      if (hasBelow && isFree(mat[row + WW + tx])) { found = true; break; }
     }
     if (found) { swap(i, row + x + dir * Math.min(s, m === WATER ? 8 : 1)); return; }
     dir = -dir;
@@ -388,9 +396,9 @@ function liquid(x, y, i, m) {
       let tx = x, n = 0;
       while (n < reach) {
         const nx = tx + dir;
-        if (nx < 0 || nx >= W || !isFree(mat[row + nx])) break;
+        if (nx < 0 || nx >= WW || !isFree(mat[row + nx])) break;
         tx = nx; n++;
-        if (hasBelow && isFree(mat[row + W + tx])) break;
+        if (hasBelow && isFree(mat[row + WW + tx])) break;
       }
       if (n > 0) {
         swap(i, row + tx);
@@ -447,7 +455,7 @@ function fireCell(x, y, i) {
     if (mj === ICE && rnd(4) === 0) { mat[j] = WATER; mixv[j] = 0; life[j] = 0; touch(j); }
   }
   const nx = x + rnd(3) - 1;
-  if (y > 0 && nx >= 0 && nx < W && isFree(mat[(y - 1) * W + nx]) && rnd(3) !== 0) swap(i, (y - 1) * W + nx);
+  if (y > 0 && nx >= 0 && nx < WW && isFree(mat[(y - 1) * WW + nx]) && rnd(3) !== 0) swap(i, (y - 1) * WW + nx);
   else touch(i);
 }
 
@@ -457,9 +465,9 @@ function gasCell(x, y, i) {
   if (l <= 0) { mat[i] = EMPTY; life[i] = 0; touch(i); return; }
   life[i] = l;
   const nx = x + rnd(3) - 1;
-  if (y > 0 && nx >= 0 && nx < W && mat[(y - 1) * W + nx] === EMPTY) { swap(i, (y - 1) * W + nx); return; }
+  if (y > 0 && nx >= 0 && nx < WW && mat[(y - 1) * WW + nx] === EMPTY) { swap(i, (y - 1) * WW + nx); return; }
   const sx = x + (Math.random() < 0.5 ? 1 : -1);
-  if (sx >= 0 && sx < W && mat[y * W + sx] === EMPTY) { swap(i, y * W + sx); return; }
+  if (sx >= 0 && sx < WW && mat[y * WW + sx] === EMPTY) { swap(i, y * WW + sx); return; }
   touch(i);
 }
 
@@ -481,9 +489,9 @@ function stepParticles() {
     for (let s = 1; s <= n; s++) {
       const qx = lerp(p.x, x1, s / n), qy = lerp(p.y, y1, s / n);
       const ix = Math.floor(qx), iy = Math.floor(qy);
-      if (ix < 0 || ix >= W || iy >= H) { done = true; break; }
+      if (ix < 0 || ix >= WW || iy >= WH) { done = true; break; }
       if (iy < 0) { lx = qx; ly = qy; continue; }
-      if (!isFree(mat[iy * W + ix])) { settle(lx, ly, p.m, p.mx, p.vx); done = true; break; }
+      if (!isFree(mat[iy * WW + ix])) { settle(lx, ly, p.m, p.mx, p.vx); done = true; break; }
       lx = qx; ly = qy;
     }
     if (done) { particles[k] = particles[particles.length - 1]; particles.pop(); }
@@ -496,13 +504,13 @@ function stepParticles() {
 function rollTarget(x0, y0, dir) {
   let x = x0, y = y0, flat = 0, turned = false;
   for (let n = 0; n < 160; n++) {
-    if (y + 1 < H && isFree(mat[(y + 1) * W + x])) { y++; flat = 0; continue; }
+    if (y + 1 < WH && isFree(mat[(y + 1) * WW + x])) { y++; flat = 0; continue; }
     const nx = x + dir;
-    if (flat < 40 && nx >= 0 && nx < W && isFree(mat[y * W + nx])) { x = nx; flat++; continue; }
+    if (flat < 40 && nx >= 0 && nx < WW && isFree(mat[y * WW + nx])) { x = nx; flat++; continue; }
     if (!turned) { dir = -dir; turned = true; flat = 0; x = x0; y = y0; continue; }
     break;
   }
-  return y >= y0 + 2 ? y * W + x : -1;
+  return y >= y0 + 2 ? y * WW + x : -1;
 }
 
 // A landing drop runs down the surface before it rests, so a strong jet
@@ -520,7 +528,7 @@ function settle(fx, fy, m, mx, vx = 0) {
   if (m === WATER) {
     let dir = Math.abs(vx) > 20 ? Math.sign(vx) : (Math.random() < 0.5 ? 1 : -1), flat = 0, turned = false;
     for (let n = 0; n < 160; n++) {
-      if (y + 1 < H && isFree(getMat(x, y + 1))) { y++; flat = 0; continue; }
+      if (y + 1 < WH && isFree(getMat(x, y + 1))) { y++; flat = 0; continue; }
       if (flat < 28 && isFree(getMat(x + dir, y))) { x += dir; flat++; continue; }
       if (!turned && isFree(getMat(x - dir, y))) { dir = -dir; turned = true; flat = 0; continue; }
       break;
@@ -535,17 +543,17 @@ function paintCell(i) {
   switch (m) {
     case EMPTY: a = 0; break;
     case WALL: {
-      const y = (i / W) | 0;
+      const y = (i / WW) | 0;
       if (y >= FLOOR_Y) { a = 0; break; }
       // Concrete blocks with a light top edge
-      const top = i >= W && mat[i - W] !== WALL, s4 = shade[i] >> 2;
+      const top = i >= WW && mat[i - WW] !== WALL, s4 = shade[i] >> 2;
       r = g = 74 + s4; b = 84 + s4;
       if (top) { r = g = 132; b = 142; }
       break;
     }
     case WATER: {
       let li = mixv[i] * 6;
-      if (i >= W && isFree(mat[i - W])) li += 3;
+      if (i >= WW && isFree(mat[i - WW])) li += 3;
       r = waterLut[li]; g = waterLut[li + 1]; b = waterLut[li + 2];
       a = 200;
       break;
@@ -553,7 +561,7 @@ function paintCell(i) {
     case BLOOD: {
       const s2 = shade[i] % 4;
       r = 108 + s2 * 5; g = 6 + s2; b = 14;
-      if (i >= W && isFree(mat[i - W])) { r = 156; g = 24; b = 34; }
+      if (i >= WW && isFree(mat[i - WW])) { r = 156; g = 24; b = 34; }
       break;
     }
     case FIRE: {
@@ -566,7 +574,7 @@ function paintCell(i) {
     case ICE: {
       const s3 = shade[i];
       r = 172 + s3; g = 216 + (s3 >> 1); b = 242;
-      if (i >= W && mat[i - W] !== ICE) { r = 226; g = 246; b = 255; }
+      if (i >= WW && mat[i - WW] !== ICE) { r = 226; g = 246; b = 255; }
       a = 235;
       break;
     }
@@ -578,15 +586,18 @@ function paintCell(i) {
 
 function flushPaint() {
   if (paintList.length === 0) return;
-  for (const i of paintList) { paintCell(i); paintMark[i] = 0; }
+  let lo = N, hi = 0;
+  for (const i of paintList) { paintCell(i); paintMark[i] = 0; if (i < lo) lo = i; if (i > hi) hi = i; }
   paintList = [];
+  if (!worldDirty) { wDirtyY0 = WH; wDirtyY1 = -1; }
+  wDirtyY0 = Math.min(wDirtyY0, (lo / WW) | 0); wDirtyY1 = Math.max(wDirtyY1, (hi / WW) | 0);
   worldDirty = true;
 }
 
 // ---------------------------------------------------------------- wall stains
 
 const decal = document.createElement("canvas");
-decal.width = W * 2; decal.height = H * 2;
+decal.width = WW * 2; decal.height = WH * 2;
 const dctx = decal.getContext("2d");
 function splat(x, y, r) {
   dctx.fillStyle = css(mixc(hex("#5c0610"), hex("#8e0f1c"), Math.random()), rf(0.55, 0.9));
@@ -619,7 +630,7 @@ function stepGibs() {
       if (g.vy > 120) { if (g.mag) magDropSound(); else if (g.casing) casingSound(); }
       g.vy *= -0.3; g.vx *= 0.65; g.vr *= 0.6; ny = g.y;
     }
-    g.x = clamp(nx, 1, W - 1); g.y = ny;
+    g.x = clamp(nx, 1, WW - 1); g.y = ny;
     g.rot += g.vr * DT;
     if (g.bleed > 0 && Math.random() < 0.3) { spawnParticle(g.x, g.y, rf(-20, 20), rf(-20, 20), BLOOD); g.bleed -= DT * 3; }
     g.still = Math.abs(g.vx) + Math.abs(g.vy) < 20 ? g.still + DT : 0;
@@ -1125,7 +1136,7 @@ class Doll {
     } else this.restT = 0;
     // Last safety: no point may leave the room, whatever moved it there.
     for (let i = 0; i < this.x.length; i++) {
-      const r = this.rad[i], x = clamp(this.x[i], r, W - r), y = Math.max(r, this.y[i]);
+      const r = this.rad[i], x = clamp(this.x[i], r, WW - r), y = Math.max(r, this.y[i]);
       if (x !== this.x[i]) { this.ox[i] = x; this.x[i] = x; }
       if (y !== this.y[i]) { this.oy[i] = y; this.y[i] = y; }
     }
@@ -1645,7 +1656,7 @@ class Doll {
       // No stepping into a wall or out of the room.
       const blocked = [P_ANKLE_L, P_TOE_L, P_ANKLE_R, P_TOE_R].some((i) => {
         const x = this.x[i] + dx + Math.sign(dx) * this.rad[i];
-        return x < 2 || x > W - 2 || solidAt(x, this.y[i] - 2) || solidAt(x, this.y[i] - 12);
+        return x < 2 || x > WW - 2 || solidAt(x, this.y[i] - 2) || solidAt(x, this.y[i] - 12);
       });
       if (!blocked) { this.footShift = dx; feetX = nf; }
     }
@@ -2006,7 +2017,7 @@ class Doll {
   updateMonitor() {
     const m = this.monitor;
     const tx = this.x[P_WAIST] + m.side * 58;
-    m.x = lerp(m.x, clamp(tx, 30, W - 30), 0.06);
+    m.x = lerp(m.x, clamp(tx, 30, WW - 30), 0.06);
     // Dragged too far away, the lines tear off.
     if (Math.hypot(this.x[P_WAIST] - m.x, this.y[P_WAIST] - (m.y || this.y[P_WAIST])) > 260) {
       addGhost({ kind: "monitor", x: m.x, gy: (m.y || FLOOR_Y - 40) + 40, side: m.side, dur: 1.2 });
@@ -2236,7 +2247,7 @@ class Doll {
   // The bag hangs beside the doll and switches sides before it would slide under the panel.
   ivTargetX(i) {
     const x = this.x[i] + 50;
-    return x > PANEL.x - 24 ? Math.max(30, this.x[i] - 50) : x;
+    return toScreen(x, 0)[0] > PANEL.x - 24 ? Math.max(30, this.x[i] - 50) : x;
   }
 
   // Extras: closes every wound and resets all values. Lost limbs stay lost.
@@ -2616,7 +2627,7 @@ function taperFill(ax, ay, bx, by, ra, rb, c, alpha = 1) {
 // units per sprite pixel.
 // ======================================================================
 
-const PIX = 1.5, PQ = 2, SPX = PIX * PQ, DW = W / PIX, DH = H / PIX;
+const PIX = 1.5, PQ = 2, SPX = PIX * PQ, DW = WW / PIX, DH = WH / PIX;
 const pixCan = document.createElement("canvas");
 pixCan.width = DW; pixCan.height = DH;
 const pixCtx = pixCan.getContext("2d");
@@ -3315,7 +3326,7 @@ function explode(x, y) {
     if (dd > r) continue;
     const m = getMat(cx + dx, cy + dy);
     if (m === WATER || m === BLOOD || m === ICE) {
-      const i = (cy + dy) * W + cx + dx, mx = mixv[i];
+      const i = (cy + dy) * WW + cx + dx, mx = mixv[i];
       setCell(cx + dx, cy + dy, EMPTY);
       if (Math.random() < 0.6) {
         const s = rf(200, 600) * (1 - dd / r) + 80;
@@ -4646,7 +4657,7 @@ function fireAtFinger() {
   const hit = fingerHit(x, y);
   if (wp.taser) {
     // The barbs fly in from the viewer: the wires trail off below the picture.
-    if (hit) { hit.d.tase(hit.k, hit.t, hit.s, x + rf(-30, 30), H + 40); state.selected = hit.d; }
+    if (hit) { hit.d.tase(hit.k, hit.t, hit.s, x + rf(-30, 30), viewBottom() + 40); state.selected = hit.d; }
     else for (let n = 0; n < 4; n++) sparks.push({ x, y, vx: rf(-80, 80), vy: rf(-120, -20), life: rf(0.1, 0.25) });
     state.lastShot = [x, y];
     taserPop();
@@ -5016,7 +5027,7 @@ function drawLaser() {
   let t = 4;
   for (; t < hitT; t += 2) {
     const x = ox + dx * t, y = oy + dy * t;
-    if (x < 0 || x >= W || y < 0 || y >= H || solidAt(x, y)) break;
+    if (x < 0 || x >= WW || y < 0 || y >= WH || solidAt(x, y)) break;
   }
   t = Math.min(t, hitT);
   const ex = ox + dx * t, ey = oy + dy * t;
@@ -5104,7 +5115,7 @@ function reloadEvent(ev) {
     magOutSound();
     // The empty magazine drops out under the gun, or in the front view where
     // the last shot was fired.
-    if (settings.front) { const [lx, ly] = state.lastShot || [W / 2, FLOOR_Y - 120]; spawnGib(lx, ly, rf(-30, 30), rf(-60, 0), false, true, true); }
+    if (settings.front) { const [lx, ly] = state.lastShot || [WW / 2, FLOOR_Y - 120]; spawnGib(lx, ly, rf(-30, 30), rf(-60, 0), false, true, true); }
     else { const [px0, py0, ang] = gunPose(); spawnGib(px0 + Math.cos(ang) * 14, py0 + 10, rf(-30, 30), rf(-60, 0), false, true, true); }
   } else if (ev === "in") { magInSound(); state.kick = 0.5; }
   else if (ev === "rack") { rackSound(); state.kick = 0.8; }
@@ -5142,7 +5153,7 @@ function reloadStep() {
 function drawMonitor(d) {
   const m = d.monitor, x = Math.round(m.x);
   let gy = FLOOR_Y;
-  for (let y = Math.max(0, Math.floor(d.y[P_WAIST]) - 40); y < H; y++) if (solidAt(x, y)) { gy = y; break; }
+  for (let y = Math.max(0, Math.floor(d.y[P_WAIST]) - 40); y < WH; y++) if (solidAt(x, y)) { gy = y; break; }
   m.y = gy - 40;
   const now = performance.now() / 1000, alarm = d.arrest || d.dead, blink = alarm && Math.sin(now * 12) > 0;
   // Lines first, so the cart stands in front of them.
@@ -6439,96 +6450,118 @@ function drawWoundMark(w, x, y, s, now) {
 // Static layers: room, lamp and light, rebuilt on every resize
 // ======================================================================
 
-const LAMP_X = W / 2, LAMP_Y = 42;
+// Three lamps hang from long cords: the old one over the middle and one
+// over each new side of the room.
+const LAMPS = [Math.round(OFFX * 0.5), Math.round(OFFX + W / 2), Math.round(WW - OFFX * 0.5)], LAMP_Y = OFFY + 42;
 const bgCan = document.createElement("canvas"), lightCan = document.createElement("canvas");
 
 function buildStatic() {
-  bgCan.width = lightCan.width = canvas.width;
-  bgCan.height = lightCan.height = canvas.height;
+  // The room layers cover the whole room at screen sharpness, at most 2
+  // device pixels per unit so the big room stays light on memory.
+  const kb = Math.min(K, 2);
+  bgCan.width = lightCan.width = Math.ceil(WW * kb);
+  bgCan.height = lightCan.height = Math.ceil(WH * kb);
   const b = bgCan.getContext("2d");
-  b.setTransform(K, 0, 0, K, 0, 0);
+  b.setTransform(kb, 0, 0, kb, 0, 0);
   const th = MAPS[state.map].theme;
   const wall = b.createLinearGradient(0, 0, 0, FLOOR_Y);
   wall.addColorStop(0, th.wall[0]); wall.addColorStop(1, th.wall[1]);
-  b.fillStyle = wall; b.fillRect(0, 0, W, FLOOR_Y);
-  for (let x = 0; x < W; x += 96) {
+  b.fillStyle = wall; b.fillRect(0, 0, WW, FLOOR_Y);
+  for (let x = 0; x < WW; x += 96) {
     b.fillStyle = "rgba(255,255,255,0.018)"; b.fillRect(x + 4, 20, 88, FLOOR_Y - 36);
     b.fillStyle = th.line; b.fillRect(x, 16, 1.5, FLOOR_Y - 16);
     b.fillStyle = "rgba(255,255,255,0.03)"; b.fillRect(x + 1.5, 16, 1, FLOOR_Y - 16);
   }
-  for (let y = 96; y < FLOOR_Y - 20; y += 80) { b.fillStyle = th.line; b.fillRect(0, y, W, 1.5); }
-  b.fillStyle = "#111114"; b.fillRect(0, 0, W, 16);
-  b.fillStyle = "#0a0a0c"; b.fillRect(0, 16, W, 1.5);
-  // Pipes along the wall, a vent and a door frame give the room some depth.
+  for (let y = 96; y < FLOOR_Y - 20; y += 80) { b.fillStyle = th.line; b.fillRect(0, y, WW, 1.5); }
+  b.fillStyle = "#111114"; b.fillRect(0, 0, WW, 16);
+  b.fillStyle = "#0a0a0c"; b.fillRect(0, 16, WW, 1.5);
+  // Pipes along the wall, vents and door frames give the room some depth.
   const pipe = (x0, y0, x1, y1, r) => {
     b.strokeStyle = "rgba(0,0,0,0.45)"; b.lineWidth = r * 2 + 2; b.lineCap = "butt";
     b.beginPath(); b.moveTo(x0, y0); b.lineTo(x1, y1); b.stroke();
     b.strokeStyle = th.line; b.lineWidth = r * 2; b.beginPath(); b.moveTo(x0, y0); b.lineTo(x1, y1); b.stroke();
     b.strokeStyle = "rgba(255,255,255,0.07)"; b.lineWidth = 1.2; b.beginPath(); b.moveTo(x0, y0 - r * 0.5); b.lineTo(x1, y1 - r * 0.5); b.stroke();
   };
-  pipe(0, 150, W, 150, 4);
-  pipe(W * 0.86, 150, W * 0.86, FLOOR_Y - 12, 4);
-  for (let x = 40; x < W; x += 160) { b.fillStyle = "rgba(0,0,0,0.5)"; b.fillRect(x, 144, 8, 12); }
-  b.fillStyle = "rgba(0,0,0,0.35)"; b.fillRect(W * 0.07, 200, 54, 30);
-  b.fillStyle = "rgba(255,255,255,0.05)";
-  for (let k = 0; k < 6; k++) b.fillRect(W * 0.07 + 4, 204 + k * 4.5, 46, 1.5);
-  b.strokeStyle = "rgba(0,0,0,0.4)"; b.lineWidth = 3;
-  b.strokeRect(W * 0.66, FLOOR_Y - 150, 70, 138); // tap it three times
-  b.fillStyle = "rgba(0,0,0,0.18)"; b.fillRect(W * 0.66 + 2, FLOOR_Y - 148, 66, 134);
-  b.fillStyle = "rgba(255,255,255,0.08)"; b.fillRect(W * 0.66 + 54, FLOOR_Y - 84, 8, 3);
-  b.fillStyle = "#2a2a31"; b.fillRect(0, FLOOR_Y - 12, W, 12);
-  b.fillStyle = "#3a3a42"; b.fillRect(0, FLOOR_Y - 12, W, 1.2);
+  const py = OFFY + 150;
+  pipe(0, py, WW, py, 4);
+  pipe(0, OFFY * 0.45, WW, OFFY * 0.45, 3);
+  pipe(WW * 0.86, py, WW * 0.86, FLOOR_Y - 12, 4);
+  pipe(WW * 0.12, OFFY * 0.45, WW * 0.12, py, 3);
+  for (let x = 40; x < WW; x += 160) { b.fillStyle = "rgba(0,0,0,0.5)"; b.fillRect(x, py - 6, 8, 12); }
+  for (const vx of [WW * 0.07, WW * 0.5]) {
+    b.fillStyle = "rgba(0,0,0,0.35)"; b.fillRect(vx, OFFY + 200, 54, 30);
+    b.fillStyle = "rgba(255,255,255,0.05)";
+    for (let k = 0; k < 6; k++) b.fillRect(vx + 4, OFFY + 204 + k * 4.5, 46, 1.5);
+  }
+  for (const dx of [WW * 0.66, WW * 0.2]) {
+    b.strokeStyle = "rgba(0,0,0,0.4)"; b.lineWidth = 3;
+    b.strokeRect(dx, FLOOR_Y - 150, 70, 138);
+    b.fillStyle = "rgba(0,0,0,0.18)"; b.fillRect(dx + 2, FLOOR_Y - 148, 66, 134);
+    b.fillStyle = "rgba(255,255,255,0.08)"; b.fillRect(dx + 54, FLOOR_Y - 84, 8, 3);
+  }
+  // High windows let a little cold light into the upper room.
+  for (let x = 120; x < WW - 100; x += 300) {
+    b.fillStyle = "rgba(0,0,0,0.45)"; b.fillRect(x, 44, 90, 46);
+    b.fillStyle = "rgba(120,140,170,0.07)"; b.fillRect(x + 3, 47, 84, 40);
+    b.fillStyle = "rgba(0,0,0,0.5)"; b.fillRect(x + 44, 47, 2, 40); b.fillRect(x + 3, 66, 84, 2);
+  }
+  // The upper room lies in the dark, away from the lamps.
+  const dk = b.createLinearGradient(0, 0, 0, FLOOR_Y);
+  dk.addColorStop(0, "rgba(0,0,0,0.4)"); dk.addColorStop(0.45, "rgba(0,0,0,0.14)"); dk.addColorStop(1, "rgba(0,0,0,0)");
+  b.fillStyle = dk; b.fillRect(0, 0, WW, FLOOR_Y);
+  b.fillStyle = "#2a2a31"; b.fillRect(0, FLOOR_Y - 12, WW, 12);
+  b.fillStyle = "#3a3a42"; b.fillRect(0, FLOOR_Y - 12, WW, 1.2);
   // Floor tiles
-  const fl = b.createLinearGradient(0, FLOOR_Y, 0, H);
+  const fl = b.createLinearGradient(0, FLOOR_Y, 0, WH);
   fl.addColorStop(0, th.floor[0]); fl.addColorStop(1, th.floor[1]);
-  b.fillStyle = fl; b.fillRect(0, FLOOR_Y, W, H - FLOOR_Y);
-  b.fillStyle = th.edge; b.fillRect(0, FLOOR_Y, W, 2);
+  b.fillStyle = fl; b.fillRect(0, FLOOR_Y, WW, WH - FLOOR_Y);
+  b.fillStyle = th.edge; b.fillRect(0, FLOOR_Y, WW, 2);
   b.fillStyle = "rgba(0,0,0,0.18)";
-  for (let x = 0; x < W; x += 64) b.fillRect(x, FLOOR_Y + 2, 1.5, H - FLOOR_Y);
-  b.fillRect(0, FLOOR_Y + 26, W, 1.5);
+  for (let x = 0; x < WW; x += 64) b.fillRect(x, FLOOR_Y + 2, 1.5, WH - FLOOR_Y);
+  b.fillRect(0, FLOOR_Y + 26, WW, 1.5);
   let seed = 7;
   const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  for (let n = 0; n < 500; n++) {
+  for (let n = 0; n < 800; n++) {
     b.fillStyle = `rgba(0,0,0,${0.04 + rand() * 0.08})`;
-    b.fillRect(rand() * W, FLOOR_Y + 3 + rand() * (H - FLOOR_Y - 3), 1 + rand() * 1.5, 1 + rand());
+    b.fillRect(rand() * WW, FLOOR_Y + 3 + rand() * (WH - FLOOR_Y - 3), 1 + rand() * 1.5, 1 + rand());
   }
-  // Lamp
-  b.strokeStyle = "#0b0b0d"; b.lineWidth = 1.6;
-  b.beginPath(); b.moveTo(LAMP_X, 0); b.lineTo(LAMP_X, 26); b.stroke();
-  const shadeG = b.createLinearGradient(0, 24, 0, 40);
-  shadeG.addColorStop(0, "#5a5a64"); shadeG.addColorStop(1, "#2e2e35");
-  b.fillStyle = shadeG;
-  b.beginPath(); b.moveTo(LAMP_X - 5, 25); b.lineTo(LAMP_X + 5, 25); b.lineTo(LAMP_X + 20, 39); b.lineTo(LAMP_X - 20, 39); b.closePath(); b.fill();
-  b.strokeStyle = "#0b0b0d"; b.lineWidth = 1.4; b.stroke();
-  b.fillStyle = "#fff4d0"; b.beginPath(); b.ellipse(LAMP_X, 40.5, 6, 3, 0, 0, Math.PI * 2); b.fill();
+  // Lamps on long cords from the ceiling
+  for (const lx of LAMPS) {
+    b.strokeStyle = "#0b0b0d"; b.lineWidth = 1.6;
+    b.beginPath(); b.moveTo(lx, 16); b.lineTo(lx, LAMP_Y - 16); b.stroke();
+    const shadeG = b.createLinearGradient(0, LAMP_Y - 18, 0, LAMP_Y - 2);
+    shadeG.addColorStop(0, "#5a5a64"); shadeG.addColorStop(1, "#2e2e35");
+    b.fillStyle = shadeG;
+    b.beginPath(); b.moveTo(lx - 5, LAMP_Y - 17); b.lineTo(lx + 5, LAMP_Y - 17); b.lineTo(lx + 20, LAMP_Y - 3); b.lineTo(lx - 20, LAMP_Y - 3); b.closePath(); b.fill();
+    b.strokeStyle = "#0b0b0d"; b.lineWidth = 1.4; b.stroke();
+    b.fillStyle = "#fff4d0"; b.beginPath(); b.ellipse(lx, LAMP_Y - 1.5, 6, 3, 0, 0, Math.PI * 2); b.fill();
+  }
 
   // Light: stacked cones give soft edges, plus a glow at the bulb and on the floor.
   const l = lightCan.getContext("2d");
-  l.setTransform(K, 0, 0, K, 0, 0);
-  for (let n = 0; n < 6; n++) {
-    const spread = 0.42 + n * 0.035;
-    const g = l.createLinearGradient(0, LAMP_Y, 0, FLOOR_Y + 20);
-    g.addColorStop(0, `rgba(255,240,204,${0.05})`);
-    g.addColorStop(1, `rgba(255,240,204,${0.012})`);
-    l.fillStyle = g;
-    l.beginPath();
-    l.moveTo(LAMP_X - 14, LAMP_Y - 2); l.lineTo(LAMP_X + 14, LAMP_Y - 2);
-    l.lineTo(LAMP_X + (FLOOR_Y - LAMP_Y) * spread, FLOOR_Y + 30);
-    l.lineTo(LAMP_X - (FLOOR_Y - LAMP_Y) * spread, FLOOR_Y + 30);
-    l.closePath(); l.fill();
+  l.setTransform(kb, 0, 0, kb, 0, 0);
+  for (const lx of LAMPS) {
+    for (let n = 0; n < 6; n++) {
+      const spread = 0.42 + n * 0.035;
+      const g = l.createLinearGradient(0, LAMP_Y, 0, FLOOR_Y + 20);
+      g.addColorStop(0, `rgba(255,240,204,${0.05})`);
+      g.addColorStop(1, `rgba(255,240,204,${0.012})`);
+      l.fillStyle = g;
+      l.beginPath();
+      l.moveTo(lx - 14, LAMP_Y - 2); l.lineTo(lx + 14, LAMP_Y - 2);
+      l.lineTo(lx + (FLOOR_Y - LAMP_Y) * spread, FLOOR_Y + 30);
+      l.lineTo(lx - (FLOOR_Y - LAMP_Y) * spread, FLOOR_Y + 30);
+      l.closePath(); l.fill();
+    }
+    const glow = l.createRadialGradient(lx, LAMP_Y, 0, lx, LAMP_Y, 60);
+    glow.addColorStop(0, "rgba(255,240,204,0.5)"); glow.addColorStop(1, "rgba(255,240,204,0)");
+    l.fillStyle = glow; l.fillRect(lx - 60, LAMP_Y - 60, 120, 120);
+    l.save(); l.translate(lx, FLOOR_Y + 4); l.scale(1, 0.12);
+    const spot = l.createRadialGradient(0, 0, 0, 0, 0, 170);
+    spot.addColorStop(0, "rgba(255,240,204,0.35)"); spot.addColorStop(1, "rgba(255,240,204,0)");
+    l.fillStyle = spot; l.beginPath(); l.arc(0, 0, 170, 0, Math.PI * 2); l.fill();
+    l.restore();
   }
-  const glow = l.createRadialGradient(LAMP_X, LAMP_Y, 0, LAMP_X, LAMP_Y, 60);
-  glow.addColorStop(0, "rgba(255,240,204,0.5)"); glow.addColorStop(1, "rgba(255,240,204,0)");
-  l.fillStyle = glow; l.fillRect(LAMP_X - 60, LAMP_Y - 60, 120, 120);
-  l.save(); l.translate(LAMP_X, FLOOR_Y + 4); l.scale(1, 0.12);
-  const spot = l.createRadialGradient(0, 0, 0, 0, 0, 170);
-  spot.addColorStop(0, "rgba(255,240,204,0.35)"); spot.addColorStop(1, "rgba(255,240,204,0)");
-  l.fillStyle = spot; l.beginPath(); l.arc(0, 0, 170, 0, Math.PI * 2); l.fill();
-  l.restore();
-  // Vignette
-  const v = l.createRadialGradient(W / 2, H / 2, H * 0.4, W / 2, H / 2, W * 0.75);
-  v.addColorStop(0, "rgba(0,0,0,0)"); v.addColorStop(1, "rgba(0,0,0,0.0)");
-  l.fillStyle = v; l.fillRect(0, 0, W, H);
 }
 
 // ======================================================================
@@ -6553,8 +6586,8 @@ const MAPS = [
     build: () => {
       const x0 = Math.round(W * 0.36), x1 = Math.round(W * 0.74), h = 74;
       return {
-        walls: [[x0 - 10, FLOOR_Y - h, 10, h], [x1, FLOOR_Y - h, 10, h]],
-        water: [[x0, FLOOR_Y - h + 14, x1 - x0, h - 14]],
+        walls: [[x0 - 10, BASE_FLOOR - h, 10, h], [x1, BASE_FLOOR - h, 10, h]],
+        water: [[x0, BASE_FLOOR - h + 14, x1 - x0, h - 14]],
         ice: [], dolls: [W * 0.18, W * 0.27],
       };
     },
@@ -6564,9 +6597,9 @@ const MAPS = [
     theme: { wall: ["#241a16", "#33251e"], floor: ["#8c7c6c", "#5c4e42"], edge: "#a89888", line: "#1a120e" },
     build: () => {
       const walls = [], x0 = Math.round(W * 0.2), step = 30, rise = 14.5;
-      for (let i = 0; i < 7; i++) walls.push([x0 + i * step, FLOOR_Y - (i + 1) * rise, step, (i + 1) * rise]);
+      for (let i = 0; i < 7; i++) walls.push([x0 + i * step, BASE_FLOOR - (i + 1) * rise, step, (i + 1) * rise]);
       const top = x0 + 7 * step;
-      walls.push([top, FLOOR_Y - 8 * rise, 150, 8 * rise]);
+      walls.push([top, BASE_FLOOR - 8 * rise, 150, 8 * rise]);
       return { walls, water: [], ice: [], dolls: [top + 70] };
     },
   },
@@ -6584,7 +6617,7 @@ const MAPS = [
     build: () => ({
       walls: [],
       water: [],
-      ice: [[0, FLOOR_Y - 5, W, 5], [W * 0.3, FLOOR_Y - 96, 26, 91], [W * 0.66, FLOOR_Y - 64, 44, 59], [W * 0.48, 150, 70, 14]],
+      ice: [[0, BASE_FLOOR - 5, W, 5], [W * 0.3, BASE_FLOOR - 96, 26, 91], [W * 0.66, BASE_FLOOR - 64, 44, 59], [W * 0.48, 150, 70, 14]],
       dolls: [W * 0.16, W * 0.4],
     }),
   },
@@ -6594,7 +6627,7 @@ const MAPS = [
     name: "Hochhaus", accent: "#9ab0d0", desc: "Ganz oben auf dem Dach",
     theme: { wall: ["#0e1422", "#1a2436"], floor: ["#6a707c", "#3e434c"], edge: "#9aa0aa", line: "#0a0e18" },
     build: () => ({
-      walls: [[W * 0.2, 262, 150, FLOOR_Y - 262], [W * 0.2 + 150, 262, 30, 6], [W * 0.56, 316, 120, FLOOR_Y - 316]],
+      walls: [[W * 0.2, 262, 150, BASE_FLOOR - 262], [W * 0.2 + 150, 262, 30, 6], [W * 0.56, 316, 120, BASE_FLOOR - 316]],
       water: [], ice: [], dolls: [W * 0.2 + 60, W * 0.56 + 60],
     }),
   },
@@ -6604,8 +6637,8 @@ const MAPS = [
     build: () => {
       const a = Math.round(W * 0.3), b = Math.round(W * 0.7);
       return {
-        walls: [[0, 262, a, FLOOR_Y - 262], [b, 262, W - b, FLOOR_Y - 262], [a, 262, b - a, 6]],
-        water: [[a, 312, b - a, FLOOR_Y - 312]], ice: [], dolls: [W * 0.14, W * 0.5],
+        walls: [[0, 262, a, BASE_FLOOR - 262], [b, 262, W - b, BASE_FLOOR - 262], [a, 262, b - a, 6]],
+        water: [[a, 312, b - a, BASE_FLOOR - 312]], ice: [], dolls: [W * 0.14, W * 0.5],
       };
     },
   },
@@ -6633,7 +6666,7 @@ const MAPS = [
     theme: { wall: ["#16161a", "#222228"], floor: ["#5c5c62", "#38383e"], edge: "#7c7c84", line: "#0e0e12" },
     build: () => {
       const x0 = W * 0.06, cw = W * 0.15, walls = [[x0, 134, cw * 4 + 6, 10]];
-      for (let k = 0; k <= 4; k++) walls.push([x0 + k * cw, 144, 6, FLOOR_Y - 144]);
+      for (let k = 0; k <= 4; k++) walls.push([x0 + k * cw, 144, 6, BASE_FLOOR - 144]);
       return { walls, water: [], ice: [], dolls: [[x0 + cw * 0.5 + 3, 300], [x0 + cw * 1.5 + 3, 300], [x0 + cw * 2.5 + 3, 300], W * 0.74] };
     },
   },
@@ -6643,8 +6676,8 @@ const MAPS = [
     build: () => {
       const x0 = Math.round(W * 0.42), tw = Math.round(W * 0.34);
       return {
-        walls: [[x0, 176, 8, FLOOR_Y - 176], [x0 + tw, 176, 8, FLOOR_Y - 176], [W * 0.22, 262, 120, 8], [W * 0.22 + 112, 270, 8, FLOOR_Y - 270]],
-        water: [[x0 + 8, 214, tw - 8, FLOOR_Y - 214]], ice: [], dolls: [W * 0.22 + 40, W * 0.1],
+        walls: [[x0, 176, 8, BASE_FLOOR - 176], [x0 + tw, 176, 8, BASE_FLOOR - 176], [W * 0.22, 262, 120, 8], [W * 0.22 + 112, 270, 8, BASE_FLOOR - 270]],
+        water: [[x0 + 8, 214, tw - 8, BASE_FLOOR - 214]], ice: [], dolls: [W * 0.22 + 40, W * 0.1],
       };
     },
   },
@@ -6661,10 +6694,10 @@ const MAPS = [
     theme: { wall: ["#1e140c", "#2e2014"], floor: ["#8a7460", "#5a4a3c"], edge: "#aa9480", line: "#140c06" },
     build: () => {
       const walls = [], ice = [], x0 = Math.round(W * 0.26), y0 = 262, n = 45;
-      walls.push([x0 - 60, y0, 60, FLOOR_Y - y0]);
+      walls.push([x0 - 60, y0, 60, BASE_FLOOR - y0]);
       for (let i = 0; i < n; i++) {
         const y = y0 + i * 3;
-        walls.push([x0 + i * 6, y + 2, 6, FLOOR_Y - y - 2]);
+        walls.push([x0 + i * 6, y + 2, 6, BASE_FLOOR - y - 2]);
         ice.push([x0 + i * 6, y, 6, 2]);
       }
       return { walls, water: [], ice, dolls: [x0 - 30] };
@@ -6676,8 +6709,8 @@ const MAPS = [
     build: () => {
       const a = Math.round(W * 0.46), sw = 64;
       return {
-        walls: [[0, 262, a, FLOOR_Y - 262], [a + sw, 262, W - a - sw, FLOOR_Y - 262], [a - 6, 248, 6, 14], [a + sw, 248, 6, 14]],
-        water: [[a, 326, sw, FLOOR_Y - 326]], ice: [], dolls: [W * 0.25, W * 0.67],
+        walls: [[0, 262, a, BASE_FLOOR - 262], [a + sw, 262, W - a - sw, BASE_FLOOR - 262], [a - 6, 248, 6, 14], [a + sw, 248, 6, 14]],
+        water: [[a, 326, sw, BASE_FLOOR - 326]], ice: [], dolls: [W * 0.25, W * 0.67],
       };
     },
   },
@@ -6690,6 +6723,14 @@ const MAPS = [
     }),
   },
 ];
+// A block of a map in the big room: moved to the middle and down to the
+// floor, stretched to the side walls where it touched the old ones.
+function mapRect(r) {
+  let x0 = r[0] + OFFX, x1 = r[0] + r[2] + OFFX;
+  if (r[0] <= 0) x0 = 0;
+  if (r[0] + r[2] >= W - 0.5) x1 = WW;
+  return [x0, r[1] + OFFY, x1 - x0, r[3]];
+}
 // Where a map puts a doll: an x position, or [x, y] to start below a ceiling.
 const mapDollSpot = (e) => (Array.isArray(e) ? e : [e, 40]);
 
@@ -6701,19 +6742,22 @@ function fillRect(r, m, mx = 0, lf = 0) {
 // Builds the chosen map: room, blocks, water, ice and the starting dolls.
 function loadMap(i) {
   state.map = i;
-  state.cam.z = 1; state.cam.x = 0; state.cam.y = 0; state.zoomAnim = null;
+  homeView(state.cam); state.zoomAnim = null;
   state.fires = []; wires = [];
   worldReset();
-  const m = MAPS[i].build();
-  for (const r of m.walls) fillRect(r, WALL);
-  for (const r of m.ice) fillRect(r, ICE, 0, 0);
-  for (const r of m.water) fillRect(r, WATER);
+  // Maps are laid out on the old screen-sized room; it sits in the middle of
+  // the big room on its floor. Blocks that reached the old side walls go on
+  // to the new ones.
+  const m = MAPS[i].build(), down = mapRect;
+  for (const r of m.walls) fillRect(down(r), WALL);
+  for (const r of m.ice) fillRect(down(r), ICE, 0, 0);
+  for (const r of m.water) fillRect(down(r), WATER);
   // Remember the map's own ice so "Eis entfernen" only clears placed ice.
   for (let i = 0; i < N; i++) mapIce[i] = mat[i] === ICE ? 1 : 0;
   gibs = []; effects = []; tracers = []; flashes = []; sparks = []; smokes = [];
   dctx.clearRect(0, 0, decal.width, decal.height);
   state.dolls = []; state.selected = null; state.grabDoll = null; state.counter = 0;
-  for (const e of m.dolls) placeDoll(...mapDollSpot(e));
+  for (const e of m.dolls) { const [x, y] = mapDollSpot(e); placeDoll(x + OFFX, y + OFFY); }
   state.toast = 0;
   buildStatic();
 }
@@ -7089,7 +7133,7 @@ function drawMapPreview(i, x, y, w, h) {
   drawMapBadge(i, x + w - 15, y + 15, 11);
 }
 function paintMapPreview(i, x, y, w, h) {
-  const m = MAPS[i], t = m.theme, sx = w / W, sy = h / H, b = m.build();
+  const m = MAPS[i], t = m.theme, sx = w / WW, sy = h / WH, b = m.build();
   ctx.save();
   rr(x, y, w, h, 8); ctx.clip();
   const g = ctx.createLinearGradient(0, y, 0, y + FLOOR_Y * sy);
@@ -7097,34 +7141,37 @@ function paintMapPreview(i, x, y, w, h) {
   ctx.fillStyle = g; ctx.fillRect(x, y, w, FLOOR_Y * sy);
   // wall panels and the ceiling strip
   ctx.fillStyle = t.line;
-  for (let px1 = 0; px1 < W; px1 += 96) ctx.fillRect(x + px1 * sx, y, 1, FLOOR_Y * sy);
-  ctx.fillRect(x, y + 150 * sy, w, 1.6);
+  for (let px1 = 0; px1 < WW; px1 += 96) ctx.fillRect(x + px1 * sx, y, 1, FLOOR_Y * sy);
+  ctx.fillRect(x, y + (OFFY + 150) * sy, w, 1.6);
   ctx.fillStyle = "#0e0e11"; ctx.fillRect(x, y, w, 16 * sy);
-  // lamp and its cone of light
-  const lx = x + w / 2, ly = y + 42 * sy;
-  const cone = ctx.createLinearGradient(0, ly, 0, y + FLOOR_Y * sy);
-  cone.addColorStop(0, "rgba(255,240,204,0.32)"); cone.addColorStop(1, "rgba(255,240,204,0.04)");
-  ctx.fillStyle = cone;
-  ctx.beginPath(); ctx.moveTo(lx - 4, ly); ctx.lineTo(lx + 4, ly); ctx.lineTo(lx + 150 * sx, y + FLOOR_Y * sy); ctx.lineTo(lx - 150 * sx, y + FLOOR_Y * sy); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = "#d8d8d0"; ctx.fillRect(lx - 4, ly - 3, 8, 3);
-  ctx.fillStyle = "#fff6d8"; ctx.beginPath(); ctx.arc(lx, ly + 1, 1.6, 0, Math.PI * 2); ctx.fill();
+  // lamps and their cones of light
+  for (const lw of LAMPS) {
+    const lx = x + lw * sx, ly = y + LAMP_Y * sy;
+    const cone = ctx.createLinearGradient(0, ly, 0, y + FLOOR_Y * sy);
+    cone.addColorStop(0, "rgba(255,240,204,0.32)"); cone.addColorStop(1, "rgba(255,240,204,0.04)");
+    ctx.fillStyle = cone;
+    ctx.beginPath(); ctx.moveTo(lx - 3, ly); ctx.lineTo(lx + 3, ly); ctx.lineTo(lx + 150 * sx, y + FLOOR_Y * sy); ctx.lineTo(lx - 150 * sx, y + FLOOR_Y * sy); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#3a3a42"; ctx.fillRect(lx - 0.4, y, 0.8, ly - y - 2);
+    ctx.fillStyle = "#d8d8d0"; ctx.fillRect(lx - 3, ly - 2.5, 6, 2.5);
+    ctx.fillStyle = "#fff6d8"; ctx.beginPath(); ctx.arc(lx, ly + 1, 1.3, 0, Math.PI * 2); ctx.fill();
+  }
   // floor
   const fl = ctx.createLinearGradient(0, y + FLOOR_Y * sy, 0, y + h);
   fl.addColorStop(0, t.floor[0]); fl.addColorStop(1, t.floor[1]);
   ctx.fillStyle = fl; ctx.fillRect(x, y + FLOOR_Y * sy, w, h - FLOOR_Y * sy);
   ctx.fillStyle = t.edge; ctx.fillRect(x, y + FLOOR_Y * sy, w, 1.2);
   ctx.fillStyle = "rgba(0,0,0,0.18)";
-  for (let px1 = 0; px1 < W; px1 += 48) ctx.fillRect(x + px1 * sx, y + FLOOR_Y * sy, 0.8, h);
+  for (let px1 = 0; px1 < WW; px1 += 48) ctx.fillRect(x + px1 * sx, y + FLOOR_Y * sy, 0.8, h);
   // concrete blocks
   for (const r of b.walls) {
-    const rx = x + r[0] * sx, ry = y + r[1] * sy, rw = r[2] * sx, rh = r[3] * sy;
+    const [r0, r1, r2, r3] = mapRect(r), rx = x + r0 * sx, ry = y + r1 * sy, rw = r2 * sx, rh = r3 * sy;
     ctx.fillStyle = "#4c4c56"; ctx.fillRect(rx, ry, rw, rh);
     ctx.fillStyle = "#8a8a94"; ctx.fillRect(rx, ry, rw, 1.2);
     ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.fillRect(rx, ry + rh - 1, rw, 1);
   }
   // water with a bright surface line
   for (const r of b.water) {
-    const rx = x + r[0] * sx, ry = y + r[1] * sy, rw = r[2] * sx, rh = r[3] * sy;
+    const [r0, r1, r2, r3] = mapRect(r), rx = x + r0 * sx, ry = y + r1 * sy, rw = r2 * sx, rh = r3 * sy;
     const wg = ctx.createLinearGradient(0, ry, 0, ry + rh);
     wg.addColorStop(0, "rgba(70,140,230,0.9)"); wg.addColorStop(1, "rgba(30,70,170,0.95)");
     ctx.fillStyle = wg; ctx.fillRect(rx, ry, rw, rh);
@@ -7132,7 +7179,7 @@ function paintMapPreview(i, x, y, w, h) {
   }
   // ice with a white top and a shine
   for (const r of b.ice) {
-    const rx = x + r[0] * sx, ry = y + r[1] * sy, rw = r[2] * sx, rh = r[3] * sy;
+    const [r0, r1, r2, r3] = mapRect(r), rx = x + r0 * sx, ry = y + r1 * sy, rw = r2 * sx, rh = r3 * sy;
     ctx.fillStyle = "#a6d6f6"; ctx.fillRect(rx, ry, rw, rh);
     ctx.fillStyle = "#f0fbff"; ctx.fillRect(rx, ry, rw, Math.min(1.2, rh));
     if (rh > 6) { ctx.fillStyle = "rgba(255,255,255,0.45)"; ctx.fillRect(rx + rw * 0.2, ry + 2, Math.max(1, rw * 0.12), rh - 4); }
@@ -7140,10 +7187,10 @@ function paintMapPreview(i, x, y, w, h) {
   // people standing where the map puts them
   b.dolls.forEach((e, n) => {
     const [dx, sy0] = mapDollSpot(e);
-    let gy = FLOOR_Y;
+    let gy = BASE_FLOOR;
     for (const r of b.walls.concat(b.ice, b.water)) if (dx >= r[0] && dx <= r[0] + r[2] && r[1] < gy && r[1] > sy0) gy = r[1];
     ctx.save(); ctx.translate(x, y);
-    drawBlockPerson(dx * sx, gy * sy, sy, MENU_LOOKS[(n + i) % MENU_LOOKS.length]);
+    drawBlockPerson((dx + OFFX) * sx, (gy + OFFY) * sy, Math.min(sx, sy) * 1.3, MENU_LOOKS[(n + i) % MENU_LOOKS.length]);
     ctx.restore();
   });
   // soft vignette
@@ -8317,7 +8364,7 @@ function aimFire() {
   state.shake = Math.max(state.shake, wp.kick);
   v.flash = 1; v.last = hit;
   if (!hit) { state.toast = 0.8; state.toastText = "Daneben"; return; }
-  if (wp.taser) { d.tase(hit.k, hit.t, hit.s, d.x[P_WAIST] + rf(-40, 40), H + 40); state.selected = d; return; }
+  if (wp.taser) { d.tase(hit.k, hit.t, hit.s, d.x[P_WAIST] + rf(-40, 40), viewBottom() + 40); state.selected = d; return; }
   const [wx, wy] = d.preciseShot(hit, wp, Math.random() < 0.5 ? 1 : -1);
   flashes.push({ x: wx, y: wy, ang: 0, age: 0 });
   state.selected = d;
@@ -8561,21 +8608,17 @@ function drawAimView() {
 
 const state = {
   tool: T_GRAB, mx: W / 2, my: H / 2, sx: W / 2, sy: H / 2, lastX: W / 2, lastY: H / 2,
-  cam: { z: 1, x: 0, y: 0 }, zoomAnim: null, fireMode: 1, fires: [],
+  cam: { z: 1, x: OFFX, y: OFFY }, zoomAnim: null, fireMode: 1, fires: [],
   pressing: false, pointerSeen: false, hover: -1, flashBtn: -1, toast: 0, toastText: "",
   dolls: [], selected: null, grabDoll: null, pinDrag: null, swings: [], dockCat: -1, catTool: null, counter: 0, trail: [], shake: 0,
   waterLevel: 3, weapon: 0, fireCd: 0, map: 0, screen: "", screenT: 0, lp: null, ctxMenu: null, aimView: null, xray: false, toolT: 9, pressTarget: null, inGame: false, menuDown: false,
   extrasOpen: false, extrasFlash: -1, extrasFlashT: 0, paused: false, slow: false,
-  gunX: W * 0.22, gunY: FLOOR_Y - 130, gunAng: 0, gunDrag: false, aimX: W, aimY: FLOOR_Y - 130,
+  gunX: OFFX + W * 0.22, gunY: FLOOR_Y - 130, gunAng: 0, gunDrag: false, aimX: OFFX + W, aimY: FLOOR_Y - 130,
   ammo: WEAPONS.map((wp) => wp.mag), autoMode: WEAPONS.map((wp) => wp.auto), reloadT: 0,
   triggerDown: false, kick: 0, climb: 0, emptyFlash: 0,
 };
 
 function spawnDoll(bx, by) {
-  if (state.dolls.length >= 6) {
-    const old = state.dolls.shift();
-    if (state.grabDoll === old) state.grabDoll = null;
-  }
   const d = new Doll(bx, by, ++state.counter);
   state.dolls.push(d);
   state.selected = d;
@@ -8619,10 +8662,10 @@ function useButton(i) {
 
 // New doll stands upright on the ground below the tap, no fall, no collapse.
 function placeDoll(x, y) {
-  x = clamp(x, 40, W - 40);
+  x = clamp(x, 40, WW - 40);
   let gy = Math.max(30, Math.floor(y));
   if (solidAt(x, gy)) { while (gy > 30 && solidAt(x, gy - 1)) gy--; }
-  else { while (gy < H - 1 && !solidAt(x, gy)) gy++; }
+  else { while (gy < WH - 1 && !solidAt(x, gy)) gy++; }
   if (gy - 180 < 10) { state.toast = 1.4; state.toastText = "Kein Platz"; return; }
   const d = spawnDoll(x, gy);
   state.toast = 1; state.toastText = "Puppe " + d.id;
@@ -8713,7 +8756,7 @@ function press() {
     if (best.monitor) { const m = best.monitor; addGhost({ kind: "monitor", x: m.x, gy: (m.y || FLOOR_Y - 40) + 40, side: m.side, dur: 1.2 }); best.monitor = null; state.toastText = "Monitor abgenommen"; best.logEvent("Monitor abgenommen"); clickSound(500, 0.06); }
     else if (best.dead && best.deadT > 45) state.toastText = "Zu spät für den Monitor";
     else {
-      const side = best.x[P_WAIST] < W / 2 ? 1 : -1;
+      const side = best.x[P_WAIST] < WW / 2 ? 1 : -1;
       best.monitor = { x: best.x[P_WAIST] + side * 58, side, alarmT: 0 };
       best.logEvent("Am Monitor angeschlossen");
       state.toastText = best.dead ? "Monitor dran, jetzt schocken" : "Am Monitor: Blut und Sauerstoff laufen";
@@ -8857,7 +8900,7 @@ function applyTool() {
     particles = particles.filter((p) => (p.m !== WATER && p.m !== BLOOD) || Math.hypot(p.x - mx, p.y - my) > r);
   } else if (state.tool === T_GUN && !settings.front) {
     if (state.gunDrag) {
-      state.gunX = clamp(mx, 30, W - 30); state.gunY = clamp(my, 40, FLOOR_Y - 12);
+      state.gunX = clamp(mx, 30, WW - 30); state.gunY = clamp(my, 40, FLOOR_Y - 12);
       return;
     }
     aimAt(mx, my);
@@ -8900,7 +8943,7 @@ function molotov(x, y) {
   worldEvent("fire", x, y);
   // The fuel spreads out on the surface below the finger.
   let gy = Math.floor(y);
-  while (gy < H - 1 && !solidAt(x, gy + 1)) gy++;
+  while (gy < WH - 1 && !solidAt(x, gy + 1)) gy++;
   state.fires.push({ x, y: gy, r: 34, t: 7 });
   for (let n = 0; n < 40; n++) spawnParticle(x + rf(-4, 4), y + rf(-4, 4), rf(-260, 260), rf(-320, -40), FIRE);
   for (let n = 0; n < 14; n++) sparks.push({ x, y, vx: rf(-260, 260), vy: rf(-300, -60), life: rf(0.3, 0.8) });
@@ -9042,7 +9085,16 @@ const taserPop = () => sfx((t) => { nz(t, 0.06, { type: "lowpass", f: 900, g: 0.
 // Dolls bump into each other instead of passing through.
 function collideDolls() {
   const ds = state.dolls;
+  // Bounding boxes first: two dolls far apart need no point checks at all,
+  // so many dolls in the big room stay cheap.
+  const box = ds.map((d) => {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (let i = 0; i < d.x.length; i++) { const r = d.rad[i]; x0 = Math.min(x0, d.x[i] - r); x1 = Math.max(x1, d.x[i] + r); y0 = Math.min(y0, d.y[i] - r); y1 = Math.max(y1, d.y[i] + r); }
+    return [x0, y0, x1, y1];
+  });
   for (let a = 0; a < ds.length; a++) for (let b = a + 1; b < ds.length; b++) {
+    const A = box[a], B = box[b];
+    if (A[0] > B[2] || B[0] > A[2] || A[1] > B[3] || B[1] > A[3]) continue;
     const p = ds[a], q = ds[b];
     for (let i = 0; i < p.x.length; i++) {
       if (p.gone[p.owner[i]]) continue;
@@ -9098,22 +9150,26 @@ function toGame(ev) {
   state.sx = clamp((ev.clientX - r.left) / r.width * W, 0, W - 0.01);
   state.sy = clamp((ev.clientY - r.top) / r.height * H, 0, H - 0.01);
   const [wx, wy] = toWorld(state.sx, state.sy);
-  state.mx = clamp(wx, 0, W - 0.01); state.my = clamp(wy, 0, H - 0.01);
+  state.mx = clamp(wx, 0, WW - 0.01); state.my = clamp(wy, 0, WH - 0.01);
   state.pointerSeen = true;
 }
 
 // ----------------------------------------------------------------- zoom
 // Free zoom with two fingers (or the mouse wheel). The camera keeps the
 // room point under the fingers in place and never shows past the walls.
-const ZOOM_MAX = 8;
+const ZOOM_MAX = 8, ZOOM_MIN = Math.max(W / WW, H / WH);
+// The lower edge of the view in room units: front view shots come from there.
+const viewBottom = () => state.cam.y + H / state.cam.z;
+// Start view: screen-sized, centered on the room, the floor at the bottom.
+function homeView(c) { c.z = 1; c.x = OFFX; c.y = OFFY; }
 const toWorld = (x, y) => [state.cam.x + x / state.cam.z, state.cam.y + y / state.cam.z];
 const toScreen = (x, y) => [(x - state.cam.x) * state.cam.z, (y - state.cam.y) * state.cam.z];
 function setZoom(z, ax, ay, wx, wy) {
   // (ax, ay): screen point that should show room point (wx, wy).
   const c = state.cam;
-  c.z = clamp(z, 1, ZOOM_MAX);
-  c.x = clamp(wx - ax / c.z, 0, W - W / c.z);
-  c.y = clamp(wy - ay / c.z, 0, H - H / c.z);
+  c.z = clamp(z, ZOOM_MIN, ZOOM_MAX);
+  c.x = clamp(wx - ax / c.z, 0, WW - W / c.z);
+  c.y = clamp(wy - ay / c.z, 0, WH - H / c.z);
 }
 const touches = new Map();
 let pinch = null;
@@ -9129,20 +9185,24 @@ function pinchMove() {
   const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2, d = Math.hypot(a[0] - b[0], a[1] - b[1]) || 1;
   setZoom(pinch.z0 * d / pinch.d0, mx, my, pinch.wx, pinch.wy);
 }
-// The little zoom pill at the top: shows the factor, a tap glides back to 1x.
+// The little zoom pill at the top: shows the factor as soon as the view
+// left its start, a tap glides back to 1x in the middle of the room.
 const ZOOM_BTN = { x: 0, y: 10, w: 84, h: 28 };
 const zoomBtn = () => ({ ...ZOOM_BTN, x: W / 2 - ZOOM_BTN.w / 2 });
-const inZoomBtn = (x, y) => state.cam.z > 1.02 && hitBox(zoomBtn(), x, y);
+const HOME = { z: 1, x: 0, y: 0 };
+homeView(HOME);
+const awayFromHome = () => { const c = state.cam; return Math.abs(c.z - 1) > 0.02 || Math.abs(c.x - HOME.x) > 4 || Math.abs(c.y - HOME.y) > 4; };
+const inZoomBtn = (x, y) => awayFromHome() && hitBox(zoomBtn(), x, y);
 function zoomStep(dt) {
   const za = state.zoomAnim;
   if (!za) return;
   za.t = Math.min(1, za.t + dt / 0.35);
   const e = easeOut(za.t), c = state.cam;
-  c.z = lerp(za.z0, 1, e); c.x = lerp(za.x0, 0, e); c.y = lerp(za.y0, 0, e);
+  c.z = lerp(za.z0, 1, e); c.x = lerp(za.x0, HOME.x, e); c.y = lerp(za.y0, HOME.y, e);
   if (za.t >= 1) state.zoomAnim = null;
 }
 function drawZoomBtn() {
-  const k = tween("zoomBtn", state.cam.z > 1.02 ? 1 : 0, 14);
+  const k = tween("zoomBtn", awayFromHome() ? 1 : 0, 14);
   if (k < 0.01) return;
   const b = zoomBtn();
   ctx.save(); ctx.globalAlpha *= k; ctx.translate(0, (1 - k) * -8);
@@ -9424,7 +9484,7 @@ function drawDecayFx() {
 function render() {
   flushPaint();
   ctx.globalCompositeOperation = "source-over";
-  if (worldDirty) { wctx.putImageData(wimg, 0, 0); worldDirty = false; }
+  if (worldDirty) { wctx.putImageData(wimg, 0, 0, 0, wDirtyY0, WW, wDirtyY1 - wDirtyY0 + 1); worldDirty = false; }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalCompositeOperation = "source-over";
   ctx.fillStyle = "#0c0c0f"; ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -9433,8 +9493,8 @@ function render() {
   const worldT = [kz, 0, 0, kz, (rf(-sh, sh) - cam.x * cam.z) * K, (rf(-sh, sh) - cam.y * cam.z) * K];
   ctx.setTransform(...worldT);
   ctx.imageSmoothingEnabled = true;
-  ctx.drawImage(bgCan, 0, 0, W, H);
-  ctx.drawImage(decal, 0, 0, W, H);
+  ctx.drawImage(bgCan, 0, 0, WW, WH);
+  ctx.drawImage(decal, 0, 0, WW, WH);
   // Gibs and dolls are pixel art on their own layer.
   pxBegin();
   for (const g of gibs) rasterGib(g);
@@ -9443,14 +9503,14 @@ function render() {
   if (state.tool === T_GUN && !settings.front) rasterGun();
   pxEnd();
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(pixCan, 0, 0, W, H);
+  ctx.drawImage(pixCan, 0, 0, WW, WH);
   ctx.imageSmoothingEnabled = true;
   drawBodyFlames();
   drawWires();
   // Very close up the body opens and shows its organs.
   if (settings.organs && cam.z > 3) for (const d of state.dolls) drawDollOrgans(d, smooth01((cam.z - 3) / 1.6));
   // Liquids, fire and smoke cover the dolls.
-  ctx.drawImage(wcan, 0, 0, W, H);
+  ctx.drawImage(wcan, 0, 0, WW, WH);
   ctx.fillStyle = COL_P_BLOOD;
   ctx.beginPath();
   for (const p of particles) if (p.m === BLOOD) ctx.rect(p.x - 0.8, p.y - 0.8, 1.6, 1.6);
@@ -9524,7 +9584,7 @@ function render() {
       ctx.restore();
     }
   }
-  ctx.drawImage(lightCan, 0, 0, W, H);
+  ctx.drawImage(lightCan, 0, 0, WW, WH);
   ctx.globalCompositeOperation = "source-over";
   // Powder smoke
   for (const p of smokes) { const k = 1 - p.age / p.life; ctx.fillStyle = `rgba(190,188,182,${p.a * k * k})`; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill(); }
