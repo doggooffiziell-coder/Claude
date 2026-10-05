@@ -882,9 +882,23 @@ class Doll {
     if (this.sepsis > 50 && !this.dead) this.ko = Math.min(this.ko, 100 - (this.sepsis - 50) * 1.6);
     if (this.sepsis >= 100 && !this.dead) { this.cause = ORGAN_DEATH.stomach; this.die(); }
     if (!this.dead && hp("brain") < 1) this.ko = Math.min(this.ko, 15 + hp("brain") * 85);
-    // Living organs mend slowly, faster with an infusion. Destroyed ones stay.
-    const mend = this.iv > 0 ? 3 : this.healing ? 0.6 : 0;
-    if (mend && !this.dead) for (let n = 0; n < ORGANS.length; n++) if (this.organ[n] > 0) this.organ[n] = Math.min(100, this.organ[n] + mend * DT);
+    // A badly hurt heart pumps weakly: less oxygen, chest pain, a body that
+    // stays weak. Below about a third it falls out of rhythm and can stop at
+    // any moment, faster with adrenaline in the blood. Blood from a bag does
+    // not repair it.
+    const heart = hp("heart");
+    if (!this.dead && heart > 0 && heart < 0.6) {
+      const weak = (0.6 - heart) / 0.6;
+      if (!this.arrest) this.o2 = Math.min(this.o2, 100 - weak * 45);
+      this.pn = Math.max(this.pn, weak * 55);
+      this.ko = Math.min(this.ko, 100 - weak * 55);
+      const risk = heart < 0.35 ? (0.35 - heart) * 0.4 * (this.adrenT > 0 ? 2.5 : 1) : 0;
+      if (!this.arrest && Math.random() < risk * DT) { this.arrest = true; this.logEvent("Kammerflimmern"); }
+    }
+    // Only lightly hurt organs mend, slowly, a little faster with an
+    // infusion. Badly damaged ones (under 60 %) stay as they are.
+    const mend = this.iv > 0 ? 1 : this.healing ? 0.3 : 0;
+    if (mend && !this.dead) for (let n = 0; n < ORGANS.length; n++) if (this.organ[n] >= 60) this.organ[n] = Math.min(100, this.organ[n] + mend * DT);
   }
 
   // Seconds until death if nothing changes, or Infinity. this.etaWhy names
@@ -1940,6 +1954,13 @@ class Doll {
     const cx = lerp(this.x[P_NECK], this.x[P_WAIST], 0.4), cy = lerp(this.y[P_NECK], this.y[P_WAIST], 0.4);
     for (let n = 0; n < 12; n++) sparks.push({ x: cx + rf(-10, 10), y: cy + rf(-6, 6), vx: rf(-160, 160), vy: rf(-180, 40), life: rf(0.1, 0.3) });
     flashes.push({ x: cx, y: cy, ang: 0, age: 0 });
+    if (!this.dead && this.arrest) {
+      // Heart stopped but the body still alive: the shock can restart it.
+      if (this.organ[ORGAN.heart] <= 0) return "Das Herz ist zerstört";
+      if (Math.random() < 0.3) return "Kein Rhythmus, nochmal!";
+      this.arrest = false; this.noAir = 0; this.hr = 55; this.logEvent("Herz neu gestartet");
+      return "Herz schlägt wieder";
+    }
     if (!this.dead) {
       this.pn = Math.min(100, this.pn + 25); this.hurtPart(TORSO, 6); this.damaged();
       this.logEvent("Elektroschock Brust");
@@ -2389,6 +2410,8 @@ class Doll {
       HEAL: this.healing || this.iv > 0, BLADE: this.bladeTimer > 0, TORN: this.severed.includes(true), FROZEN: this.frozen,
       BROKEN: this.broken.some((b, k) => b && this.attached(k)), PINNED: this.pins.size > 0,
       ZAP: this.taseT > 0,
+      ARREST: this.arrest && !this.dead,
+      HEARTWEAK: !this.arrest && !this.dead && this.organ[ORGAN.heart] > 0 && this.organ[ORGAN.heart] < 60,
       BANDAGED: this.wounds.some((w) => w.bandaged && !this.gone[w.part]) || this.bands.some((b) => b.burn),
     };
   }
@@ -3631,6 +3654,7 @@ const VITALS = [
 ];
 // Status chips in German. Only the ones that apply are shown.
 const STATUS = [
+  ["ARREST", "HERZSTILLSTAND", "#ff3040"], ["HEARTWEAK", "HERZ SCHWACH", "#ff7a8a"],
   ["OUT", "BEWUSSTLOS", "#a2a2aa"], ["BLEED", "BLUTET", "#d6202f"], ["FIRE", "BRENNT", "#ff5a1e"],
   ["CHOKE", "ERSTICKT", "#2ec8c0"], ["AGONY", "QUALEN", "#f08a24"], ["HEAL", "HEILT", "#f2da3a"],
   ["BLADE", "SCHNITT", "#c8d0dc"], ["TORN", "GLIED AB", "#f272b8"], ["FROZEN", "GEFROREN", "#86c4ff"],
