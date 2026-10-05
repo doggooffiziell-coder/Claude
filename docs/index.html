@@ -7616,7 +7616,7 @@ const titleFx = { drops: [], dust: [], t: 0, dark: 0, fadeIn: 0 };
 for (let n = 0; n < 26; n++) titleFx.dust.push({ x: rf(-60, 60), y: rf(60, 360), v: rf(3, 9), p: rf(0, 6.28) });
 
 function titleButtons() {
-  const items = [], five = state.inGame, x = 56, w = 250, h = five ? 37 : 40, gap = five ? 7 : 9, y0 = five ? 184 : 192;
+  const items = [], five = state.inGame, x = 56, w = 250, h = five ? 35 : 40, gap = five ? 6 : 8, y0 = five ? 178 : 184;
   if (state.inGame) items.push({ id: "resume", text: "WEITERSPIELEN", primary: true });
   items.push({ id: "maps", text: state.inGame ? "MAP WÄHLEN" : "SPIELEN", primary: !state.inGame });
   items.push({ id: "decay", text: "VERWESUNG" });
@@ -7719,8 +7719,8 @@ function drawTitle(dt) {
   }));
   withAppear(appear(8), () => label("v2 · " + MAPS.length + " MAPS · " + TOOL_NAMES.length + " WERKZEUGE", 56, H - 16, 9, "#4c4c56"), 0);
   // A tip that changes every few seconds, under the buttons
-  const btns = titleButtons(), last = btns[btns.length - 1], ty = last.y + last.h + 22;
-  if (ty < H - 34) withAppear(appear(9), () => {
+  const btns = titleButtons(), last = btns[btns.length - 1], ty = last.y + last.h + 16;
+  if (ty < H - 30) withAppear(appear(9), () => {
     const n = Math.floor(f.t / 5) % TITLE_TIPS.length, ph = (f.t % 5) / 5, a = Math.min(1, ph * 6, (1 - ph) * 6);
     ctx.save(); ctx.globalAlpha *= a;
     ctx.fillStyle = "#8e0f1c"; ctx.fillRect(56, ty - 6, 3, 12);
@@ -7733,13 +7733,18 @@ function drawTitle(dt) {
 }
 
 const TITLE_TIPS = [
-  "Halte eine Puppe fest, sie läuft mit.",
-  "Die Pinnadel: ziehen, loslassen, fixiert.",
-  "Ein Verband stoppt jede Blutung.",
-  "Das i im Panel erklärt jeden Tod.",
-  "Zeig mit der Waffe auf eine Puppe.",
-  "Zoome ganz nah, dann siehst du die Organe.",
-  "Wasser löscht Feuer, Eis friert ein.",
+  "Adrenalin zweimal in 13 s kostet das Herz 40 %.",
+  "Defi nur bis 45 s nach dem Tod, mit über 15 % Blut.",
+  "Ein Organ unter 60 % heilt nie mehr von selbst.",
+  "Zerstörter Darm: etwa 10 Minuten bis zum Tod.",
+  "Unter 38 % Blut steht keine Puppe mehr auf.",
+  "Der Sniper durchschlägt drei Puppen hintereinander.",
+  "Die Schrotflinte feuert auch mitten im Nachladen.",
+  "Am Monitor überlebt man sogar eine Leberblutung.",
+  "Eis stoppt die Verwesung, Wasser bremst sie.",
+  "Brennt der Kopf, verbrennen auch die Lungen.",
+  "Der 3. Grad schmerzt weniger als der 2.",
+  "Herz unter 35 %: Adrenalin kann es anhalten.",
 ];
 
 // The room behind the person: a pipe that drips, an exit sign, a camera
@@ -8345,47 +8350,59 @@ function drawMapCard(c) {
 
 // ----------------------------------------------------------------- help
 
-const HELP = [
-  [T_GRAB, "Puppe packen, ziehen und werfen"],
-  [T_PIN, "Ziehen, loslassen fixiert, tippen löst"],
-  [T_WATER, "Wasser gießen, Menge oben links"],
-  [T_BUCKET, "Wasser und Blut aufsaugen"],
-  [T_BLADE, "Schnell ziehen, um zu schneiden"],
-  [T_GUN, "Zielen + roter Knopf, vorn: tippen"],
-  [T_FIRE, "Feuerzeug, Flamme, Molotow, Wasser löscht"],
-  [T_ICE, "Eis setzen, friert Puppen ein"],
-  [T_BOMB, "Tippen, um zu sprengen"],
-  [T_BANDAGE, "Auf eine Wunde tippen, stoppt die Blutung"],
-  [T_IV, "Heilt und weckt Bewusstlose"],
-  [T_DOLL, "Tippen, wo sie stehen soll"],
-  [T_RESET, "Baut die Map neu auf"],
-  [T_BAT, "Tippen = Schlag, bricht Knochen"],
-  [T_DEFI, "Belebt frisch Tote wieder, mit Glück"],
-  [T_ADREN, "Weckt auf, Schmerz weg, nicht zu oft"],
-  [T_MONITOR, "Hält am Leben: Blut und Luft, piept"],
-  [-1, "Aufräumen, Zeitlupe und Pause"],
-];
 
+// The guide explains how the body and the tools really work, with the
+// numbers the game uses, sorted into four tabs.
+const HELP_TABS = [
+  { id: "h-body", name: "KÖRPER", topics: [
+    ["ORGANE UND TODESZEIT", "Jedes Organ hat eigene Lebenspunkte. Leicht verletzte Organe heilen langsam, mit Infusion schneller. Fällt ein Organ unter 60 %, heilt es nie mehr. Ein zerstörter Magen oder Darm vergiftet den Bauch: Pro zerstörtem Organ bleiben etwa 10 Minuten bis zur tödlichen Bauchfellentzündung."],
+    ["DAS HERZ", "Unter 60 % pumpt das Herz schwach: weniger Sauerstoff, Brustschmerz, die Puppe bleibt matt. Unter 35 % kann es jederzeit flimmern und stehen bleiben. Adrenalin im Blut macht das zweieinhalbmal wahrscheinlicher. Eine Infusion repariert kein Herz."],
+    ["BLUT UND SCHOCK", "Offene Wunden bluten, bis ein Verband oder eine Infusion sie stoppt, Blutungen in den Organen stoppt kein Verband. Unter 50 % Blut zittert die Puppe im Schock, unter 38 % steht sie nicht mehr auf. Stümpfe spritzen bei jedem Herzschlag. Die Haut wird blass ohne Blut und bläulich ohne Sauerstoff."],
+  ] },
+  { id: "h-med", name: "MEDIZIN", topics: [
+    ["WIEDERBELEBUNG", "Der Defibrillator holt eine Puppe nur zurück, wenn sie höchstens 45 Sekunden tot ist, Herz und Gehirn nicht zerstört sind und sie über 15 % Blut hat. Sonst zuerst Infusion, dann schocken. Selbst dann klappen nur etwa 7 von 10 Schocks. Steht das Herz einer lebenden Puppe still, startet ein Schock es neu."],
+    ["INFUSION ODER MONITOR", "Die Infusion füllt 8 % Blut pro Sekunde auf, schließt Wunden und weckt auf, aber der Beutel läuft leer. Der Monitor gibt dauerhaft 5 % Blut pro Sekunde und Sauerstoff, damit überlebt eine Puppe sogar eine Leberblutung. Ziehst du sie zu weit weg, reißen die Leitungen, und die Blutung gewinnt."],
+    ["ADRENALIN", "Weckt sofort auf, senkt den Schmerz um 40 und hebt die Puppe aus dem K.O. Eine zweite Spritze innerhalb von etwa 13 Sekunden ist eine Überdosis: Das Herz verliert 40 %, der Schmerz steigt um 30. Bei schwachem Herzen treibt Adrenalin es in den Stillstand."],
+  ] },
+  { id: "h-gun", name: "WAFFEN", topics: [
+    ["KOPFSCHÜSSE", "Ein Kopfschuss zerstört das Gehirn nur mit einer Chance: Sniper 95 %, AK-47 30 %, Sturmgewehr 22 %, Glock und jede einzelne Schrotkugel 12 %. Jeder Treffer macht ein Einschuss- und ein Austrittsloch, beide bluten. Ein Glied mit vollem Schaden und acht Treffern kann abreißen."],
+    ["DURCHSCHLAG UND STREUUNG", "Der Sniper durchschlägt bis zu drei Puppen hintereinander. Die Schrotflinte schießt acht Kugeln im Kegel und lädt Patrone für Patrone, drückst du beim Nachladen ab, feuert sie mit dem, was drin ist. Dauerfeuer zieht die Waffe nach oben, kurze Salven bleiben genauer."],
+    ["MEDIZIN ALS ZIEL", "Kugeln treffen auch Blutbeutel und Monitore und fliegen weiter. Ein Beutel platzt und beendet die Infusion. Ohne Beutel gibt der Monitor kein Blut mehr, nur Sauerstoff. Ein zerschossener Bildschirm tut gar nichts mehr, bis du ihn abnimmst und einen neuen anschließt."],
+  ] },
+  { id: "h-env", name: "UMWELT", topics: [
+    ["FEUER", "Verbrennungen zählen nach der Neunerregel. Ab dem 2. Grad verliert der Körper Flüssigkeit, große Flächen führen in den Verbrennungsschock. Der 2. Grad schmerzt am meisten, der 3. weniger, weil die Nerven tot sind. Brennt der Kopf, verbrennen die Lungen. Ein Brandverband halbiert Schmerz und Flüssigkeitsverlust."],
+    ["KÄLTE UND WASSER", "Kälte und Nässe lassen zittern, bei voller Kälte erstarrt die Puppe zu Eis und taut erst langsam wieder auf. Liegt der Kopf unter Wasser, sinkt der Sauerstoff, und die Puppe ertrinkt. Eis stoppt die Verwesung ganz, Wasser bremst sie auf 60 %."],
+    ["VERWESUNG", "Nach dem Tod wird die Puppe blass, bekommt Leichenflecken auf der unteren Seite und erstarrt. Die Starre löst sich wieder, der Körper wird grün, bläht sich auf, verwest und wird zum Skelett. Im Zeitraffer unter GAMEPLAY geht das zehnmal schneller, im Modus VERWESUNG über Jahre."],
+  ] },
+];
+function helpTabs() {
+  const w = 112, h = 30, gap = 6, x0 = W / 2 - (HELP_TABS.length * w + (HELP_TABS.length - 1) * gap) / 2;
+  return HELP_TABS.map((t, n) => ({ ...t, x: x0 + n * (w + gap), y: 70, w, h }));
+}
 function drawHelp() {
   screenBackground();
-  withAppear(appear(0), () => { label("ANLEITUNG", W / 2, 50, 26, "#e6e6de", "center"); drawBackButton(); });
-  const colW = Math.min(360, (W - 80) / 2), x0 = W / 2 - colW - 8, y0 = 76, per = Math.ceil(HELP.length / 2), rowH = Math.min(44, (H - y0 - 34) / per);
-  HELP.forEach(([tool, text], n) => {
-    const x = x0 + Math.floor(n / per) * (colW + 16), y = y0 + (n % per) * rowH;
-    const a = appear(1 + (n % per) + Math.floor(n / per) * 0.5, 0.3, 0.04);
+  const cur = state.helpTab || "h-body", tab = HELP_TABS.find((t) => t.id === cur);
+  withAppear(appear(0), () => { label("ANLEITUNG", W / 2, 42, 24, "#e6e6de", "center"); drawBackButton(); });
+  withAppear(appear(1), () => { for (const t of helpTabs()) drawSettingTab(t, cur); });
+  // Three cards with the rules of the chosen tab, fading in one after another.
+  const cw = Math.min(660, W - 60), x = W / 2 - cw / 2, y0 = 114, gap = 8, ch = (H - y0 - 12 - gap * 2) / 3;
+  const since = (performance.now() - (state.helpTabT || 0)) / 1000;
+  tab.topics.forEach(([title, text], n) => {
+    const a = Math.min(appear(2 + n, 0.3, 0.04), easeOut((since - n * 0.06) / 0.25));
     if (a <= 0) return;
-    ctx.save(); ctx.globalAlpha *= a; ctx.translate(0, (1 - a) * 8);
-    const ch = rowH - 5, ib = ch - 6;
-    rr(x, y, colW, ch, 9); ctx.fillStyle = "rgba(26,26,32,0.92)"; ctx.fill();
-    ctx.strokeStyle = "#2e2e36"; ctx.lineWidth = 1.2; ctx.stroke();
-    rr(x + 3, y + 3, ib, ib, 7); ctx.fillStyle = "#26262c"; ctx.fill();
-    if (tool >= 0) { ctx.save(); ctx.translate(x + 3 + ib / 2, y + 3 + ib / 2); ctx.scale(ib / 34, ib / 34); drawIcon(tool, 0, 0); ctx.restore(); }
-    else label("+", x + 3 + ib / 2, y + 4 + ib / 2, 16, "#e6c850", "center");
-    label(tool >= 0 ? TOOL_NAMES[tool].toUpperCase() : "EXTRAS", x + ib + 12, y + ch * 0.33, 10.5, "#e2e2da");
-    label(text, x + ib + 12, y + ch * 0.72, 9.5, "#8e8e98", "left", 400);
+    const y = y0 + n * (ch + gap);
+    ctx.save(); ctx.globalAlpha *= a; ctx.translate((1 - a) * 10, 0);
+    rr(x, y, cw, ch, 9); ctx.fillStyle = "rgba(22,20,26,0.94)"; ctx.fill();
+    ctx.strokeStyle = "#2e2a32"; ctx.lineWidth = 1.2; ctx.stroke();
+    ctx.save(); rr(x, y, cw, ch, 9); ctx.clip(); ctx.fillStyle = "#8e0f1c"; ctx.fillRect(x, y, 4, ch); ctx.restore();
+    dockSpecks(x + cw - 14, y + 14, 10, 300 + n * 7 + cur.length);
+    label(title, x + 16, y + 14, 12, "#f0d8d0");
+    // The text is wrapped to the card and shrinks a little if it needs to.
+    let size = 10.5, lines = wrapText(text, cw - 32, size), lh = size * 1.32;
+    while (lines.length * lh > ch - 30 && size > 7) { size -= 0.5; lines = wrapText(text, cw - 32, size); lh = size * 1.32; }
+    lines.forEach((ln, i) => label(ln, x + 16, y + 30 + i * lh, size, "#a8a2ae", "left", 400));
     ctx.restore();
   });
-  if (appear(8) > 0) label(DAMAGE_PANEL ? "Zustände: WACH, K.O. und TOT. Tippe auf die Kopfzeile des Panels, um es zuzuklappen." : "Zustände: WACH, K.O. und TOT. Gedrückt halten auf einer Puppe öffnet ihr Menü.", W / 2, H - 22, 10, "#6a6a74", "center", 400);
 }
 
 // ----------------------------------------------------------------- settings
@@ -8474,8 +8491,8 @@ function drawSettings(dt) {
   ctx.restore();
 }
 
-function drawSettingTab(t) {
-  const k = tween("tab:" + t.id, t.id === (state.settingsTab || "audio") ? 1 : 0, 16);
+function drawSettingTab(t, cur = state.settingsTab || "audio") {
+  const k = tween("tab:" + t.id, t.id === cur ? 1 : 0, 16);
   scaled(t.x + t.w / 2, t.y + t.h / 2, 1 - 0.03 * pressAmt("tab:" + t.id, t), () => {
     rr(t.x, t.y, t.w, t.h, 8);
     ctx.fillStyle = "#16141a"; ctx.fill();
@@ -8625,6 +8642,8 @@ function screenTargets() {
   if (state.screen === "maps") {
     for (const c of menuCards()) t.push({ id: "map" + c.i, box: c, run: () => { state.inGame = true; loadMap(c.i); setScreen("game"); } });
     t.push({ id: "random", box: randomBtn(), run: () => { state.inGame = true; loadMap(rnd(MAPS.length)); setScreen("game"); } });
+  } else if (state.screen === "help") {
+    for (const tb of helpTabs()) t.push({ id: "tab:" + tb.id, box: tb, run: () => { if ((state.helpTab || "h-body") !== tb.id) { state.helpTab = tb.id; state.helpTabT = performance.now(); } } });
   } else if (state.screen === "settings") {
     for (const r of settingRows()) {
       t.push({ id: r.id, box: r, run: () => { if (r.id === "panel") togglePanel(); else { settings[r.id] = !settings[r.id]; saveSettings(); } musicStart(); } });
