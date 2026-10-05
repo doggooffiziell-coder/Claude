@@ -9333,8 +9333,115 @@ function drawSettingIcon(id, cx, cy) {
 
 // ----------------------------------------------------------------- input
 
+// ----------------------------------------------------------------- view choice
+// Right after the start, once the phone lies sideways: front view or side
+// view? Two dark rooms in the style of the game, each with a doll seen that
+// way, blood on the frame. The choice is saved, the settings can change it.
+function viewCards() {
+  const w = Math.min(300, (W - 90) / 2), h = Math.min(262, H - 150), gap = 26, x0 = W / 2 - w - gap / 2, y = 90;
+  return [
+    { id: "vfront", front: true, x: x0, y, w, h, title: "FRONT", text: "Die Puppen schauen dich an.", gun: "Waffe: Tippe auf die Puppe, dort trifft der Schuss." },
+    { id: "vside", front: false, x: x0 + w + gap, y, w, h, title: "SEITE", text: "Du siehst die Puppen von der Seite.", gun: "Waffe im Raum: ziehen zum Zielen, roter Knopf schießt." },
+  ];
+}
+function drawViewCard(c, t, dt, press) {
+  const on = settings.front === c.front, k = tween("vc" + c.id, on ? 1 : 0, 10);
+  scaled(c.x + c.w / 2, c.y + c.h / 2, 1 - 0.04 * press + 0.015 * k, () => {
+    // The room: dark wall, a lamp cone, a floor and a pool of blood.
+    ctx.save();
+    rr(c.x, c.y, c.w, c.h, 12); ctx.clip();
+    const g = ctx.createLinearGradient(0, c.y, 0, c.y + c.h);
+    g.addColorStop(0, "#17161b"); g.addColorStop(1, "#0e0d10");
+    ctx.fillStyle = g; ctx.fillRect(c.x, c.y, c.w, c.h);
+    ctx.fillStyle = "#0b0b0e";
+    for (let x = c.x + 40; x < c.x + c.w; x += 70) ctx.fillRect(x, c.y, 1.5, c.h - 46);
+    const floor = c.y + c.h - 52, cx = c.x + c.w / 2, flick = Math.sin(t * 19 + c.x) > 0.97 ? 0.5 : 1;
+    const cone = ctx.createLinearGradient(0, c.y + 10, 0, floor);
+    cone.addColorStop(0, `rgba(255,236,200,${0.24 * flick})`); cone.addColorStop(1, `rgba(255,236,200,${0.05 * flick})`);
+    ctx.fillStyle = cone;
+    ctx.beginPath(); ctx.moveTo(cx - 8, c.y + 12); ctx.lineTo(cx + 8, c.y + 12); ctx.lineTo(cx + 95, floor); ctx.lineTo(cx - 95, floor); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#cfcfc8"; ctx.beginPath(); ctx.moveTo(cx - 12, c.y + 12); ctx.lineTo(cx - 5, c.y + 5); ctx.lineTo(cx + 5, c.y + 5); ctx.lineTo(cx + 12, c.y + 12); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#3a3a42"; ctx.fillRect(c.x, floor, c.w, c.h);
+    ctx.fillStyle = "#6a6a72"; ctx.fillRect(c.x, floor, c.w, 1.5);
+    ctx.fillStyle = "rgba(110,8,18,0.85)";
+    ctx.beginPath(); ctx.ellipse(cx + (c.front ? 6 : 22), floor + 2, 44, 4, 0, 0, Math.PI * 2); ctx.fill();
+    // Spatters on the wall, the same every time.
+    for (let n = 0; n < 14; n++) {
+      const sx = c.x + flameNoise(n, c.front ? 3 : 9) * c.w, sy = c.y + 20 + flameNoise(n, c.front ? 5 : 11) * (c.h - 80), r = 0.8 + flameNoise(n, 21) * 2.2;
+      if (Math.abs(sx - cx) < 50) continue;
+      ctx.fillStyle = "rgba(120,10,20,0.75)"; ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.fill();
+    }
+    // The doll, seen from the front or from the side.
+    const sc = Math.min(0.95, (floor - c.y - 18) / 222);
+    if (c.front) drawPortraitDoll(cx, floor, t, sc, dt);
+    else drawTitleDoll(cx + 30, floor, t, sc);
+    // How the gun works in this view.
+    if (c.front) {
+      // The crosshair of the front view sits right on the chest and pulses.
+      const hx = cx + 2, hy = floor - 128 * sc, pulse = 1 + 0.08 * Math.sin(t * 4), r = 15 * pulse;
+      ctx.save(); ctx.translate(hx, hy);
+      ctx.strokeStyle = "rgba(255,60,60,0.9)"; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
+      ctx.rotate(t * 0.8);
+      ctx.strokeStyle = "rgba(255,60,60,0.5)"; ctx.setLineDash([4, 5]);
+      ctx.beginPath(); ctx.arc(0, 0, r + 6, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+      ctx.rotate(-t * 0.8);
+      ctx.strokeStyle = "rgba(255,90,80,0.95)"; ctx.lineWidth = 1.4;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { ctx.beginPath(); ctx.moveTo(dx * (r - 6), dy * (r - 6)); ctx.lineTo(dx * (r + 4), dy * (r + 4)); ctx.stroke(); }
+      ctx.fillStyle = "#ff4040"; ctx.fillRect(-1, -1, 2, 2);
+      ctx.restore();
+      label("BRUST", hx + r + 8, hy - r + 2, 7.5, "#ff8a80");
+    } else {
+      // The gun floats in the room and a red laser shows where it hits.
+      const wp = WEAPONS[0], z = 1.5, gx = c.x + 18, gy = floor - 134 * sc;
+      drawSprite(wp.sprite, gx, gy, z, 1);
+      const mx = gx + wp.muzzle[0] * z, my = gy + wp.muzzle[1] * z, tx = cx + 22, ty = floor - 126 * sc + Math.sin(t * 1.3) * 3;
+      ctx.strokeStyle = "rgba(255,40,40,0.55)"; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(mx, my); ctx.lineTo(tx, ty); ctx.stroke();
+      const gl = ctx.createRadialGradient(tx, ty, 0, tx, ty, 7);
+      gl.addColorStop(0, "rgba(255,70,60,0.9)"); gl.addColorStop(1, "rgba(255,30,30,0)");
+      ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(tx, ty, 7, 0, Math.PI * 2); ctx.fill();
+    }
+    // A dark band for the text at the bottom.
+    ctx.fillStyle = "rgba(8,6,8,0.78)"; ctx.fillRect(c.x, floor + 2, c.w, c.h);
+    // Both cards use the same text size: the smallest that fits all lines.
+    const fs = Math.min(...viewCards().flatMap((o) => [fitFont(o.text, o.w - 20, 9.5, 400), fitFont(o.gun, o.w - 20, 9.5, 400)]));
+    label(c.text, cx, floor + 18, fs, "#e2d8da", "center", 400);
+    label(c.gun, cx, floor + 35, fs, "#ff9a90", "center", 400);
+    ctx.restore();
+    // The frame: dark, red when chosen, with blood running from its top edge.
+    rr(c.x, c.y, c.w, c.h, 12);
+    ctx.strokeStyle = css(mixc(hex("#3a2a30"), hex("#b8141e"), k)); ctx.lineWidth = 2 + k; ctx.stroke();
+    ctx.fillStyle = css(mixc(hex("#4a0a12"), hex("#9c0e1c"), k));
+    ctx.fillRect(c.x + 12, c.y, c.w - 24, 3);
+    for (let n = 0; n < 6; n++) {
+      const dx = c.x + 18 + flameNoise(n, c.front ? 31 : 37) * (c.w - 36), len = 4 + flameNoise(n, 41) * 14 + 4 * Math.sin(t * 0.9 + n);
+      ctx.fillRect(dx - 1, c.y + 2, 2, len); ctx.beginPath(); ctx.arc(dx, c.y + 2 + len, 2, 0, Math.PI * 2); ctx.fill();
+    }
+    // The name in bloody letters on the top edge.
+    drawBloodText(c.title, c.x + 16, c.y + 26, 21, on || press > 0.5, false);
+    if (on) label("GEWÄHLT", c.x + c.w - 14, c.y + 24, 8, "#ff8a90", "right");
+  });
+}
+function drawViewChoice(dt) {
+  const t = performance.now() / 1000;
+  screenBackground("#100d10", "#18121a");
+  // A red shadow at the edges, like the rest of the menu.
+  const v = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, W * 0.7);
+  v.addColorStop(0, "rgba(90,0,8,0)"); v.addColorStop(1, "rgba(90,0,8,0.28)");
+  ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+  withAppear(appear(0, 0.4), () => {
+    ctx.font = `700 26px ${FONT}`;
+    const tw = ctx.measureText("WIE WILLST DU SPIELEN?").width;
+    drawBloodText("WIE WILLST DU SPIELEN?", W / 2 - tw / 2, 50, 26, true);
+  }, 10);
+  for (const c of viewCards()) withAppear(appear(c.front ? 0.15 : 0.25, 0.4), () => drawViewCard(c, t, dt, pressAmt(c.id, c)), 14);
+  label("Du kannst das später in den Einstellungen unter FRONTANSICHT ändern.", W / 2, H - 22, 9, "#6a5a60", "center", 400);
+}
+
 function drawScreen(dt) {
-  if (state.screen === "title") drawTitle(dt);
+  if (state.screen === "view") drawViewChoice(dt);
+  else if (state.screen === "title") drawTitle(dt);
   else if (state.screen === "maps") drawMaps(dt);
   else if (state.screen === "help") drawHelp();
   else if (state.screen === "settings") drawSettings(dt);
@@ -9343,6 +9450,10 @@ function drawScreen(dt) {
 // Every tappable thing on the current menu screen and what it does.
 function screenTargets() {
   const t = [];
+  if (state.screen === "view") {
+    for (const c of viewCards()) t.push({ id: c.id, box: c, run: () => { settings.front = c.front; saveSettings(); setScreen("title"); } });
+    return t;
+  }
   if (state.screen === "title") {
     for (const b of titleButtons()) t.push({ id: b.id, box: b, run: () => (b.id === "decay" ? startDecaySim() : b.id === "maps" && !state.inGame ? startPlayShot(b) : setScreen(b.id === "resume" ? "game" : b.id)) });
     return t;
@@ -11177,7 +11288,8 @@ function loop(now) {
 
 fit();
 loadMap(0);
-setScreen("title");
+// Every start asks first: front view or side view.
+setScreen("view");
 requestAnimationFrame((t) => { lastT = t; loop(t); });
 if (document.fonts && document.fonts.load) document.fonts.load(`700 12px ${FONT}`).catch(() => {});
 </script>
