@@ -376,6 +376,7 @@ html.phone.portrait .rotate { display: flex; }
   // Am Computer rendert das Spiel in einem ganzen Vielfachen von 640 x 360 und füllt dann die Bühne.
   // Auf dem Handy bekommt es genau so viele Pixel, wie der Bildschirm hat. Das Spiel rechnet
   // selbst die größte ganze Vergrößerung aus, darum sind alle Pixel gleich groß und es gibt keine Ränder.
+  var started = false, startW = 0, startH = 0, reloadTimer = 0;
   function fit() {
     var dpr = window.devicePixelRatio || 1;
     if (isPhone) {
@@ -384,6 +385,15 @@ html.phone.portrait .rotate { display: flex; }
       var cssH = Math.max(1, stage.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom));
       var pw = Math.max(1, Math.round(cssW * dpr));
       var ph = Math.max(1, Math.round(cssH * dpr));
+      var portraitNow = window.innerHeight > window.innerWidth;
+      if (portraitNow) return;
+      if (started && (Math.abs(pw - startW) > 8 || Math.abs(ph - startH) > 8)) {
+        // Godot merkt eine neue Größe nach dem Start nicht. Ein Neustart ist sicher, das Spiel hat gespeichert.
+        clearTimeout(reloadTimer);
+        reloadTimer = setTimeout(function () { location.reload(); }, 700);
+        return;
+      }
+      clearTimeout(reloadTimer);
       if (canvas.width !== pw) canvas.width = pw;
       if (canvas.height !== ph) canvas.height = ph;
       canvas.style.width = (pw / dpr) + "px";
@@ -531,7 +541,18 @@ html.phone.portrait .rotate { display: flex; }
       onExit: function () { cover.hidden = false; statusEl.textContent = "Spiel beendet. Lade die Seite neu, um weiterzuspielen."; }
     });
     statusEl.textContent = "Spiel wird geladen …";
-    engine.startGame().then(function () {
+    // Auf dem Handy startet das Spiel erst im Querformat, denn danach ändert sich die Bildgröße nicht mehr.
+    var landscape = new Promise(function (resolve) {
+      function check() {
+        if (!isPhone || window.innerWidth >= window.innerHeight) { resolve(); return; }
+        setTimeout(check, 250);
+      }
+      check();
+    });
+    landscape.then(function () { fit(); return engine.startGame(); }).then(function () {
+      started = true;
+      startW = canvas.width;
+      startH = canvas.height;
       cover.hidden = true;
       fit();
       canvas.focus();
