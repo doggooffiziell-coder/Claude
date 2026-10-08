@@ -31,14 +31,14 @@ const INFO := {
 		"needs": "",
 	},
 	"water_tower": {
-		"name": "Wasserturm", "size": Vector2i(1, 1), "height": 64,
-		"desc": "Versorgt Häuser im Umkreis mit Wasser.",
-		"needs": "",
+		"name": "Wasserturm", "size": Vector2i(1, 1), "height": 88,
+		"desc": "Versorgt Häuser über die Straßen mit Wasser.",
+		"needs": "Straße daneben",
 	},
 	"power_plant": {
 		"name": "Kraftwerk", "size": Vector2i(2, 2), "height": 56,
-		"desc": "Versorgt Gebäude im Umkreis mit Strom. Kostet Unterhalt.",
-		"needs": "",
+		"desc": "Versorgt Gebäude über die Straßen mit Strom. Kostet Unterhalt.",
+		"needs": "Straße daneben",
 	},
 }
 

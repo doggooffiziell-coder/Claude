@@ -130,6 +130,28 @@ func has_save() -> bool:
 	return FileAccess.file_exists(SAVE_PATH)
 
 
+## Liest nur die Eckdaten des Spielstands, ohne ihn zu laden. Für das Hauptmenü.
+func peek_save() -> Dictionary:
+	if not has_save():
+		return {}
+	var parsed = JSON.parse_string(FileAccess.get_file_as_string(SAVE_PATH))
+	if not (parsed is Dictionary) or not parsed.has("city"):
+		return {}
+	var c: Dictionary = parsed.city
+	var families := 0
+	var list: Array = c.get("buildings", [])
+	for b in list:
+		if b.has("family"):
+			families += 1
+	return {"phase": int(parsed.get("phase", 1)), "day": int(c.get("day", 1)), "money": int(c.get("money", 0)),
+		"buildings": list.size(), "families": families}
+
+
+func delete_save() -> void:
+	if has_save():
+		DirAccess.remove_absolute(SAVE_PATH)
+
+
 func save_game() -> bool:
 	var data := {
 		"format": SAVE_FORMAT,

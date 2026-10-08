@@ -18,6 +18,8 @@ static func get_icon(id: String) -> ImageTexture:
 		"water_tower": c = _water_tower()
 		"power_plant": c = _power_plant()
 		"demolish": c = _demolish()
+		"years": c = _years()
+		"bunker": c = _bunker()
 		_: c = _small(id)
 	var tex := c.texture()
 	_cache[id] = tex
@@ -102,17 +104,78 @@ static func _park() -> PixelCanvas:
 
 static func _water_tower() -> PixelCanvas:
 	var c := PixelCanvas.new(22, 22)
-	c.vline(6, 12, 9, Pal.STONE_D)
-	c.vline(15, 12, 9, Pal.STONE_D)
-	c.line(6, 13, 15, 20, Pal.STONE_D)
-	c.line(15, 13, 6, 20, Pal.STONE_D)
-	c.rect(3, 5, 16, 8, Pal.TEAL)
-	c.vline(3, 5, 8, Pal.WATER)
-	c.vline(4, 5, 8, Pal.WATER)
-	c.vline(17, 5, 8, Pal.TEAL_D)
-	c.vline(18, 5, 8, Pal.TEAL_D)
-	c.poly(PackedVector2Array([Vector2(2, 6), Vector2(11, 0), Vector2(20, 6)]), Pal.STONE)
-	c.rect(10, 7, 2, 3, Pal.WHITE)
+	# Schaft aus Ziegeln mit Bogenfenstern
+	c.rect(7, 10, 8, 11, Pal.BRICK)
+	c.vline(7, 10, 11, Pal.BRICK_L)
+	c.vline(14, 10, 11, Pal.BRICK_D)
+	for y in range(12, 21, 3):
+		c.hline(7, y, 8, Pal.BRICK_D)
+	for wy in [12, 16]:
+		c.rect(10, wy, 2, 3, Pal.BLUE_D)
+		c.px(10, wy, Pal.SKY)
+	c.rect(10, 18, 2, 3, Pal.WOOD)
+	c.rect(6, 20, 10, 2, Pal.STONE_L)
+	# Behälter
+	c.rect(5, 5, 12, 6, Pal.TEAL)
+	c.vline(5, 5, 6, Pal.WATER)
+	c.vline(6, 5, 6, Pal.WATER)
+	c.vline(16, 5, 6, Pal.TEAL_D)
+	c.hline(5, 8, 12, Pal.TEAL_D)
+	c.px(10, 6, Pal.WHITE)
+	c.px(11, 6, Pal.WHITE)
+	c.rect(4, 10, 14, 1, Pal.STONE_L)
+	# Kupferdach
+	c.poly(PackedVector2Array([Vector2(3, 5), Vector2(11, 0), Vector2(19, 5)]), Pal.MOSS)
+	c.poly(PackedVector2Array([Vector2(3, 5), Vector2(11, 0), Vector2(11, 5)]), Pal.GRASS)
+	c.outline(Pal.NIGHT)
+	return c
+
+
+## Zeitraffer: Sanduhr mit fallendem Sand.
+static func _years() -> PixelCanvas:
+	var c := PixelCanvas.new(22, 22)
+	c.rect(4, 2, 14, 2, Pal.WOOD_L)
+	c.rect(4, 18, 14, 2, Pal.WOOD_L)
+	c.hline(4, 2, 14, Pal.SAND)
+	c.poly(PackedVector2Array([Vector2(6, 4), Vector2(16, 4), Vector2(11.5, 10.5)]), Pal.SKY)
+	c.poly(PackedVector2Array([Vector2(6, 4), Vector2(16, 4), Vector2(11.5, 10.5)]), Pal.a(Pal.WHITE, 0.0))
+	c.poly(PackedVector2Array([Vector2(8, 6), Vector2(14, 6), Vector2(11, 9.5)]), Pal.OCHRE)
+	c.poly(PackedVector2Array([Vector2(11.5, 10.5), Vector2(6, 18), Vector2(17, 18)]), Pal.SKY)
+	c.poly(PackedVector2Array([Vector2(11, 13), Vector2(8, 18), Vector2(15, 18)]), Pal.YELLOW)
+	c.vline(11, 10, 4, Pal.OCHRE)
+	c.px(7, 5, Pal.WHITE)
+	c.px(7, 17, Pal.WHITE)
+	c.outline(Pal.NIGHT)
+	# Blätter wachsen um das Glas
+	c.px(3, 12, Pal.GRASS_L)
+	c.px(3, 13, Pal.GRASS)
+	c.px(2, 14, Pal.GRASS_L)
+	c.px(18, 8, Pal.GRASS_L)
+	c.px(19, 9, Pal.GRASS)
+	return c
+
+
+## Bunker: Erdblock mit Stahlluke und Leiter.
+static func _bunker() -> PixelCanvas:
+	var c := PixelCanvas.new(22, 22)
+	c.rect(1, 9, 20, 11, Pal.SOIL)
+	c.hline(1, 9, 20, Pal.GRASS)
+	c.hline(1, 10, 20, Pal.MOSS)
+	for i in 14:
+		c.px(2 + (i * 7) % 18, 12 + (i * 5) % 7, Pal.SOIL_D if i % 2 == 0 else Pal.WOOD)
+	c.rect(1, 18, 20, 2, Pal.STONE_D)
+	c.rect(5, 12, 12, 7, Pal.NIGHT)
+	c.frame(5, 12, 12, 7, Pal.STONE_L)
+	c.rect(7, 14, 8, 4, Pal.SLATE)
+	c.hline(7, 14, 8, Pal.STONE)
+	c.px(9, 16, Pal.YELLOW)
+	c.px(13, 16, Pal.BRICK_L)
+	c.vline(10, 4, 8, Pal.STONE_L)
+	c.vline(12, 4, 8, Pal.STONE_L)
+	for y in range(5, 12, 2):
+		c.px(11, y, Pal.STONE)
+	c.rect(8, 2, 6, 3, Pal.STONE_D)
+	c.hline(8, 2, 6, Pal.STONE)
 	c.outline(Pal.NIGHT)
 	return c
 

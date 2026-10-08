@@ -2,6 +2,24 @@
 
 Alle Änderungen an Verwuchert. Jede Version bekommt hier einen Eintrag.
 
+## 0.1.4
+
+- Neues Hauptmenü: Eine schwebende Insel im isometrischen Stil zeigt eine kleine lebende Stadt. Sie nutzt die echten Spielklassen: Gebäude, Bäume, Strommasten, Autos, Fußgänger, Schatten, Rauch und Licht.
+- Der Tag auf der Insel läuft in 90 Sekunden durch. Der Himmel wechselt zwischen Tag, Abendrot und Nacht, mit Sternen, Mond und Glühwürmchen. Nachts leuchten die Fenster und Laternen.
+- Der Titel ist Blockschrift mit Tiefe. Jeder Buchstabe wird im 2:1-Winkel der Insel diagonal nach hinten gezogen. Ranken hängen von den Buchstaben.
+- Unter der Insel hängt eine zackige Gesteinsspitze mit Wurzeln. Die Insel schwebt in ganzen Pixeln.
+- Menüpunkte: Neues Spiel, Weiterspielen mit Angaben zum Spielstand (Tag, Familien, Geld), Anleitung, Einstellungen, Beenden. Ein Pfeil zeigt auf den Punkt unter der Maus.
+- Neues Spiel fragt nach, wenn ein Spielstand besteht.
+- Anleitung erklärt die drei Phasen und die Steuerung.
+- Einstellungen: Vollbild (nicht im Browser), Schatten, Rauch und Partikel, Tempo beim Start. Dazu "Spielstand löschen" mit zwei Klicks. Alles wird in user://verwuchert_settings.json gespeichert und wirkt im Spiel.
+- Phasenleiste unten links zeigt die drei Phasen. Nur Phase 1 ist spielbar.
+- Neuer Wasserturm: ein gemauerter Turm mit Bogenfenstern und Tür, darüber ein genieteter Behälter unter einem Kupferdach mit Laterne. Es gibt Varianten in Ziegelrot und Sandstein, mit Behältern in Blaugrün, Wasserblau, Grau und Moosgrün.
+- Neue Maltechnik für Türme: Zylinder und Kegel mit freier Oberfläche in IsoPainter.
+- Die Erdkante unter der Karte ist jetzt eine eigene Klasse (IsoCliff), die Stadt und Menü teilen.
+- Texte der Gebäude beschreiben jetzt die Versorgung über die Straßen.
+- Neue Symbole für Wasserturm, Zeitraffer und Bunker.
+- Neuer Test: tests/menu_test.gd.
+
 ## 0.1.3
 
 Neuer Stil und weniger Simulation, mehr Stadt zum Kennenlernen.

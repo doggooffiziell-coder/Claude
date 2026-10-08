@@ -117,3 +117,61 @@ func line3(a: Vector3, b: Vector3, col: Color) -> void:
 	var pa := P(a.x, a.y, a.z)
 	var pb := P(b.x, b.y, b.z)
 	c.line(int(round(pa.x)), int(round(pa.y)), int(round(pb.x)), int(round(pb.y)), col)
+
+
+## Schreibt ein Ergebnis der Füllfunktion: Color oder [Color, Leuchtfarbe].
+func _put(x: int, y: int, res: Variant) -> void:
+	if res is Color:
+		if res.a > 0.0:
+			c.px(x, y, res)
+	elif res is Array:
+		if res[0].a > 0.0:
+			c.px(x, y, res[0])
+		if res.size() > 1 and res[1].a > 0.0:
+			g.px(x, y, res[1])
+
+
+## Senkrechter Zylinder mit freier Oberfläche. fill(sh, z, x, y, nx):
+## sh geht von 0 links bis 1 rechts, nx von -1 bis 1, z ist die Höhe über dem Boden in Pixeln.
+## Der Deckel gehört nicht dazu, den malt cap().
+func cyl_fill(cu: float, cv: float, r: float, z0: float, z1: float, fill: Callable) -> void:
+	var cen := P(cu, cv, 0)
+	var rx := r * 45.25
+	var ry := r * 22.63
+	for x in range(floori(cen.x - rx), ceili(cen.x + rx) + 1):
+		var nx := (x + 0.5 - cen.x) / rx
+		if absf(nx) > 1.0:
+			continue
+		var dy := sqrt(maxf(0.0, 1.0 - nx * nx)) * ry
+		var sh := (nx + 1.0) * 0.5
+		for y in range(int(round(cen.y + dy - z1)), int(round(cen.y + dy - z0)) + 1):
+			var z := cen.y + dy - (y + 0.5)
+			_put(x, y, fill.call(sh, z, x, y, nx))
+
+
+## Deckel eines Zylinders als Ellipse. Mit ring und hole entsteht eine offene Öffnung.
+func cap(cu: float, cv: float, r: float, z: float, col: Color, rim := Color(0, 0, 0, 0), hole := Color(0, 0, 0, 0)) -> void:
+	var cen := P(cu, cv, z)
+	var rx := r * 45.25
+	var ry := r * 22.63
+	c.ellipse(cen.x, cen.y, rx, ry, rim if rim.a > 0.0 else col)
+	c.ellipse(cen.x, cen.y + 0.5, rx - 2.0 if rim.a > 0.0 else rx, ry - 1.0 if rim.a > 0.0 else ry, col)
+	if hole.a > 0.0:
+		c.ellipse(cen.x, cen.y + 0.5, rx * 0.62, ry * 0.62, hole)
+
+
+## Kegel mit freier Oberfläche. fill(sh, t, x, y, nx): t geht von 0 am Rand bis 1 an der Spitze.
+func cone_fill(cu: float, cv: float, r: float, z0: float, z1: float, fill: Callable) -> void:
+	var base := P(cu, cv, z0)
+	var apex := P(cu, cv, z1)
+	var rx := r * 45.25
+	var ry := r * 22.63
+	for x in range(floori(base.x - rx), ceili(base.x + rx) + 1):
+		var nx := (x + 0.5 - base.x) / rx
+		if absf(nx) > 1.0:
+			continue
+		var ybot := base.y + sqrt(maxf(0.0, 1.0 - nx * nx)) * ry
+		var ytop := apex.y + absf(nx) * (base.y - apex.y)
+		for y in range(int(round(ytop)), int(round(ybot)) + 1):
+			var t := clampf((ybot - (y + 0.5)) / maxf(1.0, ybot - apex.y), 0.0, 1.0)
+			_put(x, y, fill.call((nx + 1.0) * 0.5, t, x, y, nx))

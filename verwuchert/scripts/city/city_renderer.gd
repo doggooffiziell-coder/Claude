@@ -32,7 +32,7 @@ func setup(city_builder: Node) -> void:
 		var ty := i / int(c.w)
 		for k in 7:
 			_sparkles.append(Vector3(tx * T + rng.randi_range(8, 24), ty * T + rng.randi_range(8, 24), rng.randf() * TAU))
-	_make_cliff_bits(rng)
+	_cliff_bits = IsoCliff.make_bits(rng, CLIFF)
 
 
 ## Die Landstraße kommt von links oben aus dem Wald. Sie liegt im Rand und gehört nicht zur Stadt.
@@ -41,13 +41,6 @@ func _paint_entry_road(img: Image) -> void:
 	for k in margin:
 		var src := SpriteFactory.road(RoadArt.E | RoadArt.W, k + 1).get_image()
 		img.blit_rect(src, Rect2i(0, 0, T, T), Vector2i(k * T, (row + margin) * T))
-
-
-## Steine, Wurzeln und Erdschichten an der Kante. Fest aus dem Seed.
-func _make_cliff_bits(rng: RandomNumberGenerator) -> void:
-	for i in 220:
-		_cliff_bits.append({"f": rng.randf(), "side": rng.randi() % 2, "d": rng.randf_range(8, CLIFF - 4),
-			"w": rng.randi_range(2, 5), "h": rng.randi_range(1, 3), "kind": rng.randi() % 5})
 
 
 func _process(_delta: float) -> void:
@@ -71,59 +64,7 @@ func _draw() -> void:
 
 ## Erdschichten unter den beiden vorderen Kanten der Karte.
 func _draw_cliff() -> void:
-	var w: int = GameState.city.w
-	var h: int = GameState.city.h
-	var m := margin
-	var left := Iso.to_screen(-m, h + m)
-	var bottom := Iso.to_screen(w + m, h + m)
-	var right := Iso.to_screen(w + m, -m)
-	var layers := [
-		[0, 3, Pal.MOSS, Pal.MOSS_D],
-		[3, 12, Pal.SOIL, Pal.SOIL_D],
-		[12, 22, Pal.SOIL_D, Pal.NIGHT],
-		[22, 34, Pal.STONE_D, Pal.SLATE],
-		[34, CLIFF, Pal.SLATE, Pal.NIGHT],
-	]
-	for L in layers:
-		_band(left, bottom, L[0], L[1], L[2])
-		_band(bottom, right, L[0], L[1], L[3])
-	# Steine, Wurzeln, Würmer in der Erde
-	for b in _cliff_bits:
-		var a: Vector2 = left if b.side == 0 else bottom
-		var e: Vector2 = bottom if b.side == 0 else right
-		var p: Vector2 = a.lerp(e, b.f).round() + Vector2(0, b.d)
-		var shade: bool = b.side == 1
-		match b.kind:
-			0, 1:
-				if b.d > 14:
-					var col := Pal.STONE if not shade else Pal.STONE_D
-					draw_rect(Rect2(p, Vector2(b.w, b.h)), col)
-					draw_rect(Rect2(p, Vector2(b.w, 1)), Pal.STONE_L if not shade else Pal.STONE)
-			2:
-				if b.d < 20:
-					draw_line(p, p + Vector2(b.w - 2, b.h + 3), Pal.WOOD if not shade else Pal.SOIL)
-			3:
-				if b.d > 24:
-					draw_rect(Rect2(p, Vector2(1, 1)), Pal.TEAL_D)
-			_:
-				draw_rect(Rect2(p, Vector2(b.w, 1)), Pal.SOIL_D if b.d < 22 else Pal.NIGHT)
-	# Unterkante
-	draw_line(left + Vector2(0, CLIFF), bottom + Vector2(0, CLIFF), Pal.BLACK)
-	draw_line(bottom + Vector2(0, CLIFF), right + Vector2(0, CLIFF), Pal.BLACK)
-
-
-func _band(a: Vector2, b: Vector2, d0: float, d1: float, col: Color) -> void:
-	var pts := PackedVector2Array()
-	var steps := int(a.distance_to(b) / 6.0)
-	for i in steps + 1:
-		var f := float(i) / steps
-		var wob := 0.0 if d0 == 0 else roundf(sin(f * 90.0 + d0) * 1.2)
-		pts.append(a.lerp(b, f).round() + Vector2(0, d0 + wob))
-	for i in range(steps, -1, -1):
-		var f2 := float(i) / steps
-		var wob2 := 0.0 if d1 == CLIFF else roundf(sin(f2 * 90.0 + d1) * 1.2)
-		pts.append(a.lerp(b, f2).round() + Vector2(0, d1 + wob2))
-	draw_colored_polygon(pts, col)
+	IsoCliff.draw(self, int(GameState.city.w), int(GameState.city.h), margin, _cliff_bits, CLIFF)
 
 
 func _draw_sparkles() -> void:

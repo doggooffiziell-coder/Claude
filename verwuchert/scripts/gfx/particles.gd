@@ -14,6 +14,8 @@ func _ready() -> void:
 
 
 func emit(kind: String, pos: Vector2, count: int = 1, opts: Dictionary = {}) -> void:
+	if not Settings.particles and kind != "text":
+		return
 	for i in count:
 		if _parts.size() >= MAX:
 			_parts.pop_front()

@@ -2,8 +2,9 @@
 
 Ein 2D-Aufbauspiel in Godot 4.4. Du baust eine kleine Stadt. Danach vergehen 50 Jahre, und die Natur holt sich alles zurück. Zum Schluss baust du mit zwei Überlebenden einen Bunker in den Ruinen deiner eigenen Stadt.
 
-Stand: Version 0.1.3. Phase 1 ist spielbar. Phase 2 und Phase 3 folgen.
+Stand: Version 0.1.4. Phase 1 ist spielbar. Phase 2 und Phase 3 folgen.
 
+![Hauptmenü](docs/menu.png)
 ![Stadt am Tag](docs/phase1_day.png)
 ![Stadt in der Nacht](docs/phase1_night.png)
 
@@ -12,6 +13,14 @@ Stand: Version 0.1.3. Phase 1 ist spielbar. Phase 2 und Phase 3 folgen.
 1. Öffne Godot 4.4.
 2. Importiere den Ordner verwuchert/ (die Datei project.godot).
 3. Drück F5. Das Spiel startet im Hauptmenü.
+
+## Hauptmenü
+
+Das Menü ist eine schwebende Insel im isometrischen Stil. Auf ihr läuft eine kleine Stadt mit Autos, Fußgängern, Rauch und Strommasten. Ein Tag dauert dort 90 Sekunden, der Himmel wechselt von Tag über Abendrot zur Nacht. Der Titel ist Blockschrift mit Tiefe.
+
+Menüpunkte: Neues Spiel, Weiterspielen (mit Tag, Familien und Geld des Spielstands), Anleitung, Einstellungen und Beenden. In den Einstellungen schaltest du Schatten und Partikel ein oder aus, wählst das Tempo beim Start und löschst bei Bedarf den Spielstand. Die Werte stehen in user://verwuchert_settings.json.
+
+![Menü in der Nacht](docs/menu_night.png)
 
 ## Im Browser
 
@@ -64,11 +73,12 @@ verwuchert/
   config/balance.json       Balancing
   autoload/config.gd        liest balance.json
   autoload/game_state.gd    Stadtdaten, Phase, Speichern und Laden
+  autoload/settings.gd      Einstellungen des Spielers
   autoload/palette.gd       die 32 Farben (Klasse Pal)
   scenes/                   eine Szene pro Phase und das Hauptmenü
   scripts/city/             Phase 1: Bauen, Gebäude, Bäume, Verkehr, Oberfläche
   scripts/gfx/              Grafik aus Code: Gebäude, Natur, Straßen, Autos, Symbole, Licht, Partikel
-  scripts/ui/               Pixel-Schrift, Theme, Menü-Hintergrund
+  scripts/ui/               Pixel-Schrift, Theme, Menü: Insel, Himmel, Titel, Phasenleiste
   scripts/timelapse/        Phase 2 (noch Platzhalter)
   scripts/bunker/           Phase 3 (folgt)
   shaders/lit.gdshader      färbt die Welt nach Tageszeit
@@ -88,8 +98,9 @@ Die Tests spielen Phase 1 ohne Fenster durch:
 ```
 godot --headless --path verwuchert -s res://tests/play_test.gd
 godot --path verwuchert -s res://tests/input_test.gd
+godot --headless --path verwuchert -s res://tests/menu_test.gd
 ```
 
-play_test baut Straßen und Gebäude, lässt die Bautrupps arbeiten, prüft Versorgung und Einnahmen, reißt ab, speichert, lädt und startet Phase 2. input_test klickt mit echten Maus-Ereignissen.
+play_test baut Straßen und Gebäude, lässt die Bautrupps arbeiten, prüft Versorgung und Einnahmen, reißt ab, speichert, lädt und startet Phase 2. input_test klickt mit echten Maus-Ereignissen. menu_test prüft Insel, Seiten, Einstellungen, Löschen und den Start mit dem gewählten Tempo.
 
-Für Bilder ohne Spielen gibt es Schalter nach `--`: `--demo` baut eine Beispielstadt, `--hour=21` stellt die Uhr, `--zoom=2`, `--look=12,8` und `--shot=bild.png` speichern ein Bild.
+Für Bilder ohne Spielen gibt es Schalter nach `--`. Im Menü zeigen `--hour=21` und `--screen=guide` (oder settings, confirm) eine Tageszeit und eine Seite. In der Stadt gilt: `--demo` baut eine Beispielstadt, `--hour=21` stellt die Uhr, `--zoom=2`, `--look=12,8` und `--shot=bild.png` speichern ein Bild.

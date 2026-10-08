@@ -35,10 +35,7 @@ func _draw() -> void:
 			"park":
 				_blob(Vector2(x + 0.32 * T, y + 0.3 * T), sun * 14.0, 8.0)
 			"water_tower":
-				_blob(Vector2(x + 16, y + 16), sun * h * 0.85, 13.0)
-				for lp in [Vector2(8, 24), Vector2(24, 24), Vector2(24, 8)]:
-					var foot: Vector2 = Vector2(x, y) + lp
-					draw_line(foot, foot + sun * h * 0.7, Color.BLACK, 1.5)
+				_capsule(Vector2(x + 16, y + 16), 10.0, sun * h * 0.9, 14.0)
 			_:
 				var inset := 0.18 * T if b.type in ["house", "shop"] else 0.12 * T
 				var base := Rect2(x + inset, y + inset, w - inset * 2.0, hh - inset * 2.0)
@@ -73,6 +70,16 @@ func _hull(pts: Array, offset: Vector2) -> void:
 	var hull := Geometry2D.convex_hull(all)
 	if hull.size() >= 3:
 		draw_colored_polygon(hull, Color.BLACK)
+
+
+## Schatten eines Turms: vom Fuß bis zum breiteren Kopf.
+func _capsule(a: Vector2, ra: float, off: Vector2, rb: float) -> void:
+	var pts := []
+	for i in 12:
+		var d := Vector2(cos(TAU * i / 12.0), sin(TAU * i / 12.0))
+		pts.append(a + d * ra)
+		pts.append(a + off + d * rb)
+	_hull(pts, Vector2.ZERO)
 
 
 func _blob(center: Vector2, offset: Vector2, r: float) -> void:

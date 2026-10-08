@@ -684,90 +684,178 @@ static func power_plant(variant: int, _material: String, _facing: String) -> Dic
 	return _result(p, meta, 2, 2)
 
 
-# Wasserturm
+# Wasserturm: gemauerter Turm mit Bogenfenstern, darauf ein genieteter Behälter unter Kupferdach
 
 static func water_tower(variant: int, _material: String, _facing: String) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = variant
-	var p := IsoPainter.for_footprint(1, 1, 96)
+	var p := IsoPainter.for_footprint(1, 1, 112)
 	var meta := {"smoke": [], "blink": []}
-	var paint: Color = _pick(rng, [Pal.TEAL, Pal.STONE_L, Pal.WATER, Pal.BRICK_L, Pal.SKY])
-	var lt := Shade.light(paint)
-	var dk := Shade.dark(paint)
-	var leg_top := 58.0
-	# Fundamente
-	for lp in [Vector2(0.25, 0.25), Vector2(0.75, 0.25), Vector2(0.25, 0.75), Vector2(0.75, 0.75)]:
-		p.box(lp.x - 0.06, lp.y - 0.06, lp.x + 0.06, lp.y + 0.06, 0, 2, Pal.STONE_L, Pal.STONE, Pal.BONE)
-	# Hinteres Bein, Steigrohr, Seitenbeine, vorderes Bein
-	var legs := [Vector2(0.25, 0.25), Vector2(0.75, 0.25), Vector2(0.25, 0.75), Vector2(0.75, 0.75)]
-	for i in legs.size():
-		var lp2: Vector2 = legs[i]
-		var a := p.P(lp2.x, lp2.y, 2)
-		var b := p.P(lp2.x, lp2.y, leg_top)
-		var col := Pal.SLATE if i == 0 else Pal.STONE_D
-		p.c.rect(int(a.x) - 1, int(b.y), 2, int(a.y - b.y), col)
-		p.c.vline(int(a.x) - 1, int(b.y), int(a.y - b.y), Pal.STONE if i == 2 else col)
-		if i == 0:
-			var r0 := p.P(0.5, 0.5, 0)
-			p.c.rect(int(r0.x) - 1, int(b.y), 2, int(r0.y - b.y), Pal.STONE)
-	# Verstrebungen an den beiden sichtbaren Seiten
-	for k in 3:
-		var z0 := 8.0 + k * 16.0
-		var z1 := z0 + 16.0
-		p.line3(Vector3(0.25, 0.75, z0), Vector3(0.75, 0.75, z1), Pal.STONE_D)
-		p.line3(Vector3(0.75, 0.75, z0), Vector3(0.25, 0.75, z1), Pal.STONE_D)
-		p.line3(Vector3(0.75, 0.75, z0), Vector3(0.75, 0.25, z1), Pal.SLATE)
-		p.line3(Vector3(0.75, 0.25, z0), Vector3(0.75, 0.75, z1), Pal.SLATE)
-		p.line3(Vector3(0.25, 0.75, z1), Vector3(0.75, 0.75, z1), Pal.STONE)
-	# Leiter am linken Bein
-	var la := p.P(0.25, 0.75, 2)
-	var lb := p.P(0.25, 0.75, leg_top)
-	p.c.vline(int(la.x) - 3, int(lb.y), int(la.y - lb.y), Pal.STONE_L)
-	p.c.vline(int(la.x) - 5, int(lb.y), int(la.y - lb.y), Pal.STONE_L)
-	for y in range(int(lb.y), int(la.y), 2):
-		p.c.px(int(la.x) - 4, y, Pal.STONE)
-	# Behälter
-	p.cylinder(0.5, 0.5, 0.42, leg_top, leg_top + 20, [lt, lt, paint, paint, paint, dk, dk], paint)
-	var cen := p.P(0.5, 0.5, 0)
-	var rx := 0.42 * 45.25
-	# Nähte und Band
-	for k in [-0.6, -0.2, 0.2, 0.6]:
-		var x := int(cen.x + k * rx)
-		var dy := sqrt(1.0 - k * k) * 0.42 * 22.63
-		p.c.vline(x, int(cen.y - leg_top - 20 + dy), 19, Shade.dark(p.c.get_px(x, int(cen.y - leg_top - 10))))
-	# Tropfen-Symbol vorne
-	var dp := p.P(0.5, 0.5, leg_top + 10) + Vector2(-2, 8)
-	p.c.px(int(dp.x) + 1, int(dp.y) - 2, Pal.WHITE)
-	p.c.hline(int(dp.x), int(dp.y) - 1, 3, Pal.WHITE)
-	p.c.rect(int(dp.x) - 1, int(dp.y), 5, 2, Pal.WHITE)
-	p.c.hline(int(dp.x), int(dp.y) + 2, 3, Pal.WHITE)
-	# Kegeldach
-	var ct := cen - Vector2(0, leg_top + 20)
-	for y in 12:
-		var f := float(y) / 11.0
-		var hw := 0.46 * 45.25 * f
-		var hh := 0.46 * 22.63 * f
-		for x in range(int(ct.x - hw), int(ct.x + hw) + 1):
-			var nx := (x + 0.5 - ct.x) / maxf(hw, 0.5)
-			var col := Pal.STONE if nx < -0.2 else (Pal.STONE_D if nx < 0.5 else Pal.SLATE)
-			var yy := int(ct.y - 12 + y + sqrt(maxf(0.0, 1.0 - nx * nx)) * hh * 0.4)
-			p.c.px(x, yy, col)
-			p.c.px(x, yy - 1, col)
-	p.c.vline(int(ct.x), int(ct.y) - 16, 4, Pal.STONE_D)
-	meta.blink.append(Vector2(int(ct.x), int(ct.y) - 17))
-	# Laufsteg
-	var ring := p.P(0.5, 0.5, leg_top)
-	p.c.ellipse(ring.x, ring.y + 1, 0.5 * 45.25, 0.5 * 22.63, Color(0, 0, 0, 0))
-	for i in 48:
-		var ang := TAU * i / 48.0
-		if sin(ang) < -0.1:
+	var shaft: Color = _pick(rng, [Pal.BRICK, Pal.BRICK, Pal.BRICK_L, Pal.SAND])
+	var tank_col: Color = _pick(rng, [Pal.TEAL, Pal.WATER, Pal.STONE_L, Pal.MOSS])
+	var roof_col: Color = _pick(rng, [Pal.TEAL_D, Pal.MOSS, Pal.SLATE, Pal.BRICK_D])
+	var cu := 0.5
+	var cv := 0.5
+	var Z_PLINTH := 6.0
+	var Z_SHAFT := 52.0
+	var Z_GALLERY := 57.0
+	var Z_TANK := 80.0
+	var Z_ROOF := 98.0
+
+	# Steinplatte rund um den Turm
+	p.ground(0.08, 0.08, 0.92, 0.92, 0, func(s, t, x, y):
+		if s < 0.05 or t < 0.05 or s > 0.95 or t > 0.95:
+			return Pal.STONE_D
+		var n := _noise(x, y, variant)
+		if (int(s * 12.0) + int(t * 12.0)) % 2 == 0:
+			return Pal.STONE_L if n > 100 else Pal.STONE
+		return Pal.STONE if n > 60 else Pal.STONE_D)
+
+	# Sockel aus Quadern
+	p.cyl_fill(cu, cv, 0.38, 0, Z_PLINTH, func(sh, z, x, y, _nx):
+		var col := Pal.STONE_L
+		if int(z) % 3 == 0:
+			col = Pal.STONE
+		if sh < 0.18:
+			col = Shade.light(col)
+		elif sh > 0.74:
+			col = Shade.dark(col)
+		return col)
+	p.cap(cu, cv, 0.38, Z_PLINTH, Pal.STONE_L)
+
+	# Schaft: Ziegel im Verband, Bogenfenster in drei Stockwerken, Tür unten
+	var wins: Array = []
+	var floors := [[21.0, [-0.62, 0.0, 0.62]], [31.0, [-0.31, 0.31]], [41.0, [-0.62, 0.0, 0.62]]]
+	for f in floors:
+		for th in f[1]:
+			wins.append({"th": th, "z0": f[0], "h": 8.0, "hw": 0.17, "door": false})
+	wins.append({"th": 0.0, "z0": Z_PLINTH, "h": 13.0, "hw": 0.2, "door": true})
+	p.cyl_fill(cu, cv, 0.34, Z_PLINTH, Z_SHAFT, func(sh, z, x, y, nx):
+		var th := asin(clampf(nx, -1.0, 1.0))
+		var zz := int(z) - int(Z_PLINTH)
+		for w in wins:
+			var dz: float = z - w.z0
+			if dz < 0.0 or dz >= w.h:
+				continue
+			var top_off: float = w.h - 1.0 - dz
+			var hw: float = w.hw
+			if top_off < 3.0:
+				hw *= [0.5, 0.78, 0.92][int(top_off)]
+			var d := absf(th - float(w.th))
+			if d > hw:
+				continue
+			var shade_dark: bool = sh > 0.74
+			var frame := Pal.BONE if not shade_dark else Pal.STONE_L
+			if d > hw - 0.05 or dz < 1.0 or top_off < 1.0:
+				return frame
+			if w.door:
+				var door_col := Pal.WOOD if not shade_dark else Pal.SOIL
+				if int(z) == int(Z_PLINTH) + 7 and d < 0.04:
+					return Pal.YELLOW
+				return door_col if fposmod(th, 0.14) > 0.04 else Shade.dark(door_col)
+			return [Pal.BLUE_D if dz < 6.0 else Pal.BLUE, GLASS_GLOW]
+		var course := zz / 3
+		var u := (th + PI * 0.5) * 11.0 + (course % 2) * 0.5
+		var col := shaft
+		if zz % 3 == 2 or fposmod(u, 1.0) < 0.13:
+			col = Shade.dark(shaft)
+		else:
+			var n := _noise(int(floor(u)), course, variant)
+			if n < 120:
+				col = Shade.light(shaft)
+			elif n < 200:
+				col = Shade.dark(shaft)
+		if sh < 0.16:
+			col = Shade.light(col)
+		elif sh > 0.78:
+			col = Shade.dark(col)
+		if sh > 0.9:
+			col = Shade.dark(col)
+		return col)
+
+	# Gesims und Umgang mit Geländer
+	p.cyl_fill(cu, cv, 0.4, Z_SHAFT, Z_GALLERY, func(sh, z, _x, _y, _nx):
+		var col := Pal.STONE_L if z > Z_SHAFT + 2.0 else Pal.STONE
+		if int(z) == int(Z_SHAFT):
+			col = Pal.STONE_D
+		if sh < 0.18:
+			col = Shade.light(col)
+		elif sh > 0.74:
+			col = Shade.dark(col)
+		return col)
+	p.cap(cu, cv, 0.4, Z_GALLERY, Pal.STONE, Pal.STONE_L)
+	var ring := p.P(cu, cv, Z_GALLERY)
+	for i in 40:
+		var ang := TAU * i / 40.0
+		if sin(ang) < -0.2:
 			continue
-		var rp := ring + Vector2(cos(ang) * 0.5 * 45.25, sin(ang) * 0.5 * 22.63)
-		p.c.px(int(rp.x), int(rp.y), Pal.STONE_D)
+		var rp := ring + Vector2(cos(ang) * 0.385 * 45.25, sin(ang) * 0.385 * 22.63)
+		p.c.px(int(rp.x), int(rp.y) - 3, Pal.STONE_D)
 		if i % 4 == 0:
-			p.c.vline(int(rp.x), int(rp.y) - 3, 3, Pal.STONE_L)
-		p.c.px(int(rp.x), int(rp.y) - 3, Pal.STONE_L)
+			p.c.vline(int(rp.x), int(rp.y) - 3, 3, Pal.STONE_D)
+
+	# Behälter: Blechplatten, Nietenreihen, Tropfen vorn
+	p.cyl_fill(cu, cv, 0.35, Z_GALLERY, Z_TANK, func(sh, z, x, y, nx):
+		var th := asin(clampf(nx, -1.0, 1.0))
+		var zz := int(z) - int(Z_GALLERY)
+		var col := tank_col
+		if fposmod((th + PI * 0.5) * 6.0, 1.0) < 0.1:
+			col = Shade.dark(col)
+		if zz % 7 == 0:
+			col = Shade.dark(col)
+		elif zz % 7 == 1 and x % 3 == 0:
+			col = Shade.light(col)
+		if sh < 0.16:
+			col = Shade.light(col)
+		elif sh > 0.78:
+			col = Shade.dark(col)
+		elif sh > 0.9:
+			col = Shade.dark(col)
+		return col)
+	p.cap(cu, cv, 0.35, Z_TANK, Shade.dark(tank_col))
+	var cen := p.P(cu, cv, 0)
+	var dp := Vector2(cen.x, cen.y + 0.35 * 22.63 - (Z_GALLERY + 14.0))
+	p.c.px(int(dp.x), int(dp.y) - 3, Pal.WHITE)
+	p.c.hline(int(dp.x) - 1, int(dp.y) - 2, 3, Pal.WHITE)
+	p.c.rect(int(dp.x) - 2, int(dp.y) - 1, 5, 3, Pal.WHITE)
+	p.c.hline(int(dp.x) - 1, int(dp.y) + 2, 3, Pal.WHITE)
+	p.c.px(int(dp.x) - 1, int(dp.y), Pal.SKY)
+
+	# Dach: Kupfer mit Schindelreihen
+	p.cone_fill(cu, cv, 0.41, Z_TANK, Z_ROOF, func(sh, t, x, y, _nx):
+		var row := int(t * 20.0)
+		var col := roof_col
+		if row % 3 == 0:
+			col = Shade.dark(col)
+		elif (x + row * 2) % 5 == 0:
+			col = Shade.dark(col)
+		if t < 0.06:
+			col = Shade.dark(Shade.dark(col))
+		if sh < 0.3:
+			col = Shade.light(col)
+		elif sh > 0.66:
+			col = Shade.dark(col)
+		if t > 0.88:
+			col = Shade.light(col)
+		return col)
+
+	# Laterne und Spitze
+	p.cyl_fill(cu, cv, 0.06, Z_ROOF, Z_ROOF + 6.0, func(sh, z, _x, _y, _nx):
+		return [Pal.BONE if sh < 0.5 else Pal.STONE_L, Color(0, 0, 0, 0)] if z > Z_ROOF + 1.0 else Pal.STONE_D)
+	var tip := p.P(cu, cv, Z_ROOF + 6.0)
+	p.c.vline(int(tip.x), int(tip.y) - 5, 5, Pal.STONE_D)
+	p.c.px(int(tip.x), int(tip.y) - 6, Pal.BRICK_L)
+	meta.blink.append(Vector2(int(tip.x), int(tip.y) - 6))
 	p.c.outline(Pal.NIGHT)
+
+	# Büsche am Fuß
+	for bp in [Vector2(0.14, 0.72), Vector2(0.84, 0.22), Vector2(0.78, 0.84)]:
+		var q := p.P(bp.x, bp.y, 0)
+		p.c.disc(q.x, q.y - 2, 3.0, Pal.MOSS)
+		p.c.disc(q.x - 0.5, q.y - 2.5, 1.9, Pal.GRASS)
+		p.c.px(int(q.x) - 1, int(q.y) - 4, Pal.GRASS_L)
+		if rng.randf() < 0.5:
+			p.c.px(int(q.x) + 1, int(q.y) - 2, Pal.ROSE)
 	return _result(p, meta, 1, 1)
 
 

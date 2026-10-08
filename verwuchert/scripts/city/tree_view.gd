@@ -36,7 +36,7 @@ func _process(delta: float) -> void:
 		if _leaf_t <= 0.0:
 			_leaf_t = randf_range(6.0, 16.0)
 			var r: float = art.radius
-			builder.particles.emit("leaf", global_position + Vector2(randf_range(-r, r) * 0.7, 0), 1, {"z": art.height * 0.7})
+			builder.particles.emit("leaf", position + Vector2(randf_range(-r, r) * 0.7, 0), 1, {"z": art.height * 0.7})
 
 
 func sway() -> int:

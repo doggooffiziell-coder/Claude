@@ -20,6 +20,8 @@ func _initialize() -> void:
 	list.append(["park", 4, "", "left"])
 	list.append(["park", 8, "", "left"])
 	list.append(["water_tower", 11, "stahl", "left"])
+	list.append(["water_tower", 12, "stahl", "left"])
+	list.append(["water_tower", 13, "stahl", "left"])
 	list.append(["factory", 21, "ziegel", "left"])
 	list.append(["factory", 22, "stahl", "right"])
 	list.append(["power_plant", 5, "beton", "left"])

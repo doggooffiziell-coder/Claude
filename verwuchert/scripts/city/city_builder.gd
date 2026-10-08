@@ -105,6 +105,8 @@ func _ready() -> void:
 	_setup_camera()
 	_reroll_ghost()
 	$HUD/Root.setup(self)
+	if float(city.time) < 1.0:
+		set_speed(Settings.start_speed)
 	if city.chronicle.is_empty():
 		add_event("Die Stadt wird gegründet. Eine Landstraße führt aus dem Wald herein.")
 	_debug_args()
@@ -225,6 +227,7 @@ func _process(delta: float) -> void:
 		_tick(dt)
 	night = DayCycle.night(hour)
 	_lit_mat.set_shader_parameter("tint", DayCycle.tint(hour))
+	shadow_group.visible = Settings.shadows
 	shadow_group.self_modulate = Color(1, 1, 1, 0.34 * DayCycle.sun_strength(hour))
 	_status_t -= delta
 	if _status_t <= 0.0:
