@@ -2,6 +2,23 @@
 
 Alle Änderungen an Verwuchert. Jede Version bekommt hier einen Eintrag.
 
+## 0.1.3
+
+Neuer Stil und weniger Simulation, mehr Stadt zum Kennenlernen.
+
+- Isometrische Ansicht: Jedes Gebäude zeigt zwei Wände und das Dach. Linke Wände liegen im Licht, rechte im Schatten.
+- Alle Gebäude neu gemalt, mit Satteldächern in zwei Richtungen, Giebeln, Gauben, Schornsteinen und Zäunen.
+- Türen zeigen zur Straße, wenn beim Bauen eine daneben liegt.
+- Autos als kleine Iso-Kisten in vier Richtungen, mit Lichtkegel in der Nacht.
+- Unter der Karte liegt eine Erdkante mit Schichten, Steinen und Wurzeln.
+- Strom und Wasser fließen über das Straßennetz statt über Kreise. Ein Kraftwerk versorgt 24 Plätze, ein Wasserturm 16 Häuser. Die Leiste oben zeigt die Auslastung.
+- Strommasten mit Leitungen und Laternen stehen nur an Straßen mit Strom. Hydranten zeigen Straßen mit Wasser.
+- Jedes Haus bekommt beim Einzug eine Familie mit Namen und Bewohnern. Jede Straße hat einen Namen, jedes Gebäude eine Adresse.
+- Läden und Fabriken heißen nach ihren Besitzern, zum Beispiel "Bäckerei Krüger".
+- Chronik unten links: wer einzieht, was öffnet, wer auszieht. Sie wird mit dem Spielstand gespeichert.
+- Grundsteuer: Leere Häuser zahlen 6 pro Zahltag. Wer kein Geld für das Kraftwerk hat, spart es zusammen.
+- Gebäude lassen sich auch über ihr Bild anklicken, nicht nur über ihre Felder.
+
 ## 0.1.2
 
 - Web-Version: Der Knopf "Vollbild" funktioniert jetzt auch dort, wo der Browser echtes Vollbild verbietet. Dann füllt das Spiel das ganze Fenster der Seite.

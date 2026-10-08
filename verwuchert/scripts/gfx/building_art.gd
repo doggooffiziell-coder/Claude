@@ -1,30 +1,32 @@
 class_name BuildingArt
 extends RefCounted
-## Malt alle Gebäude in leichter Schrägansicht. Licht von oben links.
+## Malt alle Gebäude isometrisch: linke Wand im Licht, rechte Wand im Schatten, Dach oben.
 ## Jedes Gebäude bekommt ein Farbbild und ein Leuchtbild für die Nacht.
-## Das Bild sitzt mit der Unterkante auf der Unterkante seiner Felder.
+## Das Bild sitzt mit der unteren Ecke auf der unteren Ecke seiner Felder.
+## facing sagt, an welcher Wand die Tür liegt: "left" (nach links unten), "right" oder "back".
 
-const CLEAR := Color(0, 0, 0, 0)
 const GLASS_GLOW := Pal.YELLOW
 const GLOW_EDGE := Pal.OCHRE
+const CLEAR := Color(0, 0, 0, 0)
 
 
-static func _result(c: PixelCanvas, g: PixelCanvas, meta: Dictionary) -> Dictionary:
-	# Oberste gemalte Zeile, für Blasen und Texte über dem Dach
+static func _result(p: IsoPainter, meta: Dictionary, w: int, h: int) -> Dictionary:
 	var top := 0
 	var found := false
-	for y in c.h:
-		for x in c.w:
-			if c.img.get_pixel(x, y).a > 0.0:
+	for y in p.c.h:
+		for x in p.c.w:
+			if p.c.img.get_pixel(x, y).a > 0.0:
 				found = true
 				break
 		if found:
 			top = y
 			break
 	meta["top"] = top
-	meta["tex"] = c.texture()
-	meta["glow"] = g.texture()
-	meta["size"] = Vector2i(c.w, c.h)
+	meta["tex"] = p.c.texture()
+	meta["glow"] = p.g.texture()
+	meta["size"] = Vector2i(p.c.w, p.c.h)
+	# Ankerpunkt: untere Ecke der Fläche im Bild
+	meta["anchor"] = p.P(w, h, 0)
 	return meta
 
 
@@ -32,984 +34,852 @@ static func _pick(rng: RandomNumberGenerator, options: Array):
 	return options[rng.randi() % options.size()]
 
 
-# Bausteine
+static func _noise(a: int, b: int, seed_value: int) -> int:
+	return absi(hash(Vector3i(a, b, seed_value))) % 1000
 
-## Wand mit Material-Struktur. Ziegel im Verband, Holz als Bretter, Beton als Platten.
-static func _wall(c: PixelCanvas, rng: RandomNumberGenerator, x: int, y: int, ww: int, wh: int, base: Color, material: String) -> void:
+
+# Wandstruktur
+
+## Farbe einer Wand an Spalte ax und Zeile uy (von unten). Ziegel im Verband, Holz als Bretter.
+static func _wall_px(material: String, base: Color, ax: int, uy: int, seed_value: int) -> Color:
 	var lt := Shade.light(base)
 	var dk := Shade.dark(base)
-	c.rect(x, y, ww, wh, base)
 	match material:
 		"ziegel":
-			for r in wh:
-				var yy := y + r
-				if r % 3 == 2:
-					c.hline(x, yy, ww, dk)
-					continue
-				var course := r / 3
-				for xx in range(x, x + ww):
-					if (xx - x + (course % 2) * 3) % 6 == 5:
-						c.px(xx, yy, dk)
-			# Einzelne Ziegel heller oder dunkler
-			for n in int(ww * wh / 22):
-				var bx := x + rng.randi_range(0, ww - 4)
-				var by := y + rng.randi_range(0, wh - 2)
-				if (by - y) % 3 == 2:
-					continue
-				var col := lt if rng.randf() < 0.6 else dk
-				for k in 3:
-					if c.get_px(bx + k, by).is_equal_approx(base):
-						c.px(bx + k, by, col)
+			if uy % 3 == 2:
+				return dk
+			var course := uy / 3
+			if (ax + (course % 2) * 3) % 6 == 5:
+				return dk
+			var n := _noise((ax + (course % 2) * 3) / 6, course, seed_value)
+			if n < 110:
+				return lt
+			if n < 170:
+				return dk
+			return base
 		"holz":
-			for r in wh:
-				var yy := y + r
-				if r % 3 == 0:
-					c.hline(x, yy, ww, lt)
-				elif r % 3 == 2:
-					c.hline(x, yy, ww, dk)
-			for n in int(ww * wh / 40):
-				c.px(x + rng.randi_range(1, ww - 2), y + rng.randi_range(0, wh - 1), dk)
+			if uy % 3 == 0:
+				return lt
+			if uy % 3 == 2:
+				return dk
+			return dk if _noise(ax, uy, seed_value) < 30 else base
 		"beton":
-			for r in wh:
-				if r % 8 == 7:
-					c.hline(x, y + r, ww, dk)
-			for xx in range(x + 7, x + ww - 1, 8):
-				c.vline(xx, y, wh, dk)
-			c.speckle(x, y, ww, wh, lt, 0.04, rng)
-			c.speckle(x, y, ww, wh, dk, 0.03, rng)
+			if uy % 9 == 8 or ax % 9 == 8:
+				return dk
+			var n2 := _noise(ax, uy, seed_value)
+			return lt if n2 < 40 else (dk if n2 < 70 else base)
 		"stahl":
-			for xx in range(x, x + ww):
-				var k := (xx - x) % 4
-				if k == 0:
-					c.vline(xx, y, wh, lt)
-				elif k == 3:
-					c.vline(xx, y, wh, dk)
-	# Licht von links, Schatten rechts
-	c.vline(x, y, wh, lt)
-	c.dither(x + ww - 2, y, 2, wh, dk, 0.5)
-	c.vline(x + ww - 1, y, wh, dk)
+			var k := ax % 4
+			if k == 0:
+				return lt
+			if k == 3:
+				return dk
+			return base
+		"putz":
+			var n3 := _noise(ax, uy, seed_value)
+			return lt if n3 < 50 else (dk if n3 < 80 else base)
+	return base
 
 
-## Fenster mit Rahmen, Sprosse, Spiegelung und Vorhang. Leuchtet nachts.
-static func _window(c: PixelCanvas, g: PixelCanvas, rng: RandomNumberGenerator, x: int, y: int, ww: int, wh: int, frame: Color, curtain := true, cross := true) -> void:
-	c.rect(x, y, ww, wh, frame)
-	var gx := x + 1
-	var gy := y + 1
-	var gw := ww - 2
-	var gh := wh - 2
-	# Glas: oben heller Himmel, unten dunkel
-	c.rect(gx, gy, gw, gh, Pal.BLUE_D)
-	c.hline(gx, gy, gw, Pal.BLUE)
-	c.px(gx, gy, Pal.SKY)
-	if gh > 3:
-		c.px(gx + 1, gy + 1, Pal.BLUE)
-	g.rect(gx, gy, gw, gh, GLASS_GLOW)
-	g.hline(gx, gy + gh - 1, gw, GLOW_EDGE)
-	if curtain:
-		var cc: Color = _pick(rng, [Pal.ROSE, Pal.OCHRE, Pal.BONE, Pal.TEAL, Pal.SAND])
-		c.vline(gx + gw - 1, gy, mini(3, gh), cc)
-		c.px(gx + gw - 2, gy, cc)
-		g.vline(gx + gw - 1, gy, mini(3, gh), GLOW_EDGE)
-	# Sprossen: waagerecht immer, senkrecht nur bei breiten Fenstern
-	if cross and gh >= 4:
-		var my := gy + gh / 2 - 1
-		c.hline(gx, my, gw, frame)
-		g.clear(gx, my, gw, 1)
-	if cross and gw >= 5:
-		var mx := gx + gw / 2
-		c.vline(mx, gy, gh, frame)
-		g.clear(mx, gy, 1, gh)
-	# Fensterbank
-	c.hline(x - 1, y + wh, ww + 2, Pal.STONE_L)
-	c.px(x + ww, y + wh, Pal.STONE)
-	# Lichtschein auf der Wand
-	for yy in range(y - 1, y + wh + 1):
-		g.px(x - 1, yy, Pal.a(GLOW_EDGE, 0.22))
-		g.px(x + ww, yy, Pal.a(GLOW_EDGE, 0.22))
-	g.hline(x, y + wh + 1, ww, Pal.a(GLOW_EDGE, 0.3))
+## Füllfunktion für eine Wand mit Fenstern, Türen und Struktur.
+## features: Liste von Dictionaries mit kind, x, y, w, h in Pixeln der Wand (x von links, y von unten).
+static func _facade(material: String, base: Color, cols: float, height: float, features: Array, shaded: bool, seed_value: int, trim := Color(0, 0, 0, 0)) -> Callable:
+	return func(s: float, t: float, _x: int, _y: int):
+		var ax := int(s * cols)
+		var uy := int(t * height)
+		if uy >= int(height):
+			uy = int(height) - 1
+		for f in features:
+			var fx: int = f.x
+			var fy: int = f.y
+			var fw: int = f.w
+			var fh: int = f.h
+			if ax >= fx and ax < fx + fw and uy >= fy and uy < fy + fh:
+				return _feature_px(f, ax - fx, uy - fy, shaded)
+		var col := _wall_px(material, base, ax, uy, seed_value)
+		# Sockel
+		if uy < 2:
+			col = Pal.STONE_D if uy == 0 else Pal.STONE
+		# Kanten: Ecke vorne heller, oben Schatten der Traufe
+		if trim.a > 0.0 and (ax == 0 or ax == int(cols) - 1) and uy >= 2:
+			col = trim
+		if uy >= int(height) - 2 and uy >= 2:
+			col = Shade.dark(col)
+		if shaded:
+			col = Shade.dark(col)
+		return col
 
 
-static func _flower_box(c: PixelCanvas, rng: RandomNumberGenerator, x: int, y: int, ww: int) -> void:
-	c.rect(x, y + 1, ww, 2, Pal.WOOD)
-	c.hline(x, y + 1, ww, Pal.WOOD_L)
-	for xx in range(x, x + ww):
-		c.px(xx, y, Pal.GRASS if (xx % 2 == 0) else Pal.MOSS)
-		if rng.randf() < 0.45:
-			c.px(xx, y, _pick(rng, [Pal.ROSE, Pal.YELLOW, Pal.WHITE, Pal.BRICK_L]))
+## Ein Pixel eines Fensters, einer Tür oder eines Schildes.
+static func _feature_px(f: Dictionary, x: int, y: int, shaded: bool) -> Variant:
+	var w: int = f.w
+	var h: int = f.h
+	var frame: Color = f.get("frame", Pal.BONE)
+	if shaded:
+		frame = Shade.dark(frame)
+	match f.kind:
+		"window":
+			if x == 0 or x == w - 1 or y == 0 or y == h - 1:
+				return frame
+			# Sprosse in der Mitte
+			if h >= 6 and y == h / 2:
+				return [frame, CLEAR]
+			if w >= 6 and x == w / 2:
+				return [frame, CLEAR]
+			var top := y == h - 2
+			var glass := Pal.BLUE if top else Pal.BLUE_D
+			if top and x == 1:
+				glass = Pal.SKY
+			var cur: Color = f.get("curtain", Color(0, 0, 0, 0))
+			if cur.a > 0.0 and x == w - 2 and y >= h - 4:
+				return [Shade.dark(cur) if shaded else cur, GLOW_EDGE]
+			return [glass, GLOW_EDGE if y == 1 else GLASS_GLOW]
+		"door":
+			var dc: Color = f.get("color", Pal.TEAL_D)
+			if shaded:
+				dc = Shade.dark(dc)
+			if x == 0 or x == w - 1 or y == h - 1:
+				return frame
+			if x == w - 2 and y == h / 2:
+				return Pal.YELLOW
+			if y == h - 3 and x > 0 and x < w - 1:
+				return [Pal.SKY if not shaded else Pal.BLUE, GLASS_GLOW]
+			return Shade.dark(dc) if (x == 1) else dc
+		"shop":
+			# Schaufenster mit Regalen
+			if x == 0 or x == w - 1 or y == h - 1 or y == 0:
+				return Pal.STONE_D
+			if y == 3 or y == 7:
+				return [Pal.WOOD, Color(0, 0, 0, 0)]
+			if (y == 4 or y == 8) and (x * 7 + y) % 3 != 0:
+				var goods := [Pal.BRICK_L, Pal.OCHRE, Pal.TEAL, Pal.YELLOW, Pal.ROSE, Pal.GRASS_L]
+				var gc: Color = goods[(x * 5 + y) % goods.size()]
+				return [gc, gc]
+			if y == h - 2 and x < 3:
+				return [Pal.SKY, GLASS_GLOW]
+			return [Pal.BLUE_D, Pal.a(Pal.YELLOW, 0.85)]
+		"glassdoor":
+			if x == 0 or x == w - 1 or y == h - 1:
+				return Pal.STONE_D
+			return [Pal.TEAL_D, Pal.a(Pal.OCHRE, 0.85)]
+		"roller":
+			if x == 0 or x == w - 1 or y == h - 1:
+				return Pal.STONE_D
+			return Pal.STONE_L if y % 2 == 0 else Pal.STONE
+		"sign":
+			var sc: Color = f.get("color", Pal.NIGHT)
+			if y == h - 1 or y == 0:
+				return Pal.WOOD
+			var icon: Array = f.get("icon", [])
+			for ip in icon:
+				if ip.x == x and ip.y == y:
+					return [ip.c, ip.c]
+			return sc
+		"band":
+			return f.get("color", Pal.TEAL)
+		"vent":
+			return Pal.STONE_D if (x + y) % 2 == 0 else Pal.SLATE
+	return Pal.WHITE
 
 
-static func _door(c: PixelCanvas, g: PixelCanvas, x: int, bottom: int, dw: int, dh: int, col: Color, frame: Color) -> void:
-	var top := bottom - dh + 1
-	c.rect(x - 1, top - 1, dw + 2, dh + 1, frame)
-	c.rect(x, top, dw, dh, col)
-	c.vline(x, top, dh, Shade.light(col))
-	c.vline(x + dw - 1, top, dh, Shade.dark(col))
-	# Füllungen
-	c.frame(x + 1, top + 1, dw - 2, dh / 2 - 1, Shade.dark(col))
-	c.frame(x + 1, top + dh / 2 + 1, dw - 2, dh / 2 - 2, Shade.dark(col))
-	c.px(x + dw - 2, top + dh / 2, Pal.YELLOW)
-	# Lampe neben der Tür
-	c.px(x + dw + 1, top + 1, Pal.STONE_D)
-	c.px(x + dw + 2, top + 1, Pal.YELLOW)
-	c.px(x + dw + 2, top + 2, Pal.OCHRE)
-	g.px(x + dw + 2, top + 1, Pal.WHITE)
-	g.px(x + dw + 2, top + 2, Pal.YELLOW)
-	for p in [Vector2i(1, 0), Vector2i(3, 1), Vector2i(1, 3), Vector2i(3, 2), Vector2i(2, 3), Vector2i(2, 0)]:
-		g.px(x + dw + p.x, top + p.y, Pal.a(Pal.OCHRE, 0.45))
-	# Stufe
-	c.rect(x - 1, bottom + 1, dw + 2, 1, Pal.STONE_L)
-	c.hline(x - 1, bottom + 2, dw + 2, Pal.STONE)
+static func _window(x: int, y: int, w: int, h: int, rng: RandomNumberGenerator, frame := Pal.BONE) -> Dictionary:
+	var cur: Color = Color(0, 0, 0, 0)
+	if rng.randf() < 0.7:
+		cur = _pick(rng, [Pal.ROSE, Pal.OCHRE, Pal.BONE, Pal.TEAL, Pal.SAND])
+	return {"kind": "window", "x": x, "y": y, "w": w, "h": h, "frame": frame, "curtain": cur}
 
 
-## Schindeldach, Firstlinie oben. Reihen werden nach oben heller.
-static func _shingles(c: PixelCanvas, rng: RandomNumberGenerator, x: int, y: int, rw: int, rh: int, base: Color) -> void:
-	var lt := Shade.light(base)
+# Dächer
+
+## Satteldach. axis "u": First läuft nach rechts unten, Giebel auf der rechten Wand.
+## axis "v": First läuft nach links unten, Giebel auf der linken Wand.
+static func _gable(p: IsoPainter, u0: float, v0: float, u1: float, v1: float, H: float, R: float, ov: float, axis: String, roof: Color, gable_fill: Callable, gable_fill_shaded: Callable) -> void:
+	var lt := Shade.light(roof)
+	var dk := Shade.dark(roof)
+	if axis == "u":
+		var vm := (v0 + v1) * 0.5
+		var lu := u1 - u0 + ov * 2.0
+		# Hintere Fläche: vom First nach hinten unten
+		var back_len := (vm - (v0 - ov))
+		p.quad(Vector3(u0 - ov, vm, H + R), Vector3(lu, 0, 0), Vector3(0, -back_len, -R), _shingles(dk, lu * 32.0, 12.0))
+		# Giebeldreieck rechts
+		p.quad(Vector3(u1, v1, H), Vector3(0, v0 - v1, 0), Vector3(0, vm - v1, R), gable_fill_shaded, true)
+		# Vordere Fläche im Licht
+		var front_len := (v1 + ov) - vm
+		p.quad(Vector3(u0 - ov, v1 + ov, H - 1), Vector3(lu, 0, 0), Vector3(0, -front_len, R + 1), _shingles(roof, lu * 32.0, 14.0, lt))
+		# Firstlinie
+		p.line3(Vector3(u0 - ov, vm, H + R), Vector3(u1 + ov, vm, H + R), Shade.light(lt))
+		# Ortgang rechts
+		p.line3(Vector3(u1 + ov, v1 + ov, H - 1), Vector3(u1 + ov, vm, H + R), dk)
+	else:
+		var um := (u0 + u1) * 0.5
+		var lv := v1 - v0 + ov * 2.0
+		var back_len2 := um - (u0 - ov)
+		# Hintere Fläche zeigt nach links oben: im Licht
+		p.quad(Vector3(um, v1 + ov, H + R), Vector3(0, -lv, 0), Vector3(-back_len2, 0, -R), _shingles(lt, lv * 32.0, 12.0))
+		# Giebeldreieck links
+		p.quad(Vector3(u0, v1, H), Vector3(u1 - u0, 0, 0), Vector3(um - u0, 0, R), gable_fill, true)
+		# Vordere Fläche zeigt nach rechts unten: Schatten
+		var front_len2 := (u1 + ov) - um
+		p.quad(Vector3(u1 + ov, v1 + ov, H - 1), Vector3(0, -lv, 0), Vector3(-front_len2, 0, R + 1), _shingles(dk, lv * 32.0, 14.0))
+		p.line3(Vector3(um, v1 + ov, H + R), Vector3(um, v0 - ov, H + R), lt)
+		p.line3(Vector3(u0 - ov, v1 + ov, H - 1), Vector3(um, v1 + ov, H + R), Shade.light(lt))
+
+
+## Schindeln: Reihen parallel zur Traufe, versetzte Fugen, nach oben heller.
+static func _shingles(base: Color, cols: float, rows: float, top_col := Color(0, 0, 0, 0)) -> Callable:
 	var dk := Shade.dark(base)
-	c.rect(x, y, rw, rh, base)
-	for r in rh:
-		var yy := y + rh - 1 - r
-		if r % 3 == 0:
-			c.hline(x, yy, rw, dk)
-			continue
-		var course := r / 3
-		for xx in range(x, x + rw):
-			if (xx + course * 2) % 4 == 0 and r % 3 == 1:
-				c.px(xx, yy, dk)
-	c.dither(x, y, rw, rh / 3, lt, 0.5)
-	c.hline(x, y, rw, lt)
-	for n in rw * rh / 18:
-		var sx := x + rng.randi_range(0, rw - 2)
-		var sy := y + rng.randi_range(1, rh - 2)
-		if c.get_px(sx, sy).is_equal_approx(base):
-			c.px(sx, sy, lt if rng.randf() < 0.5 else dk)
-	c.dither(x + rw - 3, y, 3, rh, dk, 0.5)
+	return func(s: float, t: float, _x: int, _y: int):
+		var ax := int(s * cols)
+		var ry := int(t * rows)
+		if ry % 3 == 0:
+			return dk
+		var course := ry / 3
+		if ry % 3 == 1 and (ax + course * 2) % 4 == 0:
+			return dk
+		if top_col.a > 0.0 and t > 0.72 and PixelCanvas.bayer(ax, ry, (t - 0.72) * 3.0):
+			return top_col
+		return base
 
 
-static func _chimney(c: PixelCanvas, x: int, top: int, height: int, meta: Dictionary) -> void:
-	c.rect(x, top, 4, height, Pal.BRICK)
-	c.vline(x, top, height, Pal.BRICK_L)
-	c.vline(x + 3, top, height, Pal.BRICK_D)
-	for yy in range(top + 2, top + height, 3):
-		c.hline(x, yy, 4, Pal.BRICK_D)
-	c.rect(x - 1, top - 1, 6, 2, Pal.STONE_D)
-	c.hline(x - 1, top - 1, 6, Pal.STONE)
-	c.px(x + 1, top - 1, Pal.BLACK)
-	c.px(x + 2, top - 1, Pal.BLACK)
-	meta.smoke.append(Vector2(x + 2, top - 2))
+## Flachdach mit Brüstung, Teerpappe und Kies.
+static func _flat_roof(p: IsoPainter, u0: float, v0: float, u1: float, v1: float, H: float, edge: Color, seed_value: int) -> void:
+	p.ground(u0, v0, u1, v1, H, func(s, t, x, y):
+		var e := 0.06
+		if s < e or t < e or s > 1.0 - e or t > 1.0 - e:
+			return Shade.light(edge) if (s < e or t < e) else edge
+		var n := _noise(x, y, seed_value)
+		return Pal.STONE_D if n < 220 else (Pal.STONE if n < 260 else Pal.SLATE))
+
+
+## Schornstein als kleine Kiste aus Ziegeln mit dunkler Öffnung.
+static func _chimney(p: IsoPainter, u: float, v: float, z0: float, z1: float, meta: Dictionary) -> void:
+	var s := 0.055
+	p.box(u - s, v - s, u + s, v + s, z0, z1, Pal.BRICK, Pal.BRICK_D, Pal.STONE)
+	var top := p.P(u, v, z1)
+	p.c.px(int(top.x), int(top.y), Pal.BLACK)
+	p.c.px(int(top.x) - 1, int(top.y), Pal.NIGHT)
+	meta.smoke.append(p.P(u, v, z1 + 1))
 
 
 # Wohnhaus
 
-static func house(variant: int, material: String) -> Dictionary:
+static func house(variant: int, material: String, facing: String) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = variant
-	var c := PixelCanvas.new(32, 64)
-	var g := PixelCanvas.new(32, 64)
+	var p := IsoPainter.for_footprint(1, 1, 50)
 	var meta := {"smoke": [], "blink": []}
-	var style: String = _pick(rng, ["ridge", "gable", "tall", "ridge", "gable"])
+	var style: String = _pick(rng, ["gable_u", "gable_v", "tall", "gable_u", "gable_v"])
 	if material == "holz" and style == "tall":
-		style = "gable"
+		style = "gable_v"
 	var roof: Color = _pick(rng, [Pal.BRICK_D, Pal.SLATE, Pal.TEAL_D, Pal.PLUM, Pal.SOIL, Pal.STONE_D, Pal.BRICK])
 	var wall: Color = Pal.BRICK
+	var mat := material
 	if material == "holz":
 		wall = _pick(rng, [Pal.WOOD, Pal.TEAL, Pal.SAND, Pal.STONE_L, Pal.BLUE, Pal.WOOD_L])
-	var trim: Color = Pal.BONE if wall != Pal.STONE_L else Pal.WHITE
+	elif style == "tall" and rng.randf() < 0.4:
+		wall = _pick(rng, [Pal.SAND, Pal.BONE, Pal.ROSE, Pal.SKY])
+		mat = "putz"
+	var trim := Pal.BONE if material == "holz" else Color(0, 0, 0, 0)
 	var door_col: Color = _pick(rng, [Pal.TEAL_D, Pal.BRICK_D, Pal.BLUE_D, Pal.WOOD, Pal.MOSS, Pal.PLUM])
-	var wl := 4
-	var ww := 24
-	var bottom := 57
-	var wh := 26 if style == "tall" else 16
-	var top := bottom - wh + 1
-	var door_x: int = 13 if rng.randf() < 0.6 else _pick(rng, [6, 20])
+	var u0 := 0.2
+	var u1 := 0.8
+	var v0 := 0.2
+	var v1 := 0.8
+	var H := 26.0 if style == "tall" else 16.0
+	var cols := (u1 - u0) * 32.0
+	var seed_value := variant
 
-	# Wand
-	_wall(c, rng, wl, top, ww, wh, wall, material)
-	if material == "holz":
-		c.vline(wl, top, wh, trim)
-		c.vline(wl + ww - 1, top, wh, Shade.dark(trim))
-	# Sockel
-	c.rect(wl, bottom - 1, ww, 2, Pal.STONE_D)
-	c.hline(wl, bottom - 1, ww, Pal.STONE)
+	_yard(p, rng, facing)
 
-	# Fenster und Tür
-	var win_xs: Array = []
-	match door_x:
-		13: win_xs = [6, 20]
-		6: win_xs = [14, 21]
-		_: win_xs = [6, 13]
-	var shutters := material == "holz" and rng.randf() < 0.55
-	var shutter_col: Color = _pick(rng, [Pal.MOSS, Pal.TEAL_D, Pal.BRICK_D, Pal.BLUE_D])
-	var rows: Array = [top + 4] if style != "tall" else [top + 3, top + 14]
+	# Fassaden
+	var left_f: Array = []
+	var right_f: Array = []
+	var rows := [4] if style != "tall" else [3, 14]
 	for ry in rows:
-		for wx in win_xs:
-			_window(c, g, rng, wx, ry, 6, 7, trim)
-			if shutters:
-				c.vline(wx - 2, ry, 7, shutter_col)
-				c.vline(wx + 6, ry, 7, shutter_col)
-				for k in range(ry + 1, ry + 7, 2):
-					c.px(wx - 2, k, Shade.dark(shutter_col))
-					c.px(wx + 6, k, Shade.dark(shutter_col))
-			if ry == rows[rows.size() - 1] and rng.randf() < 0.6:
-				_flower_box(c, rng, wx - 1, ry + 8, 8)
-		if style == "tall" and ry == rows[0]:
-			# Obergeschoss: auch über der Tür ein Fenster
-			_window(c, g, rng, door_x, ry, 6, 7, trim)
+		left_f.append(_window(2, ry, 5, 7, rng))
+		left_f.append(_window(int(cols) - 7, ry, 5, 7, rng))
+		right_f.append(_window(2, ry, 5, 7, rng))
+		right_f.append(_window(int(cols) - 7, ry, 5, 7, rng))
+	var door := {"kind": "door", "x": int(cols) / 2 - 3, "y": 1, "w": 6, "h": 10, "color": door_col, "frame": Pal.BONE}
+	match facing:
+		"left":
+			left_f.push_front(door)
+			left_f = left_f.filter(func(f): return f.kind == "door" or f.y > 11 or absi(f.x - door.x) > 6)
+		"right":
+			right_f.push_front(door)
+			right_f = right_f.filter(func(f): return f.kind == "door" or f.y > 11 or absi(f.x - door.x) > 6)
+	p.wall_left(u0, u1, v1, 0, H, _facade(mat, wall, cols, H, left_f, false, seed_value, trim))
+	p.wall_right(u1, v0, v1, 0, H, _facade(mat, wall, cols, H, right_f, true, seed_value + 1, Shade.dark(trim) if trim.a > 0.0 else trim))
 	if style == "tall":
 		# Gesims zwischen den Stockwerken
-		c.hline(wl, top + 12, ww, Shade.light(wall))
-		c.hline(wl, top + 13, ww, Shade.dark(wall))
-	_door(c, g, door_x, bottom - 2, 6, 10, door_col, trim)
-	# Hausnummer
-	c.px(door_x + 2, bottom - 13 if style != "tall" else bottom - 13, Pal.WHITE)
+		p.line3(Vector3(u0, v1, 13), Vector3(u1, v1, 13), Shade.light(wall))
+		p.line3(Vector3(u1, v1, 13), Vector3(u1, v0, 13), wall)
+	# Lampe neben der Tür
+	if facing == "left":
+		var lp := p.P(u0 + (door.x + 7) / 32.0, v1, 9)
+		p.c.px(int(lp.x), int(lp.y), Pal.YELLOW)
+		p.g.px(int(lp.x), int(lp.y), Pal.WHITE)
+		p.g.px(int(lp.x) - 1, int(lp.y), Pal.a(Pal.OCHRE, 0.45))
+		p.g.px(int(lp.x) + 1, int(lp.y), Pal.a(Pal.OCHRE, 0.45))
+		p.g.px(int(lp.x), int(lp.y) + 1, Pal.a(Pal.OCHRE, 0.45))
+	elif facing == "right":
+		var lp2 := p.P(u1, v1 - (door.x + 7) / 32.0, 9)
+		p.c.px(int(lp2.x), int(lp2.y), Pal.YELLOW)
+		p.g.px(int(lp2.x), int(lp2.y), Pal.WHITE)
 
-	# Dach
+	var gable_l := _facade(mat, wall, cols, 12.0, [], false, seed_value + 3, trim)
+	var gable_r := _facade(mat, wall, cols, 12.0, [], true, seed_value + 4)
 	match style:
-		"ridge":
-			var rt := top - 14
-			_shingles(c, rng, 2, rt, 28, 14, roof)
-			c.hline(1, top - 1, 30, Shade.dark(Shade.dark(roof)))
-			c.hline(2, rt - 1, 28, Shade.light(Shade.light(roof)))
-			c.dither(wl, top, ww, 2, Pal.a(Pal.BLACK, 1.0), 0.25)
-			if rng.randf() < 0.45:
-				# Gaube
-				var gx := 12
-				c.rect(gx, rt + 4, 8, 7, wall)
-				_window(c, g, rng, gx + 1, rt + 6, 6, 5, trim, false)
-				c.rect(gx - 1, rt + 2, 10, 3, Shade.dark(roof))
-				c.hline(gx - 1, rt + 2, 10, Shade.light(roof))
-			_chimney(c, _pick(rng, [5, 22]), rt - 5, 9, meta)
-		"gable":
-			var apex := Vector2(16, top - 13)
-			var d := 11.0
-			var left := PackedVector2Array([Vector2(2, top + 1), apex, apex + Vector2(0, -d), Vector2(2, top + 1 - d)])
-			var right := PackedVector2Array([apex, Vector2(30, top + 1), Vector2(30, top + 1 - d), apex + Vector2(0, -d)])
-			c.poly(left, Shade.light(roof))
-			c.poly(right, roof)
-			# Schindelreihen parallel zur Traufe
-			for y in range(0, 64):
-				for x in range(0, 32):
-					var col := c.get_px(x, y)
-					if col.is_equal_approx(Shade.light(roof)) and (x + y) % 3 == 0:
-						c.px(x, y, roof)
-					elif col.is_equal_approx(roof) and (y - x + 64) % 3 == 0:
-						c.px(x, y, Shade.dark(roof))
-			c.line(int(apex.x), int(apex.y - d), int(apex.x), int(apex.y), Shade.light(Shade.light(roof)))
-			# Giebelwand vor dem Dach
-			var gable := PackedVector2Array([Vector2(wl, top), Vector2(16, top - 11), Vector2(wl + ww, top)])
-			var gc := PixelCanvas.new(32, 64)
-			_wall(gc, rng, wl, top - 12, ww, 12, wall, material)
-			for y in range(top - 12, top):
-				for x in range(wl, wl + ww):
-					if Geometry2D.is_point_in_polygon(Vector2(x + 0.5, y + 0.5), gable):
-						c.px(x, y, gc.get_px(x, y))
-			# Rundfenster im Giebel
-			c.disc(16, top - 5, 2.5, trim)
-			c.disc(16, top - 5, 1.6, Pal.BLUE_D)
-			c.px(15, top - 6, Pal.SKY)
-			g.disc(16, top - 5, 1.6, GLASS_GLOW)
-			# Windbretter
-			c.line(2, top, 16, top - 14, trim)
-			c.line(16, top - 14, 30, top, Shade.dark(trim))
-			c.dither(wl, top, ww, 2, Pal.BLACK, 0.25)
-			_chimney(c, 22, top - 22, 8, meta)
+		"gable_u":
+			_gable(p, u0, v0, u1, v1, H, 11, 0.05, "u", roof, gable_l, gable_r)
+			_chimney(p, u0 + 0.15, 0.36, H + 6, H + 15, meta)
+		"gable_v":
+			_gable(p, u0, v0, u1, v1, H, 11, 0.05, "v", roof, gable_l, gable_r)
+			# Rundes Fenster im Giebel
+			var gp := p.P((u0 + u1) * 0.5, v1, H + 4)
+			p.c.disc(gp.x, gp.y, 2.2, Pal.BONE)
+			p.c.disc(gp.x, gp.y, 1.3, Pal.BLUE_D)
+			p.g.disc(gp.x, gp.y, 1.3, GLASS_GLOW)
+			_chimney(p, 0.62, v0 + 0.12, H + 6, H + 15, meta)
 		"tall":
-			var rt := top - 10
-			c.rect(wl, rt, ww, 10, Pal.STONE_D)
-			c.speckle(wl, rt, ww, 10, Pal.SLATE, 0.18, rng)
-			c.speckle(wl, rt, ww, 10, Pal.STONE, 0.06, rng)
-			# Brüstung
-			c.rect(wl - 1, rt - 1, ww + 2, 2, Shade.light(wall))
-			c.vline(wl - 1, rt, 11, Shade.light(wall))
-			c.vline(wl + ww, rt, 11, Shade.dark(wall))
-			c.rect(wl - 1, top - 2, ww + 2, 2, Shade.light(wall))
-			c.hline(wl - 1, top - 1, ww + 2, Shade.dark(wall))
-			# Oberlicht und Antenne
-			c.rect(wl + 3, rt + 3, 6, 4, Pal.BLUE)
-			c.frame(wl + 3, rt + 3, 6, 4, Pal.STONE_L)
-			c.px(wl + 4, rt + 4, Pal.SKY)
-			c.vline(wl + 18, rt - 7, 9, Pal.STONE_L)
-			c.hline(wl + 15, rt - 6, 7, Pal.STONE_L)
-			c.hline(wl + 16, rt - 4, 5, Pal.STONE_L)
-			meta.blink.append(Vector2(wl + 18, rt - 8))
-			_chimney(c, wl + 12, rt - 3, 6, meta)
+			_flat_roof(p, u0, v0, u1, v1, H, Shade.light(wall), seed_value)
+			p.box(u0 + 0.12, v0 + 0.1, u0 + 0.3, v0 + 0.25, H, H + 3, Pal.BLUE, Pal.BLUE_D, Pal.SKY)
+			var ant := p.P(u1 - 0.15, v0 + 0.15, H)
+			p.c.vline(int(ant.x), int(ant.y) - 9, 9, Pal.STONE_L)
+			p.c.hline(int(ant.x) - 3, int(ant.y) - 8, 7, Pal.STONE_L)
+			p.c.hline(int(ant.x) - 2, int(ant.y) - 6, 5, Pal.STONE_L)
+			meta.blink.append(Vector2(int(ant.x), int(ant.y) - 10))
+			_chimney(p, u0 + 0.35, v0 + 0.15, H, H + 6, meta)
+	p.c.outline(Pal.NIGHT)
+	_fence(p, rng, facing)
+	return _result(p, meta, 1, 1)
 
-	c.outline(Pal.NIGHT, Pal.a(Pal.NIGHT, 1.0))
 
-	# Vorgarten ohne Kontur
-	var path_col := Pal.STONE_L
-	for y in range(bottom + 3, 64):
-		c.hline(door_x, y, 6, path_col)
-		if (y - bottom) % 2 == 0:
-			c.px(door_x + ((y / 2) % 3) * 2, y, Pal.STONE)
-	var fence: Color = _pick(rng, [Pal.BONE, Pal.WOOD_L, Pal.WOOD])
-	if rng.randf() < 0.7:
-		for x in range(1, 31):
-			if x >= door_x - 1 and x <= door_x + 6:
-				continue
-			if x % 2 == 1:
-				c.vline(x, 59, 4, fence)
-				c.px(x, 59, Shade.light(fence))
-			c.px(x, 60, Shade.dark(fence))
-	if rng.randf() < 0.7:
-		var bx: int = 26 if door_x < 16 else 2
-		c.disc(bx + 2, bottom - 1, 2.6, Pal.MOSS)
-		c.disc(bx + 1.5, bottom - 1.5, 1.6, Pal.GRASS)
-		c.px(bx + 1, bottom - 3, Pal.GRASS_L)
+## Vorgarten: Weg zur Tür, Rasenkante, ein Busch.
+static func _yard(p: IsoPainter, rng: RandomNumberGenerator, facing: String) -> void:
+	match facing:
+		"left":
+			p.ground(0.43, 0.8, 0.57, 1.0, 0, func(s, t, x, y): return Pal.STONE if (int(t * 6.0) % 2 == 0 and (x + y) % 5 == 0) else Pal.STONE_L)
+		"right":
+			p.ground(0.8, 0.43, 1.0, 0.57, 0, func(s, t, x, y): return Pal.STONE if (int(s * 6.0) % 2 == 0 and (x + y) % 5 == 0) else Pal.STONE_L)
+	# Busch an der Ecke
+	if rng.randf() < 0.75:
+		var bp := p.P(0.86, 0.86, 0) if facing != "right" else p.P(0.86, 0.12, 0)
+		if facing == "left":
+			bp = p.P(0.86, 0.2, 0)
+		p.c.disc(bp.x, bp.y - 2, 3.0, Pal.MOSS)
+		p.c.disc(bp.x - 0.5, bp.y - 2.5, 1.9, Pal.GRASS)
+		p.c.px(int(bp.x) - 1, int(bp.y) - 4, Pal.GRASS_L)
 		if rng.randf() < 0.5:
-			c.px(bx + 3, bottom - 2, Pal.ROSE)
-			c.px(bx + 1, bottom, Pal.ROSE)
-	# Briefkasten
-	var mx: int = door_x + 8 if door_x < 20 else door_x - 3
-	c.vline(mx, 59, 4, Pal.STONE_D)
-	c.rect(mx - 1, 57, 3, 2, _pick(rng, [Pal.BLUE, Pal.BRICK, Pal.OCHRE]))
-	return _result(c, g, meta)
+			p.c.px(int(bp.x) + 1, int(bp.y) - 2, Pal.ROSE)
+			p.c.px(int(bp.x) - 2, int(bp.y) - 1, Pal.ROSE)
+
+
+## Lattenzaun an den beiden vorderen Kanten, mit Lücke am Weg.
+static func _fence(p: IsoPainter, rng: RandomNumberGenerator, facing: String) -> void:
+	if rng.randf() > 0.7:
+		return
+	var col: Color = _pick(rng, [Pal.BONE, Pal.WOOD_L, Pal.WOOD])
+	var dk := Shade.dark(col)
+	for i in 16:
+		var f := (i + 0.5) / 16.0
+		if facing == "left" and f > 0.4 and f < 0.6:
+			continue
+		var a := p.P(0.04 + f * 0.92, 0.96, 0)
+		p.c.vline(int(a.x), int(a.y) - 4, 4, col if i % 2 == 0 else dk)
+	for i in 16:
+		var f2 := (i + 0.5) / 16.0
+		if facing == "right" and f2 > 0.4 and f2 < 0.6:
+			continue
+		var b := p.P(0.96, 0.04 + f2 * 0.92, 0)
+		p.c.vline(int(b.x), int(b.y) - 4, 4, dk if i % 2 == 0 else Shade.dark(dk))
+	p.line3(Vector3(0.04, 0.96, 3), Vector3(0.96, 0.96, 3), col)
+	p.line3(Vector3(0.96, 0.96, 3), Vector3(0.96, 0.04, 3), dk)
 
 
 # Laden
 
-static func shop(variant: int, material: String) -> Dictionary:
+static func shop(variant: int, material: String, facing: String) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = variant
-	var c := PixelCanvas.new(32, 64)
-	var g := PixelCanvas.new(32, 64)
+	var p := IsoPainter.for_footprint(1, 1, 44)
 	var meta := {"smoke": [], "blink": []}
 	var wall: Color = Pal.BRICK if material == "ziegel" else Pal.STONE_L
 	var awning: Color = _pick(rng, [Pal.ROSE, Pal.TEAL, Pal.OCHRE, Pal.BRICK, Pal.MOSS, Pal.BLUE])
-	var kind: String = _pick(rng, ["can", "bread", "bottle"])
-	var wl := 3
-	var ww := 26
-	var bottom := 57
-	var top := 35
-	var wh := bottom - top + 1
+	var kind := shop_kind(variant)
+	var u0 := 0.14
+	var u1 := 0.86
+	var v0 := 0.14
+	var v1 := 0.86
+	var H := 22.0
+	var cols := (u1 - u0) * 32.0
+	var icon := _sign_icon(kind)
+	var front: Array = [
+		{"kind": "shop", "x": 2, "y": 2, "w": 12, "h": 10},
+		{"kind": "glassdoor", "x": 16, "y": 1, "w": 5, "h": 11},
+		{"kind": "sign", "x": 2, "y": 16, "w": int(cols) - 4, "h": 5, "color": Pal.NIGHT, "icon": icon},
+	]
+	var side: Array = [_window(3, 6, 5, 7, rng, Pal.STONE_L), _window(int(cols) - 9, 6, 5, 7, rng, Pal.STONE_L)]
+	var left_f := front if facing != "right" else side
+	var right_f := front if facing == "right" else side
+	p.ground(0.0, 0.0, 1.0, 1.0, 0, func(s, t, x, y):
+		# Pflaster vor dem Laden
+		var edge: bool = (t > 0.88 and facing != "right") or (s > 0.88 and facing == "right")
+		if not edge:
+			return CLEAR
+		return Pal.STONE_L if (x + y * 2) % 7 != 0 else Pal.STONE)
+	p.wall_left(u0, u1, v1, 0, H, _facade(material, wall, cols, H, left_f, false, variant))
+	p.wall_right(u1, v0, v1, 0, H, _facade(material, wall, cols, H, right_f, true, variant + 1))
+	_flat_roof(p, u0 - 0.02, v0 - 0.02, u1 + 0.02, v1 + 0.02, H + 2, Shade.light(wall), variant)
+	# Klimagerät auf dem Dach
+	p.box(u0 + 0.1, v0 + 0.12, u0 + 0.32, v0 + 0.3, H + 2, H + 7, Pal.STONE_L, Pal.STONE, Pal.WHITE)
+	var fan := p.P(u0 + 0.21, v0 + 0.21, H + 7)
+	p.c.ellipse(fan.x, fan.y, 2.4, 1.2, Pal.STONE)
+	# Markise über dem Schaufenster
+	if facing != "right":
+		p.quad(Vector3(u0, v1, 15), Vector3(u1 - u0, 0, 0), Vector3(0, 0.14, -4), func(s, t, _x, _y):
+			var stripe := int(s * cols / 2.0) % 2 == 0
+			var col: Color = awning if stripe else Pal.BONE
+			if t > 0.8:
+				return Shade.dark(col)
+			return Shade.light(col) if t < 0.2 else col)
+	else:
+		p.quad(Vector3(u1, v1, 15), Vector3(0, v0 - v1, 0), Vector3(0.14, 0, -4), func(s, t, _x, _y):
+			var stripe2 := int(s * cols / 2.0) % 2 == 0
+			var col2: Color = awning if stripe2 else Pal.BONE
+			return Shade.dark(col2) if t > 0.8 else col2)
+	p.c.outline(Pal.NIGHT)
+	# Obstkisten vor dem Laden
+	var cp := p.P(0.2, 0.95, 0) if facing != "right" else p.P(0.95, 0.75, 0)
+	p.c.rect(int(cp.x), int(cp.y) - 4, 6, 4, Pal.WOOD)
+	p.c.hline(int(cp.x), int(cp.y) - 4, 6, Pal.WOOD_L)
+	for k in 6:
+		p.c.px(int(cp.x) + k, int(cp.y) - 5, _pick(rng, [Pal.BRICK_L, Pal.GRASS_L, Pal.OCHRE, Pal.YELLOW]))
+	return _result(p, meta, 1, 1)
 
-	_wall(c, rng, wl, top, ww, wh, wall, material)
-	# Flachdach mit Brüstung
-	var rt := top - 11
-	c.rect(wl, rt, ww, 11, Pal.SLATE)
-	c.speckle(wl, rt, ww, 11, Pal.STONE_D, 0.25, rng)
-	c.rect(wl - 1, rt - 1, ww + 2, 2, Shade.light(wall))
-	c.vline(wl - 1, rt, 12, Shade.light(wall))
-	c.vline(wl + ww, rt, 12, Shade.dark(wall))
-	c.rect(wl - 1, top - 2, ww + 2, 2, Shade.light(wall))
-	c.hline(wl - 1, top - 1, ww + 2, Shade.dark(wall))
-	# Klimagerät
-	c.rect(wl + 15, rt + 2, 8, 6, Pal.STONE_L)
-	c.hline(wl + 15, rt + 2, 8, Pal.WHITE)
-	c.vline(wl + 22, rt + 2, 6, Pal.STONE)
-	c.disc(wl + 18.5, rt + 5.5, 2, Pal.STONE)
-	c.px(wl + 18, rt + 5, Pal.STONE_D)
-	c.rect(wl + 3, rt + 4, 3, 3, Pal.STONE)
-	c.px(wl + 3, rt + 4, Pal.STONE_L)
 
-	# Schild mit Symbol
-	var sy := top + 1
-	c.rect(wl + 2, sy, ww - 4, 6, Pal.NIGHT)
-	c.frame(wl + 2, sy, ww - 4, 6, Pal.WOOD)
-	c.hline(wl + 2, sy, ww - 4, Pal.WOOD_L)
-	var ix := wl + ww / 2 - 2
+## Was der Laden verkauft. Hängt nur an der Variante, damit Bild und Name zusammenpassen.
+static func shop_kind(variant: int) -> String:
+	return ["can", "bread", "bottle"][absi(hash([variant, "kind"])) % 3]
+
+
+static func _sign_icon(kind: String) -> Array:
+	var out := []
 	match kind:
 		"can":
 			for k in 3:
-				var cx := wl + 6 + k * 6
-				c.rect(cx, sy + 1, 3, 4, Pal.BRICK_L)
-				c.hline(cx, sy + 1, 3, Pal.STONE_L)
-				c.hline(cx, sy + 4, 3, Pal.STONE_L)
-				c.px(cx + 1, sy + 2, Pal.BONE)
-				g.rect(cx, sy + 1, 3, 4, Pal.ROSE)
+				for yy in range(1, 4):
+					out.append({"x": 3 + k * 5, "y": yy, "c": Pal.BRICK_L})
+					out.append({"x": 4 + k * 5, "y": yy, "c": Pal.BONE if yy == 2 else Pal.BRICK_L})
 		"bread":
 			for k in 3:
-				var bx := wl + 5 + k * 6
-				c.rect(bx, sy + 2, 5, 3, Pal.OCHRE)
-				c.hline(bx + 1, sy + 1, 3, Pal.OCHRE)
-				c.px(bx + 1, sy + 2, Pal.YELLOW)
-				c.px(bx + 3, sy + 2, Pal.YELLOW)
-				c.hline(bx, sy + 4, 5, Pal.RUST)
-				g.rect(bx, sy + 2, 5, 2, Pal.OCHRE)
+				for xx in range(0, 4):
+					out.append({"x": 2 + k * 6 + xx, "y": 2, "c": Pal.OCHRE})
+					out.append({"x": 2 + k * 6 + xx, "y": 1, "c": Pal.RUST})
+				out.append({"x": 3 + k * 6, "y": 3, "c": Pal.YELLOW})
 		_:
 			for k in 4:
-				var bx := wl + 5 + k * 5
-				c.vline(bx + 1, sy + 1, 1, Pal.SKY)
-				c.rect(bx, sy + 2, 3, 3, Pal.TEAL)
-				c.px(bx, sy + 2, Pal.WATER)
-				g.rect(bx, sy + 2, 3, 3, Pal.WATER)
-	g.frame(wl + 2, sy, ww - 4, 6, Pal.a(Pal.OCHRE, 0.25))
-	ix = ix
-
-	# Markise mit Streifen und Bogenkante
-	var ay := sy + 7
-	for x in range(wl - 1, wl + ww + 1):
-		var stripe := ((x - wl + 1) / 2) % 2 == 0
-		var col: Color = awning if stripe else Pal.BONE
-		c.vline(x, ay, 4, col)
-		c.px(x, ay, Shade.light(col))
-		if x % 2 == 0:
-			c.px(x, ay + 4, Shade.dark(col))
-	c.dither(wl, ay + 5, ww, 2, Pal.BLACK, 0.5)
-
-	# Schaufenster mit Regalen
-	var wy := ay + 6
-	var wx := wl + 2
-	var www := 15
-	var wwh := bottom - wy - 1
-	c.rect(wx - 1, wy - 1, www + 2, wwh + 2, Pal.STONE_D)
-	c.rect(wx, wy, www, wwh, Pal.BLUE_D)
-	g.rect(wx, wy, www, wwh, Pal.a(Pal.YELLOW, 0.8))
-	for shelf in [wy + 3, wy + 7]:
-		if shelf >= wy + wwh:
-			continue
-		c.hline(wx, shelf, www, Pal.WOOD)
-		for x in range(wx, wx + www):
-			if rng.randf() < 0.75:
-				var goods: Color = _pick(rng, [Pal.BRICK_L, Pal.OCHRE, Pal.TEAL, Pal.YELLOW, Pal.ROSE, Pal.GRASS_L, Pal.BONE])
-				c.px(x, shelf - 1, goods)
-				if rng.randf() < 0.5:
-					c.px(x, shelf - 2, Shade.dark(goods))
-				g.px(x, shelf - 1, goods)
-	c.line(wx + 2, wy, wx, wy + 2, Pal.SKY)
-	c.line(wx + 7, wy, wx + 3, wy + 4, Pal.a(Pal.SKY, 0.7))
-	c.vline(wx + www / 2, wy, wwh, Pal.STONE_D)
-	g.clear(wx + www / 2, wy, 1, wwh)
-	# Glastür
-	var dx := wx + www + 2
-	c.rect(dx - 1, wy - 1, 7, bottom - wy + 1, Pal.STONE_D)
-	c.rect(dx, wy, 5, bottom - wy - 1, Pal.TEAL_D)
-	c.px(dx, wy, Pal.SKY)
-	c.px(dx + 1, wy, Pal.WATER)
-	c.vline(dx + 3, wy + 4, 3, Pal.STONE_L)
-	g.rect(dx, wy, 5, bottom - wy - 1, Pal.a(Pal.OCHRE, 0.8))
-	c.hline(dx - 1, bottom, 7, Pal.STONE_L)
-	# Sockel
-	c.hline(wl, bottom, dx - wl - 1, Pal.STONE)
-
-	c.outline(Pal.NIGHT)
-
-	# Kisten mit Obst und Aufsteller vor dem Laden
-	c.rect(wl, 58, 6, 4, Pal.WOOD)
-	c.hline(wl, 58, 6, Pal.WOOD_L)
-	c.vline(wl + 5, 58, 4, Pal.SOIL)
-	for x in range(wl, wl + 6):
-		c.px(x, 57, _pick(rng, [Pal.BRICK_L, Pal.GRASS_L, Pal.OCHRE, Pal.YELLOW]))
-	c.hline(wl, 60, 6, Pal.SOIL)
-	var sx := wl + ww - 5
-	c.line(sx, 62, sx + 2, 57, Pal.WOOD)
-	c.line(sx + 4, 62, sx + 2, 57, Pal.SOIL)
-	c.rect(sx + 1, 58, 3, 3, Pal.NIGHT)
-	c.px(sx + 2, 59, Pal.WHITE)
-	return _result(c, g, meta)
+				out.append({"x": 3 + k * 4, "y": 3, "c": Pal.SKY})
+				out.append({"x": 3 + k * 4, "y": 2, "c": Pal.TEAL})
+				out.append({"x": 3 + k * 4, "y": 1, "c": Pal.TEAL})
+				out.append({"x": 4 + k * 4, "y": 1, "c": Pal.WATER})
+				out.append({"x": 4 + k * 4, "y": 2, "c": Pal.TEAL})
+	return out
 
 
 # Fabrik
 
-static func factory(variant: int, material: String) -> Dictionary:
+static func factory(variant: int, material: String, facing: String) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = variant
-	var c := PixelCanvas.new(64, 96)
-	var g := PixelCanvas.new(64, 96)
+	var p := IsoPainter.for_footprint(2, 2, 92)
 	var meta := {"smoke": [], "blink": []}
 	var wall: Color = Pal.BRICK if material == "ziegel" else Pal.STONE
-	var wl := 3
-	var ww := 58
-	var bottom := 89
-	var top := 64
-	var wh := bottom - top + 1
+	var mat := "ziegel" if material == "ziegel" else "stahl"
+	var u0 := 0.15
+	var u1 := 1.85
+	var v0 := 0.62
+	var v1 := 1.85
+	var H := 26.0
+	var colsL := (u1 - u0) * 32.0
+	var colsR := (v1 - v0) * 32.0
 
+	# Hof: Beton mit Warnstreifen
+	p.ground(0.0, 0.0, 2.0, 2.0, 0, func(s, t, x, y):
+		if t * 2.0 < 0.6 and s * 2.0 < 1.0:
+			return CLEAR
+		var n := _noise(x, y, variant)
+		var col := Pal.STONE_L if n > 120 else Pal.STONE
+		if t * 2.0 > 1.86 and s * 2.0 > 0.75 and s * 2.0 < 1.35:
+			col = Pal.YELLOW if (x / 2 + y) % 4 < 2 else Pal.NIGHT
+		return col)
 	# Silo hinten links
-	var silo_x := 5
-	c.rect(silo_x, 24, 12, 30, Pal.STONE_L)
-	for x in range(silo_x, silo_x + 12):
-		var t := float(x - silo_x) / 11.0
-		var col := Pal.WHITE if t < 0.2 else (Pal.STONE_L if t < 0.6 else (Pal.STONE if t < 0.85 else Pal.STONE_D))
-		c.vline(x, 24, 30, col)
-	for y in range(28, 54, 6):
-		c.hline(silo_x, y, 12, Pal.STONE)
-	c.ellipse(silo_x + 6, 24, 6, 2, Pal.STONE)
-	c.ellipse(silo_x + 6, 24, 4.5, 1.2, Pal.STONE_L)
-	c.vline(silo_x + 13, 22, 30, Pal.STONE_D)
-	for y in range(23, 52, 2):
-		c.px(silo_x + 14, y, Pal.STONE_D)
-	# Rohr vom Silo zur Halle
-	c.hline(silo_x + 12, 34, 8, Pal.RUST)
-	c.hline(silo_x + 12, 35, 8, Pal.SOIL)
-
+	p.cylinder(0.42, 0.36, 0.22, 0, 52, [Pal.WHITE, Pal.STONE_L, Pal.STONE_L, Pal.STONE, Pal.STONE_D], Pal.STONE)
+	for k in 4:
+		var rp := p.P(0.42, 0.36, 10 + k * 11)
+		p.c.hline(int(rp.x) - 9, int(rp.y), 19, Pal.STONE)
 	# Schornstein hinten rechts
-	var chx := 49
-	for y in range(3, 50):
-		var wv := 6 + (y - 3) / 18
-		var x0 := chx - wv / 2
-		for x in range(x0, x0 + wv):
-			var t := float(x - x0) / float(wv - 1)
-			var col := Pal.BRICK_L if t < 0.25 else (Pal.BRICK if t < 0.75 else Pal.BRICK_D)
-			if (y % 3 == 0) and ((x + y / 3) % 3 == 0):
-				col = Pal.BRICK_D
-			c.px(x, y, col)
-	for band in [12, 13, 30, 31]:
-		c.hline(chx - 3, band, 7, Pal.BONE if band % 2 == 0 else Pal.STONE_L)
-	c.rect(chx - 4, 2, 8, 2, Pal.STONE_D)
-	c.hline(chx - 4, 2, 8, Pal.STONE)
-	c.dither(chx - 3, 4, 6, 4, Pal.BLACK, 0.5)
-	c.hline(chx - 2, 2, 4, Pal.BLACK)
-	meta.smoke.append(Vector2(chx, 1))
-	meta.blink.append(Vector2(chx + 3, 3))
-
-	# Sheddach: Blechflächen steigen nach hinten an, dazwischen dunkle Glasbänder
-	var rt := 40
-	for tooth in 4:
-		var ty := rt + tooth * 6
-		# Glasband mit Sprossen
-		c.rect(wl, ty, ww, 2, Pal.BLUE_D)
-		for x in range(wl + 2, wl + ww, 7):
-			c.vline(x, ty, 2, Pal.SLATE)
-		c.px(wl + 5 + tooth * 11, ty, Pal.SKY)
-		c.px(wl + 6 + tooth * 11, ty, Pal.BLUE)
-		g.rect(wl, ty, ww, 2, Pal.a(Pal.YELLOW, 0.5))
-		for x in range(wl + 2, wl + ww, 7):
-			g.clear(x, ty, 1, 2)
-		# Blech: oben im Licht, unten im Schatten der nächsten Reihe
-		var ramp := [Pal.STONE_L, Pal.STONE_L, Pal.STONE, Pal.STONE_D]
-		for r in 4:
-			var yy := ty + 2 + r
-			for x in range(wl, wl + ww):
-				var col: Color = ramp[r]
-				if x % 3 == 0 and r < 3:
-					col = Shade.dark(col)
-				c.px(x, yy, col)
-		# Wenige Roststreifen am Blech
-		for n in 2:
-			var rx := wl + rng.randi_range(2, ww - 3)
-			c.px(rx, ty + 4, Pal.RUST)
-			c.px(rx, ty + 5, Pal.SOIL)
-		# Seitenansicht als Sägezahn
-		c.px(wl - 1, ty + 5, Pal.STONE_D)
-		c.px(wl - 1, ty + 4, Pal.STONE_D)
-	c.dither(wl + ww - 4, rt, 4, 24, Pal.STONE_D, 0.5)
-	# Schornstein und Silo liegen hinter dem Dach; der Dachrand vorne
-	c.rect(wl - 1, top - 2, ww + 2, 2, Shade.light(wall))
-	c.hline(wl - 1, top - 1, ww + 2, Shade.dark(wall))
+	p.cylinder(1.45, 0.3, 0.1, 0, 84, [Pal.BRICK_L, Pal.BRICK, Pal.BRICK, Pal.BRICK_D], Pal.STONE_D, true)
+	for band in [30, 31, 58, 59]:
+		var bp := p.P(1.45, 0.3, band)
+		p.c.hline(int(bp.x) - 4, int(bp.y), 9, Pal.BONE if band % 2 == 0 else Pal.STONE_L)
+	var top := p.P(1.45, 0.3, 84)
+	meta.smoke.append(top + Vector2(0, -2))
+	meta.blink.append(top + Vector2(4, 1))
+	# Rohr vom Silo zur Halle
+	p.line3(Vector3(0.55, 0.45, 34), Vector3(0.7, 0.62, 34), Pal.RUST)
+	p.line3(Vector3(0.55, 0.45, 33), Vector3(0.7, 0.62, 33), Pal.SOIL)
 
 	# Halle
-	_wall(c, rng, wl, top, ww, wh, wall, "stahl" if material == "stahl" else "ziegel")
-	if material == "stahl":
-		for n in 8:
-			var rx := wl + rng.randi_range(2, ww - 3)
-			c.vline(rx, top + rng.randi_range(0, 6), rng.randi_range(2, 6), Pal.RUST)
-	# Hohe Fensterbänder
-	for wx in [wl + 3, wl + 11, wl + 41, wl + 49]:
-		var fx: int = wx
-		c.rect(fx, top + 4, 6, 9, Pal.STONE_D)
-		c.rect(fx + 1, top + 5, 4, 7, Pal.BLUE_D)
-		c.hline(fx + 1, top + 8, 4, Pal.STONE_D)
-		c.vline(fx + 3, top + 5, 7, Pal.STONE_D)
-		c.px(fx + 1, top + 5, Pal.SKY)
-		g.rect(fx + 1, top + 5, 2, 3, Pal.YELLOW)
-		g.rect(fx + 4, top + 5, 1, 3, Pal.YELLOW)
-		g.rect(fx + 1, top + 9, 2, 3, Pal.OCHRE)
-		g.rect(fx + 4, top + 9, 1, 3, Pal.OCHRE)
-		c.hline(fx, top + 13, 6, Pal.STONE_L)
-	# Rolltor
-	var dx := wl + 20
-	var dw := 17
-	c.rect(dx - 1, top + 6, dw + 2, wh - 6, Pal.STONE_D)
-	for y in range(top + 7, bottom + 1):
-		c.hline(dx, y, dw, Pal.STONE_L if (y % 2 == 0) else Pal.STONE)
-	c.dither(dx, top + 7, dw, 3, Pal.SLATE, 0.5)
-	c.hline(dx, bottom - 1, dw, Pal.STONE_D)
-	for x in range(dx - 1, dx + dw + 1):
-		c.px(x, top + 5, Pal.YELLOW if (x / 2) % 2 == 0 else Pal.BLACK)
-	# Nummer an der Wand
-	_digits(c, dx + dw / 2 - 1, top + 1, str(rng.randi_range(1, 9)), Pal.BONE)
-	# Kleine Tür mit Lampe
-	var px_ := wl + 42
-	c.rect(px_ - 1, bottom - 10, 7, 11, Pal.STONE_D)
-	c.rect(px_, bottom - 9, 5, 10, Pal.TEAL_D)
-	c.vline(px_, bottom - 9, 10, Pal.TEAL)
-	c.px(px_ + 3, bottom - 4, Pal.YELLOW)
-	c.rect(px_ + 1, bottom - 13, 3, 1, Pal.STONE_D)
-	c.hline(px_ + 1, bottom - 12, 3, Pal.YELLOW)
-	g.hline(px_ + 1, bottom - 12, 3, Pal.WHITE)
-	g.rect(px_, bottom - 11, 5, 2, Pal.a(Pal.YELLOW, 0.35))
-	# Rohre an der Wand
-	c.vline(wl + ww - 4, top + 2, wh - 2, Pal.STONE_L)
-	c.vline(wl + ww - 3, top + 2, wh - 2, Pal.STONE_D)
-	c.hline(wl + ww - 5, top + 10, 3, Pal.STONE_D)
-	c.hline(wl + ww - 5, top + 20, 3, Pal.STONE_D)
-
-	c.outline(Pal.NIGHT)
-
-	# Hof: Betonplatte, Warnstreifen, Fässer und Paletten
-	c.rect(dx - 2, bottom + 1, dw + 4, 5, Pal.STONE_L)
-	c.hline(dx - 2, bottom + 1, dw + 4, Pal.STONE)
-	for x in range(dx - 2, dx + dw + 2):
-		var s := (x + 96) % 4
-		c.px(x, bottom + 5, Pal.YELLOW if s < 2 else Pal.NIGHT)
+	var front: Array = []
+	var side: Array = []
+	for i in 4:
+		front.append({"kind": "window", "x": 4 + i * 8 + (16 if i >= 2 else 0), "y": 12, "w": 6, "h": 9, "frame": Pal.STONE_D, "curtain": Color(0, 0, 0, 0)})
+	front.append({"kind": "roller", "x": int(colsL / 2) - 8, "y": 1, "w": 16, "h": 18})
+	front.append({"kind": "band", "x": int(colsL / 2) - 8, "y": 19, "w": 16, "h": 1, "color": Pal.YELLOW})
+	for i in 3:
+		side.append({"kind": "window", "x": 4 + i * 12, "y": 10, "w": 6, "h": 9, "frame": Pal.STONE_D, "curtain": Color(0, 0, 0, 0)})
+	side.append({"kind": "door", "x": int(colsR) - 9, "y": 1, "w": 5, "h": 9, "color": Pal.TEAL_D, "frame": Pal.STONE_D})
+	p.wall_left(u0, u1, v1, 0, H, _facade(mat, wall, colsL, H, front if facing != "right" else side, false, variant))
+	p.wall_right(u1, v0, v1, 0, H, _facade(mat, wall, colsR, H, side if facing != "right" else front, true, variant + 1))
+	# Sheddach: Zähne laufen nach rechts unten, Glas zeigt nach vorne links
+	var teeth := 4
+	var dv := (v1 - v0) / teeth
+	for k in teeth:
+		var vk := v0 + k * dv
+		# Blechfläche steigt nach vorne an
+		p.quad(Vector3(u0, vk, H), Vector3(u1 - u0, 0, 0), Vector3(0, dv, 9), func(s, t, x, y):
+			var ax := int(s * colsL)
+			if ax % 3 == 0:
+				return Pal.STONE_D
+			if _noise(ax, k, variant) < 40 and t > 0.4:
+				return Pal.RUST
+			return Pal.STONE if t < 0.5 else Pal.STONE_L)
+		# Glasband vorne, senkrecht
+		p.wall_left(u0, u1, vk + dv, H, H + 9, func(s, t, x, y):
+			var ax2 := int(s * colsL)
+			if ax2 % 7 == 0 or t < 0.12:
+				return Pal.SLATE
+			if t > 0.85:
+				return [Pal.BLUE, Pal.a(Pal.YELLOW, 0.6)]
+			return [Pal.BLUE_D, Pal.a(Pal.YELLOW, 0.6)])
+		# Seitendreieck rechts
+		p.quad(Vector3(u1, vk + dv, H), Vector3(0, -dv, 0), Vector3(0, 0, 9), func(s, t, _x, _y): return Shade.dark(wall) if s + t <= 1.0 else CLEAR)
+	p.c.outline(Pal.NIGHT)
+	# Fässer und Paletten im Hof
 	for k in 3:
-		var bx := wl + 2 + k * 4
+		var fp := p.P(0.25 + k * 0.12, 1.95, 0)
 		var col: Color = _pick(rng, [Pal.RUST, Pal.TEAL, Pal.BLUE, Pal.BRICK])
-		c.rect(bx, bottom + 1, 3, 4, col)
-		c.vline(bx, bottom + 1, 4, Shade.light(col))
-		c.hline(bx, bottom + 2, 3, Shade.dark(col))
-		c.hline(bx, bottom + 1, 3, Shade.light(Shade.light(col)))
-	for k in 2:
-		var px2 := wl + ww - 12 + k * 6
-		c.rect(px2, bottom + 4, 5, 1, Pal.WOOD)
-		c.rect(px2, bottom + 1, 5, 3, Pal.WOOD_L)
-		c.frame(px2, bottom + 1, 5, 3, Pal.WOOD)
-		c.line(px2, bottom + 1, px2 + 4, bottom + 3, Pal.WOOD)
-	return _result(c, g, meta)
+		p.c.rect(int(fp.x) - 2, int(fp.y) - 6, 4, 6, col)
+		p.c.vline(int(fp.x) - 2, int(fp.y) - 6, 6, Shade.light(col))
+		p.c.hline(int(fp.x) - 2, int(fp.y) - 6, 4, Shade.light(Shade.light(col)))
+		p.c.hline(int(fp.x) - 2, int(fp.y) - 3, 4, Shade.dark(col))
+	var pp := p.P(1.95, 1.4, 0)
+	p.c.rect(int(pp.x) - 4, int(pp.y) - 5, 8, 4, Pal.WOOD_L)
+	p.c.frame(int(pp.x) - 4, int(pp.y) - 5, 8, 4, Pal.WOOD)
+	p.c.hline(int(pp.x) - 4, int(pp.y) - 1, 8, Pal.SOIL)
+	return _result(p, meta, 2, 2)
 
 
 # Kraftwerk
 
-static func power_plant(variant: int, _material: String) -> Dictionary:
+static func power_plant(variant: int, _material: String, _facing: String) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = variant
-	var c := PixelCanvas.new(64, 112)
-	var g := PixelCanvas.new(64, 112)
+	var p := IsoPainter.for_footprint(2, 2, 98)
 	var meta := {"smoke": [], "blink": []}
-
-	# Kühlturm hinten links
-	var cx := 17.0
-	var base_y := 88
-	var top_y := 26
-	for y in range(top_y, base_y + 1):
-		var t := float(base_y - y) / float(base_y - top_y)
+	# Kies im Umspannwerk vorne links
+	p.ground(0.08, 1.15, 0.95, 1.92, 0, func(s, t, x, y):
+		var n := _noise(x, y, variant)
+		return Pal.STONE if n < 300 else (Pal.STONE_D if n < 700 else Pal.SLATE))
+	# Kühlturm hinten links: Hyperboloid, Zeile für Zeile
+	var cu := 0.62
+	var cv := 0.6
+	var cen := p.P(cu, cv, 0)
+	var Ht := 78.0
+	for zi in int(Ht):
+		var tt := float(zi) / Ht
 		var r := 0.0
-		if t < 0.72:
-			var u := (t - 0.72) / 0.72
-			r = 9.0 + 5.0 * u * u
+		if tt < 0.72:
+			var uu := (tt - 0.72) / 0.72
+			r = 0.33 + 0.16 * uu * uu
 		else:
-			r = 9.0 + (t - 0.72) / 0.28 * 1.6
-		var x0 := int(round(cx - r))
-		var x1 := int(round(cx + r))
-		for x in range(x0, x1 + 1):
-			var s := float(x - x0) / maxf(1.0, float(x1 - x0))
+			r = 0.33 + (tt - 0.72) / 0.28 * 0.05
+		var rx := r * 45.25
+		var ry := r * 22.63
+		var yrow := cen.y - zi
+		for x in range(floori(cen.x - rx), ceili(cen.x + rx) + 1):
+			var nx := (x + 0.5 - cen.x) / rx
+			if absf(nx) > 1.0:
+				continue
+			var sh := (nx + 1.0) * 0.5
 			var col := Pal.STONE
-			if s < 0.1:
+			if sh < 0.1:
 				col = Pal.STONE_L
-			elif s < 0.32:
+			elif sh < 0.36:
 				col = Pal.BONE
-			elif s < 0.36:
-				col = Pal.BONE if (y % 2 == 0) else Pal.STONE_L
-			elif s < 0.6:
+			elif sh < 0.6:
 				col = Pal.STONE_L
-			elif s < 0.64:
-				col = Pal.STONE_L if (y % 2 == 0) else Pal.STONE
-			elif s < 0.88:
+			elif sh < 0.88:
 				col = Pal.STONE
 			else:
 				col = Pal.STONE_D
-			# Betonringe und Wetterspuren
-			if y % 11 == 0:
+			if zi % 11 == 0:
 				col = Shade.dark(col)
-			elif y > base_y - 8 and (x + y) % 3 == 0:
-				col = Shade.dark(col)
-			c.px(x, y, col)
+			# Unterkante als Ellipse
+			var dy := 0
+			if zi == 0:
+				dy = int(sqrt(maxf(0.0, 1.0 - nx * nx)) * ry)
+				for yy in range(int(yrow), int(yrow) + dy + 1):
+					p.c.px(x, yy, Pal.STONE_D if yy > yrow + dy - 2 else col)
+			p.c.px(x, int(yrow), col)
 	# Öffnung oben
-	c.ellipse(cx, top_y + 1, 10.6, 2.6, Pal.STONE_L)
-	c.ellipse(cx, top_y + 1, 9.2, 1.8, Pal.NIGHT)
-	c.hline(int(cx) - 6, top_y + 2, 12, Pal.SLATE)
-	# Stützen am Fuß
-	for x in range(int(cx) - 13, int(cx) + 14):
-		if x % 2 == 0:
-			c.vline(x, base_y - 2, 3, Pal.NIGHT)
-		else:
-			c.vline(x, base_y - 2, 3, Pal.STONE_D)
-	c.hline(int(cx) - 14, base_y + 1, 29, Pal.STONE_D)
-	meta.smoke.append(Vector2(cx, top_y))
-	meta.blink.append(Vector2(cx + 9, top_y))
-
-	# Turbinenhalle rechts
-	var hx := 31
-	var hw := 31
-	var bottom := 103
-	var htop := 78
-	var rt := 62
-	c.rect(hx, rt, hw, htop - rt, Pal.STONE_D)
-	c.speckle(hx, rt, hw, htop - rt, Pal.SLATE, 0.2, rng)
+	var topc := cen - Vector2(0, Ht)
+	var rt := 0.38
+	p.c.ellipse(topc.x, topc.y, rt * 45.25, rt * 22.63, Pal.STONE_L)
+	p.c.ellipse(topc.x, topc.y + 0.5, rt * 45.25 - 2, rt * 22.63 - 1.5, Pal.NIGHT)
+	meta.smoke.append(topc)
+	meta.blink.append(topc + Vector2(rt * 45.25 - 1, 0))
+	# Turbinenhalle rechts vorne
+	var u0 := 1.0
+	var u1 := 1.92
+	var v0 := 0.55
+	var v1 := 1.92
+	var H := 24.0
+	var colsL := (u1 - u0) * 32.0
+	var colsR := (v1 - v0) * 32.0
+	var front: Array = [
+		{"kind": "band", "x": 0, "y": 16, "w": int(colsL), "h": 2, "color": Pal.TEAL},
+		{"kind": "window", "x": 3, "y": 9, "w": int(colsL) - 6, "h": 5, "frame": Pal.STONE_D, "curtain": Color(0, 0, 0, 0)},
+		{"kind": "roller", "x": int(colsL) - 11, "y": 1, "w": 8, "h": 7},
+	]
+	var side: Array = [
+		{"kind": "band", "x": 0, "y": 16, "w": int(colsR), "h": 2, "color": Pal.TEAL},
+		{"kind": "window", "x": 4, "y": 9, "w": int(colsR) - 8, "h": 5, "frame": Pal.STONE_D, "curtain": Color(0, 0, 0, 0)},
+	]
+	p.wall_left(u0, u1, v1, 0, H, _facade("beton", Pal.STONE_L, colsL, H, front, false, variant))
+	p.wall_right(u1, v0, v1, 0, H, _facade("beton", Pal.STONE_L, colsR, H, side, true, variant + 1))
+	_flat_roof(p, u0 - 0.02, v0 - 0.02, u1 + 0.02, v1 + 0.02, H + 2, Pal.STONE_L, variant)
 	for k in 3:
-		var sx := hx + 4 + k * 9
-		c.rect(sx, rt + 4, 6, 8, Pal.BLUE)
-		c.frame(sx, rt + 4, 6, 8, Pal.STONE_L)
-		c.px(sx + 1, rt + 5, Pal.SKY)
-		c.hline(sx + 1, rt + 8, 4, Pal.STONE_L)
-		g.rect(sx + 1, rt + 5, 4, 6, Pal.a(Pal.YELLOW, 0.5))
-	c.rect(hx - 1, rt - 1, hw + 2, 2, Pal.STONE_L)
-	c.rect(hx - 1, htop - 2, hw + 2, 2, Pal.STONE_L)
-	c.hline(hx - 1, htop - 1, hw + 2, Pal.STONE)
-	_wall(c, rng, hx, htop, hw, bottom - htop + 1, Pal.STONE_L, "beton")
-	c.rect(hx, htop + 4, hw, 2, Pal.TEAL)
-	c.hline(hx, htop + 4, hw, Pal.WATER)
-	# Fensterband
-	c.rect(hx + 2, htop + 8, hw - 4, 4, Pal.BLUE_D)
-	for x in range(hx + 2, hx + hw - 2, 4):
-		c.vline(x, htop + 8, 4, Pal.STONE_D)
-	c.px(hx + 3, htop + 8, Pal.SKY)
-	g.rect(hx + 3, htop + 8, hw - 6, 4, Pal.YELLOW)
-	for x in range(hx + 2, hx + hw - 2, 4):
-		g.clear(x, htop + 8, 1, 4)
-	# Tor
-	c.rect(hx + 18, htop + 14, 10, bottom - htop - 13, Pal.STONE_D)
-	for y in range(htop + 15, bottom + 1, 2):
-		c.hline(hx + 19, y, 8, Pal.STONE)
-	# Warnschild
-	c.poly(PackedVector2Array([Vector2(hx + 7, htop + 21), Vector2(hx + 10.5, htop + 14), Vector2(hx + 14, htop + 21)]), Pal.YELLOW)
-	c.line(hx + 10, htop + 16, hx + 11, htop + 18, Pal.BLACK)
-	c.line(hx + 11, htop + 18, hx + 10, htop + 20, Pal.BLACK)
-
-	c.outline(Pal.NIGHT)
-
-	# Umspannwerk vorne links: Kies, Trafos, Zaun
-	var yx := 2
-	var yy := 91
-	c.rect(yx, yy, 28, 17, Pal.STONE_D)
-	c.speckle(yx, yy, 28, 17, Pal.STONE, 0.3, rng)
-	c.speckle(yx, yy, 28, 17, Pal.SLATE, 0.2, rng)
+		p.box(u0 + 0.2, v0 + 0.2 + k * 0.4, u0 + 0.55, v0 + 0.4 + k * 0.4, H + 2, H + 4, Pal.BLUE, Pal.BLUE_D, Pal.SKY)
+	# Trafos
 	for k in 2:
-		var tx := yx + 4 + k * 12
-		c.rect(tx, yy + 4, 8, 8, Pal.STONE)
-		c.hline(tx, yy + 4, 8, Pal.STONE_L)
-		for fx in range(tx, tx + 8, 2):
-			c.vline(fx, yy + 6, 6, Pal.SLATE)
-		c.vline(tx + 7, yy + 4, 8, Pal.STONE_D)
-		for ix in [tx + 1, tx + 4, tx + 6]:
-			c.vline(ix, yy + 1, 3, Pal.BONE)
-			c.px(ix, yy + 2, Pal.STONE_L)
-		c.rect(tx, yy + 12, 8, 1, Pal.NIGHT)
-	# Leitung zur Halle
-	c.line(yx + 6, yy + 1, hx + 2, htop + 2, Pal.NIGHT)
-	c.line(yx + 18, yy + 1, hx + 2, htop + 3, Pal.NIGHT)
-	# Zaun
-	for x in range(yx, yx + 28):
-		c.px(x, yy - 1, Pal.STONE_L if x % 2 == 0 else Pal.STONE)
-		c.px(x, yy + 16, Pal.STONE_L if x % 2 == 0 else Pal.STONE)
-		if x % 6 == 0:
-			c.vline(x, yy - 3, 3, Pal.STONE_D)
-			c.vline(x, yy + 13, 4, Pal.STONE_D)
-	c.vline(yx, yy - 1, 18, Pal.STONE)
-	return _result(c, g, meta)
+		var tu := 0.25 + k * 0.38
+		p.box(tu, 1.4, tu + 0.25, 1.65, 0, 10, Pal.STONE, Pal.STONE_D, Pal.STONE_L)
+		for ii in 3:
+			var ip := p.P(tu + 0.05 + ii * 0.08, 1.45, 10)
+			p.c.vline(int(ip.x), int(ip.y) - 3, 3, Pal.BONE)
+	p.c.outline(Pal.NIGHT)
+	# Zaun ums Umspannwerk
+	for i in 20:
+		var f := (i + 0.5) / 20.0
+		var a := p.P(0.08 + f * 0.87, 1.92, 0)
+		p.c.vline(int(a.x), int(a.y) - 5, 5, Pal.STONE_L if i % 2 == 0 else Pal.STONE)
+	p.line3(Vector3(0.08, 1.92, 5), Vector3(0.95, 1.92, 5), Pal.STONE_L)
+	# Warnschild
+	var wp := p.P(0.5, 1.92, 3)
+	p.c.poly(PackedVector2Array([Vector2(wp.x - 3, wp.y), Vector2(wp.x, wp.y - 5), Vector2(wp.x + 3, wp.y)]), Pal.YELLOW)
+	p.c.px(int(wp.x), int(wp.y) - 2, Pal.BLACK)
+	return _result(p, meta, 2, 2)
 
 
 # Wasserturm
 
-static func water_tower(variant: int, _material: String) -> Dictionary:
+static func water_tower(variant: int, _material: String, _facing: String) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = variant
-	var c := PixelCanvas.new(32, 96)
-	var g := PixelCanvas.new(32, 96)
+	var p := IsoPainter.for_footprint(1, 1, 96)
 	var meta := {"smoke": [], "blink": []}
 	var paint: Color = _pick(rng, [Pal.TEAL, Pal.STONE_L, Pal.WATER, Pal.BRICK_L, Pal.SKY])
 	var lt := Shade.light(paint)
 	var dk := Shade.dark(paint)
-	var bottom := 90
-
-	# Hintere Beine
-	for lx in [10, 21]:
-		c.vline(lx, 50, bottom - 6 - 50, Pal.SLATE)
-	# Steigrohr
-	c.rect(15, 50, 2, bottom - 50, Pal.STONE)
-	c.vline(15, 50, bottom - 50, Pal.STONE_L)
-	# Vordere Beine mit Kreuzverstrebung
-	var legs := [6, 25]
-	for lx in legs:
-		c.rect(lx, 50, 2, bottom - 50 + 1, Pal.STONE_D)
-		c.vline(lx, 50, bottom - 50 + 1, Pal.STONE)
-	for k in 3:
-		var y0 := 54 + k * 12
-		c.line(8, y0, 24, y0 + 11, Pal.STONE_D)
-		c.line(24, y0, 8, y0 + 11, Pal.STONE_D)
-		c.hline(8, y0, 17, Pal.STONE)
-	# Leiter am linken Bein
-	c.vline(3, 52, bottom - 52, Pal.STONE_L)
-	c.vline(5, 52, bottom - 52, Pal.STONE_L)
-	for y in range(53, bottom, 2):
-		c.px(4, y, Pal.STONE)
-
-	# Behälter
-	var tx := 3
-	var tw := 26
-	var t_top := 30
-	var t_bot := 50
-	for x in range(tx, tx + tw):
-		var s := float(x - tx) / float(tw - 1)
-		var col := paint
-		if s < 0.15:
-			col = lt
-		elif s < 0.3 and PixelCanvas.bayer(x, 0, 0.5):
-			col = lt
-		elif s > 0.85:
-			col = dk
-		elif s > 0.68 and PixelCanvas.bayer(x, 1, 0.5):
-			col = dk
-		c.vline(x, t_top, t_bot - t_top, col)
-	# Boden als Schale
-	c.ellipse(16, t_bot, 13, 4, dk)
-	c.ellipse(15, t_bot - 1, 12, 3, paint)
-	c.rect(tx, t_top, tw, t_bot - t_top - 1, Pal.a(Color.WHITE, 0.0))
-	for x in range(tx, tx + tw):
-		var s2 := float(x - tx) / float(tw - 1)
-		c.vline(x, t_top, t_bot - t_top - 1, lt if s2 < 0.15 else (dk if s2 > 0.85 else c.get_px(x, t_top)))
-	# Nähte
-	for x in range(tx + 4, tx + tw - 1, 6):
-		c.vline(x, t_top + 1, t_bot - t_top - 2, Shade.dark(c.get_px(x, t_top + 2)))
-	c.hline(tx, t_top + 9, tw, Shade.dark(paint))
-	# Tropfen-Symbol
-	var dxp := 14
-	c.px(dxp + 1, 36, Pal.WHITE)
-	c.hline(dxp, 37, 3, Pal.WHITE)
-	c.rect(dxp - 1, 38, 5, 2, Pal.WHITE)
-	c.hline(dxp, 40, 3, Pal.WHITE)
-	c.px(dxp, 38, Pal.SKY)
-	# Kegeldach
-	c.poly(PackedVector2Array([Vector2(1, t_top + 1), Vector2(16, t_top - 11), Vector2(31, t_top + 1)]), Pal.STONE_D)
-	c.poly(PackedVector2Array([Vector2(1, t_top + 1), Vector2(16, t_top - 11), Vector2(16, t_top + 1)]), Pal.STONE)
-	for y in range(t_top - 10, t_top + 1, 3):
-		c.hline(2, y, 28, Pal.a(Pal.SLATE, 0.0))
-	c.line(1, t_top, 16, t_top - 12, Pal.STONE_L)
-	c.hline(1, t_top + 1, 30, Pal.SLATE)
-	c.vline(16, t_top - 15, 4, Pal.STONE_D)
-	c.px(16, t_top - 16, Pal.BRICK_L)
-	meta.blink.append(Vector2(16, t_top - 16))
-	# Laufsteg mit Geländer
-	c.hline(0, t_bot + 2, 32, Pal.STONE_D)
-	c.hline(0, t_bot - 2, 32, Pal.STONE_L)
-	for x in range(0, 32, 4):
-		c.vline(x, t_bot - 2, 4, Pal.STONE_L)
-
-	c.outline(Pal.NIGHT)
-
+	var leg_top := 58.0
 	# Fundamente
-	for lx in legs:
-		c.rect(lx - 1, bottom + 1, 4, 2, Pal.STONE_L)
-		c.hline(lx - 1, bottom + 2, 4, Pal.STONE)
-	c.rect(14, bottom + 1, 4, 2, Pal.STONE_L)
-	return _result(c, g, meta)
+	for lp in [Vector2(0.25, 0.25), Vector2(0.75, 0.25), Vector2(0.25, 0.75), Vector2(0.75, 0.75)]:
+		p.box(lp.x - 0.06, lp.y - 0.06, lp.x + 0.06, lp.y + 0.06, 0, 2, Pal.STONE_L, Pal.STONE, Pal.BONE)
+	# Hinteres Bein, Steigrohr, Seitenbeine, vorderes Bein
+	var legs := [Vector2(0.25, 0.25), Vector2(0.75, 0.25), Vector2(0.25, 0.75), Vector2(0.75, 0.75)]
+	for i in legs.size():
+		var lp2: Vector2 = legs[i]
+		var a := p.P(lp2.x, lp2.y, 2)
+		var b := p.P(lp2.x, lp2.y, leg_top)
+		var col := Pal.SLATE if i == 0 else Pal.STONE_D
+		p.c.rect(int(a.x) - 1, int(b.y), 2, int(a.y - b.y), col)
+		p.c.vline(int(a.x) - 1, int(b.y), int(a.y - b.y), Pal.STONE if i == 2 else col)
+		if i == 0:
+			var r0 := p.P(0.5, 0.5, 0)
+			p.c.rect(int(r0.x) - 1, int(b.y), 2, int(r0.y - b.y), Pal.STONE)
+	# Verstrebungen an den beiden sichtbaren Seiten
+	for k in 3:
+		var z0 := 8.0 + k * 16.0
+		var z1 := z0 + 16.0
+		p.line3(Vector3(0.25, 0.75, z0), Vector3(0.75, 0.75, z1), Pal.STONE_D)
+		p.line3(Vector3(0.75, 0.75, z0), Vector3(0.25, 0.75, z1), Pal.STONE_D)
+		p.line3(Vector3(0.75, 0.75, z0), Vector3(0.75, 0.25, z1), Pal.SLATE)
+		p.line3(Vector3(0.75, 0.25, z0), Vector3(0.75, 0.75, z1), Pal.SLATE)
+		p.line3(Vector3(0.25, 0.75, z1), Vector3(0.75, 0.75, z1), Pal.STONE)
+	# Leiter am linken Bein
+	var la := p.P(0.25, 0.75, 2)
+	var lb := p.P(0.25, 0.75, leg_top)
+	p.c.vline(int(la.x) - 3, int(lb.y), int(la.y - lb.y), Pal.STONE_L)
+	p.c.vline(int(la.x) - 5, int(lb.y), int(la.y - lb.y), Pal.STONE_L)
+	for y in range(int(lb.y), int(la.y), 2):
+		p.c.px(int(la.x) - 4, y, Pal.STONE)
+	# Behälter
+	p.cylinder(0.5, 0.5, 0.42, leg_top, leg_top + 20, [lt, lt, paint, paint, paint, dk, dk], paint)
+	var cen := p.P(0.5, 0.5, 0)
+	var rx := 0.42 * 45.25
+	# Nähte und Band
+	for k in [-0.6, -0.2, 0.2, 0.6]:
+		var x := int(cen.x + k * rx)
+		var dy := sqrt(1.0 - k * k) * 0.42 * 22.63
+		p.c.vline(x, int(cen.y - leg_top - 20 + dy), 19, Shade.dark(p.c.get_px(x, int(cen.y - leg_top - 10))))
+	# Tropfen-Symbol vorne
+	var dp := p.P(0.5, 0.5, leg_top + 10) + Vector2(-2, 8)
+	p.c.px(int(dp.x) + 1, int(dp.y) - 2, Pal.WHITE)
+	p.c.hline(int(dp.x), int(dp.y) - 1, 3, Pal.WHITE)
+	p.c.rect(int(dp.x) - 1, int(dp.y), 5, 2, Pal.WHITE)
+	p.c.hline(int(dp.x), int(dp.y) + 2, 3, Pal.WHITE)
+	# Kegeldach
+	var ct := cen - Vector2(0, leg_top + 20)
+	for y in 12:
+		var f := float(y) / 11.0
+		var hw := 0.46 * 45.25 * f
+		var hh := 0.46 * 22.63 * f
+		for x in range(int(ct.x - hw), int(ct.x + hw) + 1):
+			var nx := (x + 0.5 - ct.x) / maxf(hw, 0.5)
+			var col := Pal.STONE if nx < -0.2 else (Pal.STONE_D if nx < 0.5 else Pal.SLATE)
+			var yy := int(ct.y - 12 + y + sqrt(maxf(0.0, 1.0 - nx * nx)) * hh * 0.4)
+			p.c.px(x, yy, col)
+			p.c.px(x, yy - 1, col)
+	p.c.vline(int(ct.x), int(ct.y) - 16, 4, Pal.STONE_D)
+	meta.blink.append(Vector2(int(ct.x), int(ct.y) - 17))
+	# Laufsteg
+	var ring := p.P(0.5, 0.5, leg_top)
+	p.c.ellipse(ring.x, ring.y + 1, 0.5 * 45.25, 0.5 * 22.63, Color(0, 0, 0, 0))
+	for i in 48:
+		var ang := TAU * i / 48.0
+		if sin(ang) < -0.1:
+			continue
+		var rp := ring + Vector2(cos(ang) * 0.5 * 45.25, sin(ang) * 0.5 * 22.63)
+		p.c.px(int(rp.x), int(rp.y), Pal.STONE_D)
+		if i % 4 == 0:
+			p.c.vline(int(rp.x), int(rp.y) - 3, 3, Pal.STONE_L)
+		p.c.px(int(rp.x), int(rp.y) - 3, Pal.STONE_L)
+	p.c.outline(Pal.NIGHT)
+	return _result(p, meta, 1, 1)
 
 
 # Park
 
-static func park(variant: int, _material: String) -> Dictionary:
+static func park(variant: int, _material: String, _facing: String) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = variant
-	var c := PixelCanvas.new(32, 64)
-	var g := PixelCanvas.new(32, 64)
+	var p := IsoPainter.for_footprint(1, 1, 40)
 	var meta := {"smoke": [], "blink": [], "lamp": []}
 	var kind: int = rng.randi() % 3
-	# Rasen mit Mähstreifen
-	for y in range(33, 63):
-		for x in range(1, 31):
-			var col := Pal.GRASS_L if ((x / 4) % 2 == 0) else Pal.GRASS
-			if PixelCanvas.bayer(x, y, 0.12):
-				col = Pal.LEAF_L if col == Pal.GRASS_L else Pal.GRASS_L
-			c.px(x, y, col)
-	# Hecke als Rand
-	for x in range(1, 31):
-		c.px(x, 33, Pal.MOSS)
-		c.px(x, 62, Pal.MOSS)
-	for y in range(33, 63):
-		c.px(1, y, Pal.MOSS)
-		c.px(30, y, Pal.MOSS_D)
+	# Rasen mit Mähstreifen und Heckenrand
+	p.ground(0.02, 0.02, 0.98, 0.98, 0, func(s, t, x, y):
+		if s < 0.06 or t < 0.06 or s > 0.94 or t > 0.94:
+			return Pal.MOSS if (x + y) % 3 else Pal.MOSS_D
+		var stripe := int(s * 8.0) % 2 == 0
+		var col := Pal.GRASS_L if stripe else Pal.GRASS
+		if PixelCanvas.bayer(x, y, 0.12):
+			col = Shade.light(col)
+		return col)
 	match kind:
 		0:
-			# Weg, Baum, Bank, Beet
-			for t in 40:
-				var f := t / 39.0
-				var px_ := lerpf(4.0, 28.0, f)
-				var py := 60.0 - f * 22.0 + sin(f * PI * 2.0) * 3.0
-				c.rect(int(px_) - 1, int(py) - 1, 4, 3, Pal.SAND)
-			c.speckle(2, 34, 28, 28, Pal.WOOD_L, 0.0, rng)
-			_bench(c, 19, 52)
-			_flowerbed(c, rng, 4, 54, 9, 5)
-			_tree(c, rng, 10, 38, 11.0)
-			_lamp(c, g, 26, 46, meta)
+			# Geschwungener Weg, Baum, Bank, Beet
+			p.ground(0.06, 0.06, 0.94, 0.94, 0, func(s, t, x, y):
+				var curve := 0.5 + sin(s * PI * 1.6) * 0.18
+				if absf(t - curve) < 0.08:
+					return Pal.SAND if (x + y) % 6 else Pal.WOOD_L
+				return CLEAR)
+			_bed(p, rng, 0.6, 0.72, 0.88, 0.9)
+			_bench(p, 0.25, 0.75)
+			_tree(p, rng, 0.32, 0.3, 10.0)
+			_lamp(p, 0.8, 0.3, meta)
 		1:
 			# Brunnen mit Wegkreuz
-			c.rect(14, 34, 4, 28, Pal.SAND)
-			c.rect(2, 46, 28, 4, Pal.SAND)
-			c.ellipse(16, 48, 9, 6, Pal.STONE_L)
-			c.ellipse(16, 48, 7.5, 4.8, Pal.STONE)
-			c.ellipse(16, 48.5, 6.5, 4, Pal.WATER)
-			c.ellipse(15, 47.5, 4, 2, Pal.SKY)
-			c.ellipse(16, 49, 5, 2.5, Pal.TEAL)
-			c.rect(15, 42, 2, 6, Pal.STONE_L)
-			c.px(15, 41, Pal.WHITE)
-			c.px(16, 41, Pal.SKY)
-			c.px(14, 43, Pal.SKY)
-			c.px(17, 43, Pal.SKY)
-			meta["fountain"] = Vector2(16, 41)
-			for p in [Vector2(5, 38), Vector2(26, 38), Vector2(5, 57), Vector2(26, 57)]:
-				_bush(c, rng, int(p.x), int(p.y))
-			_lamp(c, g, 22, 40, meta)
+			p.ground(0.06, 0.43, 0.94, 0.57, 0, func(_s, _t, x, y): return Pal.SAND if (x + y) % 7 else Pal.WOOD_L)
+			p.ground(0.43, 0.06, 0.57, 0.94, 0, func(_s, _t, x, y): return Pal.SAND if (x + y) % 7 else Pal.WOOD_L)
+			var fc := p.P(0.5, 0.5, 0)
+			p.c.ellipse(fc.x, fc.y, 13, 6.5, Pal.STONE_L)
+			p.c.ellipse(fc.x, fc.y - 1, 12, 5.5, Pal.STONE)
+			p.c.ellipse(fc.x, fc.y, 10.5, 4.6, Pal.WATER)
+			p.c.ellipse(fc.x - 2, fc.y - 1, 6, 2, Pal.SKY)
+			p.c.ellipse(fc.x + 1, fc.y + 1, 7, 2.6, Pal.TEAL)
+			p.c.rect(int(fc.x) - 1, int(fc.y) - 7, 2, 7, Pal.STONE_L)
+			p.c.px(int(fc.x) - 1, int(fc.y) - 8, Pal.WHITE)
+			meta["fountain"] = Vector2(fc.x, fc.y - 8)
+			for bp in [Vector2(0.2, 0.2), Vector2(0.8, 0.2), Vector2(0.2, 0.8), Vector2(0.8, 0.8)]:
+				var q := p.P(bp.x, bp.y, 0)
+				p.c.disc(q.x, q.y - 2, 3, Pal.MOSS)
+				p.c.disc(q.x - 0.5, q.y - 2.5, 2, Pal.GRASS)
+				p.c.px(int(q.x) - 1, int(q.y) - 4, Pal.GRASS_L)
+			_lamp(p, 0.62, 0.3, meta)
 		_:
-			# Spielplatz: Sandkasten, Schaukel, kleiner Baum
-			c.rect(3, 50, 12, 10, Pal.SAND)
-			c.frame(3, 50, 12, 10, Pal.WOOD)
-			c.hline(3, 50, 12, Pal.WOOD_L)
-			c.speckle(4, 51, 10, 8, Pal.OCHRE, 0.1, rng)
-			c.px(7, 54, Pal.BRICK_L)
-			c.px(8, 54, Pal.BRICK_L)
-			c.px(11, 56, Pal.BLUE)
+			# Spielplatz
+			p.ground(0.15, 0.55, 0.5, 0.88, 0, func(s, t, x, y):
+				if s < 0.08 or t < 0.08 or s > 0.92 or t > 0.92:
+					return Pal.WOOD
+				return Pal.SAND if _noise(x, y, 3) > 80 else Pal.OCHRE)
 			# Schaukel
-			c.line(17, 58, 20, 41, Pal.WOOD)
-			c.line(23, 58, 20, 41, Pal.WOOD)
-			c.line(24, 58, 27, 41, Pal.WOOD)
-			c.line(30, 58, 27, 41, Pal.WOOD_L)
-			c.hline(20, 41, 8, Pal.WOOD_L)
-			c.hline(20, 42, 8, Pal.SOIL)
-			for sx in [22, 25]:
-				c.vline(sx, 43, 9, Pal.STONE)
-				c.vline(sx + 1, 43, 9, Pal.STONE)
-			c.rect(21, 52, 4, 1, Pal.BRICK)
-			c.rect(24, 52, 3, 1, Pal.BLUE)
-			_tree(c, rng, 8, 38, 8.0)
-	c.outline(Pal.MOSS_D)
-	return _result(c, g, meta)
+			for sp in [Vector2(0.62, 0.3), Vector2(0.62, 0.7)]:
+				p.line3(Vector3(sp.x - 0.06, sp.y, 0), Vector3(sp.x, sp.y, 16), Pal.WOOD)
+				p.line3(Vector3(sp.x + 0.06, sp.y, 0), Vector3(sp.x, sp.y, 16), Pal.WOOD_L)
+			p.line3(Vector3(0.62, 0.3, 16), Vector3(0.62, 0.7, 16), Pal.WOOD_L)
+			for sv in [0.42, 0.56]:
+				var top := p.P(0.62, sv, 16)
+				var bot := p.P(0.62, sv, 5)
+				p.c.vline(int(top.x), int(top.y), int(bot.y - top.y), Pal.STONE_L)
+				p.c.rect(int(bot.x) - 1, int(bot.y), 3, 1, Pal.BRICK)
+			_tree(p, rng, 0.25, 0.25, 7.0)
+	p.c.outline(Pal.MOSS_D)
+	return _result(p, meta, 1, 1)
 
 
-static func _bench(c: PixelCanvas, x: int, y: int) -> void:
-	c.hline(x, y, 9, Pal.WOOD_L)
-	c.hline(x, y + 1, 9, Pal.WOOD)
-	c.hline(x, y - 3, 9, Pal.WOOD_L)
-	c.hline(x, y - 2, 9, Pal.WOOD)
-	c.vline(x + 1, y - 3, 6, Pal.STONE_D)
-	c.vline(x + 7, y - 3, 6, Pal.STONE_D)
+static func _bed(p: IsoPainter, rng: RandomNumberGenerator, u0: float, v0: float, u1: float, v1: float) -> void:
+	p.ground(u0, v0, u1, v1, 0, func(_s, _t, x, y):
+		if (x + y) % 2 == 0:
+			return Pal.GRASS
+		var n := _noise(x, y, 17)
+		if n < 350:
+			return [Pal.ROSE, Pal.YELLOW, Pal.WHITE, Pal.BRICK_L, Pal.BLUE][n % 5]
+		return Pal.SOIL)
+	rng = rng
 
 
-static func _flowerbed(c: PixelCanvas, rng: RandomNumberGenerator, x: int, y: int, fw: int, fh: int) -> void:
-	c.rect(x, y, fw, fh, Pal.SOIL)
-	c.hline(x, y + fh - 1, fw, Pal.SOIL_D)
-	for yy in range(y, y + fh - 1):
-		for xx in range(x, x + fw):
-			if (xx + yy) % 2 == 0:
-				c.px(xx, yy, Pal.GRASS)
-			if rng.randf() < 0.35:
-				c.px(xx, yy, _pick(rng, [Pal.ROSE, Pal.YELLOW, Pal.WHITE, Pal.BRICK_L, Pal.BLUE]))
+static func _bench(p: IsoPainter, u: float, v: float) -> void:
+	p.box(u, v, u + 0.24, v + 0.07, 3, 4, Pal.WOOD_L, Pal.WOOD, Pal.WOOD_L)
+	p.box(u, v - 0.02, u + 0.24, v, 4, 8, Pal.WOOD, Pal.SOIL, Pal.WOOD_L)
+	for k in [0.02, 0.2]:
+		var a := p.P(u + k, v + 0.07, 0)
+		p.c.vline(int(a.x), int(a.y) - 3, 3, Pal.STONE_D)
 
 
-static func _bush(c: PixelCanvas, rng: RandomNumberGenerator, x: int, y: int) -> void:
-	c.disc(x, y, 3, Pal.MOSS)
-	c.disc(x - 0.5, y - 0.5, 2, Pal.GRASS)
-	c.px(x - 1, y - 2, Pal.GRASS_L)
-	if rng.randf() < 0.5:
-		c.px(x + 1, y, Pal.ROSE)
+static func _tree(p: IsoPainter, rng: RandomNumberGenerator, u: float, v: float, r: float) -> void:
+	var base := p.P(u, v, 0)
+	p.c.rect(int(base.x) - 1, int(base.y - r - 6), 3, int(r) + 6, Pal.WOOD)
+	p.c.vline(int(base.x) + 1, int(base.y - r - 6), int(r) + 6, Pal.SOIL)
+	NatureArt.crown(p.c, rng, Vector2(base.x + 0.5, base.y - r - 6 - r * 0.45), r, r * 0.85)
 
 
-static func _tree(c: PixelCanvas, rng: RandomNumberGenerator, x: int, y: int, r: float) -> void:
-	c.rect(x - 1, y, 3, int(r) + 2, Pal.WOOD)
-	c.vline(x + 1, y, int(r) + 2, Pal.SOIL)
-	NatureArt.crown(c, rng, Vector2(x + 0.5, y - r * 0.55), r, r * 0.85)
-
-
-static func _lamp(c: PixelCanvas, g: PixelCanvas, x: int, y: int, meta: Dictionary) -> void:
-	c.vline(x, y - 12, 13, Pal.STONE_D)
-	c.px(x, y + 1, Pal.SLATE)
-	c.hline(x - 1, y + 1, 3, Pal.STONE_D)
-	c.rect(x - 1, y - 14, 3, 2, Pal.YELLOW)
-	c.hline(x - 1, y - 15, 3, Pal.STONE_D)
-	g.rect(x - 1, y - 14, 3, 2, Pal.WHITE)
-	g.disc(x, y - 13, 3, Pal.a(Pal.YELLOW, 0.35))
+static func _lamp(p: IsoPainter, u: float, v: float, meta: Dictionary) -> void:
+	var b := p.P(u, v, 0)
+	var x := int(b.x)
+	var y := int(b.y)
+	p.c.vline(x, y - 13, 13, Pal.STONE_D)
+	p.c.hline(x - 1, y, 3, Pal.SLATE)
+	p.c.rect(x - 1, y - 15, 3, 2, Pal.YELLOW)
+	p.c.hline(x - 1, y - 16, 3, Pal.STONE_D)
+	p.g.rect(x - 1, y - 15, 3, 2, Pal.WHITE)
+	p.g.disc(x, y - 14, 3, Pal.a(Pal.YELLOW, 0.35))
 	meta.lamp.append(Vector2(x, y))
 
 
-## Kleine Ziffern 3x5 für Hausnummern und Schilder.
+## Kleine Ziffern 3x5.
 static func _digits(c: PixelCanvas, x: int, y: int, text: String, col: Color) -> void:
 	const D := {
 		"0": ["###", "#.#", "#.#", "#.#", "###"], "1": [".#.", "##.", ".#.", ".#.", "###"],
@@ -1028,12 +898,12 @@ static func _digits(c: PixelCanvas, x: int, y: int, text: String, col: Color) ->
 		cx += 4
 
 
-static func make(type: String, variant: int, material: String) -> Dictionary:
+static func make(type: String, variant: int, material: String, facing: String = "left") -> Dictionary:
 	match type:
-		"house": return house(variant, material)
-		"shop": return shop(variant, material)
-		"factory": return factory(variant, material)
-		"power_plant": return power_plant(variant, material)
-		"water_tower": return water_tower(variant, material)
-		"park": return park(variant, material)
-	return house(variant, material)
+		"house": return house(variant, material, facing)
+		"shop": return shop(variant, material, facing)
+		"factory": return factory(variant, material, facing)
+		"power_plant": return power_plant(variant, material, facing)
+		"water_tower": return water_tower(variant, material, facing)
+		"park": return park(variant, material, facing)
+	return house(variant, material, facing)

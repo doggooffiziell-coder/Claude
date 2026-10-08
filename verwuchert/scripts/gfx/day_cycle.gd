@@ -41,13 +41,13 @@ static func night(hour: float) -> float:
 	return 0.0
 
 
-## Schattenrichtung pro Pixel Höhe. Morgens nach links, abends nach rechts,
-## immer etwas zum Betrachter hin, damit der Schatten neben dem Gebäude sichtbar ist.
+## Schattenrichtung im Bodenraum pro Pixel Höhe. Morgens nach links unten (+V),
+## abends nach rechts unten (+U). So liegt der Schatten immer sichtbar neben dem Gebäude.
 static func sun_vector(hour: float) -> Vector2:
 	var h := clampf(fposmod(hour, 24.0), 6.0, 18.0)
 	var t := (h - 6.0) / 12.0
-	var x := lerpf(-0.85, 0.85, t)
-	return Vector2(x, 0.16 + absf(x) * 0.22)
+	var dir := Vector2(lerpf(0.15, 1.0, t), lerpf(1.0, 0.15, t)).normalized()
+	return dir * (0.55 + absf(t - 0.5) * 0.7)
 
 
 ## Wie kräftig die Schatten sind. Nachts keine.

@@ -6,24 +6,25 @@ func _initialize() -> void:
 	var bg := ColorRect.new()
 	bg.color = Pal.GRASS
 	bg.size = Vector2(640, 360)
+	bg.size = Vector2(640, 360)
 	root.add_child(bg)
 	var x := 4
 	var y := 4
 	var row_h := 0
 	var list := []
-	for v in 5:
-		list.append(["house", 300 + v * 13, "ziegel" if v % 2 == 0 else "holz"])
+	for v in 6:
+		list.append(["house", 300 + v * 13, "ziegel" if v % 2 == 0 else "holz", "left" if v < 3 else "right"])
 	for v in 3:
-		list.append(["shop", 50 + v * 7, "ziegel" if v % 2 == 0 else "beton"])
-	list.append(["park", 3, ""])
-	list.append(["park", 4, ""])
-	list.append(["park", 8, ""])
-	list.append(["water_tower", 11, "stahl"])
-	list.append(["factory", 21, "ziegel"])
-	list.append(["factory", 22, "stahl"])
-	list.append(["power_plant", 5, "beton"])
+		list.append(["shop", 50 + v * 7, "ziegel" if v % 2 == 0 else "beton", "left" if v < 2 else "right"])
+	list.append(["park", 3, "", "left"])
+	list.append(["park", 4, "", "left"])
+	list.append(["park", 8, "", "left"])
+	list.append(["water_tower", 11, "stahl", "left"])
+	list.append(["factory", 21, "ziegel", "left"])
+	list.append(["factory", 22, "stahl", "right"])
+	list.append(["power_plant", 5, "beton", "left"])
 	for item in list:
-		var d := BuildingArt.make(item[0], item[1], item[2])
+		var d := BuildingArt.make(item[0], item[1], item[2], item[3])
 		if x + d.size.x > 636:
 			x = 4
 			y += row_h + 4

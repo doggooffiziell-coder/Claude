@@ -6,6 +6,8 @@ var data: Dictionary
 var art: Dictionary
 var builder: Node
 var decor := false
+## Bodenpunkt in Feldern. Für Schatten und Lichtkegel.
+var ground_pos := Vector2.ZERO
 var _leaf_t := 0.0
 
 
@@ -14,7 +16,8 @@ func setup(t: Dictionary, city_builder: Node, is_decor := false) -> void:
 	builder = city_builder
 	decor = is_decor
 	art = SpriteFactory.tree(t.kind, int(t.seed))
-	position = Vector2(int(t.x) * 32 + 16 + int(t.get("ox", 0)), int(t.y) * 32 + 24 + int(t.get("oy", 0)))
+	ground_pos = Vector2(int(t.x) + 0.5 + int(t.get("ox", 0)) / 32.0, int(t.y) + 0.5 + int(t.get("oy", 0)) / 32.0)
+	position = Iso.to_screen(ground_pos.x, ground_pos.y).round()
 	use_parent_material = true
 	_leaf_t = randf_range(2.0, 12.0)
 

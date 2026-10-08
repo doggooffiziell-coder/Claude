@@ -2,7 +2,7 @@
 
 Ein 2D-Aufbauspiel in Godot 4.4. Du baust eine kleine Stadt. Danach vergehen 50 Jahre, und die Natur holt sich alles zurück. Zum Schluss baust du mit zwei Überlebenden einen Bunker in den Ruinen deiner eigenen Stadt.
 
-Stand: Version 0.1.2. Phase 1 ist spielbar. Phase 2 und Phase 3 folgen.
+Stand: Version 0.1.3. Phase 1 ist spielbar. Phase 2 und Phase 3 folgen.
 
 ![Stadt am Tag](docs/phase1_day.png)
 ![Stadt in der Nacht](docs/phase1_night.png)
@@ -23,14 +23,17 @@ Du hast etwa 8 Minuten. Nach 10 Minuten beginnen die Jahre von selbst. Mit "Stad
 
 Regeln:
 
-- Wohnhäuser brauchen eine Straße vor der Tür, Strom und Wasser. Erst dann ziehen 4 Leute ein und zahlen Steuern.
-- Das Kraftwerk versorgt 8 Felder im Umkreis mit Strom, der Wasserturm 6 Felder mit Wasser.
+- Wohnhäuser brauchen eine Straße vor der Tür, Strom und Wasser. Erst dann zieht eine Familie mit 4 Leuten ein und zahlt Steuern.
+- Leere Häuser zahlen eine kleine Grundsteuer. So kommt immer etwas Geld rein.
+- Strom und Wasser fließen über die Straßen. Kraftwerk und Wasserturm brauchen eine Straße daneben. Ein Kraftwerk versorgt 24 Plätze (Häuser und Läden je 1, Fabriken 3), ein Wasserturm 16 Häuser. Die nächsten Gebäude bekommen zuerst etwas.
 - Läden verdienen an bewohnten Häusern in der Nähe.
 - Fabriken bringen viel Geld, ihr Rauch senkt aber die Steuern der Häuser daneben.
 - Parks machen Häuser in der Nähe beliebter.
 - Zwei Bautrupps arbeiten gleichzeitig. Weitere Baustellen warten.
 - Bäume auf dem Bauplatz kosten 5 zum Fällen. Im Teich kannst du nicht bauen.
 - Geld kommt alle 12 Sekunden. Der Balken neben dem Geld zeigt den nächsten Zahltag.
+
+Jede Familie hat einen Namen, jede Straße auch. Die Chronik unten links erzählt, wer einzieht und was öffnet.
 
 Jedes Gebäude speichert Material, Zustand und Inhalt. Ein Laden lagert Konserven, eine Fabrik Metall, ein Wasserturm Rohre. Klick ein Gebäude an, und die Infotafel zeigt alles. Genau das findest du in Phase 3 in den Ruinen.
 
@@ -76,7 +79,7 @@ GameState hält die Stadt als reine Daten. Jede Phase liest sie von dort und sch
 
 ## Grafik
 
-Alle Grafiken entstehen beim Start im Code, ohne Bilddateien. Die Palette hat 32 gedämpfte Farben. Licht kommt immer von oben links. Das Bild ist 640 x 360 Pixel groß und wird ganzzahlig hochskaliert, mit Nearest-Filter.
+Alle Grafiken entstehen beim Start im Code, ohne Bilddateien. Die Ansicht ist isometrisch im Verhältnis 2:1, eine Kachel ist 64 x 32 Pixel groß. Gebäude malt IsoPainter Fläche für Fläche, Boden und Straßen entstehen als Quadrate und werden mit einer Matrix zur Raute gekippt. Die Palette hat 32 gedämpfte Farben. Licht kommt immer von oben links. Das Bild ist 640 x 360 Pixel groß und wird ganzzahlig hochskaliert, mit Nearest-Filter.
 
 ## Tests
 

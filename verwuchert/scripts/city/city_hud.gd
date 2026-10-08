@@ -8,6 +8,10 @@ var _money: Label
 var _money_delta: Label
 var _people: Label
 var _crews: Label
+var _power: Label
+var _water: Label
+var _chron_box: VBoxContainer
+var _chron_labels: Array[Label] = []
 var _clock: Label
 var _clock_icon: TextureRect
 var _timer: Label
@@ -45,6 +49,7 @@ func setup(city_builder: CityBuilder) -> void:
 	builder.toast.connect(show_toast)
 	builder.selection_changed.connect(_on_selection)
 	builder.payday.connect(_on_payday)
+	builder.chronicle_added.connect(func(_e): _refresh_chronicle())
 	_money_shown = float(GameState.city.money)
 	show_toast("Bau deine Stadt. Häuser brauchen Straße, Strom und Wasser.", Pal.BONE)
 
@@ -138,6 +143,19 @@ func _build_top_bar() -> void:
 	_crews = _label("0/2")
 	_crews.custom_minimum_size = Vector2(34, 0)
 	row.add_child(_crews)
+	row.add_child(_sep())
+	row.add_child(_icon("bolt"))
+	_power = _label("0/0")
+	_power.custom_minimum_size = Vector2(30, 0)
+	_power.tooltip_text = "Strom: versorgte Gebäude / Leistung"
+	_power.mouse_filter = Control.MOUSE_FILTER_PASS
+	row.add_child(_power)
+	row.add_child(_icon("drop"))
+	_water = _label("0/0")
+	_water.custom_minimum_size = Vector2(30, 0)
+	_water.tooltip_text = "Wasser: versorgte Häuser / Leistung"
+	_water.mouse_filter = Control.MOUSE_FILTER_PASS
+	row.add_child(_water)
 	row.add_child(_sep())
 	_clock_icon = _icon("sun")
 	row.add_child(_clock_icon)
@@ -242,9 +260,62 @@ func _build_toolbar() -> void:
 		key.position = Vector2(2, 1)
 		b.add_child(key)
 	_hint = _label("", Pal.STONE_L)
-	_hint.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	_hint.position = Vector2(6, 360 - 62)
+	_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_hint.position = Vector2(640 - 6 - 300, 360 - 60)
+	_hint.add_theme_color_override("font_shadow_color", Pal.BLACK)
+	_hint.add_theme_constant_override("shadow_offset_x", 1)
+	_hint.add_theme_constant_override("shadow_offset_y", 1)
+	_hint.size = Vector2(300, 10)
 	add_child(_hint)
+	_build_chronicle()
+
+
+## Chronik: die letzten Ereignisse der Stadt, unten links.
+func _build_chronicle() -> void:
+	_chron_box = VBoxContainer.new()
+	_chron_box.add_theme_constant_override("separation", 1)
+	_chron_box.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	_chron_box.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_chron_box.offset_left = 4
+	_chron_box.offset_bottom = -4
+	_chron_box.custom_minimum_size = Vector2(146, 0)
+	_chron_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_chron_box)
+	var head := _label("Chronik", Pal.OCHRE)
+	head.add_theme_color_override("font_shadow_color", Pal.BLACK)
+	head.add_theme_constant_override("shadow_offset_x", 1)
+	head.add_theme_constant_override("shadow_offset_y", 1)
+	_chron_box.add_child(head)
+	for i in 3:
+		var l := _label("", Pal.BONE)
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		l.custom_minimum_size = Vector2(146, 0)
+		l.add_theme_constant_override("line_spacing", 1)
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = Pal.a(Pal.BLACK, 0.55)
+		sb.content_margin_left = 3
+		sb.content_margin_right = 3
+		sb.content_margin_top = 1
+		sb.content_margin_bottom = 1
+		l.add_theme_stylebox_override("normal", sb)
+		_chron_box.add_child(l)
+		_chron_labels.append(l)
+	_refresh_chronicle()
+
+
+func _refresh_chronicle() -> void:
+	var list: Array = GameState.city.get("chronicle", [])
+	var n := _chron_labels.size()
+	for i in n:
+		var idx := list.size() - n + i
+		var l := _chron_labels[i]
+		if idx < 0:
+			l.visible = false
+			continue
+		var e: Dictionary = list[idx]
+		l.visible = true
+		l.text = e.text
+		l.modulate.a = 0.45 + 0.55 * float(i + 1) / n
 
 
 func _sep_tall() -> Control:
@@ -295,8 +366,11 @@ func _update_tip() -> void:
 		if info.needs != "":
 			lines.append("Braucht: %s" % info.needs)
 		var cfg := Config.building(id)
+		if cfg.has("capacity"):
+			var what := "Gebäude mit Strom" if id == "power_plant" else "Häuser mit Wasser"
+			lines.append("Versorgt %d %s, über die Straßen." % [int(cfg.capacity), what])
 		if cfg.has("radius"):
-			lines.append("Reichweite: %d Felder" % int(cfg.radius))
+			lines.append("Wirkt %d Felder weit." % int(cfg.radius))
 		if cfg.has("upkeep"):
 			lines.append("Unterhalt: %d pro Zahltag" % int(cfg.upkeep))
 		_tip_body.text = "\n".join(lines)
@@ -344,8 +418,16 @@ func _update_info() -> void:
 		return
 	var v: BuildingView = builder.building_views.get(int(b.id))
 	var st: Dictionary = v.status if v else {}
-	_info_title.text = BuildingTypes.display_name(b.type)
+	_info_title.text = str(b.get("name", BuildingTypes.display_name(b.type)))
 	var lines: Array[String] = []
+	if b.has("family"):
+		_info_title.text = "Familie %s" % b.family
+		lines.append(", ".join(b.get("people", [])))
+	var addr: String = builder.address(b)
+	if addr != "":
+		lines.append(addr)
+	if b.has("name") or b.has("family"):
+		lines.append(BuildingTypes.display_name(b.type))
 	lines.append("Material: %s" % BuildingTypes.MATERIAL_NAMES.get(b.material, b.material))
 	lines.append("Zustand: %d %%" % int(b.condition))
 	match b.state:
@@ -360,6 +442,7 @@ func _update_info() -> void:
 						lines.append("Bewohnt von %d Leuten." % int(Config.building("house").get("residents", 4)))
 					else:
 						lines.append("Leer. Es fehlt: %s." % _needs_text(st))
+						lines.append("Grundsteuer: +%d" % int(Config.building("house").get("base_tax", 6)))
 					if st.get("parks", 0) > 0:
 						lines.append("Park in der Nähe: +%d" % (int(st.parks) * int(Config.building("house").get("park_bonus", 4))))
 					if st.get("polluted", false):
@@ -372,9 +455,9 @@ func _update_info() -> void:
 				"factory":
 					lines.append("Läuft." if st.get("active", false) else "Steht still. Es fehlt: %s." % _needs_text(st))
 				"water_tower":
-					lines.append("Wasser für %d Felder rundum." % int(Config.building("water_tower").get("radius", 6)))
+					lines.append("Versorgt %d von %d Häusern." % [builder.water_load, builder.water_cap] if st.get("active", false) else "Braucht eine Straße.")
 				"power_plant":
-					lines.append("Strom für %d Felder rundum." % int(Config.building("power_plant").get("radius", 8)))
+					lines.append("Versorgt %d von %d Plätzen." % [builder.power_load, builder.power_cap] if st.get("active", false) else "Braucht eine Straße.")
 				"park":
 					lines.append("Häuser in der Nähe zahlen mehr.")
 			var inc: int = st.get("income", 0)
@@ -546,6 +629,10 @@ func _process(delta: float) -> void:
 	var q := builder.queue_length()
 	_crews.text = "%d/%d%s" % [builder.crews_busy(), crews, (" +%d" % q) if q > 0 else ""]
 	_crews.add_theme_color_override("font_color", Pal.OCHRE if q > 0 else Pal.BONE)
+	_power.text = "%d/%d" % [builder.power_load, builder.power_cap]
+	_power.add_theme_color_override("font_color", Pal.ROSE if builder.power_cap == 0 or builder.power_load >= builder.power_cap else Pal.BONE)
+	_water.text = "%d/%d" % [builder.water_load, builder.water_cap]
+	_water.add_theme_color_override("font_color", Pal.ROSE if builder.water_cap == 0 or builder.water_load >= builder.water_cap else Pal.BONE)
 	_clock.text = "Tag %d  %s" % [int(c.day), DayCycle.clock_text(builder.hour)]
 	_clock_icon.texture = IconArt.get_icon("moon" if builder.night > 0.5 else "sun")
 	var left := builder.time_left()
@@ -578,7 +665,7 @@ func _update_hint() -> void:
 		return
 	match t:
 		"":
-			_hint.text = "Klick: Gebäude ansehen   Ziehen: Karte bewegen   Rad: Zoom   1-7: Werkzeuge"
+			_hint.text = "Klick: ansehen   Ziehen: Karte bewegen   Rad: Zoom"
 		"road":
 			_hint.text = "Ziehen baut eine Straße   Rechtsklick: abbrechen"
 		"demolish":

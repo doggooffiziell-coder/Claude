@@ -77,14 +77,14 @@ func _paint_scene() -> Image:
 		c.poly(PackedVector2Array([Vector2(x - 6, 276), Vector2(x, 276 - hgt), Vector2(x + 6, 276)]), Pal.MOSS_D)
 	# Häuserzeile rechts, schon ein wenig verwuchert
 	var x0 := 250
-	var items := [["house", 11, "ziegel"], ["shop", 5, "ziegel"], ["house", 8, "holz"], ["water_tower", 3, "stahl"], ["house", 2, "ziegel"], ["factory", 4, "ziegel"]]
+	var items := [["house", 11, "ziegel"], ["shop", 5, "ziegel"], ["house", 8, "holz"], ["water_tower", 3, "stahl"], ["house", 2, "ziegel"], ["house", 19, "holz"]]
 	for it in items:
 		var art := BuildingArt.make(it[0], it[1], it[2])
 		var img: Image = (art.tex as ImageTexture).get_image()
 		var y := GROUND + 6 - img.get_height()
 		c.stamp(img, x0, y)
 		_overgrow(c, rng, x0, y, img.get_width(), img.get_height())
-		x0 += img.get_width() + rng.randi_range(2, 8)
+		x0 += img.get_width() - rng.randi_range(4, 12)
 	# Boden
 	for y in range(GROUND, H):
 		for x in W:

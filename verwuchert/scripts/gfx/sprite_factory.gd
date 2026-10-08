@@ -7,15 +7,15 @@ static var _trees := {}
 static var _roads := {}
 
 
-static func building(type: String, variant: int, material: String) -> Dictionary:
-	var key := "%s_%d_%s" % [type, variant, material]
+static func building(type: String, variant: int, material: String, facing: String = "left") -> Dictionary:
+	var key := "%s_%d_%s_%s" % [type, variant, material, facing]
 	if not _buildings.has(key):
-		_buildings[key] = BuildingArt.make(type, variant, material)
+		_buildings[key] = BuildingArt.make(type, variant, material, facing)
 	return _buildings[key]
 
 
 static func building_for(b: Dictionary) -> Dictionary:
-	return building(b.type, int(b.variant), b.material)
+	return building(b.type, int(b.variant), b.material, str(b.get("facing", "left")))
 
 
 static func tree(kind: String, seed_value: int) -> Dictionary:

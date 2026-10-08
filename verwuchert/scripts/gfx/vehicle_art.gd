@@ -1,73 +1,70 @@
 class_name VehicleArt
 extends RefCounted
-## Kleine Autos für vier Richtungen. 0 = Osten, 1 = Süden, 2 = Westen, 3 = Norden.
+## Kleine Autos als isometrische Kisten. Richtung im Bodenraum:
+## 0 = +U (rechts unten), 1 = +V (links unten), 2 = -U (links oben), 3 = -V (rechts oben).
 
 static var _cache := {}
 
+const LEN := 0.42
+const WID := 0.22
 
-static func car(dir: int, body: Color) -> ImageTexture:
+
+static func car(dir: int, body: Color) -> Dictionary:
 	var key := "%d_%s" % [dir, body.to_html()]
 	if _cache.has(key):
 		return _cache[key]
-	var c: PixelCanvas
+	var p := IsoPainter.new()
+	p.c = PixelCanvas.new(34, 26)
+	p.g = PixelCanvas.new(34, 26)
+	p.origin = Vector2(17, 4)
+	var along_u := dir == 0 or dir == 2
+	var lu := LEN if along_u else WID
+	var lv := WID if along_u else LEN
+	var u0 := 0.5 - lu * 0.5
+	var v0 := 0.5 - lv * 0.5
 	var lt := Shade.light(body)
 	var dk := Shade.dark(body)
-	if dir == 0 or dir == 2:
-		c = PixelCanvas.new(14, 9)
-		# Karosserie
-		c.rect(1, 3, 12, 4, body)
-		c.hline(1, 3, 12, lt)
-		c.hline(1, 6, 12, dk)
-		# Kabine mit Scheiben
-		c.rect(3, 0, 7, 3, body)
-		c.hline(4, 0, 5, lt)
-		c.rect(4, 1, 2, 2, Pal.BLUE_D)
-		c.rect(7, 1, 2, 2, Pal.BLUE_D)
-		c.px(4, 1, Pal.SKY)
-		c.px(7, 1, Pal.SKY)
-		c.vline(9, 1, 2, Pal.BLUE)
-		# Räder
-		for wx in [2, 9]:
-			c.rect(wx, 6, 3, 2, Pal.BLACK)
-			c.px(wx + 1, 6, Pal.STONE)
-		# Lichter
-		c.px(12, 4, Pal.YELLOW)
-		c.px(1, 4, Pal.BRICK_L)
-		c.px(6, 4, dk)
-		c.outline(Pal.BLACK)
-		if dir == 2:
-			c.img.flip_x()
+	# Räder
+	for f in [0.2, 0.8]:
+		for side in [0.0, 1.0]:
+			var wu: float = u0 + (lu * f if along_u else lu * side)
+			var wv: float = v0 + (lv * side if along_u else lv * f)
+			var wp := p.P(wu, wv, 1)
+			p.c.rect(int(wp.x) - 1, int(wp.y) - 1, 2, 2, Pal.BLACK)
+	# Karosserie
+	p.box(u0, v0, u0 + lu, v0 + lv, 2, 6, body, dk, lt)
+	# Kabine, nach hinten versetzt
+	var cu0 := u0 + (lu * 0.25 if along_u else 0.02)
+	var cu1 := u0 + (lu * 0.72 if along_u else lu - 0.02)
+	var cv0 := v0 + (0.02 if along_u else lv * 0.25)
+	var cv1 := v0 + (lv - 0.02 if along_u else lv * 0.72)
+	p.wall_left(cu0, cu1, cv1, 6, 10, func(s, t, _x, _y): return Pal.BLUE_D if t < 0.75 else Pal.SKY)
+	p.wall_right(cu1, cv0, cv1, 6, 10, func(s, t, _x, _y): return Pal.NIGHT if t < 0.75 else Pal.BLUE)
+	p.ground(cu0, cv0, cu1, cv1, 10, func(_s, _t, _x, _y): return lt)
+	# Lichter vorne und hinten
+	var front := Vector3()
+	var back := Vector3()
+	match dir:
+		0:
+			front = Vector3(u0 + lu, v0 + lv * 0.5, 4)
+			back = Vector3(u0, v0 + lv * 0.5, 4)
+		1:
+			front = Vector3(u0 + lu * 0.5, v0 + lv, 4)
+			back = Vector3(u0 + lu * 0.5, v0, 4)
+		2:
+			front = Vector3(u0, v0 + lv * 0.5, 4)
+			back = Vector3(u0 + lu, v0 + lv * 0.5, 4)
+		_:
+			front = Vector3(u0 + lu * 0.5, v0, 4)
+			back = Vector3(u0 + lu * 0.5, v0 + lv, 4)
+	var fp := p.P(front.x, front.y, front.z)
+	var bp := p.P(back.x, back.y, back.z)
+	# Nur sichtbare Seiten bekommen Lichter
+	if dir == 0 or dir == 1:
+		p.c.px(int(fp.x), int(fp.y), Pal.YELLOW)
 	else:
-		c = PixelCanvas.new(9, 13)
-		c.rect(1, 1, 7, 10, body)
-		c.vline(1, 1, 10, lt)
-		c.vline(7, 1, 10, dk)
-		if dir == 1:
-			# Zum Betrachter: Dach oben, Frontscheibe, Haube, Scheinwerfer
-			c.rect(2, 2, 5, 3, lt)
-			c.rect(2, 5, 5, 2, Pal.BLUE_D)
-			c.px(2, 5, Pal.SKY)
-			c.hline(2, 8, 5, dk)
-			c.px(1, 10, Pal.YELLOW)
-			c.px(7, 10, Pal.YELLOW)
-			c.hline(2, 10, 5, Pal.STONE_L)
-		else:
-			# Vom Betrachter weg: Heckscheibe unten, Rücklichter
-			c.hline(2, 1, 5, dk)
-			c.rect(2, 3, 5, 3, lt)
-			c.rect(2, 6, 5, 2, Pal.BLUE_D)
-			c.px(2, 6, Pal.BLUE)
-			c.px(1, 10, Pal.BRICK_L)
-			c.px(7, 10, Pal.BRICK_L)
-			c.hline(2, 10, 5, dk)
-		for wy in [2, 8]:
-			c.rect(0, wy, 1, 3, Pal.BLACK)
-			c.rect(8, wy, 1, 3, Pal.BLACK)
-		c.outline(Pal.BLACK)
-	var tex := c.texture()
-	_cache[key] = tex
-	return tex
-
-
-static func car_size(dir: int) -> Vector2i:
-	return Vector2i(14, 9) if (dir == 0 or dir == 2) else Vector2i(9, 13)
+		p.c.px(int(bp.x), int(bp.y), Pal.BRICK_L)
+	p.c.outline(Pal.BLACK)
+	var res := {"tex": p.c.texture(), "size": Vector2i(p.c.w, p.c.h), "anchor": p.P(0.5, 0.5, 0), "front": fp, "back": bp}
+	_cache[key] = res
+	return res

@@ -28,7 +28,7 @@
 		},
 		"house": {
 			"cost": 120, "build_time": 8,
-			"residents": 4, "tax_per_resident": 5,
+			"residents": 4, "tax_per_resident": 5, "base_tax": 6,
 			"park_bonus": 4, "park_bonus_max": 2,
 			"factory_malus": 0.3
 		},
@@ -39,16 +39,16 @@
 		},
 		"factory": {
 			"cost": 400, "build_time": 18,
-			"income": 90, "pollution_radius": 3
+			"income": 90, "pollution_radius": 3, "power_use": 3
 		},
 		"park": {
 			"cost": 60, "build_time": 4, "radius": 3
 		},
 		"water_tower": {
-			"cost": 250, "build_time": 12, "radius": 6, "upkeep": 10
+			"cost": 250, "build_time": 12, "capacity": 16, "upkeep": 10
 		},
 		"power_plant": {
-			"cost": 500, "build_time": 22, "radius": 8, "upkeep": 25
+			"cost": 500, "build_time": 22, "capacity": 24, "upkeep": 25
 		}
 	},
 

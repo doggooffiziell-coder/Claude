@@ -8,7 +8,9 @@ const SHIRT := [Pal.TEAL, Pal.BRICK_L, Pal.OCHRE, Pal.BLUE, Pal.MOSS, Pal.PLUM, 
 const PANTS := [Pal.BLUE_D, Pal.SLATE, Pal.SOIL, Pal.STONE_D]
 
 var builder: Node
+## Wegpunkte in Feldern auf dem Boden.
 var points: Array[Vector2] = []
+var gpos := Vector2.ZERO
 var idx := 1
 var done := false
 var skin: Color
@@ -23,7 +25,8 @@ var fade := 0.0
 func setup(city_builder: Node, pts: Array[Vector2]) -> void:
 	builder = city_builder
 	points = pts
-	position = pts[0]
+	gpos = pts[0]
+	position = Iso.to_screen(gpos.x, gpos.y).round()
 	use_parent_material = true
 	skin = SKIN[randi() % SKIN.size()]
 	hair = HAIR[randi() % HAIR.size()]
@@ -42,14 +45,15 @@ func advance(dt: float) -> void:
 		return
 	fade = minf(1.0, fade + dt * 3.0)
 	modulate.a = fade
-	var to := points[idx] - position
-	var step := speed * dt
+	var to := points[idx] - gpos
+	var step := speed / 32.0 * dt
 	walk += dt * speed * 0.5
 	if to.length() <= step:
-		position = points[idx]
+		gpos = points[idx]
 		idx += 1
 	else:
-		position += to.normalized() * step
+		gpos += to.normalized() * step
+	position = Iso.to_screen(gpos.x, gpos.y).round()
 	queue_redraw()
 
 

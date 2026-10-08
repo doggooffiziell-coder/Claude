@@ -1,10 +1,12 @@
 class_name Traffic
 extends Node
-## Autos und Fußgänger. Autos fahren rechts, Fußgänger laufen auf dem Gehweg von Haus zu Haus.
+## Autos und Fußgänger. Alles rechnet in Feldern auf dem Boden.
+## Autos fahren rechts, Fußgänger laufen auf dem Gehweg von Haus zu Laden oder Park.
 
-const T := 32
 const DIRS := [Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(0, -1)]
 const CAR_COLORS := [Pal.BRICK, Pal.TEAL, Pal.OCHRE, Pal.BLUE, Pal.BONE, Pal.MOSS, Pal.PLUM, Pal.STONE_L]
+const LANE := 0.17
+const WALK := 0.36
 
 var builder: Node
 var objects: Node2D
@@ -49,16 +51,19 @@ func _target_walkers() -> int:
 	return mini(builder.occupied_houses * 2, Config.integer("city/max_walkers", 16))
 
 
+## Rechte Fahrspur in Fahrtrichtung, in Feldern.
 static func lane_offset(d: Vector2i) -> Vector2:
-	match d:
-		Vector2i(1, 0): return Vector2(0, 5)
-		Vector2i(-1, 0): return Vector2(0, -4)
-		Vector2i(0, 1): return Vector2(-5, 0)
-		_: return Vector2(5, 0)
+	return Vector2(-d.y, d.x) * LANE
 
 
-func _tile_center(t: Vector2i) -> Vector2:
-	return Vector2(t.x * T + 16, t.y * T + 16)
+static func _center(t: Vector2i) -> Vector2:
+	return Vector2(t.x + 0.5, t.y + 0.5)
+
+
+static func face_of(v: Vector2) -> int:
+	if absf(v.x) >= absf(v.y):
+		return 0 if v.x > 0 else 2
+	return 1 if v.y > 0 else 3
 
 
 # Autos
@@ -79,7 +84,6 @@ func _spawn_car() -> void:
 		if opts.is_empty():
 			return
 		dir = opts[randi() % opts.size()]
-	# Nicht auf einem anderen Auto starten
 	for c in cars:
 		if c.tile == start:
 			return
@@ -88,9 +92,11 @@ func _spawn_car() -> void:
 	car.setup(builder, CAR_COLORS[randi() % CAR_COLORS.size()])
 	car.tile = start
 	car.dir = dir
-	car.position = _tile_center(start) + lane_offset(dir)
-	car.target = _tile_center(start + dir) + lane_offset(dir)
+	car.gpos = _center(start) + lane_offset(dir)
+	car.target = _center(start + dir) + lane_offset(dir)
 	car.next_tile = start + dir
+	car.face = face_of(Vector2(dir))
+	car.sync()
 	cars.append(car)
 
 
@@ -108,50 +114,44 @@ func _move_car(c: CarView, dt: float) -> void:
 	if not builder.is_road(c.next_tile) and not builder.is_road(c.tile):
 		_remove_car(c)
 		return
-	# Abstand zum Vordermann halten
+	var fwd := Vector2(c.dir)
 	var ahead := false
 	for o in cars:
 		if o == c:
 			continue
-		var rel: Vector2 = o.position - c.position
-		var fwd := Vector2(c.dir)
+		var rel: Vector2 = o.gpos - c.gpos
 		var along := rel.dot(fwd)
 		var side := absf(rel.dot(Vector2(-fwd.y, fwd.x)))
-		if along > 0.0 and along < 14.0 and side < 4.0:
+		if along > 0.0 and along < 0.5 and side < 0.14:
 			ahead = true
 			break
 	c.moving = not ahead
 	if ahead:
 		return
-	var speed := 26.0 * c.speed_mult
-	var to: Vector2 = c.target - c.position
-	var step := speed * dt
+	var step := 0.8 * c.speed_mult * dt
+	var to: Vector2 = c.target - c.gpos
 	if to.length() <= step:
-		c.position = c.target
+		c.gpos = c.target
 		c.tile = c.next_tile
 		if not builder.is_road(c.tile):
 			_remove_car(c)
 			return
 		var opts := _exits(c.tile, c.dir)
 		if opts.is_empty():
-			# Sackgasse: wenden
 			opts = [-c.dir]
 		var nd: Vector2i = opts[randi() % opts.size()]
-		# Geradeaus ist wahrscheinlicher
 		if c.dir in opts and randf() < 0.55:
 			nd = c.dir
 		c.dir = nd
 		c.next_tile = c.tile + nd
-		c.target = _tile_center(c.next_tile) + lane_offset(nd)
+		c.target = _center(c.next_tile) + lane_offset(nd)
 		if c.next_tile.x < builder.entry_tile().x:
 			_remove_car(c)
+			return
 	else:
-		c.position += to.normalized() * step
-		var v := to.normalized()
-		if absf(v.x) > absf(v.y):
-			c.face = 0 if v.x > 0 else 2
-		else:
-			c.face = 1 if v.y > 0 else 3
+		c.gpos += to.normalized() * step
+		c.face = face_of(to)
+	c.sync()
 
 
 func _remove_car(c: CarView) -> void:
@@ -185,14 +185,13 @@ func _spawn_walker() -> void:
 	var path: Array = builder.road_path(a, b)
 	if path.is_empty() or path.size() > 24:
 		return
-	var side := 1 if randf() < 0.5 else -1
+	var side := 1.0 if randf() < 0.5 else -1.0
 	var pts: Array[Vector2] = []
 	pts.append(builder.door_point(home))
 	for i in path.size():
 		var t: Vector2i = path[i]
 		var d: Vector2i = (path[i + 1] - t) if i + 1 < path.size() else (t - path[i - 1] if i > 0 else Vector2i(1, 0))
-		var perp := Vector2(-d.y, d.x) * 11.0 * side
-		pts.append(_tile_center(t) + perp)
+		pts.append(_center(t) + Vector2(-d.y, d.x) * WALK * side)
 	pts.append(builder.door_point(goal))
 	var w := WalkerView.new()
 	objects.add_child(w)

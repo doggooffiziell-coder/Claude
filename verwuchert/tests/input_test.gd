@@ -18,7 +18,7 @@ func _initialize() -> void:
 
 
 func screen_of(t: Vector2i) -> Vector2:
-	var wp := Vector2(t.x * 32 + 16, t.y * 32 + 16)
+	var wp := Iso.center(t)
 	return b.get_viewport().get_canvas_transform() * wp
 
 
@@ -42,7 +42,7 @@ func _process(_d: float) -> bool:
 	match step:
 		5:
 			b = current_scene
-			b.camera.position = Vector2(8 * 32, 8 * 32)
+			b.camera.position = Iso.to_screen(6, 8)
 			# Werkzeug über die Leiste wählen
 			var hud = b.get_node("HUD/Root")
 			(hud._tool_buttons["road"] as Button).emit_signal("pressed")
@@ -84,7 +84,7 @@ func _process(_d: float) -> bool:
 			Input.parse_input_event(m)
 		28:
 			mouse(Vector2(260, 130), MOUSE_BUTTON_LEFT, false)
-			check(b.camera.position.x > 8 * 32 + 10, "Ziehen ohne Werkzeug bewegt die Karte")
+			check(b.camera.position.x > Iso.to_screen(6, 8).x + 10, "Ziehen ohne Werkzeug bewegt die Karte")
 			print("FEHLER: %d" % fails)
 			return true
 	return false

@@ -39,7 +39,7 @@ func _draw() -> void:
 		return
 	var night: float = view.builder.night
 	var art: Dictionary = view.art
-	var origin := Vector2(0, -art.size.y)
+	var origin: Vector2 = -art.anchor
 	var lit := _lit() * night
 	if lit > 0.01:
 		# Leichtes Flackern hinter Fenstern

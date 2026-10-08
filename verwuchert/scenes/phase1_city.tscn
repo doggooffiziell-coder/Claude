@@ -1,4 +1,4 @@
-[gd_scene load_steps=11 format=3]
+[gd_scene load_steps=12 format=3]
 
 [ext_resource type="Script" path="res://scripts/city/city_builder.gd" id="1"]
 [ext_resource type="Script" path="res://scripts/city/city_renderer.gd" id="2"]
@@ -9,6 +9,7 @@
 [ext_resource type="Script" path="res://scripts/gfx/sky_layer.gd" id="7"]
 [ext_resource type="Script" path="res://scripts/city/traffic.gd" id="8"]
 [ext_resource type="Script" path="res://scripts/city/city_hud.gd" id="9"]
+[ext_resource type="Script" path="res://scripts/city/wire_layer.gd" id="10"]
 
 [node name="Phase1City" type="Node2D"]
 script = ExtResource("1")
@@ -30,6 +31,9 @@ script = ExtResource("4")
 
 [node name="Objects" type="Node2D" parent="World"]
 y_sort_enabled = true
+
+[node name="Wires" type="Node2D" parent="World"]
+script = ExtResource("10")
 
 [node name="Particles" type="Node2D" parent="World"]
 script = ExtResource("5")

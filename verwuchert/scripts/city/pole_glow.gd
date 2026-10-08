@@ -1,5 +1,5 @@
 extends Node2D
-## Leuchtender Kopf der Laterne. Additiv, ohne Abdunklung.
+## Leuchte am Mast. Additiv, ohne Abdunklung.
 
 static var _add_mat: CanvasItemMaterial
 
@@ -23,6 +23,6 @@ func _draw() -> void:
 	var n: float = builder.night
 	if n <= 0.01:
 		return
-	draw_rect(Rect2(3, -14, 2, 1), Color(n, n, n * 0.9, 1.0))
-	draw_rect(Rect2(2, -13, 4, 1), Pal.a(Pal.YELLOW * n, 1.0) * Color(1, 1, 1, 0.6))
-	draw_rect(Rect2(3, -12, 2, 1), Pal.a(Pal.OCHRE * n, 1.0) * Color(1, 1, 1, 0.4))
+	draw_rect(Rect2(4, -12, 2, 1), Color(n, n, n * 0.9, 1.0))
+	draw_rect(Rect2(3, -11, 4, 1), Color(n * 0.6, n * 0.5, n * 0.25, 1.0))
+	draw_rect(Rect2(4, -10, 2, 1), Color(n * 0.35, n * 0.28, n * 0.12, 1.0))

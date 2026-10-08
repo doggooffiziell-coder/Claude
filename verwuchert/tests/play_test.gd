@@ -53,12 +53,31 @@ func _process(_d: float) -> bool:
 			var occ: int = b.occupied_houses
 			check(occ == 3, "Drei Häuser bewohnt: %d" % occ)
 			check(b.residents == 12, "12 Bewohner: %d" % b.residents)
+			check(b.power_load > 0 and b.power_cap == 24, "Strom fließt über die Straßen: %d/%d" % [b.power_load, b.power_cap])
+			var fam := 0
+			for bd in gs.city.buildings:
+				if bd.has("family"):
+					fam += 1
+			check(fam == 3, "Drei Familien mit Namen: %d" % fam)
+			check(gs.city.chronicle.size() >= 5, "Chronik hat Einträge: %d" % gs.city.chronicle.size())
+			print("     Chronik: ", gs.city.chronicle[gs.city.chronicle.size() - 1].text)
 			var inc: int = b.income_per_payday()
 			print("     Einnahmen pro Zahltag: %d  %s" % [inc, str(b.income_parts)])
 			check(inc > 0, "Stadt verdient Geld")
 			for bd in gs.city.buildings:
 				if bd.type == "shop":
 					check(not bd.contents.is_empty(), "Laden hat Inhalt: %s" % str(bd.contents))
+			# Grundsteuer: ein Haus ohne Strom zahlt trotzdem etwas
+			b.tool = "house"
+			var far := Vector2i(20, 2)
+			b.place("house", far, true)
+			b.tool = ""
+			for i in 120:
+				b._tick(0.1)
+			b._update_status()
+			var lone = b.building_at(far)
+			var lv = b.building_views[int(lone.id)]
+			check(not lv.status.get("occupied", false) and int(lv.status.get("income", 0)) > 0, "Leeres Haus zahlt Grundsteuer: %d" % int(lv.status.get("income", 0)))
 			# Abreißen
 			var before: int = gs.city.money
 			b.demolish(Vector2i(9, b.entry_row + 1))
