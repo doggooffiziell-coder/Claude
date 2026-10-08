@@ -1,0 +1,58 @@
+[gd_scene load_steps=11 format=3]
+
+[ext_resource type="Script" path="res://scripts/city/city_builder.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/city/city_renderer.gd" id="2"]
+[ext_resource type="Script" path="res://scripts/gfx/shadow_painter.gd" id="3"]
+[ext_resource type="Script" path="res://scripts/gfx/light_pools.gd" id="4"]
+[ext_resource type="Script" path="res://scripts/gfx/particles.gd" id="5"]
+[ext_resource type="Script" path="res://scripts/city/top_overlay.gd" id="6"]
+[ext_resource type="Script" path="res://scripts/gfx/sky_layer.gd" id="7"]
+[ext_resource type="Script" path="res://scripts/city/traffic.gd" id="8"]
+[ext_resource type="Script" path="res://scripts/city/city_hud.gd" id="9"]
+
+[node name="Phase1City" type="Node2D"]
+script = ExtResource("1")
+
+[node name="World" type="Node2D" parent="."]
+
+[node name="Ground" type="Node2D" parent="World"]
+script = ExtResource("2")
+
+[node name="Shadows" type="CanvasGroup" parent="World"]
+fit_margin = 0.0
+clear_margin = 0.0
+
+[node name="Painter" type="Node2D" parent="World/Shadows"]
+script = ExtResource("3")
+
+[node name="LightPools" type="Node2D" parent="World"]
+script = ExtResource("4")
+
+[node name="Objects" type="Node2D" parent="World"]
+y_sort_enabled = true
+
+[node name="Particles" type="Node2D" parent="World"]
+script = ExtResource("5")
+
+[node name="TopOverlay" type="Node2D" parent="World"]
+script = ExtResource("6")
+
+[node name="Sky" type="Node2D" parent="World"]
+script = ExtResource("7")
+
+[node name="Camera" type="Camera2D" parent="."]
+
+[node name="Traffic" type="Node" parent="."]
+script = ExtResource("8")
+
+[node name="HUD" type="CanvasLayer" parent="."]
+
+[node name="Root" type="Control" parent="HUD"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("9")

@@ -249,3 +249,7 @@ Tags: OUT, BLEED, FIRE, CHOKE, AGONY, HEAL, BLADE, TORN, FROZEN.
 | `scripts/main.gd` | Szenenaufbau, Eingabe, Werkzeuge und Lichtkegel. |
 
 Das Spiel rendert in 384 x 216 Pixeln und skaliert mit Nearest-Filter auf die Fenstergröße.
+
+## Zweites Spiel: Verwuchert
+
+Im Ordner verwuchert/ liegt ein eigenes Godot-Projekt: ein Aufbauspiel, in dem deine Stadt 50 Jahre verwuchert. Mehr dazu in verwuchert/README.md.
