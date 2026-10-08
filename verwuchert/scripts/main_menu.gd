@@ -30,6 +30,7 @@ func _ready() -> void:
 	col.add_child(_continue)
 	var quit := _button("Beenden", Pal.ROSE)
 	quit.pressed.connect(func(): get_tree().quit())
+	quit.visible = not OS.has_feature("web")
 	col.add_child(quit)
 
 	var ver := Label.new()

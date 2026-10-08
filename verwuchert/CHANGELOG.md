@@ -2,6 +2,14 @@
 
 Alle Änderungen an Verwuchert. Jede Version bekommt hier einen Eintrag.
 
+## 0.1.1
+
+- Web-Version: Das Spiel läuft als Artefakt im Browser.
+- Export-Vorlage export_presets.cfg für Web, ohne Threads, damit keine besonderen Server-Header nötig sind.
+- web/page.html ist die Seite um das Spiel. Sie skaliert das Bild in ganzen Vielfachen und füllt die Bühne.
+- web/build.sh baut alle Dateien für das Artefakt.
+- Im Browser fehlt der Knopf "Beenden" im Hauptmenü.
+
 ## 0.1.0
 
 Phase 1, Stadtbau, als spielbarer Prototyp.

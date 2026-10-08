@@ -1,0 +1,332 @@
+<title>Verwuchert</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=IBM+Plex+Sans:wght@400;600&display=swap">
+<style>
+/* Layout: ein Spielfenster in 16:9, darüber ein schmaler Titel, darunter die Steuerung. Eine dunkle Welt, wie im Spiel. */
+:root {
+  --night: #141218;
+  --panel: #252334;
+  --line: #3a3b4f;
+  --bone: #d8d2c0;
+  --stone: #a9a9ad;
+  --ochre: #d29a45;
+  --moss: #84945a;
+  --rose: #b77a7a;
+  --display: "Pixelify Sans", "Courier New", monospace;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body {
+  background: var(--night);
+  color: var(--bone);
+  font-family: var(--body);
+  font-size: 15px;
+  line-height: 1.5;
+}
+.wrap {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding-inline: 16px;
+  padding-block: 14px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+}
+h1 {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: clamp(26px, 4vw, 38px);
+  letter-spacing: 0.02em;
+  line-height: 1;
+  text-wrap: balance;
+}
+h1 span { color: var(--moss); }
+.tag {
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--stone);
+  letter-spacing: 0.04em;
+}
+.stage {
+  position: relative;
+  width: min(100%, calc((100vh - 170px) * 16 / 9));
+  min-width: min(100%, 320px);
+  margin-inline: auto;
+  aspect-ratio: 16 / 9;
+  max-width: 100%;
+  background: #000;
+  border: 2px solid var(--line);
+  outline: 2px solid #000;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+#canvas {
+  display: block;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  touch-action: none;
+  outline: none;
+}
+#canvas:focus-visible { outline: 2px solid var(--ochre); }
+.cover {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--night) url("poster.png") center / cover no-repeat;
+  image-rendering: pixelated;
+}
+.cover[hidden] { display: none !important; }
+.loader {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  padding: 14px 18px;
+  background: rgba(20, 18, 24, 0.86);
+  border: 2px solid var(--line);
+  min-width: min(300px, 80%);
+}
+.loader p {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 15px;
+  color: var(--bone);
+  text-align: center;
+}
+.bar {
+  width: 100%;
+  height: 10px;
+  background: #000;
+  border: 2px solid var(--line);
+}
+.bar i {
+  display: block;
+  height: 100%;
+  width: 0%;
+  background: var(--ochre);
+  transition: width 0.15s linear;
+}
+.loader.error p { color: var(--rose); }
+.tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  align-items: center;
+  justify-content: space-between;
+}
+button {
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: 15px;
+  color: var(--bone);
+  background: var(--panel);
+  border: 2px solid #000;
+  box-shadow: inset 0 2px 0 var(--line), 0 2px 0 #000;
+  padding: 5px 12px 6px;
+  cursor: pointer;
+}
+button:hover { background: var(--line); }
+button:active { transform: translateY(1px); box-shadow: inset 0 2px 0 #000; }
+button:focus-visible { outline: 2px solid var(--ochre); outline-offset: 2px; }
+.keys {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 6px 24px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+  color: var(--stone);
+}
+.keys li { min-width: 0; }
+kbd {
+  font-family: var(--display);
+  font-size: 13px;
+  color: var(--bone);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  padding: 0 5px;
+}
+.note { margin: 0; font-size: 14px; color: var(--stone); max-width: 70ch; }
+.stage:fullscreen { width: 100%; height: 100%; aspect-ratio: auto; border: 0; outline: 0; }
+@media (prefers-reduced-motion: reduce) { .bar i { transition: none; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Verwuch<span>ert</span></h1>
+    <div class="tag">Version 0.1.1 · Phase 1: Stadtbau</div>
+  </header>
+
+  <div class="stage" id="stage">
+    <canvas id="canvas" tabindex="0">Dein Browser kann das Spiel nicht zeigen.</canvas>
+    <div class="cover" id="cover">
+      <div class="loader" id="loader">
+        <p id="status">Spiel wird geladen …</p>
+        <div class="bar"><i id="fill"></i></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tools">
+    <p class="note">Bau in rund 8 Minuten eine Stadt. Häuser brauchen Straße, Strom und Wasser. Mit „Stadt fertig“ beginnen die 50 Jahre.</p>
+    <button type="button" id="full">Vollbild</button>
+  </div>
+
+  <ul class="keys">
+    <li><kbd>Klick</kbd> bauen oder Gebäude ansehen</li>
+    <li><kbd>Ziehen</kbd> Straße ziehen, ohne Werkzeug Karte bewegen</li>
+    <li><kbd>Rechtsklick</kbd> Werkzeug weglegen</li>
+    <li><kbd>Rad</kbd> Zoom 1× und 2×</li>
+    <li><kbd>1</kbd>–<kbd>7</kbd> Werkzeuge, <kbd>X</kbd> Abriss</li>
+    <li><kbd>WASD</kbd> Karte bewegen, <kbd>Leertaste</kbd> Pause</li>
+  </ul>
+</div>
+
+<script src="verwuchert.js"></script>
+<script>
+(function () {
+  "use strict";
+  var BASE_W = 640, BASE_H = 360;
+  var stage = document.getElementById("stage");
+  var canvas = document.getElementById("canvas");
+  var cover = document.getElementById("cover");
+  var loader = document.getElementById("loader");
+  var statusEl = document.getElementById("status");
+  var fill = document.getElementById("fill");
+
+  // Das Spiel liegt gepackt neben der Seite. Beim Laden wird es im Browser entpackt.
+  var realFetch = window.fetch.bind(window);
+  window.fetch = function (input, init) {
+    var url = typeof input === "string" ? input : (input && input.url) || "";
+    if (/verwuchert\.pck(\?|$)/.test(url)) {
+      return realFetch("data-pck.wasm").then(function (r) {
+        if (!r.ok) throw new Error("Spieldaten fehlen (" + r.status + ")");
+        return r.arrayBuffer();
+      }).then(function (buf) {
+        return new Response(buf, { status: 200, headers: { "Content-Type": "application/octet-stream" } });
+      });
+    }
+    if (/verwuchert\.wasm(\?|$)/.test(url)) {
+      return realFetch("data-engine.wasm").then(function (r) {
+        if (!r.ok) throw new Error("Spieldatei fehlt (" + r.status + ")");
+        return r.arrayBuffer();
+      }).then(function (buf) {
+        var head = new Uint8Array(buf, 0, 2);
+        var body;
+        if (head[0] === 0x1f && head[1] === 0x8b) {
+          body = new Response(buf).body.pipeThrough(new DecompressionStream("gzip"));
+        } else {
+          body = buf;
+        }
+        return new Response(body, { status: 200, headers: { "Content-Type": "application/wasm" } });
+      });
+    }
+    return realFetch(input, init);
+  };
+
+  // Das Spiel rendert in einem ganzen Vielfachen von 640 x 360 und füllt dann die Bühne.
+  function fit() {
+    var dpr = window.devicePixelRatio || 1;
+    var rect = stage.getBoundingClientRect();
+    var cssW = Math.max(1, rect.width - 4);
+    var cssH = Math.max(1, rect.height - 4);
+    var w = Math.min(cssW, cssH * 16 / 9);
+    var scale = Math.max(1, Math.ceil(w * dpr / BASE_W - 0.05));
+    canvas.width = BASE_W * scale;
+    canvas.height = BASE_H * scale;
+    canvas.style.width = Math.floor(w) + "px";
+    canvas.style.height = Math.floor(w * 9 / 16) + "px";
+  }
+  fit();
+  window.addEventListener("resize", fit);
+  document.addEventListener("fullscreenchange", function () { setTimeout(fit, 50); });
+
+  document.getElementById("full").addEventListener("click", function () {
+    var el = stage;
+    var req = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (!req) return;
+    try {
+      var p = req.call(el);
+      if (p && p.catch) p.catch(function () {});
+    } catch (e) {}
+    canvas.focus();
+  });
+  canvas.addEventListener("pointerdown", function () { canvas.focus(); });
+  canvas.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+
+  function fail(msg) {
+    loader.classList.add("error");
+    statusEl.textContent = msg;
+    fill.style.width = "0%";
+  }
+
+  if (typeof Engine === "undefined") {
+    fail("Die Spieldatei konnte nicht geladen werden.");
+    return;
+  }
+  if (!Engine.isWebGLAvailable()) {
+    fail("Dein Browser hat kein WebGL. Ohne WebGL läuft das Spiel nicht.");
+    return;
+  }
+
+  // Spielstände liegen im Browser. Ist der Speicher gesperrt, läuft das Spiel ohne Speichern.
+  function storageOk() {
+    return new Promise(function (resolve) {
+      try {
+        var req = indexedDB.open("verwuchert-probe");
+        req.onsuccess = function () { try { req.result.close(); } catch (e) {} resolve(true); };
+        req.onerror = function () { resolve(false); };
+        req.onblocked = function () { resolve(false); };
+        setTimeout(function () { resolve(false); }, 1500);
+      } catch (e) { resolve(false); }
+    });
+  }
+
+  storageOk().then(function (ok) {
+    var engine = new Engine({
+      args: [],
+      canvas: canvas,
+      canvasResizePolicy: 0,
+      executable: "verwuchert",
+      mainPack: "verwuchert.pck",
+      ensureCrossOriginIsolationHeaders: false,
+      experimentalVK: false,
+      focusCanvas: true,
+      gdextensionLibs: [],
+      fileSizes: { "verwuchert.pck": 216448, "verwuchert.wasm": 43699190 },
+      persistentPaths: ok ? ["/userfs"] : [],
+      onProgress: function (cur, total) {
+        if (total > 0) {
+          var pct = Math.min(100, Math.round(cur / total * 100));
+          fill.style.width = pct + "%";
+          statusEl.textContent = "Spiel wird geladen … " + pct + " %";
+        }
+      },
+      onExit: function () { cover.hidden = false; statusEl.textContent = "Spiel beendet. Lade die Seite neu, um weiterzuspielen."; }
+    });
+    statusEl.textContent = "Spiel wird geladen …";
+    engine.startGame().then(function () {
+      cover.hidden = true;
+      fit();
+      canvas.focus();
+    }).catch(function (err) {
+      fail("Das Spiel startet nicht: " + (err && err.message ? err.message : err));
+    });
+  });
+})();
+</script>
