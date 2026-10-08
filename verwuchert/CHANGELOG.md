@@ -2,6 +2,19 @@
 
 Alle Änderungen an Verwuchert. Jede Version bekommt hier einen Eintrag.
 
+## 0.1.5
+
+iPhone-Version, getestet auf dem Maß des iPhone 14 Plus (Querformat, 926 x 428 Punkte, 3-fache Dichte).
+
+- Neuer Autoload Platform: erkennt das Handy, rechnet die ganzzahlige Pixelvergrößerung selbst aus und pausiert das Spiel, wenn die Seite verdeckt oder hochkant ist. Auf dem Handy speichert das Spiel alle 20 Sekunden und beim Pausieren.
+- Touch-Steuerung: Tippen wählt und baut beim Loslassen. Beim Bauen schwebt die Vorschau über dem Finger. Ein Finger zieht die Karte, zwei Finger schieben und zoomen. Straßen entstehen durch Ziehen.
+- Handy-Oberfläche: kompakte Leiste oben mit Tempo-Knopf, Zoom-Knopf und Menü-Knopf. Größere Knöpfe, angepasste Hinweise und Anleitung.
+- Das Menü passt Himmel, Insel und Phasenleiste an jedes Bildformat an.
+- Neue Webseite: Querformat füllt den ganzen Bildschirm mit Sicherheitsrändern, kein Scrollen, kein Zoomen, Hinweis "Dreh dein Handy quer" im Hochformat, Bildschirm bleibt wach. Für iOS vor 16.4 gibt es einen Ersatz für das Entpacken.
+- Laden in Schritten mit Fortschrittsbalken. Der Boden entsteht rund viermal schneller (GroundJob).
+- Weniger Rechenzeit: Straßen sind in den Boden eingebrannt, Boden, Schatten, Licht, Himmel und Hausansichten zeichnen nur bei Änderung, Häuser kommen aus festen Varianten und werden im Hintergrund vorgemalt.
+- Neue Tests: touch_test, perf_test, perf_calls, perf_load.
+
 ## 0.1.4
 
 - Neues Hauptmenü: Eine schwebende Insel im isometrischen Stil zeigt eine kleine lebende Stadt. Sie nutzt die echten Spielklassen: Gebäude, Bäume, Strommasten, Autos, Fußgänger, Schatten, Rauch und Licht.

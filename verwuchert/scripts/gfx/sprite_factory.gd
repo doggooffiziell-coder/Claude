@@ -5,9 +5,22 @@ extends RefCounted
 static var _buildings := {}
 static var _trees := {}
 static var _roads := {}
+static var _road_imgs := {}
+
+
+## Nur Häuser zeigen drei verschiedene Türseiten. Läden und Fabriken kennen links und rechts,
+## alles andere sieht von jeder Seite gleich aus. So entstehen weniger Bilder.
+static func norm_facing(type: String, facing: String) -> String:
+	match type:
+		"house":
+			return facing
+		"shop", "factory":
+			return "right" if facing == "right" else "left"
+	return "left"
 
 
 static func building(type: String, variant: int, material: String, facing: String = "left") -> Dictionary:
+	facing = norm_facing(type, facing)
 	var key := "%s_%d_%s_%s" % [type, variant, material, facing]
 	if not _buildings.has(key):
 		_buildings[key] = BuildingArt.make(type, variant, material, facing)
@@ -36,3 +49,10 @@ static func road(mask: int, variant: int) -> ImageTexture:
 	if not _roads.has(key):
 		_roads[key] = RoadArt.tile(mask, variant % 6)
 	return _roads[key]
+
+
+static func road_image(mask: int, variant: int) -> Image:
+	var key := mask * 10 + (variant % 6)
+	if not _road_imgs.has(key):
+		_road_imgs[key] = RoadArt.tile_img(mask, variant % 6)
+	return _road_imgs[key]

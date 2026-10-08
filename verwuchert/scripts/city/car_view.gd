@@ -37,6 +37,8 @@ func _process(_delta: float) -> void:
 func _draw() -> void:
 	var art := VehicleArt.car(face, body)
 	var off: Vector2 = -art.anchor
+	# Kleiner Schatten unter dem Auto, die Schattenebene kennt Autos nicht
+	draw_rect(Rect2(-6, -1, 13, 3), Pal.a(Pal.BLACK, 0.22))
 	var bump := 0.0
 	if moving and builder and int(builder.anim_time * 8.0 + position.x) % 7 == 0:
 		bump = -1.0

@@ -8,8 +8,6 @@ extends Node2D
 
 const W := 6
 const H := 6
-const CLIFF := 34
-const TAPER := 46
 const NO_TILE := Vector2i(-99, -99)
 const LANE := 0.17
 const WALK := 0.36
@@ -41,6 +39,9 @@ const POND := [Vector2i(0, 5), Vector2i(1, 5)]
 
 ## Oberer Eckpunkt der Insel auf dem Bildschirm.
 var base := Vector2(440, 62)
+## Tiefe der Erdkante und Länge der Gesteinsspitze. Auf kurzen Bildern werden beide kleiner.
+var cliff := 34
+var taper := 46
 var speed := 1.0
 var anim_time := 0.0
 var night := 0.0
@@ -54,6 +55,8 @@ var cars: Array[CarView] = []
 var walkers: Array[WalkerView] = []
 var traffic := {"cars": []}
 var roads := {}
+## Wie im Spiel: die Leitungen zeichnen sich neu, wenn diese Zahl wechselt.
+var pole_version := 1
 
 var _objects: Node2D
 var _shadow_group: CanvasGroup
@@ -81,8 +84,7 @@ func _ready() -> void:
 			_sparkles.append(Vector3(t.x * 32 + rng.randi_range(8, 24), t.y * 32 + rng.randi_range(8, 24), rng.randf() * TAU))
 	var img := NatureArt.ground_image(4242, W, H, 0, pond)
 	_ground = ImageTexture.create_from_image(img)
-	_bits = IsoCliff.make_bits(rng, CLIFF)
-	_under = IsoCliff.underside(W, H, CLIFF, TAPER, 4242)
+	configure(get_viewport().get_visible_rect().size)
 
 	_lit_mat = ShaderMaterial.new()
 	_lit_mat.shader = preload("res://shaders/lit.gdshader")
@@ -116,6 +118,23 @@ func _ready() -> void:
 
 	_build_town()
 	hour = float(GameState.user_args.get("hour", hour))
+
+
+## Passt die Insel an die Größe des Bildes an. Das Handy hat ein breiteres, aber kürzeres Bild.
+func configure(vp: Vector2) -> void:
+	var tiny := vp.y < 300.0
+	var compact := vp.y < 340.0
+	var new_cliff := 26 if compact else 34
+	var new_taper := 0 if tiny else (18 if compact else 46)
+	base = Vector2(clampf(vp.x - 205.0, 350.0, 470.0), 40.0 if tiny else (56.0 if compact else 62.0))
+	if not _under.is_empty() and new_cliff == cliff and new_taper == taper:
+		return
+	cliff = new_cliff
+	taper = new_taper
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 4242
+	_bits = IsoCliff.make_bits(rng, cliff)
+	_under = IsoCliff.underside(W, H, cliff, taper, 4242) if taper > 0 else {"tex": null, "pos": Vector2.ZERO}
 
 
 # Aufbau
@@ -217,8 +236,9 @@ func _process(delta: float) -> void:
 
 func _draw() -> void:
 	var u: Dictionary = _under
-	draw_texture(u.tex, u.pos)
-	IsoCliff.draw(self, W, H, 0, _bits, CLIFF)
+	if u.tex != null:
+		draw_texture(u.tex, u.pos)
+	IsoCliff.draw(self, W, H, 0, _bits, cliff)
 	draw_set_transform_matrix(Iso.GROUND)
 	draw_texture(_ground, Vector2.ZERO)
 	for s in _sparkles:

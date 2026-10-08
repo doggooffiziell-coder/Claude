@@ -11,6 +11,7 @@ var pop := 0.0
 var glow: Node2D
 var _smoke_t := 0.0
 var _last_state := ""
+var _final_draw := false
 
 
 func setup(b: Dictionary, city_builder: Node) -> void:
@@ -28,6 +29,7 @@ func setup(b: Dictionary, city_builder: Node) -> void:
 
 func refresh_art() -> void:
 	art = SpriteFactory.building_for(data)
+	queue_redraw()
 
 
 ## Oberkante des Bildes in Weltkoordinaten. Dort erscheinen Blasen und Zahlen.
@@ -44,7 +46,7 @@ func hit(p: Vector2) -> bool:
 	var size: Vector2i = art.size
 	if local.x < 0 or local.y < 0 or local.x >= size.x or local.y >= size.y:
 		return false
-	var img: Image = (art.tex as ImageTexture).get_image()
+	var img: Image = art.img
 	return img.get_pixel(int(local.x), int(local.y)).a > 0.0
 
 
@@ -72,6 +74,8 @@ func _process(delta: float) -> void:
 		_last_state = data.state
 	if pop > 0.0:
 		pop = maxf(0.0, pop - delta * 4.0)
+		if pop <= 0.0:
+			_final_draw = true
 	var spd: float = builder.speed if builder else 1.0
 	if data.state == "done" and spd > 0.0:
 		_smoke_t -= delta * spd
@@ -82,7 +86,10 @@ func _process(delta: float) -> void:
 			var fp := footprint_local(0.1)
 			var a: Vector2 = fp[3].lerp(fp[1], randf())
 			builder.particles.emit("dust", position + a.lerp(fp[2], randf() * 0.6), 2)
-	queue_redraw()
+	# Ein fertiges Haus ändert sich nicht, es wird nur beim Einpoppen und auf der Baustelle neu gemalt
+	if data.state != "done" or pop > 0.0 or _final_draw:
+		_final_draw = false
+		queue_redraw()
 
 
 func _emit_smoke() -> void:

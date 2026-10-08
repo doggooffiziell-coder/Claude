@@ -9,6 +9,7 @@ var decor := false
 ## Bodenpunkt in Feldern. Für Schatten und Lichtkegel.
 var ground_pos := Vector2.ZERO
 var _leaf_t := 0.0
+var _last_sway := 0
 
 
 func setup(t: Dictionary, city_builder: Node, is_decor := false) -> void:
@@ -20,6 +21,9 @@ func setup(t: Dictionary, city_builder: Node, is_decor := false) -> void:
 	position = Iso.to_screen(ground_pos.x, ground_pos.y).round()
 	use_parent_material = true
 	_leaf_t = randf_range(2.0, 12.0)
+	# Wald im Rand wiegt sich nicht. Er wird einmal gemalt und kostet danach keine Rechenzeit.
+	if is_decor:
+		set_process(false)
 
 
 func tile() -> Vector2i:
@@ -30,7 +34,11 @@ func _process(delta: float) -> void:
 	if data.kind == "rock":
 		set_process(false)
 		return
-	queue_redraw()
+	# Der Wind verschiebt die Krone nur um ganze Pixel, neu gemalt wird nur beim Wechsel
+	var s := sway()
+	if s != _last_sway:
+		_last_sway = s
+		queue_redraw()
 	if data.kind == "oak" and builder:
 		_leaf_t -= delta * builder.speed
 		if _leaf_t <= 0.0:

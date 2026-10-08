@@ -3,30 +3,59 @@ extends Node2D
 ## Zeichnet den Boden: Gras, Teiche, Straßen, Raster und die Vorschau beim Bauen.
 ## Alles Flache entsteht im Bodenraum (Quadrate) und wird mit Iso.GROUND zur Raute gekippt.
 ## Unter der Karte liegt eine Erdkante wie bei einem Diorama.
+##
+## Spart Rechenzeit auf dem Handy:
+## Fertige Straßen werden in das Bodenbild eingebrannt, es bleibt ein einziger Zeichenaufruf.
+## Der Boden wird nur neu gezeichnet, wenn sich etwas ändert, sonst sechsmal pro Sekunde für Glitzern.
 
 const T := 32
 const CLIFF := 44
+const REFRESH := 0.16
 
 var builder: Node
-var ground_tex: ImageTexture
+var job: GroundJob
 var margin := 4
+
+var _tex: ImageTexture
+var _img: Image
+var _base: Image
 var _sparkles: Array[Vector3] = []
 var _cliff_bits: Array = []
+var _pond: PackedByteArray
+var _dirty := true
+var _tex_dirty := false
+var _acc := 0.0
+var _sig := 0
 
 
-func setup(city_builder: Node) -> void:
+## Bereitet das Malen des Bodens vor. Das Malen selbst läuft in step().
+func begin(city_builder: Node) -> void:
 	builder = city_builder
 	margin = city_builder.MARGIN
 	use_parent_material = true
 	var c: Dictionary = GameState.city
-	var pond := Terrain.ponds(int(c.seed), int(c.w), int(c.h), Config.integer("city/pond_count", 1))
-	var img := NatureArt.ground_image(int(c.seed), int(c.w), int(c.h), margin, pond)
-	_paint_entry_road(img)
-	ground_tex = ImageTexture.create_from_image(img)
+	_pond = Terrain.ponds(int(c.seed), int(c.w), int(c.h), Config.integer("city/pond_count", 1))
+	job = GroundJob.new(int(c.seed), int(c.w), int(c.h), margin, _pond)
+
+
+## Malt weiter, gibt true zurück wenn der Boden fertig ist.
+func step(budget_ms: float) -> bool:
+	if not job.step(budget_ms):
+		return false
+	_finish()
+	return true
+
+
+func _finish() -> void:
+	var c: Dictionary = GameState.city
+	_paint_entry_road(job.image)
+	_base = job.image.duplicate()
+	_img = job.image
+	_tex = ImageTexture.create_from_image(_img)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = int(c.seed) + 3
-	for i in pond.size():
-		if pond[i] == 0:
+	for i in _pond.size():
+		if _pond[i] == 0:
 			continue
 		var tx := i % int(c.w)
 		var ty := i / int(c.w)
@@ -39,20 +68,75 @@ func setup(city_builder: Node) -> void:
 func _paint_entry_road(img: Image) -> void:
 	var row: int = builder.entry_row
 	for k in margin:
-		var src := SpriteFactory.road(RoadArt.E | RoadArt.W, k + 1).get_image()
+		var src := SpriteFactory.road_image(RoadArt.E | RoadArt.W, k + 1)
 		img.blit_rect(src, Rect2i(0, 0, T, T), Vector2i(k * T, (row + margin) * T))
 
 
-func _process(_delta: float) -> void:
-	queue_redraw()
+# Straßen einbrennen
+
+## Wird gerufen, wenn eine Straße gebaut, fertig oder abgerissen wird. Brennt das Feld und seine
+## Nachbarn neu ein, denn die Verbindungen ändern sich.
+func road_changed(t: Vector2i) -> void:
+	for d in [Vector2i.ZERO, Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+		_bake(t + d)
+	_tex_dirty = true
+
+
+func rebake_all() -> void:
+	for t in builder.roads:
+		_bake(t)
+	_tex_dirty = true
+
+
+func _bake(t: Vector2i) -> void:
+	var pos := Vector2i((t.x + margin) * T, (t.y + margin) * T)
+	if pos.x < 0 or pos.y < 0 or pos.x + T > _img.get_width() or pos.y + T > _img.get_height():
+		return
+	var rect := Rect2i(pos, Vector2i(T, T))
+	var r: Dictionary = builder.roads.get(t, {})
+	if not r.is_empty() and r.state == "done":
+		var mask: int = builder.road_mask(t)
+		_img.blit_rect(SpriteFactory.road_image(mask, (t.x * 7 + t.y * 13) % 6), Rect2i(0, 0, T, T), pos)
+	elif t.y == builder.entry_row and t.x < 0 and t.x >= -margin:
+		_img.blit_rect(SpriteFactory.road_image(RoadArt.E | RoadArt.W, t.x + margin + 1), Rect2i(0, 0, T, T), pos)
+	else:
+		_img.blit_rect(_base, rect, pos)
+
+
+func mark_dirty() -> void:
+	_dirty = true
+
+
+func _process(delta: float) -> void:
+	if job == null or not job.done:
+		return
+	if _tex_dirty:
+		_tex.update(_img)
+		_tex_dirty = false
+		_dirty = true
+	var sig: int = builder.preview_sig()
+	if sig != _sig:
+		_sig = sig
+		_dirty = true
+	_acc += delta
+	if _acc >= REFRESH:
+		_acc = 0.0
+		_dirty = true
+	if builder.roads_open > 0:
+		_dirty = true
+	if _dirty:
+		_dirty = false
+		queue_redraw()
 
 
 func _draw() -> void:
+	if _tex == null:
+		return
 	_draw_cliff()
 	draw_set_transform_matrix(Iso.GROUND)
-	draw_texture(ground_tex, Vector2(-margin * T, -margin * T))
+	draw_texture(_tex, Vector2(-margin * T, -margin * T))
 	_draw_sparkles()
-	_draw_roads()
+	_draw_roads_in_work()
 	_draw_network()
 	if builder.tool != "":
 		_draw_grid()
@@ -76,15 +160,17 @@ func _draw_sparkles() -> void:
 			draw_rect(Rect2(s.x, s.y, 1, 1), col)
 
 
-func _draw_roads() -> void:
+## Nur Straßen im Bau, sie blenden mit dem Fortschritt ein. Fertige liegen schon im Bodenbild.
+func _draw_roads_in_work() -> void:
+	if builder.roads_open <= 0:
+		return
 	for t in builder.roads:
 		var b: Dictionary = builder.roads[t]
+		if b.state == "done":
+			continue
 		var mask: int = builder.road_mask(t)
 		var tex := SpriteFactory.road(mask, (t.x * 7 + t.y * 13) % 6)
-		var a := 1.0
-		if b.state != "done":
-			a = 0.35 + 0.65 * float(b.progress)
-		draw_texture(tex, Vector2(t.x * T, t.y * T), Color(1, 1, 1, a))
+		draw_texture(tex, Vector2(t.x * T, t.y * T), Color(1, 1, 1, 0.35 + 0.65 * float(b.progress)))
 
 
 ## Welche Straßen Strom und Wasser führen. Nur sichtbar, wenn ein Werkzeug es braucht.

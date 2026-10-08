@@ -11,6 +11,10 @@ const WALK := 5
 
 
 static func tile(mask: int, variant: int) -> ImageTexture:
+	return ImageTexture.create_from_image(tile_img(mask, variant))
+
+
+static func tile_img(mask: int, variant: int) -> Image:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = mask * 131 + variant * 7 + 3
 	var c := PixelCanvas.new(T, T)
@@ -101,7 +105,7 @@ static func tile(mask: int, variant: int) -> ImageTexture:
 		c.rect(20, T - WALK - 2, 4, 2, Pal.NIGHT)
 		c.px(21, T - WALK - 2, Pal.STONE_D)
 		c.px(23, T - WALK - 2, Pal.STONE_D)
-	return c.texture()
+	return c.img
 
 
 ## Gehweg mit Platten und Bordstein zur Fahrbahn hin.

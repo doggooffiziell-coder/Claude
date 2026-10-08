@@ -61,7 +61,16 @@ func emit(kind: String, pos: Vector2, count: int = 1, opts: Dictionary = {}) -> 
 		_parts.append(p)
 
 
+var _had := false
+
+
 func _process(delta: float) -> void:
+	if _parts.is_empty():
+		if _had:
+			_had = false
+			queue_redraw()
+		return
+	_had = true
 	var keep: Array[Dictionary] = []
 	for p in _parts:
 		p.age += delta

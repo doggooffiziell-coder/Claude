@@ -37,6 +37,8 @@ func mouse(pos: Vector2, button := 0, pressed := false) -> void:
 
 
 func _process(_d: float) -> bool:
+	if current_scene != null and current_scene.has_method("map_screen_rect") and not current_scene.loaded:
+		return false
 	step += 1
 	var gs = root.get_node("GameState")
 	match step:

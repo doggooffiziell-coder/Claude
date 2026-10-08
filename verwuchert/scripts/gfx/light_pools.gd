@@ -38,8 +38,22 @@ static func _make_pool(d: int) -> ImageTexture:
 	return ImageTexture.create_from_image(img)
 
 
-func _process(_delta: float) -> void:
-	queue_redraw()
+var _acc := 0.0
+var _was := false
+
+
+## Lichtkegel gibt es nur nachts, und zehn Bilder pro Sekunde reichen.
+func _process(delta: float) -> void:
+	if builder == null:
+		return
+	_acc += delta
+	if _acc < 0.1:
+		return
+	_acc = 0.0
+	var on: bool = float(builder.night) >= 0.02
+	if on or _was:
+		queue_redraw()
+	_was = on
 
 
 func _draw() -> void:

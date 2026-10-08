@@ -23,6 +23,7 @@ static func _result(p: IsoPainter, meta: Dictionary, w: int, h: int) -> Dictiona
 			break
 	meta["top"] = top
 	meta["tex"] = p.c.texture()
+	meta["img"] = p.c.img
 	meta["glow"] = p.g.texture()
 	meta["size"] = Vector2i(p.c.w, p.c.h)
 	# Ankerpunkt: untere Ecke der Fläche im Bild

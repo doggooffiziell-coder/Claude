@@ -2,7 +2,7 @@
 
 Ein 2D-Aufbauspiel in Godot 4.4. Du baust eine kleine Stadt. Danach vergehen 50 Jahre, und die Natur holt sich alles zurück. Zum Schluss baust du mit zwei Überlebenden einen Bunker in den Ruinen deiner eigenen Stadt.
 
-Stand: Version 0.1.4. Phase 1 ist spielbar. Phase 2 und Phase 3 folgen.
+Stand: Version 0.1.5. Phase 1 ist spielbar. Phase 2 und Phase 3 folgen.
 
 ![Hauptmenü](docs/menu.png)
 ![Stadt am Tag](docs/phase1_day.png)
@@ -45,6 +45,12 @@ Regeln:
 Jede Familie hat einen Namen, jede Straße auch. Die Chronik unten links erzählt, wer einzieht und was öffnet.
 
 Jedes Gebäude speichert Material, Zustand und Inhalt. Ein Laden lagert Konserven, eine Fabrik Metall, ein Wasserturm Rohre. Klick ein Gebäude an, und die Infotafel zeigt alles. Genau das findest du in Phase 3 in den Ruinen.
+
+## iPhone
+
+Das Spiel läuft im Querformat auf dem Handy. Der Autoload Platform erkennt das Handy und wählt die ganzzahlige Vergrößerung. Im Hochformat pausiert das Spiel und speichert. Zum Testen am Computer startet `--phone` die Handy-Oberfläche.
+
+Touch: Tippen wählt und baut beim Loslassen, ein Finger zieht die Karte, zwei Finger schieben und zoomen, Ziehen mit Werkzeug baut Straßen.
 
 ## Steuerung
 
@@ -99,8 +105,9 @@ Die Tests spielen Phase 1 ohne Fenster durch:
 godot --headless --path verwuchert -s res://tests/play_test.gd
 godot --path verwuchert -s res://tests/input_test.gd
 godot --headless --path verwuchert -s res://tests/menu_test.gd
+godot --headless --path verwuchert -s res://tests/touch_test.gd
 ```
 
-play_test baut Straßen und Gebäude, lässt die Bautrupps arbeiten, prüft Versorgung und Einnahmen, reißt ab, speichert, lädt und startet Phase 2. input_test klickt mit echten Maus-Ereignissen. menu_test prüft Insel, Seiten, Einstellungen, Löschen und den Start mit dem gewählten Tempo.
+play_test baut Straßen und Gebäude, lässt die Bautrupps arbeiten, prüft Versorgung und Einnahmen, reißt ab, speichert, lädt und startet Phase 2. input_test klickt mit echten Maus-Ereignissen. touch_test prüft Tippen, Ziehen, Zoomen und Bauen mit Touch-Ereignissen. perf_test, perf_calls und perf_load messen Bildzeit und Ladezeit. menu_test prüft Insel, Seiten, Einstellungen, Löschen und den Start mit dem gewählten Tempo.
 
 Für Bilder ohne Spielen gibt es Schalter nach `--`. Im Menü zeigen `--hour=21` und `--screen=guide` (oder settings, confirm) eine Tageszeit und eine Seite. In der Stadt gilt: `--demo` baut eine Beispielstadt, `--hour=21` stellt die Uhr, `--zoom=2`, `--look=12,8` und `--shot=bild.png` speichern ein Bild.

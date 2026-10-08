@@ -7,14 +7,22 @@ extends Node2D
 const T := 32
 
 var builder: Node
+var _acc := 0.0
 
 
-func _process(_delta: float) -> void:
+## Die Sonne wandert langsam. Acht Bilder pro Sekunde reichen, und nachts ohne Sonne gibt es nichts zu malen.
+func _process(delta: float) -> void:
+	_acc += delta
+	if _acc < 0.125:
+		return
+	_acc = 0.0
 	queue_redraw()
 
 
 func _draw() -> void:
 	if builder == null:
+		return
+	if DayCycle.sun_strength(builder.hour) <= 0.0:
 		return
 	draw_set_transform_matrix(Iso.GROUND)
 	var sun: Vector2 = DayCycle.sun_vector(builder.hour)
@@ -57,8 +65,6 @@ func _draw() -> void:
 	for pv in builder.pole_views:
 		var gp: Vector2 = pv.ground_pos * T
 		draw_line(gp, gp + sun * 20.0, Color.BLACK, 1.0)
-	for c in builder.traffic.cars:
-		_blob(c.gpos * T, sun * 3.0, 5.0)
 	draw_set_transform_matrix(Transform2D.IDENTITY)
 
 

@@ -13,8 +13,16 @@ func _ready() -> void:
 	material = _add_mat
 
 
+var _was := false
+
+
 func _process(_delta: float) -> void:
-	queue_redraw()
+	if car == null or car.builder == null:
+		return
+	var on: bool = float(car.builder.night) > 0.05
+	if on or _was:
+		queue_redraw()
+	_was = on
 
 
 func _draw() -> void:

@@ -3,10 +3,14 @@ extends Node2D
 ## Stromleitungen zwischen benachbarten Masten, leicht durchhängend.
 
 var builder: Node
+var _version := -1
 
 
+## Die Leitungen ändern sich nur, wenn Masten dazukommen oder fehlen.
 func _process(_delta: float) -> void:
-	queue_redraw()
+	if builder != null and int(builder.pole_version) != _version:
+		_version = int(builder.pole_version)
+		queue_redraw()
 
 
 func _draw() -> void:

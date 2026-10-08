@@ -297,4 +297,13 @@ static func _small(id: String) -> PixelCanvas:
 		"close":
 			c.line(1, 1, 7, 7, Pal.BONE)
 			c.line(7, 1, 1, 7, Pal.BONE)
+		"menu":
+			c.rect(1, 1, 7, 1, Pal.BONE)
+			c.rect(1, 4, 7, 1, Pal.BONE)
+			c.rect(1, 7, 7, 1, Pal.BONE)
+		"zoom":
+			c.disc(3.5, 3.5, 3.0, Pal.BONE)
+			c.disc(3.5, 3.5, 1.8, Pal.NIGHT)
+			c.line(6, 6, 8, 8, Pal.BONE)
+			c.px(2, 2, Pal.SKY)
 	return c

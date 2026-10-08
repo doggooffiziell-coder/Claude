@@ -3,10 +3,27 @@ extends Node2D
 ## Über allem: Geist-Vorschau beim Bauen, Warnblasen, Auswahl.
 
 var builder: Node
+var _was := false
+var _bubbles := false
+var _check := 0.0
 
 
-func _process(_delta: float) -> void:
-	queue_redraw()
+## Nur zeichnen, wenn es etwas zu zeigen gibt: Vorschau, Auswahl oder eine Blase.
+func _process(delta: float) -> void:
+	if builder == null:
+		return
+	_check -= delta
+	if _check <= 0.0:
+		_check = 0.25
+		_bubbles = false
+		for v in builder.building_views.values():
+			if v.data.state == "done" and not v.status.get("needs", []).is_empty():
+				_bubbles = true
+				break
+	var active: bool = builder.tool != "" or not builder.selected.is_empty() or _bubbles
+	if active or _was:
+		queue_redraw()
+	_was = active
 
 
 func _draw() -> void:

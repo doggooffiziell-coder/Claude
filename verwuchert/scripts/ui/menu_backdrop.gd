@@ -15,50 +15,66 @@ var _shade: ImageTexture
 var _stars: Array[Vector3] = []
 var _flies: Array[Dictionary] = []
 var _t := 0.0
+var _size := Vector2(640, 360)
 
 
 func _ready() -> void:
-	_day = _gradient([[0, Pal.BLUE], [130, Pal.WATER], [250, Pal.SKY], [360, Pal.WHITE]])
-	_dusk = _gradient([[0, Pal.BLUE_D], [90, Pal.PLUM], [180, Pal.ROSE], [250, Pal.BRICK_L], [320, Pal.OCHRE], [360, Pal.YELLOW]])
-	_night = _gradient([[0, Pal.BLACK], [110, Pal.NIGHT], [230, Pal.BLUE_D], [360, Pal.TEAL_D]])
-	_shade = _left_shade()
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 7
-	for i in 46:
-		_stars.append(Vector3(rng.randi_range(0, W), rng.randi_range(0, 190), rng.randf() * TAU))
-	for i in 18:
-		_flies.append({"p": Vector2(rng.randf_range(230, 640), rng.randf_range(90, 340)), "ph": rng.randf() * TAU, "sp": rng.randf_range(0.4, 1.0)})
+	# Die Himmelsverläufe sind nur vier Pixel breit und werden gekachelt, das spart Speicher und Zeit
+	texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 	diorama = MenuDiorama.new()
 	add_child(diorama)
+	get_viewport().size_changed.connect(_resize)
+	_resize()
+
+
+## Baut alles, was von der Bildgröße abhängt, neu. Das Handy hat ein anderes Bildformat als der Computer.
+func _resize() -> void:
+	_size = get_viewport().get_visible_rect().size
+	var h := int(_size.y)
+	_day = _gradient(h, [[0.0, Pal.BLUE], [0.36, Pal.WATER], [0.7, Pal.SKY], [1.0, Pal.WHITE]])
+	_dusk = _gradient(h, [[0.0, Pal.BLUE_D], [0.25, Pal.PLUM], [0.5, Pal.ROSE], [0.7, Pal.BRICK_L], [0.89, Pal.OCHRE], [1.0, Pal.YELLOW]])
+	_night = _gradient(h, [[0.0, Pal.BLACK], [0.3, Pal.NIGHT], [0.64, Pal.BLUE_D], [1.0, Pal.TEAL_D]])
+	_shade = _left_shade(h)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	_stars.clear()
+	_flies.clear()
+	for i in 46:
+		_stars.append(Vector3(rng.randi_range(0, int(_size.x)), rng.randi_range(0, int(_size.y * 0.53)), rng.randf() * TAU))
+	for i in 18:
+		_flies.append({"p": Vector2(rng.randf_range(_size.x * 0.36, _size.x), rng.randf_range(_size.y * 0.25, _size.y * 0.94)), "ph": rng.randf() * TAU, "sp": rng.randf_range(0.4, 1.0)})
+	diorama.configure(_size)
 
 
 ## Senkrechter Verlauf mit geordnetem Raster, damit die Stufen pixelig bleiben.
-func _gradient(stops: Array) -> ImageTexture:
-	var img := Image.create_empty(W, H, false, Image.FORMAT_RGBA8)
-	for y in H:
+## stops: [Anteil der Höhe von 0 bis 1, Farbe].
+func _gradient(h: int, stops: Array) -> ImageTexture:
+	var img := Image.create_empty(4, h, false, Image.FORMAT_RGBA8)
+	for y in h:
+		var f := float(y) / float(maxi(1, h - 1))
 		var a: Array = stops[0]
 		var b: Array = stops[stops.size() - 1]
 		for i in stops.size() - 1:
-			if y >= stops[i][0] and y < stops[i + 1][0]:
+			if f >= stops[i][0] and f < stops[i + 1][0]:
 				a = stops[i]
 				b = stops[i + 1]
 				break
 		var t := 0.0
 		if b[0] != a[0]:
-			t = clampf(float(y - a[0]) / float(b[0] - a[0]), 0.0, 1.0)
-		for x in W:
+			t = clampf((f - float(a[0])) / (float(b[0]) - float(a[0])), 0.0, 1.0)
+		for x in 4:
 			img.set_pixel(x, y, b[1] if PixelCanvas.bayer(x, y, t) else a[1])
 	return ImageTexture.create_from_image(img)
 
 
 ## Dunkler Schleier links, damit die Menüpunkte lesbar bleiben.
-func _left_shade() -> ImageTexture:
+func _left_shade(h: int) -> ImageTexture:
 	var w := 320
-	var img := Image.create_empty(w, H, false, Image.FORMAT_RGBA8)
+	var img := Image.create_empty(w, h, false, Image.FORMAT_RGBA8)
 	for x in w:
 		var f := 1.0 - float(x) / w
 		var level := f * f * 0.62
-		for y in H:
+		for y in h:
 			var steps := level * 6.0
 			var a := floorf(steps) / 6.0
 			if PixelCanvas.bayer(x, y, steps - floorf(steps)):
@@ -78,9 +94,10 @@ func _draw() -> void:
 	var n := DayCycle.night(hour)
 	# Abendrot um Sonnenauf- und -untergang
 	var d := maxf(0.0, 1.0 - minf(absf(hour - 18.9), absf(hour - 6.1)) / 2.2)
-	draw_texture(_night, Vector2.ZERO)
-	draw_texture(_day, Vector2.ZERO, Color(1, 1, 1, clampf((1.0 - n) * (1.0 - d), 0.0, 1.0)))
-	draw_texture(_dusk, Vector2.ZERO, Color(1, 1, 1, d))
+	var full := Rect2(Vector2.ZERO, _size)
+	draw_texture_rect(_night, full, true)
+	draw_texture_rect(_day, full, true, Color(1, 1, 1, clampf((1.0 - n) * (1.0 - d), 0.0, 1.0)))
+	draw_texture_rect(_dusk, full, true, Color(1, 1, 1, d))
 	for s in _stars:
 		var v := sin(_t * 1.5 + s.z)
 		if v > 0.2:

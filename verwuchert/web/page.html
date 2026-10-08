@@ -1,4 +1,16 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>Verwuchert</title>
+<script>
+/* Handy erkennen, bevor etwas gezeichnet wird: grober Zeiger ohne Schweben und eine kleine Seite. */
+(function () {
+  try {
+    var coarse = matchMedia("(pointer: coarse)").matches && matchMedia("(hover: none)").matches;
+    if (coarse && Math.min(screen.width, screen.height) <= 600) document.documentElement.classList.add("phone");
+  } catch (e) {}
+  window.vwPaused = false;
+})();
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=IBM+Plex+Sans:wght@400;600&display=swap">
@@ -191,13 +203,78 @@ kbd {
 }
 .exit:hover, .exit:focus-visible { opacity: 1; }
 body.is-max { overflow: hidden; }
-@media (prefers-reduced-motion: reduce) { .bar i { transition: none; } }
+/* Handy: das Spiel füllt die ganze Fläche, nichts scrollt, nichts wird markiert */
+html.phone, html.phone body {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+html.phone * {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+html.phone .wrap { max-width: none; padding: 0; gap: 0; height: 100%; }
+html.phone header, html.phone .tools, html.phone .keys { display: none; }
+html.phone .stage {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  min-width: 0;
+  aspect-ratio: auto;
+  margin: 0;
+  border: 0;
+  outline: 0;
+  z-index: 5;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  touch-action: none;
+}
+html.phone #canvas { touch-action: none; }
+.rotate {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: var(--night);
+  color: var(--bone);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 24px;
+  text-align: center;
+}
+html.phone.portrait .rotate { display: flex; }
+.rotate svg { width: 96px; height: 96px; animation: turn 2.6s ease-in-out infinite; }
+.rotate h2 {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 24px;
+  line-height: 1.15;
+  text-wrap: balance;
+}
+.rotate p { margin: 0; max-width: 28ch; color: var(--stone); font-size: 15px; }
+@keyframes turn {
+  0%, 20% { transform: rotate(0deg); }
+  60%, 100% { transform: rotate(-90deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bar i { transition: none; }
+  .rotate svg { animation: none; transform: rotate(-90deg); }
+}
 </style>
 
 <div class="wrap">
   <header>
     <h1>Verwuch<span>ert</span></h1>
-    <div class="tag">Version 0.1.4 · Phase 1: Stadtbau</div>
+    <div class="tag">Version 0.1.5 · Phase 1: Stadtbau</div>
   </header>
 
   <div class="stage" id="stage">
@@ -226,6 +303,17 @@ body.is-max { overflow: hidden; }
   </ul>
 </div>
 
+<div class="rotate" id="rotate" role="status">
+  <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="square" aria-hidden="true">
+    <rect x="7" y="2.5" width="10" height="19" fill="var(--panel)" stroke="var(--bone)"/>
+    <path d="M10.5 4.8h3" stroke="var(--stone)"/>
+    <path d="M11 19.2h2" stroke="var(--stone)"/>
+    <path d="M19.5 9a8 8 0 0 0-3-3.3M19.5 9l1.8-2M19.5 9l-2.2.6" stroke="var(--ochre)"/>
+  </svg>
+  <h2>Dreh dein Handy quer</h2>
+  <p>Verwuchert läuft im Querformat. Dein Spiel ist angehalten und gesichert.</p>
+</div>
+
 <script src="verwuchert.js"></script>
 <script>
 (function () {
@@ -237,6 +325,18 @@ body.is-max { overflow: hidden; }
   var loader = document.getElementById("loader");
   var statusEl = document.getElementById("status");
   var fill = document.getElementById("fill");
+
+  // Ältere iOS-Versionen (vor 16.4) kennen DecompressionStream nicht. Dann hilft ein kleiner Entpacker.
+  function loadUnpacker() {
+    return new Promise(function (resolve, reject) {
+      if (window.fflate) { resolve(); return; }
+      var sc = document.createElement("script");
+      sc.src = "https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js";
+      sc.onload = function () { resolve(); };
+      sc.onerror = function () { reject(new Error("Der Entpacker konnte nicht geladen werden.")); };
+      document.head.appendChild(sc);
+    });
+  }
 
   // Das Spiel liegt gepackt neben der Seite. Beim Laden wird es im Browser entpackt.
   var realFetch = window.fetch.bind(window);
@@ -256,25 +356,44 @@ body.is-max { overflow: hidden; }
         return r.arrayBuffer();
       }).then(function (buf) {
         var head = new Uint8Array(buf, 0, 2);
-        var body;
-        if (head[0] === 0x1f && head[1] === 0x8b) {
-          body = new Response(buf).body.pipeThrough(new DecompressionStream("gzip"));
-        } else {
-          body = buf;
+        var gz = head[0] === 0x1f && head[1] === 0x8b;
+        var wasmHeaders = { status: 200, headers: { "Content-Type": "application/wasm" } };
+        if (gz && typeof DecompressionStream === "undefined") {
+          return loadUnpacker().then(function () {
+            return new Response(window.fflate.gunzipSync(new Uint8Array(buf)), wasmHeaders);
+          });
         }
-        return new Response(body, { status: 200, headers: { "Content-Type": "application/wasm" } });
+        var body = gz ? new Response(buf).body.pipeThrough(new DecompressionStream("gzip")) : buf;
+        return new Response(body, wasmHeaders);
       });
     }
     return realFetch(input, init);
   };
 
-  // Das Spiel rendert in einem ganzen Vielfachen von 640 x 360 und füllt dann die Bühne.
+  var root = document.documentElement;
+  var isPhone = root.classList.contains("phone");
+
+  // Am Computer rendert das Spiel in einem ganzen Vielfachen von 640 x 360 und füllt dann die Bühne.
+  // Auf dem Handy bekommt es genau so viele Pixel, wie der Bildschirm hat. Das Spiel rechnet
+  // selbst die größte ganze Vergrößerung aus, darum sind alle Pixel gleich groß und es gibt keine Ränder.
   function fit() {
     var dpr = window.devicePixelRatio || 1;
+    if (isPhone) {
+      var cs = getComputedStyle(stage);
+      var cssW = Math.max(1, stage.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight));
+      var cssH = Math.max(1, stage.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom));
+      var pw = Math.max(1, Math.round(cssW * dpr));
+      var ph = Math.max(1, Math.round(cssH * dpr));
+      if (canvas.width !== pw) canvas.width = pw;
+      if (canvas.height !== ph) canvas.height = ph;
+      canvas.style.width = (pw / dpr) + "px";
+      canvas.style.height = (ph / dpr) + "px";
+      return;
+    }
     var rect = stage.getBoundingClientRect();
-    var cssW = Math.max(1, rect.width - 4);
-    var cssH = Math.max(1, rect.height - 4);
-    var w = Math.min(cssW, cssH * 16 / 9);
+    var cssW2 = Math.max(1, rect.width - 4);
+    var cssH2 = Math.max(1, rect.height - 4);
+    var w = Math.min(cssW2, cssH2 * 16 / 9);
     var scale = Math.max(1, Math.ceil(w * dpr / BASE_W - 0.05));
     canvas.width = BASE_W * scale;
     canvas.height = BASE_H * scale;
@@ -283,6 +402,39 @@ body.is-max { overflow: hidden; }
   }
   fit();
   window.addEventListener("resize", fit);
+  window.addEventListener("orientationchange", function () { setTimeout(fit, 120); setTimeout(fit, 400); });
+  if (window.visualViewport) window.visualViewport.addEventListener("resize", fit);
+
+  // Handy: Hochformat und verborgene Seite halten das Spiel an, das Spiel sichert dabei selbst.
+  function syncPause() {
+    var portrait = isPhone && window.innerHeight > window.innerWidth;
+    root.classList.toggle("portrait", portrait);
+    window.vwPaused = portrait || document.hidden;
+  }
+  if (isPhone) {
+    syncPause();
+    window.addEventListener("resize", syncPause);
+    window.addEventListener("orientationchange", function () { setTimeout(syncPause, 150); });
+    document.addEventListener("visibilitychange", syncPause);
+    // Kein Zoomen und kein Verschieben der Seite mit Fingern
+    ["gesturestart", "gesturechange", "gestureend"].forEach(function (ev) {
+      document.addEventListener(ev, function (e) { e.preventDefault(); });
+    });
+    stage.addEventListener("touchmove", function (e) { e.preventDefault(); }, { passive: false });
+    // Der Bildschirm bleibt an, solange gespielt wird
+    var wakeLock = null;
+    var wake = function () {
+      if (!navigator.wakeLock || document.hidden) return;
+      navigator.wakeLock.request("screen").then(function (l) {
+        wakeLock = l;
+        l.addEventListener("release", function () { wakeLock = null; });
+      }).catch(function () {});
+    };
+    stage.addEventListener("pointerdown", function () { if (!wakeLock) wake(); });
+    document.addEventListener("visibilitychange", function () { if (!document.hidden && !wakeLock) wake(); });
+  } else {
+    document.addEventListener("visibilitychange", function () { window.vwPaused = document.hidden; });
+  }
   // Vollbild: zuerst echtes Vollbild des Browsers. Erlaubt die Seite das nicht,
   // füllt die Bühne das ganze Fenster der Seite.
   var fullBtn = document.getElementById("full");

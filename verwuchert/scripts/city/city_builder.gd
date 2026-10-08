@@ -15,6 +15,11 @@ const MARGIN := 4
 const PAINT_TOOLS := ["house", "shop", "park", "demolish"]
 const NO_TILE := Vector2i(-99, -99)
 const DIRS := [Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(0, -1)]
+## Der Zielpunkt liegt so viele Spielpunkte über dem Finger, damit der Finger ihn nicht verdeckt.
+const TOUCH_LIFT := 34.0
+## Ab dieser Strecke gilt eine Berührung als Ziehen und nicht als Tippen.
+const TAP_SLOP_MOUSE := 4.0
+const TAP_SLOP_TOUCH := 9.0
 
 @onready var world: Node2D = $World
 @onready var ground: CityRenderer = $World/Ground
@@ -58,6 +63,39 @@ var water_load := 0
 var water_cap := 0
 var income_parts := {"steuern": 0, "grundsteuer": 0, "laeden": 0, "fabriken": 0, "unterhalt": 0}
 
+## Wird wahr, wenn alle Ladeschritte fertig sind. Vorher läuft nur der Ladebalken.
+var loaded := false
+## Zahl der Straßen, die noch gebaut werden. Der Boden zeichnet sie dann jedes Bild neu.
+var roads_open := 0
+## Zählt hoch, wenn sich die Masten ändern. Die Leitungen zeichnen sich nur dann neu.
+var pole_version := 0
+
+var _steps: Array = []
+var _step_us := {}
+var _step_i := 0
+var _step_sub := 0.0
+var _load_ui: CanvasLayer
+var _load_label: Label
+var _load_fill: ColorRect
+var _forest: Array = []
+var _forest_i := 0
+var _nature_done := false
+var _prewarm: Array = []
+var _prewarm_i := 0
+var _prewarm_done := false
+var _prewarm_t := 0.0
+var _view_i := 0
+var _last_variant := {}
+
+# Touch: zwei Finger bewegen die Karte und zoomen, ein Finger baut mit Vorschau.
+var _touches := {}
+var _gesture := false
+var _gesture_dirty := false
+var _g_center := Vector2.ZERO
+var _g_dist := 1.0
+var _finger_down := false
+var _touch_pending := false
+
 var _lit_mat: ShaderMaterial
 var _status_t := 0.0
 var _autosave_t := 0.0
@@ -75,6 +113,11 @@ var _shot_frames := -1
 
 
 func _ready() -> void:
+	# Die Welt bleibt aus, bis alles geladen ist. Der Ladebalken zeigt den Fortschritt.
+	world.visible = false
+	world.process_mode = Node.PROCESS_MODE_DISABLED
+	traffic.process_mode = Node.PROCESS_MODE_DISABLED
+	$HUD/Root.process_mode = Node.PROCESS_MODE_DISABLED
 	if GameState.city.is_empty():
 		GameState.new_game(int(GameState.user_args.get("seed", "-1")))
 	city = GameState.city
@@ -88,7 +131,6 @@ func _ready() -> void:
 	world.material = _lit_mat
 	for n in [objects, particles, top_overlay, sky, wires]:
 		n.use_parent_material = true
-	ground.setup(self)
 	shadow_painter.builder = self
 	light_pools.builder = self
 	top_overlay.builder = self
@@ -96,20 +138,156 @@ func _ready() -> void:
 	traffic.setup(self, objects)
 	sky.setup(self, map_screen_rect())
 	_ensure_start_roads()
-	_spawn_nature()
-	_spawn_decor_forest()
-	for b in city.buildings:
-		_add_view(b)
+	_make_loader()
+	_steps = [
+		["Boden wird gemalt", _step_ground],
+		["Wald wächst", _step_nature],
+		["Stadt wird aufgebaut", _step_views],
+		["Letzte Handgriffe", _step_finish],
+	]
+
+
+# Laden in Häppchen: jedes Bild bekommt rund 9 Millisekunden, der Rest bleibt für den Balken.
+
+func _make_loader() -> void:
+	_load_ui = CanvasLayer.new()
+	_load_ui.layer = 40
+	add_child(_load_ui)
+	var root := Control.new()
+	root.theme = UiTheme.get_theme()
+	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_load_ui.add_child(root)
+	var bg := ColorRect.new()
+	bg.color = Pal.NIGHT
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.add_child(bg)
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.add_child(center)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 8)
+	center.add_child(col)
+	var title := Label.new()
+	title.text = "Verwuchert"
+	title.add_theme_font_size_override("font_size", PixelFont.SIZE * 2)
+	title.add_theme_color_override("font_color", Pal.YELLOW)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	col.add_child(title)
+	_load_label = Label.new()
+	_load_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_load_label.custom_minimum_size = Vector2(180, 0)
+	col.add_child(_load_label)
+	var frame := ColorRect.new()
+	frame.color = Pal.BLACK
+	frame.custom_minimum_size = Vector2(164, 10)
+	col.add_child(frame)
+	var inner := ColorRect.new()
+	inner.color = Pal.SLATE
+	inner.position = Vector2(2, 2)
+	inner.size = Vector2(160, 6)
+	frame.add_child(inner)
+	_load_fill = ColorRect.new()
+	_load_fill.color = Pal.OCHRE
+	_load_fill.position = Vector2(2, 2)
+	_load_fill.size = Vector2(0, 6)
+	frame.add_child(_load_fill)
+
+
+func _run_loader() -> void:
+	var t0 := Time.get_ticks_usec()
+	while _step_i < _steps.size() and Time.get_ticks_usec() - t0 < 9000:
+		var st: Array = _steps[_step_i]
+		_load_label.text = "%s..." % st[0]
+		var s0 := Time.get_ticks_usec()
+		var finished: bool = st[1].call()
+		_step_us[st[0]] = int(_step_us.get(st[0], 0)) + Time.get_ticks_usec() - s0
+		if finished:
+			_step_i += 1
+			_step_sub = 0.0
+	if loaded:
+		if GameState.user_args.has("steptimes"):
+			for k in _step_us:
+				print("Ladeschritt %-26s %6.1f ms" % [k, _step_us[k] / 1000.0])
+		return
+	_load_fill.size.x = roundf(160.0 * (float(_step_i) + _step_sub) / float(_steps.size()))
+
+
+func _step_ground() -> bool:
+	if ground.job == null:
+		ground.begin(self)
+	var done := ground.step(8.0)
+	_step_sub = ground.job.progress
+	return done
+
+
+func _step_nature() -> bool:
+	if not _nature_done:
+		_nature_done = true
+		_spawn_nature()
+		_forest = _forest_plan()
+	var n := 0
+	while _forest_i < _forest.size() and n < 24:
+		_make_decor_tree(_forest[_forest_i])
+		_forest_i += 1
+		n += 1
+	_step_sub = float(_forest_i) / maxi(1, _forest.size())
+	return _forest_i >= _forest.size()
+
+
+## Malt die Gebäude vor, die man am häufigsten braucht. Das läuft nach dem Start im Hintergrund,
+## ein Bild alle paar Bilder, damit der Ladebalken kurz bleibt und später nichts ruckelt.
+func _idle_prewarm(delta: float) -> void:
+	if _prewarm_done or anim_time < 1.5:
+		return
+	_prewarm_t -= delta
+	if _prewarm_t > 0.0:
+		return
+	_prewarm_t = 0.12
+	if _prewarm.is_empty():
+		for type in ["house", "shop", "park", "power_plant", "water_tower", "factory"]:
+			_prewarm.append([type, "left"])
+		_prewarm.append(["house", "right"])
+		_prewarm.append(["shop", "right"])
+	if _prewarm_i >= _prewarm.size():
+		_prewarm_done = true
+		return
+	var it: Array = _prewarm[_prewarm_i]
+	_prewarm_i += 1
+	var variant := BuildingTypes.variant_for(it[0], 0)
+	SpriteFactory.building(it[0], variant, _material_for(it[0], variant), it[1])
+
+
+## Gebäude aus einem Spielstand bekommen ihre Ansicht, ein paar pro Aufruf.
+func _step_views() -> bool:
+	var list: Array = city.buildings
+	var n := 0
+	while _view_i < list.size() and n < 6:
+		_add_view(list[_view_i])
+		_view_i += 1
+		n += 1
+	_step_sub = float(_view_i) / maxi(1, list.size())
+	return _view_i >= list.size()
+
+
+func _step_finish() -> bool:
+	ground.rebake_all()
 	_update_status()
 	_rebuild_poles()
 	_setup_camera()
 	_reroll_ghost()
+	$HUD/Root.process_mode = Node.PROCESS_MODE_INHERIT
 	$HUD/Root.setup(self)
 	if float(city.time) < 1.0:
 		set_speed(Settings.start_speed)
 	if city.chronicle.is_empty():
 		add_event("Die Stadt wird gegründet. Eine Landstraße führt aus dem Wald herein.")
+	world.visible = true
+	world.process_mode = Node.PROCESS_MODE_INHERIT
+	traffic.process_mode = Node.PROCESS_MODE_INHERIT
+	loaded = true
+	_load_ui.queue_free()
 	_debug_args()
+	return true
 
 
 func _debug_args() -> void:
@@ -157,7 +335,8 @@ func _spawn_nature() -> void:
 
 
 ## Dichter Wald im Rand rund um das Baugebiet. Nur Deko, ohne Spielstand.
-func _spawn_decor_forest() -> void:
+func _forest_plan() -> Array:
+	var out := []
 	var rng := RandomNumberGenerator.new()
 	rng.seed = int(city.seed) + 404
 	var w: int = city.w
@@ -175,11 +354,15 @@ func _spawn_decor_forest() -> void:
 					var kind := "pine" if rng.randf() < 0.45 else "oak"
 					if rng.randf() < 0.15:
 						kind = "bush"
-					var t := {"x": x, "y": y, "kind": kind, "seed": rng.randi() % 9999,
-						"ox": rng.randi_range(-12, 12), "oy": rng.randi_range(-12, 12)}
-					var tv := TreeView.new()
-					objects.add_child(tv)
-					tv.setup(t, self, true)
+					out.append({"x": x, "y": y, "kind": kind, "seed": rng.randi() % 9999,
+						"ox": rng.randi_range(-12, 12), "oy": rng.randi_range(-12, 12)})
+	return out
+
+
+func _make_decor_tree(t: Dictionary) -> void:
+	var tv := TreeView.new()
+	objects.add_child(tv)
+	tv.setup(t, self, true)
 
 
 func _add_view(b: Dictionary) -> void:
@@ -221,7 +404,17 @@ func _setup_camera() -> void:
 # Zeit und Ablauf
 
 func _process(delta: float) -> void:
+	if not loaded:
+		_run_loader()
+		return
+	# Nach einer Pause oder einem Tab-Wechsel kommt ein riesiger Zeitsprung, den fangen wir ab
+	delta = minf(delta, 0.1)
+	if _gesture_dirty:
+		_gesture_dirty = false
+		if _gesture and _touches.size() >= 2:
+			_update_gesture()
 	anim_time += delta
+	_idle_prewarm(delta)
 	var dt := delta * speed
 	if speed > 0.0:
 		_tick(dt)
@@ -257,7 +450,7 @@ func _tick(dt: float) -> void:
 		city.payday_timer = float(city.payday_timer) - pd
 		_payday()
 	_autosave_t += dt
-	if _autosave_t >= Config.num("city/autosave_seconds", 60.0):
+	if _autosave_t >= Platform.autosave_seconds():
 		_autosave_t = 0.0
 		GameState.save_game()
 	var target := Config.num("city/target_seconds", 480.0)
@@ -281,9 +474,12 @@ func time_left() -> float:
 func _build_progress(dt: float) -> void:
 	var crews := Config.integer("city/crews", 2)
 	var busy := 0
-	for b in city.buildings:
+	var open_roads := 0
+	for b in city.buildings.duplicate():
 		if b.state == "done":
 			continue
+		if b.type == "road":
+			open_roads += 1
 		if BuildingTypes.uses_crew(b.type):
 			if busy >= crews:
 				b.state = "queued"
@@ -293,10 +489,15 @@ func _build_progress(dt: float) -> void:
 		b.progress = float(b.progress) + dt / BuildingTypes.build_time(b.type)
 		if float(b.progress) >= 1.0:
 			_complete(b)
+			if b.type == "road":
+				open_roads -= 1
+	roads_open = open_roads
 
 
 func _complete(b: Dictionary) -> void:
 	GameState.finish_building(b)
+	if b.type == "road":
+		ground.road_changed(Vector2i(int(b.x), int(b.y)))
 	if b.type != "road":
 		_name_building(b)
 		var anchor := Iso.bottom(int(b.x), int(b.y), int(b.w), int(b.h))
@@ -815,6 +1016,7 @@ func _rebuild_poles() -> void:
 		objects.add_child(pv)
 		pv.setup(g, t, self)
 		pole_views.append(pv)
+	pole_version += 1
 
 
 # Bauen
@@ -828,15 +1030,36 @@ func select_tool(name: String) -> void:
 
 
 func _reroll_ghost() -> void:
-	ghost_variant = randi() % 10000
+	ghost_variant = _pick_variant(tool)
+
+
+## Wählt aus einer festen kleinen Menge, damit Bilder wiederverwendet werden und nichts ruckelt.
+func _pick_variant(type: String) -> int:
+	if not BuildingTypes.VARIANTS.has(type):
+		return randi() % 10000
+	var n := BuildingTypes.variant_count(type)
+	var i := randi() % n
+	if n > 1 and i == int(_last_variant.get(type, -1)):
+		i = (i + 1) % n
+	_last_variant[type] = i
+	return BuildingTypes.variant_for(type, i)
+
+
+func _material_for(type: String, variant: int) -> String:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = variant
+	return BuildingTypes.roll_material(type, rng)
 
 
 func ghost_material() -> String:
 	if tool == "" or tool == "demolish":
 		return ""
-	var rng := RandomNumberGenerator.new()
-	rng.seed = ghost_variant
-	return BuildingTypes.roll_material(tool, rng)
+	return _material_for(tool, ghost_variant)
+
+
+## Ändert sich diese Zahl, muss die Vorschau am Boden neu gezeichnet werden.
+func preview_sig() -> int:
+	return hash([tool, hover, _dragging, _drag_start if _dragging else Vector2i.ZERO, _touch_pending])
 
 
 func inside(t: Vector2i) -> bool:
@@ -912,6 +1135,8 @@ func place(type: String, t: Vector2i, quiet := false) -> bool:
 		b.facing = facing_for(type, t)
 	city.money = int(city.money) - cost
 	_add_view(b)
+	if type == "road":
+		ground.road_changed(t)
 	var anchor := Iso.bottom(t.x, t.y, size.x, size.y)
 	particles.emit("dust", anchor - Vector2(0, 8), 6 if type != "road" else 3)
 	if type != "road":
@@ -1001,6 +1226,7 @@ func demolish(t: Vector2i) -> void:
 	var anchor := Iso.bottom(int(b.x), int(b.y), int(b.w), int(b.h))
 	if b.type == "road":
 		roads.erase(Vector2i(int(b.x), int(b.y)))
+		ground.road_changed(Vector2i(int(b.x), int(b.y)))
 	else:
 		var v: Node = building_views.get(int(b.id))
 		if v:
@@ -1024,7 +1250,62 @@ func demolish(t: Vector2i) -> void:
 
 # Eingabe
 
+## Rohe Berührungen: zwei Finger bewegen die Karte und zoomen.
+func _input(event: InputEvent) -> void:
+	if not loaded:
+		return
+	if event is InputEventScreenTouch:
+		if event.pressed:
+			_touches[event.index] = event.position
+			if _touches.size() == 2 and not _gesture:
+				_begin_gesture()
+		else:
+			_touches.erase(event.index)
+			if _touches.is_empty():
+				_gesture = false
+	elif event is InputEventScreenDrag:
+		# Beide Finger kommen als getrennte Ereignisse. Ausgewertet wird einmal pro Bild,
+		# sonst sieht die Geste dazwischen einen schiefen Abstand.
+		_touches[event.index] = event.position
+		_gesture_dirty = true
+
+
+func _begin_gesture() -> void:
+	_gesture = true
+	# Was der erste Finger gerade angefangen hat, wird abgebrochen
+	_dragging = false
+	_left_pan = false
+	_touch_pending = false
+	_finger_down = false
+	var pts := _touches.values()
+	_g_center = (pts[0] + pts[1]) * 0.5
+	_g_dist = maxf(8.0, pts[0].distance_to(pts[1]))
+
+
+func _update_gesture() -> void:
+	var pts := _touches.values()
+	var c: Vector2 = (pts[0] + pts[1]) * 0.5
+	var d := maxf(8.0, pts[0].distance_to(pts[1]))
+	camera.position -= (c - _g_center) / camera.zoom.x
+	_g_center = c
+	var ratio := d / _g_dist
+	if ratio > 1.3 and camera.zoom.x < 2.0:
+		_mouse_screen = c
+		set_zoom(2)
+		_g_dist = d
+	elif ratio < 0.77 and camera.zoom.x > 1.0:
+		_mouse_screen = c
+		set_zoom(1)
+		_g_dist = d
+	_clamp_camera()
+
+
 func _unhandled_input(event: InputEvent) -> void:
+	if not loaded:
+		return
+	# Während zwei Finger auf dem Bild sind, zählt der zweite Finger nicht als Maus
+	if _gesture and event is InputEventMouse:
+		return
 	if event is InputEventMouse:
 		_mouse_screen = event.position
 	if event is InputEventMouseMotion:
@@ -1034,7 +1315,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			camera.position -= d
 			_pan_moved += d.length()
 			_clamp_camera()
-		elif _dragging and tool in PAINT_TOOLS and hover != _last_paint:
+		elif _dragging and tool in PAINT_TOOLS and hover != _last_paint and not _touch_pending:
 			_last_paint = hover
 			if tool == "demolish":
 				demolish(hover)
@@ -1042,19 +1323,20 @@ func _unhandled_input(event: InputEvent) -> void:
 				place(tool, hover, true)
 	elif event is InputEventMouseButton:
 		_update_hover()
+		var touch: bool = event.device == InputEvent.DEVICE_ID_EMULATION
 		match event.button_index:
 			MOUSE_BUTTON_LEFT:
 				if event.pressed:
-					_left_down()
+					_left_down(touch)
 				else:
-					_left_up()
+					_left_up(touch)
 			MOUSE_BUTTON_RIGHT, MOUSE_BUTTON_MIDDLE:
 				if event.pressed:
 					_panning = true
 					_pan_moved = 0.0
 				else:
 					_panning = false
-					if event.button_index == MOUSE_BUTTON_RIGHT and _pan_moved < 4.0:
+					if event.button_index == MOUSE_BUTTON_RIGHT and _pan_moved < TAP_SLOP_MOUSE:
 						cancel()
 			MOUSE_BUTTON_WHEEL_UP:
 				if event.pressed:
@@ -1091,6 +1373,7 @@ func cancel() -> bool:
 	if tool != "":
 		tool = ""
 		_dragging = false
+		_touch_pending = false
 		return true
 	if not selected.is_empty():
 		selected = {}
@@ -1099,14 +1382,19 @@ func cancel() -> bool:
 	return false
 
 
-func _left_down() -> void:
+## touch ist wahr, wenn ein Finger die Maus ausgelöst hat. Dann baut erst das Loslassen,
+## so sieht man die Vorschau und kann sie mit dem Finger verschieben.
+func _left_down(touch := false) -> void:
 	_warned_drag = false
+	_finger_down = touch
+	if touch:
+		_update_hover()
 	if tool == "":
-		# Ohne Werkzeug: Ziehen bewegt die Karte, ein Klick wählt ein Gebäude
+		# Ohne Werkzeug: Ziehen bewegt die Karte, ein Tippen wählt ein Gebäude
 		_left_pan = true
 		_pan_moved = 0.0
 		return
-	if not hover_inside():
+	if not hover_inside() and not touch:
 		return
 	_dragging = true
 	_last_paint = hover
@@ -1114,21 +1402,34 @@ func _left_down() -> void:
 		"road":
 			_drag_start = hover
 		"demolish":
-			demolish(hover)
+			if touch:
+				_touch_pending = true
+			else:
+				demolish(hover)
 		_:
-			place(tool, hover)
+			if touch:
+				_touch_pending = true
+			else:
+				place(tool, hover)
 
 
-func _left_up() -> void:
+func _left_up(touch := false) -> void:
+	_finger_down = false
 	if _left_pan:
 		_left_pan = false
-		if _pan_moved < 4.0:
+		if _pan_moved < (TAP_SLOP_TOUCH if touch else TAP_SLOP_MOUSE):
 			var b := _pick_building()
 			selected = b
 			selection_changed.emit(selected)
 		return
 	if _dragging and tool == "road":
 		place_road_path(_l_path(_drag_start, hover))
+	elif _dragging and _touch_pending:
+		if tool == "demolish":
+			demolish(hover)
+		elif hover_inside():
+			place(tool, hover)
+	_touch_pending = false
 	_dragging = false
 
 
@@ -1154,6 +1455,8 @@ func mouse_world() -> Vector2:
 
 func _update_hover() -> void:
 	var p := mouse_world()
+	if _finger_down and tool != "":
+		p.y -= TOUCH_LIFT / camera.zoom.x
 	var size := BuildingTypes.size_of(tool) if tool in BuildingTypes.INFO else Vector2i.ONE
 	var t := Iso.to_tile(p) - Vector2((size.x - 1) * 0.5, (size.y - 1) * 0.5)
 	hover = Vector2i(floori(t.x), floori(t.y))
@@ -1178,6 +1481,12 @@ func _clamp_camera() -> void:
 	camera.position.x = clampf(camera.position.x, camera.limit_left + half.x, maxf(camera.limit_left + half.x, camera.limit_right - half.x))
 	camera.position.y = clampf(camera.position.y, camera.limit_top + half.y, maxf(camera.limit_top + half.y, camera.limit_bottom - half.y))
 	camera.position = camera.position.round()
+
+
+## Wechselt zwischen Zoom 1 und 2 um die Mitte des Bildes. Für den Knopf auf dem Handy.
+func zoom_toggle() -> void:
+	_mouse_screen = get_viewport().get_visible_rect().size * 0.5
+	set_zoom(1 if camera.zoom.x > 1.5 else 2)
 
 
 func set_zoom(z: int) -> void:
@@ -1221,9 +1530,9 @@ func _demo_city() -> void:
 	for item in plan:
 		if str(item[0]).begins_with("road"):
 			continue
-		_reroll_ghost()
 		var prev := tool
 		tool = item[0]
+		_reroll_ghost()
 		place(item[0], Vector2i(item[1], item[2]), true)
 		tool = prev
 	for b in city.buildings:

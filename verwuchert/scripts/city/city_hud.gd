@@ -32,10 +32,20 @@ var _menu: Control
 var _hover_tool := ""
 var _money_shown := 0.0
 var _delta_t := 0.0
+var _phone := false
+var _speed_cycle: Button
+var _zoom_btn: Button
+var _menu_btn: Button
+var _sb_speed := {}
+var _last_speed := -1
+var _tip_id := "~"
+var _info_t := 0.0
+var _color_cache := {}
 
 
 func setup(city_builder: CityBuilder) -> void:
 	builder = city_builder
+	_phone = Platform.phone
 	theme = UiTheme.get_theme()
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -51,7 +61,33 @@ func setup(city_builder: CityBuilder) -> void:
 	builder.payday.connect(_on_payday)
 	builder.chronicle_added.connect(func(_e): _refresh_chronicle())
 	_money_shown = float(GameState.city.money)
-	show_toast("Bau deine Stadt. Häuser brauchen Straße, Strom und Wasser.", Pal.BONE)
+	get_viewport().size_changed.connect(_layout)
+	_layout()
+	if _phone:
+		show_toast("Bau deine Stadt. Zwei Finger bewegen die Karte.", Pal.BONE)
+	else:
+		show_toast("Bau deine Stadt. Häuser brauchen Straße, Strom und Wasser.", Pal.BONE)
+
+
+## Setzt die Schriftfarbe nur, wenn sie sich ändert. Jeder Aufruf löst sonst eine Neuberechnung aus.
+func _tint(n: Control, col: Color) -> void:
+	var id := n.get_instance_id()
+	if _color_cache.get(id) == col:
+		return
+	_color_cache[id] = col
+	n.add_theme_color_override("font_color", col)
+
+
+## Ordnet alles neu, wenn sich die Bildgröße ändert. Das Handy hat ein breiteres Bild.
+func _layout() -> void:
+	var vp := Platform.view_size()
+	if _info_panel != null:
+		_info_panel.position = Vector2(vp.x - 156, 34 if _phone else 28)
+	if _hint != null:
+		_hint.position = Vector2(vp.x - 6 - 300, vp.y - (68 if _phone else 60))
+	if _chron_box != null:
+		# Die Chronik braucht links neben der Werkzeugleiste Platz
+		_chron_box.visible = vp.x >= 690.0 or not _phone
 
 
 func _icon(id: String) -> TextureRect:
@@ -76,7 +112,7 @@ func _small_button(icon_id: String, tip: String) -> Button:
 	b.icon = IconArt.get_icon(icon_id)
 	b.tooltip_text = tip
 	b.focus_mode = Control.FOCUS_NONE
-	b.custom_minimum_size = Vector2(17, 17)
+	b.custom_minimum_size = Vector2(26, 24) if _phone else Vector2(17, 17)
 	b.add_theme_constant_override("h_separation", 0)
 	for s in ["normal", "hover", "pressed", "disabled"]:
 		b.add_theme_stylebox_override(s, _tight(UiTheme.button_box(s)))
@@ -95,6 +131,9 @@ func _tight(sb: StyleBoxTexture) -> StyleBoxTexture:
 # Obere Leiste
 
 func _build_top_bar() -> void:
+	if _phone:
+		_build_top_bar_phone()
+		return
 	var bar := PanelContainer.new()
 	bar.set_anchors_preset(Control.PRESET_TOP_WIDE)
 	bar.offset_bottom = 23
@@ -193,6 +232,87 @@ func _build_top_bar() -> void:
 	row.add_child(done)
 
 
+## Schlanke Leiste fürs Handy: weniger Angaben, dafür große Knöpfe. Geschwindigkeit hat einen
+## einzigen Knopf, der durchzählt. Speichern steckt im Pausenmenü.
+func _build_top_bar_phone() -> void:
+	var bar := PanelContainer.new()
+	bar.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	var sb := UiTheme.panel_box()
+	sb.content_margin_top = 3
+	sb.content_margin_bottom = 3
+	bar.add_theme_stylebox_override("panel", sb)
+	add_child(bar)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	bar.add_child(row)
+	row.add_child(_icon("coin"))
+	_money = _label("0", Pal.YELLOW)
+	_money.custom_minimum_size = Vector2(40, 0)
+	row.add_child(_money)
+	_money_delta = _label("", Pal.LEAF_L)
+	var pd_holder := Control.new()
+	pd_holder.custom_minimum_size = Vector2(22, 9)
+	var pd_bg := ColorRect.new()
+	pd_bg.color = Pal.BLACK
+	pd_bg.position = Vector2(0, 3)
+	pd_bg.size = Vector2(22, 4)
+	pd_holder.add_child(pd_bg)
+	_payday_bar = ColorRect.new()
+	_payday_bar.color = Pal.OCHRE
+	_payday_bar.position = Vector2(1, 4)
+	_payday_bar.size = Vector2(0, 2)
+	pd_holder.add_child(_payday_bar)
+	row.add_child(pd_holder)
+	row.add_child(_sep())
+	row.add_child(_icon("people"))
+	_people = _label("0")
+	_people.custom_minimum_size = Vector2(18, 0)
+	row.add_child(_people)
+	row.add_child(_sep())
+	row.add_child(_icon("crew"))
+	_crews = _label("0/2")
+	_crews.custom_minimum_size = Vector2(34, 0)
+	row.add_child(_crews)
+	row.add_child(_sep())
+	row.add_child(_icon("bolt"))
+	_power = _label("0/0")
+	_power.custom_minimum_size = Vector2(30, 0)
+	row.add_child(_power)
+	row.add_child(_icon("drop"))
+	_water = _label("0/0")
+	_water.custom_minimum_size = Vector2(30, 0)
+	row.add_child(_water)
+	row.add_child(_sep())
+	_clock_icon = _icon("sun")
+	row.add_child(_clock_icon)
+	_clock = _label("Tag 1  08:00")
+	row.add_child(_clock)
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(spacer)
+	_timer = _label("00:00", Pal.STONE_L)
+	row.add_child(_timer)
+	_speed_cycle = _small_button("play1", "Tempo")
+	_speed_cycle.pressed.connect(func(): builder.set_speed((builder.speed_index + 1) % 4))
+	row.add_child(_speed_cycle)
+	_zoom_btn = _small_button("zoom", "Zoom")
+	_zoom_btn.pressed.connect(func(): builder.zoom_toggle())
+	row.add_child(_zoom_btn)
+	_menu_btn = _small_button("menu", "Menü")
+	_menu_btn.pressed.connect(_open_menu)
+	row.add_child(_menu_btn)
+	var done := Button.new()
+	done.text = "Stadt fertig"
+	done.focus_mode = Control.FOCUS_NONE
+	done.custom_minimum_size = Vector2(0, 24)
+	done.add_theme_color_override("font_color", Pal.YELLOW)
+	for st in ["normal", "hover", "pressed"]:
+		done.add_theme_stylebox_override(st, _tight(UiTheme.button_box(st)))
+	done.pressed.connect(_ask_finish)
+	row.add_child(done)
+
+
 func _sep() -> Control:
 	var c := ColorRect.new()
 	c.color = Pal.STONE_D
@@ -206,7 +326,7 @@ func _sep() -> Control:
 func _build_toolbar() -> void:
 	var holder := CenterContainer.new()
 	holder.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-	holder.offset_top = -50
+	holder.offset_top = -58 if _phone else -50
 	holder.offset_bottom = -1
 	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(holder)
@@ -231,7 +351,7 @@ func _build_toolbar() -> void:
 		b.icon = IconArt.get_icon(id)
 		b.toggle_mode = true
 		b.focus_mode = Control.FOCUS_NONE
-		b.custom_minimum_size = Vector2(36, 38)
+		b.custom_minimum_size = Vector2(44, 46) if _phone else Vector2(36, 38)
 		b.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		b.vertical_icon_alignment = VERTICAL_ALIGNMENT_TOP
 		b.text = str(BuildingTypes.cost(id)) if id != "demolish" else "Abriss"
@@ -261,7 +381,7 @@ func _build_toolbar() -> void:
 		b.add_child(key)
 	_hint = _label("", Pal.STONE_L)
 	_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_hint.position = Vector2(640 - 6 - 300, 360 - 60)
+	_hint.position = Vector2(640 - 6 - 300, 360 - 60)  # _layout() setzt die endgültige Stelle
 	_hint.add_theme_color_override("font_shadow_color", Pal.BLACK)
 	_hint.add_theme_constant_override("shadow_offset_x", 1)
 	_hint.add_theme_constant_override("shadow_offset_y", 1)
@@ -349,7 +469,21 @@ func _build_tip() -> void:
 
 
 func _update_tip() -> void:
-	var id := _hover_tool if _hover_tool != "" else builder.tool
+	# Auf dem Handy gibt es kein Schweben, die Hinweise gehören immer zum gewählten Werkzeug
+	var id := builder.tool if _phone else (_hover_tool if _hover_tool != "" else builder.tool)
+	if id != _tip_id:
+		_tip_id = id
+		_rebuild_tip(id)
+	var vp := Platform.view_size()
+	if id != "" and _tip_panel.visible:
+		var btn: Button = _tool_buttons.get(id)
+		var x := 6.0
+		if btn:
+			x = clampf(btn.global_position.x + btn.size.x * 0.5 - _tip_panel.size.x * 0.5, 4.0, vp.x - _tip_panel.size.x - 4.0)
+		_tip_panel.position = Vector2(roundf(x), vp.y - (62 if _phone else 52) - _tip_panel.size.y)
+
+
+func _rebuild_tip(id: String) -> void:
 	if id == "":
 		_tip_panel.visible = false
 		return
@@ -375,11 +509,6 @@ func _update_tip() -> void:
 			lines.append("Unterhalt: %d pro Zahltag" % int(cfg.upkeep))
 		_tip_body.text = "\n".join(lines)
 	_tip_panel.reset_size()
-	var btn: Button = _tool_buttons.get(id)
-	var x := 6.0
-	if btn:
-		x = clampf(btn.global_position.x + btn.size.x * 0.5 - _tip_panel.size.x * 0.5, 4.0, 640.0 - _tip_panel.size.x - 4.0)
-	_tip_panel.position = Vector2(roundf(x), 360 - 52 - _tip_panel.size.y)
 
 
 # Infotafel
@@ -387,7 +516,7 @@ func _update_tip() -> void:
 func _build_info() -> void:
 	_info_panel = PanelContainer.new()
 	_info_panel.visible = false
-	_info_panel.position = Vector2(640 - 156, 28)
+	_info_panel.position = Vector2(640 - 156, 28)  # _layout() setzt die endgültige Stelle
 	_info_panel.custom_minimum_size = Vector2(150, 0)
 	add_child(_info_panel)
 	var col := VBoxContainer.new()
@@ -589,7 +718,7 @@ func _modal(title: String, text: String, buttons: Array) -> Control:
 		var btn := Button.new()
 		btn.text = b[0]
 		btn.focus_mode = Control.FOCUS_NONE
-		btn.custom_minimum_size = Vector2(70, 18)
+		btn.custom_minimum_size = Vector2(90, 26) if _phone else Vector2(70, 18)
 		btn.add_theme_color_override("font_color", b[2])
 		btn.pressed.connect(b[1])
 		row.add_child(btn)
@@ -601,6 +730,8 @@ func _ask_finish() -> void:
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
+	if builder == null:
+		return
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE:
 		if _dialog.visible:
 			_dialog.visible = false
@@ -614,12 +745,14 @@ func _unhandled_key_input(event: InputEvent) -> void:
 # Laufende Anzeige
 
 func _process(delta: float) -> void:
+	if builder == null:
+		return
 	var c: Dictionary = GameState.city
 	_money_shown = lerpf(_money_shown, float(c.money), minf(1.0, delta * 8.0))
 	if absf(_money_shown - float(c.money)) < 1.0:
 		_money_shown = float(c.money)
 	_money.text = _fmt(int(round(_money_shown)))
-	_money.add_theme_color_override("font_color", Pal.YELLOW if int(c.money) >= 0 else Pal.ROSE)
+	_tint(_money, Pal.YELLOW if int(c.money) >= 0 else Pal.ROSE)
 	_delta_t -= delta
 	_money_delta.modulate.a = clampf(_delta_t, 0.0, 1.0)
 	var pd := Config.num("city/payday_seconds", 15.0)
@@ -628,40 +761,75 @@ func _process(delta: float) -> void:
 	var crews := Config.integer("city/crews", 2)
 	var q := builder.queue_length()
 	_crews.text = "%d/%d%s" % [builder.crews_busy(), crews, (" +%d" % q) if q > 0 else ""]
-	_crews.add_theme_color_override("font_color", Pal.OCHRE if q > 0 else Pal.BONE)
+	_tint(_crews, Pal.OCHRE if q > 0 else Pal.BONE)
 	_power.text = "%d/%d" % [builder.power_load, builder.power_cap]
-	_power.add_theme_color_override("font_color", Pal.ROSE if builder.power_cap == 0 or builder.power_load >= builder.power_cap else Pal.BONE)
+	_tint(_power, Pal.ROSE if builder.power_cap == 0 or builder.power_load >= builder.power_cap else Pal.BONE)
 	_water.text = "%d/%d" % [builder.water_load, builder.water_cap]
-	_water.add_theme_color_override("font_color", Pal.ROSE if builder.water_cap == 0 or builder.water_load >= builder.water_cap else Pal.BONE)
+	_tint(_water, Pal.ROSE if builder.water_cap == 0 or builder.water_load >= builder.water_cap else Pal.BONE)
 	_clock.text = "Tag %d  %s" % [int(c.day), DayCycle.clock_text(builder.hour)]
-	_clock_icon.texture = IconArt.get_icon("moon" if builder.night > 0.5 else "sun")
+	var icon_id := "moon" if builder.night > 0.5 else "sun"
+	if _clock_icon.get_meta("icon", "") != icon_id:
+		_clock_icon.set_meta("icon", icon_id)
+		_clock_icon.texture = IconArt.get_icon(icon_id)
 	var left := builder.time_left()
 	if left >= 0.0 and left <= 60.0:
 		_timer.text = "Noch %s" % _mmss(left)
-		_timer.add_theme_color_override("font_color", Pal.ROSE if fposmod(builder.anim_time, 1.0) < 0.5 else Pal.BONE)
+		_tint(_timer, Pal.ROSE if fposmod(builder.anim_time, 1.0) < 0.5 else Pal.BONE)
 	else:
 		_timer.text = _mmss(float(c.time))
-		_timer.add_theme_color_override("font_color", Pal.YELLOW if float(c.time) >= Config.num("city/target_seconds", 480) else Pal.STONE_L)
-	for i in _speed_buttons.size():
-		var on := i == builder.speed_index
-		_speed_buttons[i].modulate = Color.WHITE if on else Color(0.6, 0.6, 0.65)
-		_speed_buttons[i].add_theme_stylebox_override("normal", _tight(UiTheme.button_box("selected" if on else "normal")))
+		_tint(_timer, Pal.YELLOW if float(c.time) >= Config.num("city/target_seconds", 480) else Pal.STONE_L)
+	if builder.speed_index != _last_speed:
+		_last_speed = builder.speed_index
+		_apply_speed_style()
 	for id in _tool_buttons:
 		var b: Button = _tool_buttons[id]
-		b.set_pressed_no_signal(builder.tool == id)
+		var want: bool = builder.tool == id
+		if b.button_pressed != want:
+			b.set_pressed_no_signal(want)
 		if id != "demolish":
-			b.disabled = BuildingTypes.cost(id) > int(c.money) and builder.tool != id
+			var dis: bool = BuildingTypes.cost(id) > int(c.money) and builder.tool != id
+			if b.disabled != dis:
+				b.disabled = dis
 	_update_tip()
-	_update_info()
+	_info_t -= delta
+	if _info_t <= 0.0:
+		_info_t = 0.25
+		_update_info()
 	_update_hint()
 	_toast_t -= delta
 	_toast.modulate.a = clampf(_toast_t / 0.4, 0.0, 1.0)
+
+
+## Das Aussehen der Tempo-Knöpfe ändert sich nur, wenn das Tempo wechselt. Die Stile werden einmal gebaut.
+func _apply_speed_style() -> void:
+	if _sb_speed.is_empty():
+		_sb_speed["normal"] = _tight(UiTheme.button_box("normal"))
+		_sb_speed["selected"] = _tight(UiTheme.button_box("selected"))
+	for i in _speed_buttons.size():
+		var on: bool = i == builder.speed_index
+		_speed_buttons[i].modulate = Color.WHITE if on else Color(0.6, 0.6, 0.65)
+		_speed_buttons[i].add_theme_stylebox_override("normal", _sb_speed["selected" if on else "normal"])
+	if _speed_cycle != null:
+		_speed_cycle.icon = IconArt.get_icon(["pause", "play1", "play2", "play3"][builder.speed_index])
+		_speed_cycle.add_theme_stylebox_override("normal", _sb_speed["selected" if builder.speed_index > 0 else "normal"])
 
 
 func _update_hint() -> void:
 	var t := builder.tool
 	if _menu.visible or _dialog.visible:
 		_hint.text = ""
+		return
+	if _phone:
+		match t:
+			"":
+				_hint.text = "Tippen wählt. Ziehen bewegt. Zwei Finger zoomen."
+			"road":
+				_hint.text = "Ziehen und loslassen baut eine Straße."
+			"demolish":
+				_hint.text = "Loslassen reißt das Ziel ab."
+			_:
+				_hint.text = "Finger ziehen, loslassen baut."
+		_hint.visible = not _tip_panel.visible
 		return
 	match t:
 		"":

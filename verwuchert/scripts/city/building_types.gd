@@ -55,6 +55,19 @@ const ITEM_NAMES := {
 }
 
 
+## Wie viele Varianten pro Typ vorkommen. Wenige Varianten heißen: Bilder werden wiederverwendet,
+## es gibt keine Ruckler mitten im Spiel. Häuser sind die Vielfalt der Stadt, darum zehn.
+const VARIANTS := {"house": 10, "shop": 4, "park": 3, "factory": 2, "power_plant": 1, "water_tower": 2}
+
+
+static func variant_for(type: String, i: int) -> int:
+	return 1000 + ORDER.find(type) * 331 + i * 137
+
+
+static func variant_count(type: String) -> int:
+	return int(VARIANTS.get(type, 1))
+
+
 static func info(type: String) -> Dictionary:
 	return INFO.get(type, {})
 

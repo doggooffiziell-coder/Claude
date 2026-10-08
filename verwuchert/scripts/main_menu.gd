@@ -23,6 +23,7 @@ var _t := 0.0
 var _wipe_armed := false
 var _wipe_btn: Button
 var _setting_buttons := {}
+var _version: Label
 
 
 func _ready() -> void:
@@ -35,22 +36,30 @@ func _ready() -> void:
 	add_child(title)
 	_build_main()
 	strip = PhaseStrip.new()
-	strip.position = Vector2(24, 298)
 	add_child(strip)
-	var ver := Label.new()
-	ver.text = "Version %s" % GameState.version()
-	ver.add_theme_color_override("font_color", Pal.STONE)
-	ver.position = Vector2(W - 70, H - 14)
-	add_child(ver)
+	_version = Label.new()
+	_version.text = "Version %s" % GameState.version()
+	_version.add_theme_color_override("font_color", Pal.STONE)
+	add_child(_version)
 	screens["guide"] = _build_guide()
 	screens["settings"] = _build_settings()
 	screens["confirm"] = _build_confirm()
 	for k in screens:
 		add_child(screens[k])
 	refresh()
+	get_viewport().size_changed.connect(_layout)
+	_layout()
 	var want: String = str(GameState.user_args.get("screen", ""))
 	if want != "":
 		show_screen(want)
+
+
+## Ordnet die Teile nach der Größe des Bildes. Das Handy hat ein breiteres, kürzeres Bild.
+func _layout() -> void:
+	var vp := Platform.view_size()
+	_version.position = Vector2(vp.x - 70, vp.y - 14)
+	strip.position = Vector2(24, vp.y - 62)
+	strip.visible = vp.y >= 300.0
 
 
 # Hauptseite
@@ -89,7 +98,7 @@ func _button(text: String, col: Color) -> Button:
 	var b := Button.new()
 	b.text = text
 	b.focus_mode = Control.FOCUS_NONE
-	b.custom_minimum_size = Vector2(132, 20)
+	b.custom_minimum_size = Vector2(132, 24 if Platform.phone else 20)
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	b.add_theme_color_override("font_color", col)
 	b.mouse_entered.connect(func(): _hover = b)
@@ -176,7 +185,10 @@ func _build_guide() -> Control:
 		cell.add_child(body)
 	col.add_child(_rule())
 	col.add_child(_small("Steuerung", Pal.OCHRE))
-	var keys := _small("Klick baut. Ziehen zieht eine Straße oder bewegt die Karte. Rechtsklick legt das Werkzeug weg. Mausrad zoomt. Tasten 1 bis 7 wählen das Werkzeug, X reißt ab, Leertaste hält an, F5 speichert, Esc öffnet das Pausenmenü.", Pal.BONE)
+	var keys_text := "Klick baut. Ziehen zieht eine Straße oder bewegt die Karte. Rechtsklick legt das Werkzeug weg. Mausrad zoomt. Tasten 1 bis 7 wählen das Werkzeug, X reißt ab, Leertaste hält an, F5 speichert, Esc öffnet das Pausenmenü."
+	if Platform.phone:
+		keys_text = "Tippe ein Werkzeug an, setze den Finger auf den Platz und ziehe ihn an die richtige Stelle. Loslassen baut. Eine Straße ziehst du mit dem Finger. Zwei Finger bewegen die Karte, Auseinanderziehen zoomt. Das Menü oben rechts pausiert und speichert."
+	var keys := _small(keys_text, Pal.BONE)
 	keys.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	keys.custom_minimum_size = Vector2(536, 0)
 	col.add_child(keys)

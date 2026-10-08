@@ -41,7 +41,15 @@ static func _cloud_tex(rng: RandomNumberGenerator) -> ImageTexture:
 	return ImageTexture.create_from_image(img)
 
 
+var _acc := 0.0
+
+
 func _process(delta: float) -> void:
+	_acc += delta
+	if _acc < 0.1:
+		return
+	delta = _acc
+	_acc = 0.0
 	var spd: float = builder.speed if builder else 1.0
 	var wind := Vector2(6.0, 1.2)
 	for c in _clouds:

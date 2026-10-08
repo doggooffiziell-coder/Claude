@@ -4,7 +4,8 @@ extends Node2D
 static var _add_mat: CanvasItemMaterial
 
 var view: Node2D
-var _flicker := 1.0
+var _acc := 0.0
+var _was_drawn := false
 
 
 func setup(owner_view: Node2D) -> void:
@@ -17,8 +18,17 @@ func setup(owner_view: Node2D) -> void:
 	use_parent_material = false
 
 
-func _process(_delta: float) -> void:
-	queue_redraw()
+## Fensterschein und Warnlicht ändern sich langsam. Fünfzehn Bilder pro Sekunde reichen,
+## und am Tag ohne Warnlicht gibt es nichts zu zeichnen.
+func _process(delta: float) -> void:
+	_acc += delta
+	if _acc < 0.066 or view == null or view.builder == null:
+		return
+	_acc = 0.0
+	var active: bool = view.data.state == "done" and (float(view.builder.night) > 0.01 or not view.art.get("blink", []).is_empty())
+	if active or _was_drawn:
+		queue_redraw()
+	_was_drawn = active
 
 
 func _lit() -> float:
