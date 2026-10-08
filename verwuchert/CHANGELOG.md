@@ -2,6 +2,11 @@
 
 Alle Änderungen an Verwuchert. Jede Version bekommt hier einen Eintrag.
 
+## 0.1.2
+
+- Web-Version: Der Knopf "Vollbild" funktioniert jetzt auch dort, wo der Browser echtes Vollbild verbietet. Dann füllt das Spiel das ganze Fenster der Seite.
+- Im Vollbild erscheint oben rechts "Vollbild beenden".
+
 ## 0.1.1
 
 - Web-Version: Das Spiel läuft als Artefakt im Browser.
