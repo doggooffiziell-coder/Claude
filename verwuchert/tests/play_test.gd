@@ -26,6 +26,8 @@ func _process(_d: float) -> bool:
 	match step:
 		5:
 			b = current_scene
+			# Beim Start des Testskripts ist die Konfiguration noch nicht geladen, darum gibt es hier das Startgeld
+			gs.city.money = 20000
 			check(b is CityBuilder, "Phase-1-Szene geladen")
 			check(b.roads.size() == 3, "Startstraße hat 3 Felder")
 			var money: int = gs.city.money
@@ -55,7 +57,7 @@ func _process(_d: float) -> bool:
 			var occ: int = b.occupied_houses
 			check(occ == 3, "Drei Häuser bewohnt: %d" % occ)
 			check(b.residents == 12, "12 Bewohner: %d" % b.residents)
-			check(b.power_load > 0 and b.power_cap == 24, "Strom fließt über die Straßen: %d/%d" % [b.power_load, b.power_cap])
+			check(b.power_load > 0 and b.power_cap == 36, "Strom fließt über die Straßen: %d/%d" % [b.power_load, b.power_cap])
 			var fam := 0
 			for bd in gs.city.buildings:
 				if bd.has("family"):

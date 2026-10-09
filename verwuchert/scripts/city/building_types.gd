@@ -2,7 +2,7 @@ class_name BuildingTypes
 extends RefCounted
 ## Feste Eigenschaften der sieben Gebäudetypen. Kosten und Zeiten stehen in balance.json.
 
-const ORDER: Array[String] = ["road", "house", "shop", "factory", "park", "water_tower", "power_plant"]
+const ORDER: Array[String] = ["road", "house", "apartment", "shop", "factory", "warehouse", "park", "water_tower", "power_plant", "solar", "clinic"]
 
 const INFO := {
 	"road": {
@@ -24,6 +24,26 @@ const INFO := {
 		"name": "Fabrik", "size": Vector2i(2, 2), "height": 40,
 		"desc": "Bringt viel Geld, verschmutzt aber die Häuser daneben.",
 		"needs": "Straße, Strom",
+	},
+	"apartment": {
+		"name": "Wohnblock", "size": Vector2i(2, 1), "height": 62,
+		"desc": "12 Bewohner in einem Haus. Zahlt viel Steuern, braucht aber viel Strom und Wasser.",
+		"needs": "Straße, Strom, Wasser",
+	},
+	"warehouse": {
+		"name": "Lagerhaus", "size": Vector2i(2, 1), "height": 34,
+		"desc": "Fabriken in der Nähe verdienen mehr. Lagert Vorräte.",
+		"needs": "Straße, Strom",
+	},
+	"solar": {
+		"name": "Solarpark", "size": Vector2i(1, 1), "height": 14,
+		"desc": "Liefert Strom über die Straßen, ohne Unterhalt.",
+		"needs": "Straße daneben",
+	},
+	"clinic": {
+		"name": "Klinik", "size": Vector2i(2, 2), "height": 46,
+		"desc": "Häuser in der Nähe sind gesünder und zahlen mehr Steuern.",
+		"needs": "Straße, Strom, Wasser",
 	},
 	"park": {
 		"name": "Park", "size": Vector2i(1, 1), "height": 18,
@@ -57,7 +77,7 @@ const ITEM_NAMES := {
 
 ## Wie viele Varianten pro Typ vorkommen. Wenige Varianten heißen: Bilder werden wiederverwendet,
 ## es gibt keine Ruckler mitten im Spiel. Häuser sind die Vielfalt der Stadt, darum zehn.
-const VARIANTS := {"house": 10, "shop": 4, "park": 3, "factory": 2, "power_plant": 1, "water_tower": 2}
+const VARIANTS := {"house": 10, "apartment": 3, "shop": 4, "park": 3, "factory": 2, "warehouse": 2, "power_plant": 1, "water_tower": 2, "solar": 1, "clinic": 1}
 
 
 static func variant_for(type: String, i: int) -> int:
@@ -82,6 +102,11 @@ static func size_of(type: String) -> Vector2i:
 
 static func cost(type: String) -> int:
 	return int(Config.building(type).get("cost", 0))
+
+
+## Ab welcher Stadtstufe man das Gebäude bauen darf.
+static func level_needed(type: String) -> int:
+	return int(Config.building(type).get("level", 1))
 
 
 static func build_time(type: String) -> float:

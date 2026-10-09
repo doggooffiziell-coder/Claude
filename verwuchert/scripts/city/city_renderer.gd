@@ -177,8 +177,8 @@ func _draw_roads_in_work() -> void:
 func _draw_network() -> void:
 	var tool: String = builder.tool
 	var hov: String = builder.hover_type()
-	var show_power: bool = tool in ["power_plant", "house", "shop", "factory", "road"] or hov == "power_plant"
-	var show_water: bool = tool in ["water_tower", "house", "road"] or hov == "water_tower"
+	var show_power: bool = tool in ["power_plant", "solar", "house", "apartment", "shop", "factory", "warehouse", "clinic", "road"] or hov == "power_plant" or hov == "solar"
+	var show_water: bool = tool in ["water_tower", "house", "apartment", "clinic", "road"] or hov == "water_tower"
 	if not show_power and not show_water:
 		return
 	var pulse := 0.6 + 0.4 * sin(float(builder.anim_time) * 4.0)

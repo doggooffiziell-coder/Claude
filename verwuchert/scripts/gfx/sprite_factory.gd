@@ -14,7 +14,7 @@ static func norm_facing(type: String, facing: String) -> String:
 	match type:
 		"house":
 			return facing
-		"shop", "factory":
+		"shop", "factory", "apartment", "warehouse", "clinic":
 			return "right" if facing == "right" else "left"
 	return "left"
 

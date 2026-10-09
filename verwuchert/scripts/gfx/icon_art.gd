@@ -12,6 +12,11 @@ static func get_icon(id: String) -> ImageTexture:
 	match id:
 		"road": c = _road()
 		"house": c = _house()
+		"apartment": c = _apartment()
+		"clinic": c = _clinic()
+		"warehouse": c = _warehouse()
+		"solar": c = _solar()
+		"lock": c = _lock()
 		"shop": c = _shop()
 		"factory": c = _factory()
 		"park": c = _park()
@@ -51,6 +56,81 @@ static func _house() -> PixelCanvas:
 	c.rect(14, 13, 3, 3, Pal.YELLOW)
 	c.rect(15, 3, 2, 5, Pal.BRICK_D)
 	c.outline(Pal.NIGHT)
+	return c
+
+
+static func _apartment() -> PixelCanvas:
+	var c := PixelCanvas.new(22, 22)
+	c.rect(3, 3, 16, 18, Pal.BRICK)
+	for y in range(5, 20, 3):
+		c.hline(3, y, 16, Pal.BRICK_D)
+	c.vline(3, 3, 18, Pal.BRICK_L)
+	c.rect(2, 2, 18, 2, Pal.STONE)
+	for row in 3:
+		for col in 3:
+			c.rect(5 + col * 5, 5 + row * 4, 3, 3, Pal.YELLOW if (row + col) % 2 == 0 else Pal.BLUE_D)
+	c.rect(9, 17, 4, 4, Pal.TEAL_D)
+	c.outline(Pal.NIGHT)
+	return c
+
+
+static func _clinic() -> PixelCanvas:
+	var c := PixelCanvas.new(22, 22)
+	c.rect(2, 8, 18, 12, Pal.BONE)
+	c.hline(2, 8, 18, Pal.WHITE)
+	c.rect(1, 6, 20, 2, Pal.STONE_L)
+	c.rect(4, 12, 3, 3, Pal.BLUE_D)
+	c.rect(15, 12, 3, 3, Pal.BLUE_D)
+	c.rect(9, 14, 4, 6, Pal.TEAL_D)
+	c.rect(7, 1, 8, 7, Pal.WHITE)
+	c.rect(10, 2, 2, 5, Pal.BRICK_L)
+	c.rect(8, 4, 6, 2, Pal.BRICK_L)
+	c.outline(Pal.NIGHT)
+	return c
+
+
+static func _warehouse() -> PixelCanvas:
+	var c := PixelCanvas.new(22, 22)
+	c.poly(PackedVector2Array([Vector2(1, 9), Vector2(11, 3), Vector2(21, 9)]), Pal.STONE_D)
+	c.rect(2, 9, 18, 11, Pal.STONE_L)
+	for x in range(3, 20, 3):
+		c.vline(x, 9, 11, Pal.STONE)
+	c.rect(4, 12, 6, 8, Pal.TEAL)
+	c.rect(12, 12, 6, 8, Pal.TEAL)
+	c.hline(4, 12, 6, Pal.YELLOW)
+	c.hline(12, 12, 6, Pal.YELLOW)
+	c.outline(Pal.NIGHT)
+	return c
+
+
+static func _solar() -> PixelCanvas:
+	var c := PixelCanvas.new(22, 22)
+	c.poly(PackedVector2Array([Vector2(5, 5), Vector2(21, 5), Vector2(17, 15), Vector2(1, 15)]), Pal.BLUE_D)
+	for k in 1:
+		c.line(9, 5, 5, 15, Pal.BLUE)
+		c.line(13, 5, 9, 15, Pal.BLUE)
+		c.line(17, 5, 13, 15, Pal.BLUE)
+	c.line(3, 10, 19, 10, Pal.BLUE)
+	c.line(5, 5, 21, 5, Pal.STONE_L)
+	c.px(7, 7, Pal.SKY)
+	c.px(15, 8, Pal.SKY)
+	c.vline(8, 15, 5, Pal.STONE_D)
+	c.vline(14, 15, 5, Pal.STONE_D)
+	c.hline(5, 20, 12, Pal.STONE)
+	c.outline(Pal.NIGHT)
+	return c
+
+
+## Kleines Schloss für Gebäude, die noch gesperrt sind.
+static func _lock() -> PixelCanvas:
+	var c := PixelCanvas.new(9, 9)
+	c.rect(1, 4, 7, 5, Pal.OCHRE)
+	c.hline(1, 4, 7, Pal.YELLOW)
+	c.rect(2, 1, 1, 3, Pal.STONE_L)
+	c.rect(6, 1, 1, 3, Pal.STONE_L)
+	c.hline(2, 0, 5, Pal.STONE_L)
+	c.px(4, 6, Pal.NIGHT)
+	c.px(4, 7, Pal.NIGHT)
 	return c
 
 

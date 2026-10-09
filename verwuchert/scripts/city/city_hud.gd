@@ -41,6 +41,11 @@ var _last_speed := -1
 var _tip_id := "~"
 var _info_t := 0.0
 var _color_cache := {}
+var _level_panel: PanelContainer
+var _level_label: Label
+var _level_fill: ColorRect
+var _lock_icons := {}
+var _shown_level := -1
 
 
 func setup(city_builder: CityBuilder) -> void:
@@ -50,6 +55,7 @@ func setup(city_builder: CityBuilder) -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_build_top_bar()
+	_build_level()
 	_build_toolbar()
 	_build_tip()
 	_build_info()
@@ -59,10 +65,12 @@ func setup(city_builder: CityBuilder) -> void:
 	builder.toast.connect(show_toast)
 	builder.selection_changed.connect(_on_selection)
 	builder.payday.connect(_on_payday)
+	builder.level_changed.connect(func(_l): _update_locks())
 	builder.chronicle_added.connect(func(_e): _refresh_chronicle())
 	_money_shown = float(GameState.city.money)
 	get_viewport().size_changed.connect(_layout)
 	_layout()
+	_update_locks()
 	if _phone:
 		show_toast("Bau deine Stadt. Zwei Finger bewegen die Karte.", Pal.BONE)
 	else:
@@ -150,7 +158,7 @@ func _build_top_bar() -> void:
 	var money_box := VBoxContainer.new()
 	money_box.add_theme_constant_override("separation", 0)
 	_money = _label("0", Pal.YELLOW)
-	_money.custom_minimum_size = Vector2(38, 0)
+	_money.custom_minimum_size = Vector2(46, 0)
 	money_box.add_child(_money)
 	row.add_child(money_box)
 	_money_delta = _label("", Pal.LEAF_L)
@@ -247,7 +255,7 @@ func _build_top_bar_phone() -> void:
 	bar.add_child(row)
 	row.add_child(_icon("coin"))
 	_money = _label("0", Pal.YELLOW)
-	_money.custom_minimum_size = Vector2(40, 0)
+	_money.custom_minimum_size = Vector2(48, 0)
 	row.add_child(_money)
 	_money_delta = _label("", Pal.LEAF_L)
 	var pd_holder := Control.new()
@@ -376,7 +384,7 @@ func _build_toolbar() -> void:
 		row.add_child(b)
 		_tool_buttons[id] = b
 		# Tastenkürzel als kleine Zahl
-		var key := _label(str(i + 1) if id != "demolish" else "X", Pal.STONE)
+		var key := _label(_key_text(i) if id != "demolish" else "X", Pal.STONE)
 		key.position = Vector2(2, 1)
 		b.add_child(key)
 	_hint = _label("", Pal.STONE_L)
@@ -397,7 +405,8 @@ func _build_chronicle() -> void:
 	_chron_box.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	_chron_box.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	_chron_box.offset_left = 4
-	_chron_box.offset_bottom = -4
+	# Über der Werkzeugleiste, die mit allen Gebäuden fast die ganze Breite braucht
+	_chron_box.offset_bottom = -64 if _phone else -54
 	_chron_box.custom_minimum_size = Vector2(146, 0)
 	_chron_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_chron_box)
@@ -444,6 +453,82 @@ func _sep_tall() -> Control:
 	c.custom_minimum_size = Vector2(1, 34)
 	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return c
+
+
+## Tastenkürzel: 1 bis 9, dann 0 und Minus.
+func _key_text(i: int) -> String:
+	if i < 9:
+		return str(i + 1)
+	return "0" if i == 9 else "-"
+
+
+## Stadtstufe oben links: Name, Bewohner bis zur nächsten Stufe und ein Balken.
+func _build_level() -> void:
+	_level_panel = PanelContainer.new()
+	_level_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sb := UiTheme.panel_box()
+	sb.content_margin_left = 5
+	sb.content_margin_right = 5
+	sb.content_margin_top = 3
+	sb.content_margin_bottom = 4
+	_level_panel.add_theme_stylebox_override("panel", sb)
+	_level_panel.position = Vector2(4, 38 if _phone else 27)
+	add_child(_level_panel)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 2)
+	_level_panel.add_child(col)
+	_level_label = _label("Dorf", Pal.BONE)
+	col.add_child(_level_label)
+	var track := Control.new()
+	track.custom_minimum_size = Vector2(74, 4)
+	var bg := ColorRect.new()
+	bg.color = Pal.BLACK
+	bg.size = Vector2(74, 4)
+	track.add_child(bg)
+	_level_fill = ColorRect.new()
+	_level_fill.color = Pal.LEAF_L
+	_level_fill.position = Vector2(1, 1)
+	_level_fill.size = Vector2(0, 2)
+	track.add_child(_level_fill)
+	col.add_child(track)
+
+
+func _update_level() -> void:
+	var lvl := int(GameState.city.get("level", 1))
+	var need := CityLevels.next_need(lvl)
+	var txt := CityLevels.name_of(lvl)
+	if need > 0:
+		txt += "  %d/%d" % [builder.residents, need]
+		var base := CityLevels.need_of(lvl)
+		_level_fill.size.x = roundf(72.0 * clampf(float(builder.residents - base) / float(need - base), 0.0, 1.0))
+	else:
+		txt += "  %d" % builder.residents
+		_level_fill.size.x = 72.0
+	if _level_label.text != txt:
+		_level_label.text = txt
+
+
+## Gesperrte Gebäude sind abgedunkelt und tragen ein Schloss.
+func _update_locks() -> void:
+	var lvl := int(GameState.city.get("level", 1))
+	if lvl == _shown_level:
+		return
+	_shown_level = lvl
+	for id in _tool_buttons:
+		if id == "demolish":
+			continue
+		var locked: bool = not builder.is_unlocked(id)
+		var b: Button = _tool_buttons[id]
+		b.modulate = Color(0.5, 0.5, 0.55) if locked else Color.WHITE
+		if not _lock_icons.has(id):
+			var t := TextureRect.new()
+			t.texture = IconArt.get_icon("lock")
+			t.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			t.position = Vector2(b.custom_minimum_size.x - 12, 3)
+			b.add_child(t)
+			_lock_icons[id] = t
+		_lock_icons[id].visible = locked
+	_tip_id = "~"
 
 
 func _on_tool(id: String) -> void:
@@ -501,10 +586,18 @@ func _rebuild_tip(id: String) -> void:
 			lines.append("Braucht: %s" % info.needs)
 		var cfg := Config.building(id)
 		if cfg.has("capacity"):
-			var what := "Gebäude mit Strom" if id == "power_plant" else "Häuser mit Wasser"
+			var what := "Gebäude mit Strom" if id == "power_plant" or id == "solar" else "Häuser mit Wasser"
 			lines.append("Versorgt %d %s, über die Straßen." % [int(cfg.capacity), what])
 		if cfg.has("radius"):
 			lines.append("Wirkt %d Felder weit." % int(cfg.radius))
+		if cfg.has("residents") and id == "apartment":
+			lines.append("%d Bewohner, je %d Steuern." % [int(cfg.residents), int(cfg.tax_per_resident)])
+		if cfg.has("factory_bonus"):
+			lines.append("Jede Fabrik in der Nähe: +%d %% Einnahmen (höchstens %d Lager)." % [int(float(cfg.factory_bonus) * 100.0), int(cfg.bonus_max)])
+		if cfg.has("tax_bonus"):
+			lines.append("Häuser in der Nähe: +%d %% Steuern." % int(float(cfg.tax_bonus) * 100.0))
+		if not builder.is_unlocked(id):
+			lines.append(CityLevels.lock_text(id) + ".")
 		if cfg.has("upkeep"):
 			lines.append("Unterhalt: %d pro Zahltag" % int(cfg.upkeep))
 		_tip_body.text = "\n".join(lines)
@@ -549,13 +642,15 @@ func _update_info() -> void:
 	var st: Dictionary = v.status if v else {}
 	_info_title.text = str(b.get("name", BuildingTypes.display_name(b.type)))
 	var lines: Array[String] = []
-	if b.has("family"):
+	if b.type == "house" and b.has("family"):
 		_info_title.text = "Familie %s" % b.family
 		lines.append(", ".join(b.get("people", [])))
+	elif b.has("people"):
+		lines.append(", ".join(b.people))
 	var addr: String = builder.address(b)
 	if addr != "":
 		lines.append(addr)
-	if b.has("name") or b.has("family"):
+	if b.has("name") or b.type == "house" and b.has("family"):
 		lines.append(BuildingTypes.display_name(b.type))
 	lines.append("Material: %s" % BuildingTypes.MATERIAL_NAMES.get(b.material, b.material))
 	lines.append("Zustand: %d %%" % int(b.condition))
@@ -566,16 +661,19 @@ func _update_info() -> void:
 			lines.append("Im Bau: %d %%" % int(float(b.progress) * 100.0))
 		_:
 			match b.type:
-				"house":
+				"house", "apartment":
+					var hcfg := Config.building(b.type)
 					if st.get("occupied", false):
-						lines.append("Bewohnt von %d Leuten." % int(Config.building("house").get("residents", 4)))
+						lines.append("Bewohnt von %d Leuten." % int(hcfg.get("residents", 4)))
 					else:
 						lines.append("Leer. Es fehlt: %s." % _needs_text(st))
-						lines.append("Grundsteuer: +%d" % int(Config.building("house").get("base_tax", 6)))
+						lines.append("Grundsteuer: +%d" % int(hcfg.get("base_tax", 6)))
 					if st.get("parks", 0) > 0:
-						lines.append("Park in der Nähe: +%d" % (int(st.parks) * int(Config.building("house").get("park_bonus", 4))))
+						lines.append("Park in der Nähe: +%d" % (int(st.parks) * int(hcfg.get("park_bonus", Config.building("house").get("park_bonus", 4)))))
 					if st.get("polluted", false):
 						lines.append("Rauch der Fabrik stört.")
+					if st.get("healthy", false):
+						lines.append("Klinik in der Nähe: mehr Steuern.")
 				"shop":
 					if st.get("active", false):
 						lines.append("Kunden aus %d Häusern." % int(st.get("customers", 0)))
@@ -583,6 +681,14 @@ func _update_info() -> void:
 						lines.append("Geschlossen. Es fehlt: %s." % _needs_text(st))
 				"factory":
 					lines.append("Läuft." if st.get("active", false) else "Steht still. Es fehlt: %s." % _needs_text(st))
+					if int(st.get("stores", 0)) > 0:
+						lines.append("Lagerhaus in der Nähe: mehr Einnahmen.")
+				"warehouse":
+					lines.append("Fabriken in der Nähe verdienen mehr." if st.get("active", false) else "Steht still. Es fehlt: %s." % _needs_text(st))
+				"clinic":
+					lines.append("Häuser in der Nähe zahlen mehr Steuern." if st.get("active", false) else "Geschlossen. Es fehlt: %s." % _needs_text(st))
+				"solar":
+					lines.append("Liefert Strom: %d von %d Plätzen belegt." % [builder.power_load, builder.power_cap] if st.get("active", false) else "Braucht eine Straße.")
 				"water_tower":
 					lines.append("Versorgt %d von %d Häusern." % [builder.water_load, builder.water_cap] if st.get("active", false) else "Braucht eine Straße.")
 				"power_plant":
@@ -787,9 +893,10 @@ func _process(delta: float) -> void:
 		if b.button_pressed != want:
 			b.set_pressed_no_signal(want)
 		if id != "demolish":
-			var dis: bool = BuildingTypes.cost(id) > int(c.money) and builder.tool != id
+			var dis: bool = BuildingTypes.cost(id) > int(c.money) and builder.tool != id and builder.is_unlocked(id)
 			if b.disabled != dis:
 				b.disabled = dis
+	_update_level()
 	_update_tip()
 	_info_t -= delta
 	if _info_t <= 0.0:

@@ -3,7 +3,7 @@ extends Control
 ## Drei Karten im Hauptmenü: die drei Phasen des Spiels. Die ersten beiden sind spielbar.
 
 const CARDS := [
-	{"icon": "house", "title": "1 Stadtbau", "sub": "etwa 8 Min.", "open": true},
+	{"icon": "house", "title": "1 Stadtbau", "sub": "etwa 25 Min.", "open": true},
 	{"icon": "years", "title": "2 Zeitraffer", "sub": "50 Jahre, 1 Min.", "open": true},
 	{"icon": "bunker", "title": "3 Bunker", "sub": "bald, 30 Tage", "open": false},
 ]

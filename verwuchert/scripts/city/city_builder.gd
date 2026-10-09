@@ -9,6 +9,7 @@ signal selection_changed(b: Dictionary)
 signal payday(net: int)
 signal chronicle_added(entry: Dictionary)
 signal city_finished
+signal level_changed(level: int)
 
 const T := 32
 const MARGIN := 4
@@ -123,6 +124,8 @@ func _ready() -> void:
 	city = GameState.city
 	if not city.has("chronicle"):
 		city.chronicle = []
+	if not city.has("level"):
+		city.level = 1
 	entry_row = int(city.h) / 2
 	hour = float(city.hour)
 	_pond = Terrain.ponds(int(city.seed), int(city.w), int(city.h), Config.integer("city/pond_count", 1))
@@ -244,7 +247,7 @@ func _idle_prewarm(delta: float) -> void:
 		return
 	_prewarm_t = 0.12
 	if _prewarm.is_empty():
-		for type in ["house", "shop", "park", "power_plant", "water_tower", "factory"]:
+		for type in ["house", "shop", "park", "power_plant", "water_tower", "factory", "apartment", "warehouse", "solar", "clinic"]:
 			_prewarm.append([type, "left"])
 		_prewarm.append(["house", "right"])
 		_prewarm.append(["shop", "right"])
@@ -510,6 +513,18 @@ func _name_building(b: Dictionary) -> void:
 		"water_tower":
 			b.name = "Wasserturm" + ((" " + _at_street(street)) if street != "" else "")
 			add_event("Der Wasserturm ist gefüllt.")
+		"apartment":
+			b.name = "Wohnblock" + ((" " + _at_street(street)) if street != "" else "")
+			add_event("%s ist fertig. Platz für %d Leute." % [b.name, int(Config.building("apartment").get("residents", 12))])
+		"warehouse":
+			b.name = "Lager " + Names.family(seed_value, int(b.id) + 700)
+			add_event("%s ist gefüllt. Die Fabriken in der Nähe verdienen mehr." % b.name)
+		"solar":
+			b.name = "Solarpark" + ((" " + _at_street(street)) if street != "" else "")
+			add_event("Der Solarpark liefert Strom, ohne Rauch.")
+		"clinic":
+			b.name = "Klinik" + ((" " + _at_street(street)) if street != "" else "")
+			add_event("Die Klinik öffnet. Die Leute in der Nähe sind gesünder.")
 		"park":
 			b.name = "Park" + ((" " + _at_street(street)) if street != "" else "")
 
@@ -641,15 +656,15 @@ func _road_dist(starts: Array) -> Dictionary:
 
 ## Verteilt Strom oder Wasser von jedem Versorger über die Straßen an die nächsten Verbraucher,
 ## bis seine Leistung aufgebraucht ist. Gibt {id: true} der versorgten Gebäude zurück.
-func _supply(source_type: String, consumers: Dictionary, reached_roads: Dictionary) -> Dictionary:
+func _supply(source_types: Array, consumers: Dictionary, reached_roads: Dictionary) -> Dictionary:
 	var served := {}
 	var cap_total := 0
 	var load := 0
-	var cap_each := int(Config.building(source_type).get("capacity", 20))
 	for v in building_views.values():
 		var src: Dictionary = v.data
-		if src.type != source_type or src.state != "done":
+		if not (src.type in source_types) or src.state != "done":
 			continue
+		var cap_each := int(Config.building(src.type).get("capacity", 20))
 		var starts := _plant_roads(src)
 		if starts.is_empty():
 			continue
@@ -677,7 +692,7 @@ func _supply(source_type: String, consumers: Dictionary, reached_roads: Dictiona
 			left -= need
 			load += need
 			served[c[1]] = true
-	if source_type == "power_plant":
+	if "power_plant" in source_types:
 		power_cap = cap_total
 		power_load = load
 	else:
@@ -707,29 +722,35 @@ func _update_status() -> void:
 		var b: Dictionary = v.data
 		if b.state != "done":
 			continue
+		var cfg := Config.building(b.type)
 		match b.type:
 			"house":
 				power_need[int(b.id)] = 1
 				water_need[int(b.id)] = 1
+			"apartment", "clinic":
+				power_need[int(b.id)] = int(cfg.get("power_use", 3))
+				water_need[int(b.id)] = int(cfg.get("water_use", 2))
 			"shop":
 				power_need[int(b.id)] = 1
-			"factory":
-				power_need[int(b.id)] = int(fac_cfg.get("power_use", 3))
+			"factory", "warehouse":
+				power_need[int(b.id)] = int(cfg.get("power_use", 3))
 	var new_powered := {}
 	var new_watered := {}
-	var powered := _supply("power_plant", power_need, new_powered)
-	var watered := _supply("water_tower", water_need, new_watered)
+	var powered := _supply(["power_plant", "solar"], power_need, new_powered)
+	var watered := _supply(["water_tower"], water_need, new_watered)
 	var roads_changed := new_powered.size() != powered_roads.size()
 	powered_roads = new_powered
 	watered_roads = new_watered
 	occupied_houses = 0
+	residents = 0
 	active_work = 0
 	income_parts = {"steuern": 0, "grundsteuer": 0, "laeden": 0, "fabriken": 0, "unterhalt": 0}
-	# Erst Häuser, dann der Rest, weil Läden bewohnte Häuser zählen
-	for pass_type in ["house", "other"]:
+	# Erst Wohnorte, dann der Rest, weil Läden bewohnte Häuser zählen
+	for pass_type in ["home", "other"]:
 		for v in building_views.values():
 			var b: Dictionary = v.data
-			if (b.type == "house") != (pass_type == "house"):
+			var is_home: bool = b.type == "house" or b.type == "apartment"
+			if is_home != (pass_type == "home"):
 				continue
 			var old: Dictionary = v.status
 			var st := {"needs": [], "income": 0}
@@ -743,7 +764,9 @@ func _update_status() -> void:
 			st.power = power
 			st.water = water
 			match b.type:
-				"house":
+				"house", "apartment":
+					var cfg := Config.building(b.type)
+					var count := int(cfg.get("residents", 4))
 					if not road:
 						st.needs.append("road_need")
 					else:
@@ -752,26 +775,31 @@ func _update_status() -> void:
 					st.occupied = road and power and water
 					if st.occupied:
 						occupied_houses += 1
-						var inc := float(house_cfg.get("residents", 4)) * float(house_cfg.get("tax_per_resident", 5))
-						var parks: int = mini(_count_near(b, "park", float(park_cfg.get("radius", 3))), int(house_cfg.get("park_bonus_max", 2)))
-						inc += parks * float(house_cfg.get("park_bonus", 4))
+						residents += count
+						var inc := float(count) * float(cfg.get("tax_per_resident", 5))
+						var parks: int = mini(_count_near(b, "park", float(park_cfg.get("radius", 3))), int(cfg.get("park_bonus_max", house_cfg.get("park_bonus_max", 2))))
+						inc += parks * float(cfg.get("park_bonus", house_cfg.get("park_bonus", 4)))
 						st.parks = parks
 						if _count_near(b, "factory", float(fac_cfg.get("pollution_radius", 3))) > 0:
 							inc *= 1.0 - float(house_cfg.get("factory_malus", 0.3))
 							st.polluted = true
+						if _clinic_near(b, powered, watered):
+							inc *= 1.0 + float(Config.building("clinic").get("tax_bonus", 0.25))
+							st.healthy = true
 						st.income = int(round(inc))
 						income_parts.steuern += st.income
 						if not old.get("occupied", false):
 							_move_in(b)
 					else:
 						# Grundsteuer: auch leere Häuser bringen etwas Geld
-						st.income = int(house_cfg.get("base_tax", 6))
+						st.income = int(cfg.get("base_tax", 6))
 						income_parts.grundsteuer += st.income
-						if old.get("occupied", false) and b.has("family"):
+						if old.get("occupied", false) and b.has("people"):
 							var why := "Strom" if not power else ("Wasser" if not water else "Straße")
-							add_event("Familie %s hat kein %s mehr und zieht aus." % [b.family, why] if why != "Straße" else "Familie %s ist von der Straße abgeschnitten." % b.family)
+							var who: String = ("Familie " + str(b.family)) if b.type == "house" else str(b.get("name", "Der Wohnblock"))
+							add_event("%s hat kein %s mehr und zieht aus." % [who, why] if why != "Straße" else "%s ist von der Straße abgeschnitten." % who)
 				"shop":
-					var customers := _count_near(b, "house", float(shop_cfg.get("customer_radius", 6)), "occupied")
+					var customers := _count_near(b, "house", float(shop_cfg.get("customer_radius", 6)), "occupied") + 3 * _count_near(b, "apartment", float(shop_cfg.get("customer_radius", 6)), "occupied")
 					st.customers = customers
 					if not road: st.needs.append("road_need")
 					elif not power: st.needs.append("bolt")
@@ -787,9 +815,25 @@ func _update_status() -> void:
 					st.active = road and power
 					if st.active:
 						active_work += 1
-						st.income = int(fac_cfg.get("income", 90))
+						var fi := float(fac_cfg.get("income", 90))
+						var wh_cfg := Config.building("warehouse")
+						var stores := mini(_count_near_active(b, "warehouse", float(wh_cfg.get("radius", 6)), powered), int(wh_cfg.get("bonus_max", 2)))
+						fi *= 1.0 + stores * float(wh_cfg.get("factory_bonus", 0.35))
+						st.stores = stores
+						st.income = int(round(fi))
 						income_parts.fabriken += st.income
-				"water_tower", "power_plant":
+				"warehouse":
+					if not road: st.needs.append("road_need")
+					elif not power: st.needs.append("bolt")
+					st.active = road and power
+				"clinic":
+					if not road: st.needs.append("road_need")
+					elif not power: st.needs.append("bolt")
+					elif not water: st.needs.append("drop")
+					st.active = road and power and water
+					st.income = -int(Config.building("clinic").get("upkeep", 0))
+					income_parts.unterhalt += st.income
+				"water_tower", "power_plant", "solar":
 					st.active = road
 					if not road: st.needs.append("road_need")
 					st.income = -int(Config.building(b.type).get("upkeep", 0))
@@ -797,14 +841,70 @@ func _update_status() -> void:
 				"park":
 					st.active = true
 			v.status = st
-	residents = occupied_houses * int(house_cfg.get("residents", 4))
 	if roads_changed:
 		_rebuild_poles()
+	_check_level()
+
+
+## Ein Gebäude der Art in der Nähe, das Strom, Straße (und Wasser) hat.
+func _near_working(b: Dictionary, type: String, radius: float, powered: Dictionary, watered: Dictionary = {}, need_water := false) -> int:
+	var c := Vector2(int(b.x) + int(b.w) * 0.5, int(b.y) + int(b.h) * 0.5)
+	var n := 0
+	for v in building_views.values():
+		var o: Dictionary = v.data
+		if o.type != type or o.state != "done" or not powered.has(int(o.id)):
+			continue
+		if need_water and not watered.has(int(o.id)):
+			continue
+		if not touches_road(o):
+			continue
+		var oc := Vector2(int(o.x) + int(o.w) * 0.5, int(o.y) + int(o.h) * 0.5)
+		if c.distance_to(oc) <= radius:
+			n += 1
+	return n
+
+
+func _count_near_active(b: Dictionary, type: String, radius: float, powered: Dictionary) -> int:
+	return _near_working(b, type, radius, powered)
+
+
+func _clinic_near(b: Dictionary, powered: Dictionary, watered: Dictionary) -> bool:
+	return _near_working(b, "clinic", float(Config.building("clinic").get("radius", 7)), powered, watered, true) > 0
+
+
+## Prüft, ob die Stadt eine Stufe aufgestiegen ist. Das gibt Geld, schaltet Gebäude frei und steht in der Chronik.
+func _check_level() -> void:
+	var lvl := CityLevels.level_for(residents)
+	var cur := int(city.get("level", 1))
+	if lvl <= cur:
+		return
+	for l in range(cur + 1, lvl + 1):
+		var bonus := CityLevels.bonus_of(l)
+		city.money = int(city.money) + bonus
+		var names: Array[String] = []
+		for t in CityLevels.unlocks(l):
+			names.append(BuildingTypes.display_name(t))
+		var text := "%s! Prämie %d." % [CityLevels.name_of(l), bonus]
+		if not names.is_empty():
+			text += " Neu: %s." % ", ".join(names)
+		add_event("Die Stadt wächst zur %s. %s" % [CityLevels.name_of(l), "Neu: " + ", ".join(names) + "." if not names.is_empty() else ""])
+		toast.emit(text, Pal.YELLOW)
+	city.level = lvl
+	level_changed.emit(lvl)
+	particles.emit("spark", camera.position, 30)
 
 
 ## Eine Familie zieht ein. Beim ersten Mal bekommt das Haus Namen und Bewohner.
 func _move_in(b: Dictionary) -> void:
-	var count := int(Config.building("house").get("residents", 4))
+	var count := int(Config.building(b.type).get("residents", 4))
+	if b.type == "apartment":
+		if not b.has("people"):
+			b.people = Names.residents(int(city.seed), int(b.id), count)
+			b.family = Names.family(int(city.seed), int(b.id))
+			add_event("Im Wohnblock %s ziehen %d Leute ein." % [str(b.get("name", "")).trim_prefix("Wohnblock "), count])
+		else:
+			add_event("Die Leute im Wohnblock sind zurück.")
+		return
 	if not b.has("family"):
 		b.family = Names.family(int(city.seed), int(b.id))
 		b.people = Names.residents(int(city.seed), int(b.id), count)
@@ -960,7 +1060,7 @@ func door_point(b: Dictionary) -> Vector2:
 func occupied_house_list() -> Array:
 	var out := []
 	for v in building_views.values():
-		if v.data.type == "house" and v.status.get("occupied", false):
+		if (v.data.type == "house" or v.data.type == "apartment") and v.status.get("occupied", false):
 			out.append(v.data)
 	return out
 
@@ -971,7 +1071,7 @@ func walk_goals() -> Array:
 		var b: Dictionary = v.data
 		if b.state != "done":
 			continue
-		if b.type in ["shop", "park"] or (b.type == "house" and v.status.get("occupied", false)):
+		if b.type in ["shop", "park"] or ((b.type == "house" or b.type == "apartment") and v.status.get("occupied", false)):
 			out.append(b)
 	return out
 
@@ -1005,7 +1105,14 @@ func _rebuild_poles() -> void:
 
 # Bauen
 
+func is_unlocked(type: String) -> bool:
+	return int(city.get("level", 1)) >= BuildingTypes.level_needed(type)
+
+
 func select_tool(name: String) -> void:
+	if name != "" and name != "demolish" and not is_unlocked(name):
+		toast.emit(CityLevels.lock_text(name), Pal.ROSE)
+		return
 	tool = name if tool != name else ""
 	if tool != "":
 		selected = {}
@@ -1093,6 +1200,10 @@ func place_cost(type: String, t: Vector2i) -> int:
 
 
 func place(type: String, t: Vector2i, quiet := false) -> bool:
+	if not is_unlocked(type):
+		if not quiet:
+			toast.emit(CityLevels.lock_text(type), Pal.ROSE)
+		return false
 	if not can_place(type, t):
 		if not quiet:
 			var reason := "Hier ist kein Platz."
@@ -1335,8 +1446,12 @@ func _unhandled_input(event: InputEvent) -> void:
 func _key(event: InputEventKey) -> void:
 	var tools := BuildingTypes.ORDER
 	match event.keycode:
-		KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7:
+		KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9:
 			select_tool(tools[event.keycode - KEY_1])
+		KEY_0:
+			select_tool(tools[9])
+		KEY_MINUS:
+			select_tool(tools[10])
 		KEY_X, KEY_DELETE:
 			select_tool("demolish")
 		KEY_SPACE:
@@ -1486,7 +1601,9 @@ func set_zoom(z: int) -> void:
 # Beispielstadt für Tests und Bilder
 
 func _demo_city() -> void:
-	city.money = 99999
+	city.money = 999999
+	city.level = CityLevels.count()
+	level_changed.emit(int(city.level))
 	var plan := [
 		["road_h", 3, 8, 20], ["road_v", 6, 3, 14], ["road_v", 14, 3, 14], ["road_v", 20, 4, 13],
 		["road_h", 6, 3, 18], ["road_h", 6, 13, 15], ["road_h", 14, 11, 7],
@@ -1498,6 +1615,7 @@ func _demo_city() -> void:
 		["factory", 17, 9], ["house", 15, 2], ["house", 16, 2], ["shop", 18, 7],
 		["park", 11, 9], ["house", 7, 12], ["house", 8, 12], ["house", 9, 12], ["house", 12, 12], ["house", 13, 12],
 		["house", 21, 6], ["house", 21, 7], ["shop", 21, 9], ["park", 22, 9], ["house", 5, 9], ["house", 5, 7],
+		["apartment", 8, 4], ["apartment", 10, 4], ["clinic", 7, 5], ["warehouse", 15, 10], ["solar", 13, 4], ["solar", 13, 5],
 	]
 	for item in plan:
 		match item[0]:
@@ -1529,7 +1647,7 @@ func _demo_city() -> void:
 		v.refresh_art()
 	_update_status()
 	_rebuild_poles()
-	city.money = 1840
+	city.money = 48400
 	if GameState.user_args.has("building"):
 		for p in [Vector2i(22, 12), Vector2i(10, 12), Vector2i(17, 3)]:
 			tool = "house"

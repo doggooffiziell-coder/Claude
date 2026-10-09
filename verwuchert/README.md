@@ -2,7 +2,7 @@
 
 Ein 2D-Aufbauspiel in Godot 4.4. Du baust eine kleine Stadt. Danach vergehen 50 Jahre, und die Natur holt sich alles zurück. Zum Schluss baust du mit zwei Überlebenden einen Bunker in den Ruinen deiner eigenen Stadt.
 
-Stand: Version 0.2.1. Phase 1 und Phase 2 sind spielbar. Phase 3 folgt.
+Stand: Version 0.2.2. Phase 1 und Phase 2 sind spielbar. Phase 3 folgt.
 
 ![Hauptmenü](docs/menu.png)
 ![Stadt am Tag](docs/phase1_day.png)
@@ -28,19 +28,29 @@ Menüpunkte: Neues Spiel, Weiterspielen (mit Tag, Familien und Geld des Spielsta
 
 ## Phase 1: Stadtbau
 
-Du hast etwa 8 Minuten. Nach 10 Minuten beginnen die Jahre von selbst. Mit "Stadt fertig" startest du sie früher.
+Du hast etwa 25 Minuten. Nach 35 Minuten beginnen die Jahre von selbst. Mit "Stadt fertig" startest du sie früher.
+
+Stadtstufen: Mit mehr Bewohnern wächst das Dorf zur Kleinstadt (40), zur Stadt (150) und zur Großstadt (400). Jede Stufe zahlt eine Prämie (6.000, 18.000, 40.000) und schaltet Gebäude frei. Oben links siehst du die Stufe und den Weg zur nächsten. Gesperrte Gebäude in der Leiste tragen ein Schloss.
+
+Gebäude (11 Typen):
+
+- Straße, Wohnhaus, Laden, Fabrik, Park, Wasserturm, Kraftwerk gibt es von Anfang an.
+- Wohnblock (ab Kleinstadt, 2x1): 12 Bewohner, braucht je 3 Strom und Wasser, zahlt viel Steuern.
+- Lagerhaus (ab Kleinstadt, 2x1): Fabriken in 6 Feldern Umkreis verdienen 35 % mehr, höchstens zwei Lager zählen. Lagert Vorräte.
+- Solarpark (ab Kleinstadt): 10 Strom ohne Unterhalt.
+- Klinik (ab Stadt, 2x2): Häuser und Wohnblöcke in 7 Feldern Umkreis zahlen 25 % mehr Steuern. Lagert Medizin.
 
 Regeln:
 
 - Wohnhäuser brauchen eine Straße vor der Tür, Strom und Wasser. Erst dann zieht eine Familie mit 4 Leuten ein und zahlt Steuern.
 - Leere Häuser zahlen eine kleine Grundsteuer. So kommt immer etwas Geld rein.
-- Strom und Wasser fließen über die Straßen. Kraftwerk und Wasserturm brauchen eine Straße daneben. Ein Kraftwerk versorgt 24 Plätze (Häuser und Läden je 1, Fabriken 3), ein Wasserturm 16 Häuser. Die nächsten Gebäude bekommen zuerst etwas.
-- Läden verdienen an bewohnten Häusern in der Nähe.
+- Strom und Wasser fließen über die Straßen. Kraftwerk, Solarpark und Wasserturm brauchen eine Straße daneben. Ein Kraftwerk versorgt 36 Plätze, ein Wasserturm 24, ein Solarpark 10. Häuser und Läden brauchen je 1, Fabriken 3, Wohnblöcke 3 Strom und 3 Wasser. Die nächsten Gebäude bekommen zuerst etwas.
+- Läden verdienen an bewohnten Häusern in der Nähe, ein Wohnblock zählt dreifach.
 - Fabriken bringen viel Geld, ihr Rauch senkt aber die Steuern der Häuser daneben.
 - Parks machen Häuser in der Nähe beliebter.
 - Zwei Bautrupps arbeiten gleichzeitig. Weitere Baustellen warten.
-- Bäume auf dem Bauplatz kosten 5 zum Fällen. Im Teich kannst du nicht bauen.
-- Geld kommt alle 12 Sekunden. Der Balken neben dem Geld zeigt den nächsten Zahltag.
+- Bäume auf dem Bauplatz kosten 25 zum Fällen. Im Teich kannst du nicht bauen.
+- Geld kommt alle 12 Sekunden. Der Balken neben dem Geld zeigt den nächsten Zahltag. Du startest mit 10.000.
 
 Jede Familie hat einen Namen, jede Straße auch. Die Chronik unten links erzählt, wer einzieht und was öffnet.
 
@@ -120,9 +130,10 @@ godot --headless --path verwuchert -s res://tests/play_test.gd
 godot --path verwuchert --resolution 640x360 -s res://tests/input_test.gd
 godot --headless --path verwuchert -s res://tests/menu_test.gd
 godot --path verwuchert --resolution 640x360 -s res://tests/touch_test.gd
+godot --headless --path verwuchert -s res://tests/levels_test.gd
 godot --headless --path verwuchert -s res://tests/timelapse_test.gd
 ```
 
-play_test baut Straßen und Gebäude, lässt die Bautrupps arbeiten, prüft Versorgung und Einnahmen, reißt ab, speichert, lädt und startet Phase 2. input_test klickt mit echten Maus-Ereignissen. timelapse_test prüft das Verfallsmodell, den Ablauf bis zum Ende, die Zusammenfassung und den Weg in Phase 3. touch_test prüft Tippen, Ziehen, Zoomen und Bauen mit Touch-Ereignissen. perf_test, perf_calls und perf_load messen Bildzeit und Ladezeit. menu_test prüft Insel, Seiten, Einstellungen, Löschen und den Start mit dem gewählten Tempo.
+play_test baut Straßen und Gebäude, lässt die Bautrupps arbeiten, prüft Versorgung und Einnahmen, reißt ab, speichert, lädt und startet Phase 2. input_test klickt mit echten Maus-Ereignissen. levels_test prüft Stadtstufen, Sperren und die vier neuen Gebäude. economy_bot spielt Phase 1 mit einem einfachen Bot und meldet, wann welche Stufe fällt (`-- --minutes=30`), als Messgerät fürs Balancing. timelapse_test prüft das Verfallsmodell, den Ablauf bis zum Ende, die Zusammenfassung und den Weg in Phase 3. touch_test prüft Tippen, Ziehen, Zoomen und Bauen mit Touch-Ereignissen. perf_test, perf_calls und perf_load messen Bildzeit und Ladezeit. menu_test prüft Insel, Seiten, Einstellungen, Löschen und den Start mit dem gewählten Tempo.
 
 Für Bilder ohne Spielen gibt es Schalter nach `--`. Im Menü zeigen `--hour=21` und `--screen=guide` (oder settings, confirm) eine Tageszeit und eine Seite. Der Zeitraffer lässt sich ohne Spielen ansehen: `res://scenes/phase1_city.tscn -- --demo --finish --year=30 --season=0.88 --look=12,9,1 --shot=bild.png` baut die Beispielstadt, springt in den Zeitraffer und speichert ein Bild von Jahr 30 im Winter (`--end` zeigt die Zusammenfassung). In der Stadt gilt: `--demo` baut eine Beispielstadt, `--hour=21` stellt die Uhr, `--zoom=2`, `--look=12,8` und `--shot=bild.png` speichern ein Bild.

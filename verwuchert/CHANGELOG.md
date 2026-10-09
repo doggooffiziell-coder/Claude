@@ -2,6 +2,24 @@
 
 Alle Änderungen an Verwuchert. Jede Version bekommt hier einen Eintrag.
 
+## 0.2.2
+
+Phase 1 ausgebaut: mehr Gebäude, Stadtstufen und eine größere Wirtschaft. Dauer etwa 25 Minuten.
+
+- Stadtstufen: Dorf, Kleinstadt (40 Bewohner), Stadt (150), Großstadt (400). Jede Stufe zahlt eine Prämie und schaltet Gebäude frei. Anzeige oben links mit Balken. Gesperrte Gebäude sind abgedunkelt und tragen ein Schloss, ein Tipp darauf nennt die Stufe. Die Stufe steht im Spielstand.
+- Vier neue Gebäude mit eigener Grafik, Symbol, Material, Beute und Verfall:
+  - Wohnblock (2x1, ab Kleinstadt): 12 Bewohner, braucht 3 Strom und 3 Wasser.
+  - Lagerhaus (2x1, ab Kleinstadt): Fabriken in der Nähe verdienen 35 % mehr.
+  - Solarpark (1x1, ab Kleinstadt): 10 Strom ohne Unterhalt.
+  - Klinik (2x2, ab Stadt): Häuser in der Nähe zahlen 25 % mehr Steuern, Beute Medizin.
+- Wirtschaft: Startgeld 10.000. Alle Preise und Einnahmen gelten fünfmal, Kraftwerk 36 und Wasserturm 24 Plätze. Läden zählen einen Wohnblock dreifach.
+- Spielzeit: Ziel 25 Minuten, Zeitlimit 35 Minuten.
+- Strom kommt von Kraftwerken und Solarparks. Die Versorgung rechnet mit dem Bedarf jedes Typs.
+- Werkzeugleiste mit elf Gebäuden plus Abriss. Tastenkürzel 1 bis 9, 0 und Minus. Die Chronik sitzt über der Leiste.
+- Die Chronik meldet jede neue Stufe, ihre Prämie und die neuen Gebäude.
+- Phase 2 und 3 kennen die neuen Typen: Lebensdauer, Material und Beute stehen in der balance.json.
+- Neue Tests: tests/levels_test.gd und tests/economy_bot.gd (Messgerät fürs Balancing). Bei Stufe 4 braucht ein perfekter Bot rund 11 Minuten, ein Mensch etwa doppelt so lang.
+
 ## 0.2.1
 
 - Handy: Straßen und Abriss treffen jetzt genau das Feld unter dem Finger. Vorher lag die Vorschau 34 Pixel über dem Finger, darum landete die Straße versetzt. Gebäude schweben weiter über dem Finger, damit er sie nicht verdeckt.

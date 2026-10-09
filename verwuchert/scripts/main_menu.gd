@@ -163,7 +163,7 @@ func _build_guide() -> Control:
 	row.add_theme_constant_override("separation", 14)
 	col.add_child(row)
 	var phases := [
-		["house", "Phase 1", "Stadt bauen", Pal.YELLOW, "Baue Straßen, Häuser, Läden und Fabriken. Häuser brauchen Strom und Wasser über die Straße. Leere Häuser zahlen eine kleine Grundsteuer."],
+		["house", "Phase 1", "Stadt bauen", Pal.YELLOW, "Baue Straßen, Häuser, Läden und Fabriken. Mit mehr Bewohnern wächst das Dorf zur Großstadt und schaltet Wohnblöcke, Lager, Solarparks und Kliniken frei."],
 		["years", "Phase 2", "50 Jahre", Pal.LEAF_L, "Die Zeit rast. Gras bricht durch den Asphalt, Dächer stürzen ein, Bäume wachsen in deine Häuser. Holz fault schnell, Beton hält länger."],
 		["bunker", "Phase 3", "Bunker", Pal.SKY, "Zwei Überlebende bauen in den Ruinen einen Bunker. Beute kommt aus den Gebäuden, die du gebaut hast. Halte ihn 30 Tage am Laufen."],
 	]

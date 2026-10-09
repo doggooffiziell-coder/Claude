@@ -180,6 +180,22 @@ static func _feature_px(f: Dictionary, x: int, y: int, shaded: bool) -> Variant:
 			return f.get("color", Pal.TEAL)
 		"vent":
 			return Pal.STONE_D if (x + y) % 2 == 0 else Pal.SLATE
+		"cross":
+			# Weiße Tafel mit rotem Kreuz
+			if x == 0 or y == 0 or x == w - 1 or y == h - 1:
+				return Pal.STONE_L
+			var cx := w / 2
+			var cy := h / 2
+			if (absi(x - cx) <= 1 and absi(y - cy) <= 3) or (absi(y - cy) <= 1 and absi(x - cx) <= 3):
+				return [Pal.BRICK_L if not shaded else Pal.BRICK, Pal.a(Pal.BRICK_L, 0.8)]
+			return Pal.WHITE if not shaded else Pal.BONE
+		"gate":
+			# Großes Rolltor mit Warnstreifen oben
+			if x == 0 or x == w - 1 or y == h - 1:
+				return Pal.STONE_D
+			if y >= h - 3:
+				return Pal.YELLOW if (x / 2) % 2 == 0 else Pal.NIGHT
+			return Pal.TEAL if y % 3 != 0 else Pal.TEAL_D
 	return Pal.WHITE
 
 
@@ -987,6 +1003,266 @@ static func _digits(c: PixelCanvas, x: int, y: int, text: String, col: Color) ->
 		cx += 4
 
 
+# Wohnblock
+
+static func apartment(variant: int, material: String, facing: String) -> Dictionary:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = variant
+	var p := IsoPainter.for_footprint(2, 1, 86)
+	var meta := {"smoke": [], "blink": []}
+	var brick := material == "ziegel"
+	var wall: Color = _pick(rng, [Pal.BRICK, Pal.BRICK_L]) if brick else _pick(rng, [Pal.STONE_L, Pal.SAND, Pal.BONE])
+	var mat := "ziegel" if brick else "beton"
+	var u0 := 0.12
+	var u1 := 1.88
+	var v0 := 0.14
+	var v1 := 0.86
+	var H := 48.0
+	var colsL := (u1 - u0) * 32.0
+	var colsR := (v1 - v0) * 32.0
+	var left_f: Array = []
+	var right_f: Array = []
+	var floors := [3, 14, 25, 36]
+	for fl in floors.size():
+		var y: int = floors[fl]
+		for i in 6:
+			var wx := 4 + i * 9
+			if fl == 0 and i == 3:
+				continue
+			left_f.append(_window(wx, y, 5, 7, rng, Pal.BONE))
+		for j in 2:
+			right_f.append(_window(4 + j * 13, y, 6, 7, rng, Pal.BONE))
+	# Eingang in der Mitte der linken Wand, Tür seitlich an der rechten
+	left_f.append({"kind": "door", "x": 4 + 3 * 9 - 1, "y": 1, "w": 7, "h": 11, "color": Pal.TEAL_D, "frame": Pal.STONE_L})
+	right_f.append({"kind": "door", "x": int(colsR) - 10, "y": 1, "w": 6, "h": 10, "color": Pal.TEAL_D, "frame": Pal.STONE_L})
+	var front_left := left_f
+	var front_right := right_f
+	p.ground(0.0, 0.0, 2.0, 1.0, 0, func(s, t, x, y):
+		if t > 0.88 or s > 0.94:
+			return Pal.STONE_L if (x + y * 2) % 7 != 0 else Pal.STONE
+		return CLEAR)
+	p.wall_left(u0, u1, v1, 0, H, _facade(mat, wall, colsL, H, front_left, false, variant, Shade.light(wall)))
+	p.wall_right(u1, v0, v1, 0, H, _facade(mat, wall, colsR, H, front_right, true, variant + 1))
+	# Balkone vor den Fenstern der oberen Stockwerke
+	for fl in range(1, 4):
+		var z: float = floors[fl] - 1.0
+		for i in [0, 2, 4]:
+			var bu: float = u0 + (4.0 + i * 9.0) / colsL * (u1 - u0)
+			var be: float = u0 + (4.0 + i * 9.0 + 14.0) / colsL * (u1 - u0)
+			p.box(bu, v1, be, v1 + 0.09, z, z + 1.0, Pal.STONE_L, Pal.STONE, Pal.STONE_L)
+			var rp := p.P(bu, v1 + 0.09, z + 1.0)
+			var re := p.P(be, v1 + 0.09, z + 1.0)
+			p.c.line(int(rp.x), int(rp.y) - 2, int(re.x), int(re.y) - 2, Pal.STONE_D)
+	# Vordach über dem Eingang
+	var du0 := u0 + (4.0 + 3.0 * 9.0 - 3.0) / colsL * (u1 - u0)
+	var du1 := u0 + (4.0 + 3.0 * 9.0 + 9.0) / colsL * (u1 - u0)
+	p.box(du0, v1, du1, v1 + 0.12, 13.0, 14.5, Pal.TEAL, Pal.TEAL_D, Shade.light(Pal.TEAL))
+	# Flaches Dach mit Rand, Treppenhaus und Wassertank
+	_flat_roof(p, u0 - 0.02, v0 - 0.02, u1 + 0.02, v1 + 0.02, H + 2, Shade.light(wall), variant)
+	p.box(u0 + 0.06, v0 + 0.08, u0 + 0.34, v0 + 0.5, H + 2, H + 10, wall, Shade.dark(wall), Pal.STONE_D)
+	p.cylinder(u1 - 0.34, v0 + 0.3, 0.1, H + 2, H + 11, [Pal.STONE_L, Pal.STONE_L, Pal.STONE, Pal.STONE_D], Pal.STONE_D)
+	var ant := p.P(u1 - 0.7, v0 + 0.55, H + 2)
+	p.c.vline(int(ant.x), int(ant.y) - 12, 12, Pal.STONE_D)
+	p.c.hline(int(ant.x) - 3, int(ant.y) - 9, 7, Pal.STONE_D)
+	p.c.hline(int(ant.x) - 2, int(ant.y) - 6, 5, Pal.STONE_D)
+	p.c.px(int(ant.x), int(ant.y) - 13, Pal.BRICK_L)
+	meta.blink.append(Vector2(ant.x, ant.y - 13))
+	p.c.outline(Pal.NIGHT)
+	# Fahrräder am Eingang
+	var bp := p.P(u0 + 0.12, v1 + 0.1, 0)
+	for k in 3:
+		p.c.px(int(bp.x) + k * 3, int(bp.y) - 1, Pal.NIGHT)
+		p.c.px(int(bp.x) + k * 3 + 1, int(bp.y) - 2, Pal.STONE_L)
+	return _result(p, meta, 2, 1)
+
+
+# Klinik
+
+static func clinic(variant: int, material: String, facing: String) -> Dictionary:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = variant
+	var p := IsoPainter.for_footprint(2, 2, 76)
+	var meta := {"smoke": [], "blink": []}
+	var wall: Color = Pal.BONE if material == "beton" else Pal.WHITE
+	var u0 := 0.14
+	var u1 := 1.86
+	var v0 := 0.5
+	var v1 := 1.86
+	var H := 32.0
+	var colsL := (u1 - u0) * 32.0
+	var colsR := (v1 - v0) * 32.0
+	var front: Array = []
+	var side: Array = []
+	for fl in 2:
+		var y := 4 + fl * 14
+		for i in 5:
+			if fl == 0 and i == 2:
+				continue
+			front.append(_window(4 + i * 10, y, 6, 8, rng, Pal.STONE_L))
+	front.append({"kind": "glassdoor", "x": 4 + 2 * 10 - 2, "y": 1, "w": 10, "h": 13})
+	front.append({"kind": "cross", "x": int(colsL / 2) - 6, "y": 20, "w": 12, "h": 9})
+	for fl in 2:
+		for j in 4:
+			side.append(_window(4 + j * 10, 4 + fl * 14, 6, 8, rng, Pal.STONE_L))
+	side.append({"kind": "door", "x": int(colsR) - 9, "y": 1, "w": 6, "h": 10, "color": Pal.TEAL, "frame": Pal.STONE_L})
+	# Vorplatz mit Parkbuchten
+	p.ground(0.0, 0.0, 2.0, 2.0, 0, func(s, t, x, y):
+		if t * 2.0 < 0.42 and s * 2.0 < 1.0:
+			return CLEAR
+		var n := _noise(x, y, variant)
+		var col := Pal.STONE if n > 140 else Pal.STONE_D
+		if t * 2.0 > 1.9 and int(s * 2.0 * 4.0) % 2 == 0:
+			col = Pal.BONE
+		return col)
+	p.wall_left(u0, u1, v1, 0, H, _facade("putz", wall, colsL, H, front if facing != "right" else side, false, variant, Shade.light(wall)))
+	p.wall_right(u1, v0, v1, 0, H, _facade("putz", wall, colsR, H, side if facing != "right" else front, true, variant + 1))
+	# Vordach über dem Eingang
+	var cu0 := u0 + (4.0 + 2.0 * 10.0 - 4.0) / colsL * (u1 - u0)
+	var cu1 := u0 + (4.0 + 2.0 * 10.0 + 12.0) / colsL * (u1 - u0)
+	p.box(cu0, v1, cu1, v1 + 0.25, 15.0, 16.5, Pal.BRICK_L, Pal.BRICK, Pal.BRICK_L)
+	_flat_roof(p, u0 - 0.02, v0 - 0.02, u1 + 0.02, v1 + 0.02, H + 2, Shade.light(wall), variant)
+	# Hubschrauberlandeplatz auf dem Dach
+	var hp := p.P(u0 + 0.6, v0 + 0.5, H + 2)
+	p.c.ellipse(hp.x, hp.y, 17.0, 8.5, Pal.STONE_D)
+	p.c.ellipse(hp.x, hp.y, 14.0, 7.0, Pal.STONE)
+	p.c.hline(int(hp.x) - 4, int(hp.y) - 1, 9, Pal.WHITE)
+	p.c.vline(int(hp.x) - 4, int(hp.y) - 3, 5, Pal.WHITE)
+	p.c.vline(int(hp.x) + 4, int(hp.y) - 3, 5, Pal.WHITE)
+	# Dachaufbau mit Lüftung
+	p.box(u1 - 0.5, v0 + 0.1, u1 - 0.12, v0 + 0.4, H + 2, H + 9, Pal.STONE_L, Pal.STONE, Pal.WHITE)
+	var fan := p.P(u1 - 0.31, v0 + 0.25, H + 9)
+	p.c.ellipse(fan.x, fan.y, 3.0, 1.5, Pal.STONE_D)
+	meta.blink.append(fan + Vector2(0, -2))
+	# Rotes Kreuz als Leuchtschild über dem Dach
+	var sign := p.P(u0 + 1.0, v1 - 0.05, H + 2)
+	p.c.rect(int(sign.x) - 6, int(sign.y) - 14, 12, 10, Pal.WHITE)
+	p.c.frame(int(sign.x) - 6, int(sign.y) - 14, 12, 10, Pal.STONE_L)
+	p.c.rect(int(sign.x) - 1, int(sign.y) - 12, 3, 7, Pal.BRICK_L)
+	p.c.rect(int(sign.x) - 3, int(sign.y) - 10, 7, 3, Pal.BRICK_L)
+	p.g.rect(int(sign.x) - 1, int(sign.y) - 12, 3, 7, Pal.a(Pal.BRICK_L, 0.9))
+	p.g.rect(int(sign.x) - 3, int(sign.y) - 10, 7, 3, Pal.a(Pal.BRICK_L, 0.9))
+	p.c.vline(int(sign.x) - 3, int(sign.y) - 4, 4, Pal.STONE_D)
+	p.c.vline(int(sign.x) + 3, int(sign.y) - 4, 4, Pal.STONE_D)
+	p.c.outline(Pal.NIGHT)
+	# Krankenwagen vor der Tür
+	var ap := p.P(u0 + 0.35, v1 + 0.3, 0)
+	p.c.rect(int(ap.x), int(ap.y) - 7, 15, 6, Pal.WHITE)
+	p.c.rect(int(ap.x) + 9, int(ap.y) - 9, 6, 3, Pal.WHITE)
+	p.c.hline(int(ap.x), int(ap.y) - 5, 15, Pal.BRICK_L)
+	p.c.px(int(ap.x) + 11, int(ap.y) - 8, Pal.SKY)
+	p.c.px(int(ap.x) + 13, int(ap.y) - 8, Pal.SKY)
+	p.c.px(int(ap.x) + 3, int(ap.y) - 1, Pal.NIGHT)
+	p.c.px(int(ap.x) + 11, int(ap.y) - 1, Pal.NIGHT)
+	p.c.px(int(ap.x) + 5, int(ap.y) - 8, Pal.BRICK_L)
+	return _result(p, meta, 2, 2)
+
+
+# Lagerhaus
+
+static func warehouse(variant: int, material: String, facing: String) -> Dictionary:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = variant
+	var p := IsoPainter.for_footprint(2, 1, 56)
+	var meta := {"smoke": [], "blink": []}
+	var steel := material == "stahl"
+	var wall: Color = _pick(rng, [Pal.STONE_L, Pal.SAND]) if steel else Pal.STONE_L
+	var mat := "stahl" if steel else "beton"
+	var u0 := 0.1
+	var u1 := 1.9
+	var v0 := 0.12
+	var v1 := 0.88
+	var H := 24.0
+	var colsL := (u1 - u0) * 32.0
+	var colsR := (v1 - v0) * 32.0
+	var front: Array = [
+		{"kind": "gate", "x": 5, "y": 1, "w": 16, "h": 17},
+		{"kind": "gate", "x": 27, "y": 1, "w": 16, "h": 17},
+		{"kind": "band", "x": 0, "y": 19, "w": int(colsL), "h": 2, "color": Pal.TEAL},
+		{"kind": "vent", "x": 48, "y": 10, "w": 5, "h": 3},
+	]
+	var side: Array = [
+		{"kind": "door", "x": 4, "y": 1, "w": 5, "h": 10, "color": Pal.TEAL_D, "frame": Pal.STONE_D},
+		{"kind": "band", "x": 0, "y": 19, "w": int(colsR), "h": 2, "color": Pal.TEAL},
+		_window(14, 12, 6, 5, rng, Pal.STONE_D),
+	]
+	# Ladehof mit Rampe
+	p.ground(0.0, 0.0, 2.0, 1.0, 0, func(s, t, x, y):
+		if t > 0.86 or s > 0.94:
+			var n := _noise(x, y, variant)
+			return Pal.STONE if n > 120 else Pal.STONE_D
+		return CLEAR)
+	p.wall_left(u0, u1, v1, 0, H, _facade(mat, wall, colsL, H, front if facing != "right" else side, false, variant))
+	p.wall_right(u1, v0, v1, 0, H, _facade(mat, wall, colsR, H, side if facing != "right" else front, true, variant + 1))
+	# Flaches Pultdach aus Blech, nach vorne leicht geneigt
+	p.quad(Vector3(u0 - 0.03, v0 - 0.03, H + 3), Vector3(u1 - u0 + 0.06, 0, 0), Vector3(0, v1 - v0 + 0.06, -3), func(s, t, x, y):
+		if int(s * colsL) % 4 == 0:
+			return Pal.STONE_D
+		if t > 0.9:
+			return Pal.STONE_L
+		return Pal.STONE if _noise(x, y, variant) > 30 else Pal.RUST)
+	# Dachlüfter
+	for k in 3:
+		var vp := p.P(u0 + 0.35 + k * 0.5, v0 + 0.28, H + 2)
+		p.c.ellipse(vp.x, vp.y, 3.5, 1.8, Pal.STONE_L)
+		p.c.ellipse(vp.x, vp.y - 1, 3.0, 1.5, Pal.STONE)
+	p.c.outline(Pal.NIGHT)
+	# Paletten und Kisten
+	for k in 4:
+		var cp := p.P(u0 + 0.1 + k * 0.17, v1 + 0.12, 0)
+		var col: Color = _pick(rng, [Pal.WOOD, Pal.WOOD_L, Pal.OCHRE, Pal.BRICK])
+		p.c.rect(int(cp.x), int(cp.y) - 5, 6, 5, col)
+		p.c.hline(int(cp.x), int(cp.y) - 5, 6, Shade.light(col))
+		p.c.hline(int(cp.x), int(cp.y) - 2, 6, Shade.dark(col))
+		if k % 2 == 0:
+			p.c.rect(int(cp.x) + 1, int(cp.y) - 9, 4, 4, Shade.light(col))
+			p.c.frame(int(cp.x) + 1, int(cp.y) - 9, 4, 4, Shade.dark(col))
+	# Gabelstapler
+	var fp := p.P(u0 + 1.25, v1 + 0.16, 0)
+	p.c.rect(int(fp.x), int(fp.y) - 6, 6, 4, Pal.YELLOW)
+	p.c.rect(int(fp.x) + 5, int(fp.y) - 10, 1, 8, Pal.STONE_D)
+	p.c.hline(int(fp.x) + 6, int(fp.y) - 2, 4, Pal.STONE_D)
+	p.c.px(int(fp.x) + 1, int(fp.y) - 2, Pal.NIGHT)
+	p.c.px(int(fp.x) + 4, int(fp.y) - 2, Pal.NIGHT)
+	return _result(p, meta, 2, 1)
+
+
+# Solarpark
+
+static func solar(variant: int, _material: String, _facing: String) -> Dictionary:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = variant
+	var p := IsoPainter.for_footprint(1, 1, 36)
+	var meta := {"smoke": [], "blink": []}
+	# Betonplatte und Gras am Rand
+	p.ground(0.04, 0.04, 0.96, 0.96, 0, func(s, t, x, y):
+		var edge: bool = s < 0.06 or t < 0.06 or s > 0.94 or t > 0.94
+		if edge:
+			return Pal.STONE_D
+		return Pal.STONE if _noise(x, y, variant) > 80 else Pal.STONE_L)
+	# Zwei Reihen mit je drei Modulen. Jedes Modul ist nach vorne geneigt.
+	for row in 2:
+		var v := 0.2 + row * 0.38
+		for k in 3:
+			var u := 0.1 + k * 0.28
+			# Stützen
+			p.box(u + 0.03, v + 0.18, u + 0.05, v + 0.2, 0, 4, Pal.STONE_D, Pal.SLATE, Pal.STONE)
+			p.box(u + 0.19, v + 0.18, u + 0.21, v + 0.2, 0, 4, Pal.STONE_D, Pal.SLATE, Pal.STONE)
+			p.quad(Vector3(u, v, 12), Vector3(0.26, 0, 0), Vector3(0, 0.2, -8), func(s, t, x, y):
+				if s < 0.06 or s > 0.94 or t < 0.1 or t > 0.9:
+					return Pal.STONE_L
+				if int(s * 6.0) != int((s - 0.02) * 6.0) or int(t * 4.0) != int((t - 0.04) * 4.0):
+					return Pal.BLUE
+				var glint := (int(s * 20.0) + int(t * 10.0)) % 7 == 0
+				return Pal.SKY if glint else (Pal.BLUE_D if t < 0.5 else Pal.NIGHT))
+	# Schaltkasten
+	p.box(0.8, 0.08, 0.94, 0.2, 0, 9, Pal.STONE_L, Pal.STONE, Pal.WHITE)
+	var lp := p.P(0.84, 0.2, 5)
+	p.c.px(int(lp.x), int(lp.y), Pal.GRASS_L)
+	p.g.px(int(lp.x), int(lp.y), Pal.a(Pal.GRASS_L, 0.9))
+	p.c.outline(Pal.NIGHT)
+	return _result(p, meta, 1, 1)
+
+
 static func make(type: String, variant: int, material: String, facing: String = "left") -> Dictionary:
 	match type:
 		"house": return house(variant, material, facing)
@@ -995,4 +1271,8 @@ static func make(type: String, variant: int, material: String, facing: String = 
 		"power_plant": return power_plant(variant, material, facing)
 		"water_tower": return water_tower(variant, material, facing)
 		"park": return park(variant, material, facing)
+		"apartment": return apartment(variant, material, facing)
+		"clinic": return clinic(variant, material, facing)
+		"warehouse": return warehouse(variant, material, facing)
+		"solar": return solar(variant, material, facing)
 	return house(variant, material, facing)

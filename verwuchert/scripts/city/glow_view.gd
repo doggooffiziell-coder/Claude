@@ -36,9 +36,9 @@ func _lit() -> float:
 		return 0.0
 	var st: Dictionary = view.status
 	match view.data.type:
-		"house":
+		"house", "apartment":
 			return 1.0 if st.get("occupied", false) else 0.0
-		"shop", "factory":
+		"shop", "factory", "clinic", "warehouse":
 			return 1.0 if st.get("active", false) else 0.25
 		_:
 			return 1.0

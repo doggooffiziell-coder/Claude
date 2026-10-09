@@ -4,17 +4,17 @@
 	"city": {
 		"grid_w": 24,
 		"grid_h": 16,
-		"start_money": 2000,
+		"start_money": 10000,
 		"crews": 2,
 		"payday_seconds": 12,
 		"day_seconds": 150,
 		"start_hour": 7.5,
-		"target_seconds": 480,
-		"max_seconds": 600,
+		"target_seconds": 1500,
+		"max_seconds": 2100,
 		"tree_density": 0.11,
 		"rock_density": 0.025,
 		"pond_count": 1,
-		"tree_clear_cost": 5,
+		"tree_clear_cost": 25,
 		"demolish_refund": 0.5,
 		"speeds": [1, 2, 3],
 		"autosave_seconds": 60,
@@ -22,54 +22,85 @@
 		"max_walkers": 16
 	},
 
+	"levels": [
+		{"name": "Dorf", "need": 0, "bonus": 0},
+		{"name": "Kleinstadt", "need": 40, "bonus": 6000},
+		{"name": "Stadt", "need": 150, "bonus": 18000},
+		{"name": "Großstadt", "need": 400, "bonus": 40000}
+	],
+
 	"buildings": {
 		"road": {
-			"cost": 10, "build_time": 0.6, "uses_crew": false
+			"cost": 50, "build_time": 0.6, "uses_crew": false
 		},
 		"house": {
-			"cost": 120, "build_time": 8,
-			"residents": 4, "tax_per_resident": 5, "base_tax": 6,
-			"park_bonus": 4, "park_bonus_max": 2,
+			"cost": 600, "build_time": 8,
+			"residents": 4, "tax_per_resident": 25, "base_tax": 30,
+			"park_bonus": 20, "park_bonus_max": 2,
 			"factory_malus": 0.3
 		},
+		"apartment": {
+			"cost": 3200, "build_time": 20, "level": 2,
+			"residents": 12, "tax_per_resident": 25, "base_tax": 60,
+			"park_bonus": 40, "power_use": 3, "water_use": 3
+		},
 		"shop": {
-			"cost": 180, "build_time": 10,
-			"income": 20, "income_per_house": 5, "max_income": 75,
+			"cost": 900, "build_time": 10,
+			"income": 100, "income_per_house": 25, "max_income": 375,
 			"customer_radius": 6
 		},
 		"factory": {
-			"cost": 400, "build_time": 18,
-			"income": 90, "pollution_radius": 3, "power_use": 3
+			"cost": 2000, "build_time": 18,
+			"income": 450, "pollution_radius": 3, "power_use": 3
+		},
+		"warehouse": {
+			"cost": 2400, "build_time": 14, "level": 2,
+			"radius": 6, "factory_bonus": 0.35, "bonus_max": 2, "power_use": 2
 		},
 		"park": {
-			"cost": 60, "build_time": 4, "radius": 3
+			"cost": 300, "build_time": 4, "radius": 3
 		},
 		"water_tower": {
-			"cost": 250, "build_time": 12, "capacity": 16, "upkeep": 10
+			"cost": 1250, "build_time": 12, "capacity": 24, "upkeep": 50
 		},
 		"power_plant": {
-			"cost": 500, "build_time": 22, "capacity": 24, "upkeep": 25
+			"cost": 2500, "build_time": 22, "capacity": 36, "upkeep": 125
+		},
+		"solar": {
+			"cost": 1400, "build_time": 9, "level": 2, "capacity": 10, "upkeep": 0
+		},
+		"clinic": {
+			"cost": 5000, "build_time": 24, "level": 3,
+			"radius": 7, "tax_bonus": 0.25, "upkeep": 150, "power_use": 3, "water_use": 2
 		}
 	},
 
 	"materials": {
 		"road": {"asphalt": 1.0},
 		"house": {"holz": 0.45, "ziegel": 0.55},
+		"apartment": {"ziegel": 0.5, "beton": 0.5},
 		"shop": {"ziegel": 0.6, "beton": 0.4},
 		"factory": {"ziegel": 0.5, "stahl": 0.5},
+		"warehouse": {"stahl": 0.7, "beton": 0.3},
 		"park": {"pflanzen": 1.0},
 		"water_tower": {"stahl": 1.0},
-		"power_plant": {"beton": 1.0}
+		"power_plant": {"beton": 1.0},
+		"solar": {"stahl": 1.0},
+		"clinic": {"ziegel": 0.4, "beton": 0.6}
 	},
 
 	"loot": {
 		"road": {"steine": [0, 1]},
 		"house": {"stoff": [2, 5], "holz": [2, 6], "konserven": [0, 2], "medizin": [0, 1]},
+		"apartment": {"stoff": [4, 9], "holz": [2, 6], "konserven": [2, 5], "medizin": [0, 2], "wasser": [1, 3]},
 		"shop": {"konserven": [5, 10], "wasser": [2, 6], "medizin": [0, 2]},
 		"factory": {"metall": [6, 12], "werkzeug": [1, 3], "kabel": [1, 3]},
+		"warehouse": {"konserven": [6, 12], "werkzeug": [2, 5], "kabel": [2, 4], "metall": [3, 6], "rohre": [1, 3]},
 		"park": {"samen": [2, 5], "holz": [1, 3]},
 		"water_tower": {"rohre": [4, 7], "metall": [2, 4]},
-		"power_plant": {"kabel": [4, 8], "metall": [3, 6], "batterie": [1, 2]}
+		"power_plant": {"kabel": [4, 8], "metall": [3, 6], "batterie": [1, 2]},
+		"solar": {"batterie": [2, 4], "kabel": [2, 4], "metall": [1, 3]},
+		"clinic": {"medizin": [8, 14], "stoff": [3, 6], "werkzeug": [1, 2], "wasser": [2, 4]}
 	},
 
 	"phase2": {
@@ -83,7 +114,7 @@
 		"abandon_years": [0.3, 1.1],
 		"blackout_years": [0.7, 1.6],
 		"life_years": {"holz": 28, "ziegel": 44, "beton": 66, "stahl": 38, "pflanzen": 999, "asphalt": 999},
-		"type_life": {"house": 1.0, "shop": 1.05, "factory": 0.85, "power_plant": 1.3, "water_tower": 1.1, "park": 1.0},
+		"type_life": {"house": 1.0, "apartment": 1.1, "shop": 1.05, "factory": 0.85, "warehouse": 0.9, "power_plant": 1.3, "water_tower": 1.1, "solar": 0.8, "clinic": 1.2, "park": 1.0},
 		"life_spread": 0.3,
 		"grass_full_year": 26,
 		"water_max": 0.34,

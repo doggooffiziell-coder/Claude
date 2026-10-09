@@ -47,6 +47,7 @@ func new_game(seed_value: int = -1) -> void:
 		"day": 1,
 		"payday_timer": 0.0,
 		"next_id": 1,
+		"level": 1,
 		"buildings": [],
 		"trees": [],
 	}

@@ -74,12 +74,12 @@ func _draw() -> void:
 			continue
 		var on := false
 		match b.type:
-			"house": on = v.status.get("occupied", false)
-			"shop", "factory": on = v.status.get("active", false)
+			"house", "apartment": on = v.status.get("occupied", false)
+			"shop", "factory", "clinic", "warehouse": on = v.status.get("active", false)
 			"park": on = true
 		if not on:
 			continue
 		var door: Vector2 = builder.door_point(b) * T
-		var k := 0.55 if b.type == "house" else 0.85
+		var k := 0.55 if (b.type == "house" or b.type == "apartment") else 0.85
 		draw_texture(_pool_tex, door - half, Color(n * k, n * k, n * k, 1.0))
 	draw_set_transform_matrix(Transform2D.IDENTITY)
