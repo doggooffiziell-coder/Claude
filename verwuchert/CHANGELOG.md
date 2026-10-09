@@ -2,6 +2,11 @@
 
 Alle Änderungen an Verwuchert. Jede Version bekommt hier einen Eintrag.
 
+## 0.2.1
+
+- Handy: Straßen und Abriss treffen jetzt genau das Feld unter dem Finger. Vorher lag die Vorschau 34 Pixel über dem Finger, darum landete die Straße versetzt. Gebäude schweben weiter über dem Finger, damit er sie nicht verdeckt.
+- touch_test prüft den Tipp auf ein Feld. Er braucht ein echtes Fenster: `godot --path verwuchert --resolution 640x360 -s res://tests/touch_test.gd`.
+
 ## 0.2.0
 
 Phase 2: der Zeitraffer.

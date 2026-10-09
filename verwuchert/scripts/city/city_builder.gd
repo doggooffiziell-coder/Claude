@@ -1439,7 +1439,8 @@ func mouse_world() -> Vector2:
 
 func _update_hover() -> void:
 	var p := mouse_world()
-	if _finger_down and tool != "":
+	# Gebäude schweben über dem Finger, damit er sie nicht verdeckt. Straßen und Abriss treffen genau das Feld unter dem Finger.
+	if _finger_down and tool != "" and tool != "road" and tool != "demolish":
 		p.y -= TOUCH_LIFT / camera.zoom.x
 	var size := BuildingTypes.size_of(tool) if tool in BuildingTypes.INFO else Vector2i.ONE
 	var t := Iso.to_tile(p) - Vector2((size.x - 1) * 0.5, (size.y - 1) * 0.5)

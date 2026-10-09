@@ -2,7 +2,7 @@
 
 Ein 2D-Aufbauspiel in Godot 4.4. Du baust eine kleine Stadt. Danach vergehen 50 Jahre, und die Natur holt sich alles zurück. Zum Schluss baust du mit zwei Überlebenden einen Bunker in den Ruinen deiner eigenen Stadt.
 
-Stand: Version 0.2.0. Phase 1 und Phase 2 sind spielbar. Phase 3 folgt.
+Stand: Version 0.2.1. Phase 1 und Phase 2 sind spielbar. Phase 3 folgt.
 
 ![Hauptmenü](docs/menu.png)
 ![Stadt am Tag](docs/phase1_day.png)
@@ -119,7 +119,7 @@ Die Tests spielen Phase 1 ohne Fenster durch:
 godot --headless --path verwuchert -s res://tests/play_test.gd
 godot --path verwuchert --resolution 640x360 -s res://tests/input_test.gd
 godot --headless --path verwuchert -s res://tests/menu_test.gd
-godot --headless --path verwuchert -s res://tests/touch_test.gd
+godot --path verwuchert --resolution 640x360 -s res://tests/touch_test.gd
 godot --headless --path verwuchert -s res://tests/timelapse_test.gd
 ```
 

@@ -3,6 +3,7 @@ extends SceneTree
 ## Bauen erst beim Loslassen, Zielpunkt über dem Finger, Straße ziehen, zwei Finger bewegen und zoomen.
 
 var step := 0
+var roads_before := 0
 var b
 var fails := 0
 var t1 := Vector2i.ZERO
@@ -136,37 +137,48 @@ func _process(_d: float) -> bool:
 			touch(1, Vector2(320, 150), false)
 		30:
 			b.set_zoom(1)
-			b.camera.position = Iso.to_screen(8, 6)
+			# Ohne Fenster hat das Bild nur 64 x 64 Punkte, darum liegen die Felder nah an der Mitte
+			b.camera.position = Iso.to_screen(6, 6)
 			b._clamp_camera()
 			b.select_tool("road")
-			t1 = Vector2i(4, 6)
-			t2 = Vector2i(8, 6)
-		31:
-			touch(0, finger_for(t1), true)
+			t1 = Vector2i(5, 6)
+			t2 = Vector2i(7, 6)
 		32:
-			drag(0, finger_for(t2), Vector2(100, 0))
-		34:
-			check(b.road_preview().size() >= 4, "Straße zeigt beim Ziehen eine Vorschau: %d Felder" % b.road_preview().size())
-			touch(0, finger_for(t2), false)
-		36:
+			touch(0, screen_of(t1), true)
+		33:
+			drag(0, screen_of(t2), Vector2(100, 0))
+		35:
+			check(b.road_preview().size() >= 3, "Straße zeigt beim Ziehen eine Vorschau: %d Felder" % b.road_preview().size())
+			touch(0, screen_of(t2), false)
+		37:
 			var n := 0
-			for x in range(4, 9):
+			for x in range(5, 8):
 				if b.roads.has(Vector2i(x, 6)):
 					n += 1
-			check(n >= 4, "Loslassen baut die Straße: %d Felder" % n)
+			check(n >= 3, "Loslassen baut die Straße: %d Felder" % n)
 			b.select_tool("road")
 			check(b.tool == "", "Werkzeug nochmal antippen legt es weg")
-		37:
+		38:
 			var target := Vector2i.ZERO
 			for x in b.city.buildings:
 				if x.type == "house":
 					target = Vector2i(int(x.x), int(x.y))
 			t1 = target
 			touch(0, screen_of(target) - Vector2(0, 14), true)
-		39:
+		40:
 			touch(0, screen_of(t1) - Vector2(0, 14), false)
-		41:
+		42:
 			check(not b.selected.is_empty() and b.selected.type == "house", "Tippen ohne Werkzeug wählt das Haus")
+			b.select_tool("road")
+			t1 = Vector2i(8, 7)
+			roads_before = b.roads.size()
+		43:
+			touch(0, screen_of(t1), true)
+		45:
+			touch(0, screen_of(t1), false)
+		47:
+			check(b.roads.has(t1), "Ein Tipp baut die Straße genau auf das getippte Feld")
+			check(b.roads.size() == roads_before + 1, "Genau ein Feld kommt dazu: %d neu" % (b.roads.size() - roads_before))
 			print("FEHLER: %d" % fails)
 			return true
 	return false
