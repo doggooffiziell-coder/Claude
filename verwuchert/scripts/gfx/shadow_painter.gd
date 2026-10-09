@@ -33,6 +33,7 @@ func _draw() -> void:
 		var h: float = BuildingTypes.info(b.type).get("height", 20)
 		if b.state == "building":
 			h *= float(b.progress)
+		h *= float(v.height_factor)
 		if h < 2.0:
 			continue
 		var x := float(b.x) * T
@@ -53,6 +54,8 @@ func _draw() -> void:
 				if b.type == "power_plant":
 					_blob(Vector2(x + 0.62 * T, y + 0.6 * T), sun * 78.0 * 0.6, 12.0)
 	for tv in builder.tree_views:
+		if not tv.visible:
+			continue
 		var g: Vector2 = tv.ground_pos * T
 		if tv.data.kind == "rock":
 			_blob(g, sun * 3.0, 5.0)

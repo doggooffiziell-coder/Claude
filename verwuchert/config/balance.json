@@ -73,8 +73,29 @@
 	},
 
 	"phase2": {
+		"_info": "Zeitraffer. life_years: Jahre bis zum Einsturz je Material, mal Faktor je Gebäude. Alle Zeiten der Vorführung in Sekunden.",
 		"duration_seconds": 45,
-		"years": 50
+		"years": 50,
+		"skip_speed": 7,
+		"day_seconds": 3.0,
+		"season_seconds": 10.0,
+		"tour_share": 0.82,
+		"abandon_years": [0.3, 1.1],
+		"blackout_years": [0.7, 1.6],
+		"life_years": {"holz": 28, "ziegel": 44, "beton": 66, "stahl": 38, "pflanzen": 999, "asphalt": 999},
+		"type_life": {"house": 1.0, "shop": 1.05, "factory": 0.85, "power_plant": 1.3, "water_tower": 1.1, "park": 1.0},
+		"life_spread": 0.3,
+		"grass_full_year": 26,
+		"water_max": 0.34,
+		"water_start_year": 4,
+		"plants_total": 150,
+		"plants_inside": [1, 3],
+		"sapling_years": 3,
+		"bush_years": 9,
+		"loot_keep": {
+			"konserven": 0.9, "medizin": 0.5, "stoff": 0.35, "holz": 0.5, "wasser": 0.6, "metall": 0.85,
+			"werkzeug": 0.7, "kabel": 0.7, "rohre": 0.9, "steine": 1.0, "samen": 0.8, "batterie": 0.3
+		}
 	},
 
 	"phase3": {

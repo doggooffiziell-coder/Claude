@@ -12,6 +12,8 @@ var glow: Node2D
 var _smoke_t := 0.0
 var _last_state := ""
 var _final_draw := false
+## Wird kleiner, wenn ein Gebäude einstürzt. Der Schatten folgt.
+var height_factor := 1.0
 
 
 func setup(b: Dictionary, city_builder: Node) -> void:

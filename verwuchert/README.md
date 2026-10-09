@@ -2,7 +2,7 @@
 
 Ein 2D-Aufbauspiel in Godot 4.4. Du baust eine kleine Stadt. Danach vergehen 50 Jahre, und die Natur holt sich alles zurück. Zum Schluss baust du mit zwei Überlebenden einen Bunker in den Ruinen deiner eigenen Stadt.
 
-Stand: Version 0.1.5. Phase 1 ist spielbar. Phase 2 und Phase 3 folgen.
+Stand: Version 0.2.0. Phase 1 und Phase 2 sind spielbar. Phase 3 folgt.
 
 ![Hauptmenü](docs/menu.png)
 ![Stadt am Tag](docs/phase1_day.png)
@@ -46,6 +46,18 @@ Jede Familie hat einen Namen, jede Straße auch. Die Chronik unten links erzähl
 
 Jedes Gebäude speichert Material, Zustand und Inhalt. Ein Laden lagert Konserven, eine Fabrik Metall, ein Wasserturm Rohre. Klick ein Gebäude an, und die Infotafel zeigt alles. Genau das findest du in Phase 3 in den Ruinen.
 
+## Phase 2: Zeitraffer
+
+Mit "Stadt fertig" vergehen 50 Jahre in 45 Sekunden. Oben läuft der Jahreszähler mit Jahreszeit und einer Zeitleiste, auf der kleine Rauten die Ereignisse zeigen. Unten schreibt die Chronik mit, was passiert: Die Bewohner ziehen aus, das Kraftwerk steht still, Gras bricht durch den Asphalt, Dächer stürzen ein.
+
+Die Kamera besucht erst die auffälligsten Gebäude im Nahbild und zieht dann zurück auf die ganze Stadt. Tag und Jahreszeit laufen in eigenem Tempo (3 und 10 Sekunden), damit nichts flackert. Im Frühling und Herbst regnet es, im Herbst fallen Blätter, im Winter liegt Schnee. "Überspringen" beschleunigt, ein zweiter Druck springt zum Ende.
+
+Der Verfall hängt von Typ und Material ab. Holz fault schnell, Ziegel hält länger, Beton am längsten, Stahl rostet. Jedes Gebäude hat eine eigene Lebensdauer aus dem Seed. Ranken und Moos wachsen von unten, Rost läuft in Streifen herunter, Löcher reißen im Dach auf, dann bricht das Gebäude von oben nach unten ein und lässt Schutt liegen. Bäume wachsen in den Ruinen, auf den Straßen und im Gras, vom Trieb über den Busch zum Baum. In den Senken sammelt sich Wasser.
+
+Am Ende fasst ein Fenster zusammen, was steht, was dachlos ist und was eingestürzt ist. Die Inhalte der Gebäude verderben je nach Art (Stoff schnell, Konserven kaum) und liegen für Phase 3 in `ruin` jedes Gebäudes.
+
+Alle Zahlen stehen in `phase2` in der balance.json: Dauer, Lebensdauer je Material und Typ, Pflanzen, Wasser, Tempo von Tag und Jahreszeit.
+
 ## iPhone
 
 Das Spiel läuft im Querformat auf dem Handy. Der Autoload Platform erkennt das Handy und wählt die ganzzahlige Vergrößerung. Im Hochformat pausiert das Spiel und speichert. Zum Testen am Computer startet `--phone` die Handy-Oberfläche.
@@ -85,9 +97,11 @@ verwuchert/
   scripts/city/             Phase 1: Bauen, Gebäude, Bäume, Verkehr, Oberfläche
   scripts/gfx/              Grafik aus Code: Gebäude, Natur, Straßen, Autos, Symbole, Licht, Partikel
   scripts/ui/               Pixel-Schrift, Theme, Menü: Insel, Himmel, Titel, Phasenleiste
-  scripts/timelapse/        Phase 2 (noch Platzhalter)
-  scripts/bunker/           Phase 3 (folgt)
+  scripts/timelapse/        Phase 2: Verfallsmodell, Ruinenwelt, Gebäude im Verfall, Wetter, Anzeige
+  scripts/bunker/           Phase 3 (Platzhalter)
   shaders/lit.gdshader      färbt die Welt nach Tageszeit
+  shaders/ruin.gdshader     Verfall eines Gebäudes: Moos, Ranken, Rost, Löcher, Einsturz, Schnee
+  shaders/ruin_ground.gdshader  Gras auf Straßen, Wasser in Senken, Schnee auf dem Boden
   tests/                    automatische Tests
 ```
 
@@ -103,11 +117,12 @@ Die Tests spielen Phase 1 ohne Fenster durch:
 
 ```
 godot --headless --path verwuchert -s res://tests/play_test.gd
-godot --path verwuchert -s res://tests/input_test.gd
+godot --path verwuchert --resolution 640x360 -s res://tests/input_test.gd
 godot --headless --path verwuchert -s res://tests/menu_test.gd
 godot --headless --path verwuchert -s res://tests/touch_test.gd
+godot --headless --path verwuchert -s res://tests/timelapse_test.gd
 ```
 
-play_test baut Straßen und Gebäude, lässt die Bautrupps arbeiten, prüft Versorgung und Einnahmen, reißt ab, speichert, lädt und startet Phase 2. input_test klickt mit echten Maus-Ereignissen. touch_test prüft Tippen, Ziehen, Zoomen und Bauen mit Touch-Ereignissen. perf_test, perf_calls und perf_load messen Bildzeit und Ladezeit. menu_test prüft Insel, Seiten, Einstellungen, Löschen und den Start mit dem gewählten Tempo.
+play_test baut Straßen und Gebäude, lässt die Bautrupps arbeiten, prüft Versorgung und Einnahmen, reißt ab, speichert, lädt und startet Phase 2. input_test klickt mit echten Maus-Ereignissen. timelapse_test prüft das Verfallsmodell, den Ablauf bis zum Ende, die Zusammenfassung und den Weg in Phase 3. touch_test prüft Tippen, Ziehen, Zoomen und Bauen mit Touch-Ereignissen. perf_test, perf_calls und perf_load messen Bildzeit und Ladezeit. menu_test prüft Insel, Seiten, Einstellungen, Löschen und den Start mit dem gewählten Tempo.
 
-Für Bilder ohne Spielen gibt es Schalter nach `--`. Im Menü zeigen `--hour=21` und `--screen=guide` (oder settings, confirm) eine Tageszeit und eine Seite. In der Stadt gilt: `--demo` baut eine Beispielstadt, `--hour=21` stellt die Uhr, `--zoom=2`, `--look=12,8` und `--shot=bild.png` speichern ein Bild.
+Für Bilder ohne Spielen gibt es Schalter nach `--`. Im Menü zeigen `--hour=21` und `--screen=guide` (oder settings, confirm) eine Tageszeit und eine Seite. Der Zeitraffer lässt sich ohne Spielen ansehen: `res://scenes/phase1_city.tscn -- --demo --finish --year=30 --season=0.88 --look=12,9,1 --shot=bild.png` baut die Beispielstadt, springt in den Zeitraffer und speichert ein Bild von Jahr 30 im Winter (`--end` zeigt die Zusammenfassung). In der Stadt gilt: `--demo` baut eine Beispielstadt, `--hour=21` stellt die Uhr, `--zoom=2`, `--look=12,8` und `--shot=bild.png` speichern ein Bild.

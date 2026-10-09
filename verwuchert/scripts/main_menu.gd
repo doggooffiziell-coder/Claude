@@ -116,7 +116,12 @@ func refresh() -> void:
 		continue_info.text = "Noch kein Spielstand"
 	else:
 		var fam := int(info.families)
-		continue_info.text = "Tag %d, %d %s, %s" % [int(info.day), fam, "Familie" if fam == 1 else "Familien", CityHud._fmt(int(info.money))]
+		if int(info.get("phase", 1)) == 2:
+			continue_info.text = "Stadt fertig, die Zeit wartet"
+		elif int(info.get("phase", 1)) >= 3:
+			continue_info.text = "Die Ruinen warten"
+		else:
+			continue_info.text = "Tag %d, %d %s, %s" % [int(info.day), fam, "Familie" if fam == 1 else "Familien", CityHud._fmt(int(info.money))]
 	if _wipe_btn != null:
 		_wipe_btn.disabled = info.is_empty()
 		_wipe_armed = false

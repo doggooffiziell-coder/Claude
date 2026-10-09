@@ -7,7 +7,7 @@ config_version=5
 
 config/name="Verwuchert"
 config/description="Bau eine Stadt, lass sie 50 Jahre verwuchern und überlebe in ihren Ruinen."
-config/version="0.1.5"
+config/version="0.2.0"
 run/main_scene="res://scenes/main_menu.tscn"
 config/features=PackedStringArray("4.4", "GL Compatibility")
 config/icon="res://icon.svg"

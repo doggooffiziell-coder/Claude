@@ -2,6 +2,25 @@
 
 Alle Änderungen an Verwuchert. Jede Version bekommt hier einen Eintrag.
 
+## 0.2.0
+
+Phase 2: der Zeitraffer.
+
+- "Stadt fertig" startet 50 Jahre in 45 Sekunden. Jahreszähler mit Jahreszeit, Zeitleiste mit Ereignissen, Chronik am unteren Rand, Knopf "Überspringen" (zweimal drücken springt zum Ende).
+- Die Kamera fährt im Nahbild über die auffälligsten Gebäude und zieht zum Schluss auf die ganze Stadt zurück.
+- Der Verfall folgt aus Typ, Material und Seed (DecayModel). Holz fault schnell, Ziegel hält länger, Beton am längsten, Stahl rostet. Jede Stadt verwuchert anders, dieselbe Stadt immer gleich.
+- Neue Shader malen den Verfall Pixel für Pixel in der Palette: Moos und Ranken von unten, Rost in Streifen, Löcher im Dach, Einsturz von oben nach unten mit Schutt am Fuß, Schnee auf allen Kanten. Der Schatten schrumpft mit dem Gebäude.
+- Der Boden verändert sich: Gras bricht durch Asphalt und Gehwege, Wasser sammelt sich in den Senken, im Winter liegt Schnee.
+- Pflanzen wachsen vom Trieb über den Busch zum Baum, in den Ruinen, auf den Straßen und im Gras. Neuer Trieb als Grafik.
+- Jahreszeiten färben die Welt. Regen im Frühling und Herbst, fallendes Laub im Herbst, Schnee im Winter. Tag und Jahreszeit laufen in eigenem Tempo, damit nichts flackert.
+- Die Lichter gehen aus, wenn das Kraftwerk ausfällt, die Häuser leeren sich vorher.
+- Am Ende nennt eine Zusammenfassung, was steht, was dachlos ist und was eingestürzt ist. Die Inhalte der Gebäude verderben je nach Art und liegen für Phase 3 in `ruin` jedes Gebäudes. Neue Bäume werden in `new_trees` gespeichert.
+- Hauptmenü: Phase 2 ist in der Leiste freigeschaltet, Weiterspielen zeigt den Stand der Phase.
+- Alle Werte stehen in `phase2` der balance.json.
+- Der Platzhalter für Phase 3 zeigt jetzt die Ruinen und Fundstücke.
+- Der Wald im Rand kommt aus einer eigenen Klasse (ForestPlan), Stadt und Zeitraffer teilen sie.
+- Neuer Test: tests/timelapse_test.gd. Der Eingabetest braucht `--resolution 640x360`.
+
 ## 0.1.5
 
 iPhone-Version, getestet auf dem Maß des iPhone 14 Plus (Querformat, 926 x 428 Punkte, 3-fache Dichte).

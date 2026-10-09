@@ -296,6 +296,10 @@ func _debug_args() -> void:
 		_demo_city()
 	if a.has("hour"):
 		hour = float(a.hour)
+	if a.has("finish"):
+		# Nur für Tests: nach der Beispielstadt gleich in den Zeitraffer
+		call_deferred("finish_city")
+		return
 	if a.has("shot"):
 		_shot_frames = int(a.get("frames", "40"))
 	if a.has("zoom"):
@@ -336,27 +340,7 @@ func _spawn_nature() -> void:
 
 ## Dichter Wald im Rand rund um das Baugebiet. Nur Deko, ohne Spielstand.
 func _forest_plan() -> Array:
-	var out := []
-	var rng := RandomNumberGenerator.new()
-	rng.seed = int(city.seed) + 404
-	var w: int = city.w
-	var h: int = city.h
-	for y in range(-MARGIN, h + MARGIN):
-		for x in range(-MARGIN, w + MARGIN):
-			if x >= 0 and y >= 0 and x < w and y < h:
-				continue
-			if y == entry_row and x < 0:
-				continue
-			var dist: int = maxi(maxi(-x, x - w + 1), maxi(-y, y - h + 1))
-			var chance := 0.3 + dist * 0.15
-			for k in 2:
-				if rng.randf() < chance:
-					var kind := "pine" if rng.randf() < 0.45 else "oak"
-					if rng.randf() < 0.15:
-						kind = "bush"
-					out.append({"x": x, "y": y, "kind": kind, "seed": rng.randi() % 9999,
-						"ox": rng.randi_range(-12, 12), "oy": rng.randi_range(-12, 12)})
-	return out
+	return ForestPlan.make(city, MARGIN, entry_row)
 
 
 func _make_decor_tree(t: Dictionary) -> void:

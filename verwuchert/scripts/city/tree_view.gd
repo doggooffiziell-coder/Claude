@@ -26,6 +26,15 @@ func setup(t: Dictionary, city_builder: Node, is_decor := false) -> void:
 		set_process(false)
 
 
+## Wechselt die Art, zum Beispiel vom Trieb zum Busch zum Baum. Der Fuß bleibt am selben Ort.
+func regrow(kind: String) -> void:
+	if data.kind == kind:
+		return
+	data.kind = kind
+	art = SpriteFactory.tree(kind, int(data.seed))
+	queue_redraw()
+
+
 func tile() -> Vector2i:
 	return Vector2i(int(data.x), int(data.y))
 

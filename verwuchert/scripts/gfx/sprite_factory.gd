@@ -39,6 +39,7 @@ static func tree(kind: String, seed_value: int) -> Dictionary:
 		match kind:
 			"pine": _trees[key] = NatureArt.pine(v * 97 + 5)
 			"bush": _trees[key] = NatureArt.bush(v * 53 + 2)
+			"sapling": _trees[key] = NatureArt.sapling(v * 17 + 4)
 			"rock": _trees[key] = NatureArt.rock(v * 31 + 9)
 			_: _trees[key] = NatureArt.oak(v * 71 + 3)
 	return _trees[key]

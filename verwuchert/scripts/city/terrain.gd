@@ -21,6 +21,21 @@ static func heights(seed_value: int, w: int, h: int) -> PackedFloat32Array:
 	return out
 
 
+## Höhen auch im Rand rund um die Karte, gleiche Formel wie heights(). Größe (w + 2m) mal (h + 2m).
+static func heights_margin(seed_value: int, w: int, h: int, m: int) -> PackedFloat32Array:
+	var noise := FastNoiseLite.new()
+	noise.seed = seed_value
+	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	noise.frequency = 0.09
+	noise.fractal_octaves = 3
+	var out := PackedFloat32Array()
+	out.resize((w + m * 2) * (h + m * 2))
+	for y in range(-m, h + m):
+		for x in range(-m, w + m):
+			out[(y + m) * (w + m * 2) + (x + m)] = (noise.get_noise_2d(x, y) + 1.0) * 0.5
+	return out
+
+
 ## Teiche liegen in den tiefsten Senken, nie am Rand.
 static func ponds(seed_value: int, w: int, h: int, count: int) -> PackedByteArray:
 	var hs := heights(seed_value, w, h)

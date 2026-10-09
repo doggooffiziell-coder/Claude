@@ -146,6 +146,26 @@ static func bush(seed_value: int) -> Dictionary:
 		"split": 18, "radius": 7.0, "height": 12}
 
 
+## Junger Trieb: ein dünner Stamm mit wenigen Blättern.
+static func sapling(seed_value: int) -> Dictionary:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value
+	var c := PixelCanvas.new(12, 14)
+	var lean := rng.randi_range(-1, 1)
+	c.rect(6, 7, 1, 6, Pal.WOOD)
+	c.px(6 + lean, 6, Pal.WOOD)
+	c.px(6, 12, Pal.SOIL)
+	var cols := [Pal.LEAF_L, Pal.GRASS_L, Pal.GRASS]
+	for p in [Vector2i(4, 5), Vector2i(8, 5), Vector2i(5, 3), Vector2i(7, 3), Vector2i(6, 2), Vector2i(3, 8), Vector2i(9, 8)]:
+		c.px(p.x + lean, p.y, cols[rng.randi() % 3])
+		if rng.randf() < 0.6:
+			c.px(p.x + lean + 1, p.y, cols[rng.randi() % 3])
+	c.px(6 + lean, 4, Pal.GRASS_L)
+	c.outline(Pal.MOSS_D, Pal.BLACK)
+	return {"tex": c.texture(), "size": Vector2i(c.w, c.h), "foot": Vector2(6, 12),
+		"split": 14, "radius": 3.0, "height": 9}
+
+
 static func rock(seed_value: int) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value

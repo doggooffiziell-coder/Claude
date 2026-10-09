@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3]
 
-[ext_resource type="Script" path="res://scripts/timelapse/timelapse_placeholder.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/bunker/bunker_placeholder.gd" id="1"]
 
 [node name="Phase3Bunker" type="Control"]
 layout_mode = 3
