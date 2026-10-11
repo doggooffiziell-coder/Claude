@@ -62,6 +62,12 @@
   /* Holzschild oben links */
   .sign {
     position: absolute;
+    pointer-events: auto;
+    cursor: pointer;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    appearance: none;
     top: calc(env(safe-area-inset-top, 0px) + 8px);
     left: 10px;
     display: grid;
@@ -123,11 +129,12 @@
   /* Meldung bei Ereignissen */
   .banner {
     position: absolute;
-    top: calc(env(safe-area-inset-top, 0px) + 122px);
+    top: calc(env(safe-area-inset-top, 0px) + 130px);
     left: 50%;
     transform: translateX(-50%);
-    max-width: calc(100% - 32px);
-    padding: 9px 18px;
+    width: max-content;
+    max-width: min(320px, calc(100% - 32px));
+    padding: 7px 14px;
     border-radius: 0;
     clip-path: var(--notch);
     background: rgba(8, 20, 12, 0.92);
@@ -135,7 +142,7 @@
     color: #ffe39a;
     font-family: var(--font-display);
     font-weight: 400;
-    font-size: 22px;
+    font-size: 19px;
     letter-spacing: 0.03em;
     text-align: center;
     text-wrap: balance;
@@ -220,23 +227,177 @@
   @media (prefers-reduced-motion: reduce) {
     .banner, .sheet { animation: none; }
   }
+
+  .sign:focus-visible { outline: 3px solid var(--brass); outline-offset: 2px; }
+  .sign-more { grid-column: 1 / -1; font-size: 14px; color: var(--brass); letter-spacing: 0.06em; margin-top: 2px; }
+
+  /* gemeinsame Pixel-Kästen */
+  .box {
+    position: absolute;
+    pointer-events: auto;
+    box-sizing: border-box;
+    background: rgba(20, 45, 28, 0.97);
+    border: 2px solid var(--board-light);
+    clip-path: var(--notch);
+    color: var(--cream);
+  }
+  .x {
+    margin-left: auto;
+    width: 36px; height: 36px;
+    border: 2px solid var(--board-light);
+    background: var(--board-deep);
+    color: var(--cream);
+    font: inherit; font-size: 24px; line-height: 1;
+    clip-path: var(--notch);
+    cursor: pointer;
+  }
+  .x:focus-visible, .btn:focus-visible, .tools button:focus-visible { outline: 3px solid var(--brass); outline-offset: 2px; }
+
+  /* Steckbrief einer Ameise */
+  .antcard { padding: 10px 14px 10px; }
+  .antcard .sheet-head { gap: 8px; }
+  .antcard h2 { font-size: 24px; }
+  .antcard .role { font-size: 16px; color: var(--brass); letter-spacing: 0.06em; }
+  .antcard .x { width: 34px; height: 34px; font-size: 22px; }
+  .antcard .x:first-of-type { margin-left: auto; }
+  .antcard .x + .x { margin-left: 0; }
+  .x.follow { display: grid; place-items: center; }
+  .x.follow svg { width: 16px; height: 16px; }
+  .antcard .doing { margin: 4px 0 6px; font-size: 20px; color: #ffe39a; }
+  .bars { display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 4px 8px; align-items: center; font-size: 16px; color: var(--cream-dim); }
+  .sheet dl.mini { grid-template-columns: auto 1fr auto 1fr; gap: 2px 10px; margin-top: 8px; padding-top: 8px; font-size: 16px; }
+  .bar { height: 12px; background: #0d1f14; border: 2px solid #3a6b4a; position: relative; }
+  .bar > span { position: absolute; inset: 0 auto 0 0; background: #8fcf6a; }
+  .bar > span.tired { background: #6f8fa8; }
+  .bar > span.low { background: var(--warn); }
+  .card-actions { display: flex; gap: 10px; margin-top: 12px; }
+  .btn {
+    flex: 1;
+    min-height: 44px;
+    border: 2px solid var(--board-light);
+    background: var(--board-deep);
+    color: var(--cream);
+    font: inherit; font-size: 20px; letter-spacing: 0.03em;
+    clip-path: var(--notch);
+    cursor: pointer;
+  }
+  .btn.danger { border-color: #b0563f; color: #ffc9b8; }
+
+  /* Kolonie-Panel */
+  .panel {
+    top: calc(env(safe-area-inset-top, 0px) + 8px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 76px);
+    left: 10px; right: 10px;
+    max-width: 420px;
+    margin: 0 auto;
+    padding: 14px 16px 18px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    animation: rise 0.2s ease-out;
+  }
+  .panel-head { display: flex; align-items: center; gap: 10px; }
+  .panel h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 30px; }
+  .panel h3 { margin: 18px 0 8px; font-weight: 400; font-size: 20px; color: var(--brass); letter-spacing: 0.08em; text-transform: uppercase; }
+  .tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+  .tile { background: #0f2417; border: 2px solid #2f5c3d; padding: 8px 10px; clip-path: var(--notch); min-width: 0; }
+  .tile b { display: block; font-weight: 400; font-size: 30px; line-height: 1; color: var(--cream); }
+  .tile span { font-size: 16px; color: var(--cream-dim); }
+  .tile small { display: block; font-size: 14px; color: #a99f80; margin-top: 2px; }
+  .task { display: grid; grid-template-columns: 7.5em 1fr 2.2em; gap: 8px; align-items: center; font-size: 18px; margin: 4px 0; }
+  .task .track { height: 12px; background: #0d1f14; border: 2px solid #2f5c3d; position: relative; }
+  .task .fill { position: absolute; inset: 0 auto 0 0; }
+  .task .tnum { text-align: right; color: var(--cream); }
+  #chart { width: 100%; height: auto; image-rendering: pixelated; border: 2px solid #2f5c3d; display: block; }
+  .legend { display: flex; gap: 16px; font-size: 16px; color: var(--cream-dim); margin-top: 6px; }
+  .legend i { display: inline-block; width: 12px; height: 12px; margin-right: 6px; vertical-align: -1px; }
+  #chron { list-style: none; margin: 0; padding: 0; font-size: 18px; line-height: 1.25; }
+  #chron li { padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.08); }
+  #chron .day { color: var(--brass); margin-right: 8px; }
+  .confirm { margin-top: 10px; font-size: 18px; }
+
+  /* Werkzeug unten links */
+  .tools {
+    position: absolute;
+    left: 12px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+  }
+  .tools button {
+    pointer-events: auto;
+    position: relative;
+    width: 52px; height: 52px;
+    border: 2px solid var(--board-light);
+    background: linear-gradient(180deg, var(--board) 0%, var(--board-deep) 100%);
+    color: var(--cream);
+    clip-path: var(--notch);
+    display: grid; place-items: center;
+    cursor: pointer;
+    touch-action: manipulation;
+    overflow: hidden;
+  }
+  .tools button.on { background: #6d5420; border-color: var(--brass); }
+  .tools svg { width: 26px; height: 26px; }
+  .tools .cd { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: rgba(0,0,0,0.45); }
+  .tools .label { position: absolute; left: 60px; bottom: 14px; font-size: 18px; color: var(--cream); white-space: nowrap; text-shadow: 0 2px 0 rgba(0,0,0,0.6); pointer-events: none; }
 </style>
 
 <canvas id="game" aria-label="Ameisenkolonie im Querschnitt durch den Boden"></canvas>
 <div id="hud">
-  <div class="sign" role="status" aria-live="polite">
+  <button class="sign" id="sign" type="button" aria-label="Kolonie ansehen">
     <svg class="ant-icon" viewBox="0 0 7 9" aria-hidden="true" fill="#f4edd3" shape-rendering="crispEdges"><rect x="1" y="0" width="1" height="1"/><rect x="5" y="0" width="1" height="1"/><rect x="2" y="1" width="1" height="1"/><rect x="4" y="1" width="1" height="1"/><rect x="3" y="2" width="1" height="1"/><rect x="0" y="3" width="1" height="1"/><rect x="2" y="3" width="1" height="1"/><rect x="3" y="3" width="1" height="1"/><rect x="4" y="3" width="1" height="1"/><rect x="6" y="3" width="1" height="1"/><rect x="1" y="4" width="1" height="1"/><rect x="3" y="4" width="1" height="1"/><rect x="5" y="4" width="1" height="1"/><rect x="2" y="5" width="1" height="1"/><rect x="3" y="5" width="1" height="1"/><rect x="4" y="5" width="1" height="1"/><rect x="0" y="6" width="1" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="3" y="6" width="1" height="1"/><rect x="4" y="6" width="1" height="1"/><rect x="6" y="6" width="1" height="1"/><rect x="2" y="7" width="1" height="1"/><rect x="3" y="7" width="1" height="1"/><rect x="4" y="7" width="1" height="1"/><rect x="3" y="8" width="1" height="1"/></svg>
     <div class="sign-text"><span class="sign-label">ANT POP.</span><span class="sign-count" id="pop">6</span></div>
     <div class="sign-stats"><span>Futter <b id="food">20</b></span><span>Tag <b id="day">1</b></span><span class="warn" id="hunger" hidden>Hunger!</span></div>
-  </div>
+    <span class="sign-more">Kolonie ansehen ›</span>
+  </button>
   <div class="banner" id="banner" hidden></div>
   <div class="sheet hint" id="hint">
-    <p>Tippe auf eine <span>Kammer</span>, um zu sehen, was darin liegt.</p>
-    <p>Zwei Finger zoomen. Doppeltippen holt dich näher heran.</p>
+    <p>Deine Ameisen leben selbstständig.</p>
+    <p>Tippe auf eine <span>Ameise</span> oder <span>Kammer</span>.</p>
   </div>
   <div class="sheet" id="info" hidden>
     <div class="sheet-head"><span class="swatch" id="swatch"></span><h2 id="infoTitle"></h2></div>
     <dl id="infoRows"></dl>
+  </div>
+  <div class="sheet antcard" id="antCard" hidden>
+    <div class="sheet-head"><h2 id="antName"></h2><span class="role" id="antRole"></span>
+      <button class="x follow" id="antFollow" type="button" aria-label="Folgen"><svg viewBox="0 0 9 9" aria-hidden="true" shape-rendering="crispEdges" fill="currentColor"><rect x="4" y="0" width="1" height="3"/><rect x="4" y="6" width="1" height="3"/><rect x="0" y="4" width="3" height="1"/><rect x="6" y="4" width="3" height="1"/><rect x="3" y="3" width="3" height="3"/></svg></button>
+      <button class="x" id="antClose" type="button" aria-label="Schließen">×</button></div>
+    <div class="doing" id="antDoing"></div>
+    <div class="bars">
+      <span>Satt</span><span class="bar"><span id="barFood"></span></span>
+      <span>Müde</span><span class="bar"><span id="barTired" class="tired"></span></span>
+    </div>
+    <dl class="mini" id="antRows"></dl>
+  </div>
+  <div class="box panel" id="panel" hidden role="dialog" aria-labelledby="panelTitle">
+    <div class="panel-head"><h2 id="panelTitle">Die Kolonie</h2><button class="x" id="panelClose" type="button" aria-label="Schließen">×</button></div>
+    <div class="tiles">
+      <div class="tile"><b id="tPop">0</b><span>Ameisen</span><small><span id="tSoldiers">0</span> davon Soldatinnen</small></div>
+      <div class="tile"><b id="tBrood">0</b><span>Brut</span><small id="tBroodSub"></small></div>
+      <div class="tile"><b id="tFood">0</b><span>Futter im Nest</span></div>
+      <div class="tile"><b id="tRooms">0</b><span>Kammern</span><small><span id="tTunnels">0</span> Felder gegraben</small></div>
+      <div class="tile"><b id="tBorn">0</b><span>Geschlüpft</span></div>
+      <div class="tile"><b id="tDied">0</b><span>Gestorben</span></div>
+    </div>
+    <h3>Was die Ameisen gerade tun</h3>
+    <div id="taskBars"></div>
+    <h3>Verlauf</h3>
+    <canvas id="chart" width="300" height="84"></canvas>
+    <div class="legend"><span><i style="background:#f4edd3"></i>Ameisen</span><span><i style="background:#e0a43a"></i>Futter</span></div>
+    <h3>Chronik</h3>
+    <ol id="chron"></ol>
+    <h3>Neu anfangen</h3>
+    <button class="btn danger" id="btnNew" type="button">Neue Kolonie gründen</button>
+    <div class="confirm" id="confirmNew" hidden>
+      <p>Die jetzige Kolonie geht dabei verloren.</p>
+      <div class="card-actions"><button class="btn danger" id="btnNewYes" type="button">Ja, neu gründen</button><button class="btn" id="btnNewNo" type="button">Abbrechen</button></div>
+    </div>
+  </div>
+  <div class="tools">
+    <button id="btnFeed" type="button" aria-label="Zucker streuen" aria-pressed="false">
+      <svg viewBox="0 0 13 13" aria-hidden="true" shape-rendering="crispEdges"><rect x="2" y="5" width="9" height="7" fill="#e6e9ef"/><rect x="2" y="5" width="9" height="1" fill="#ffffff"/><rect x="10" y="6" width="1" height="6" fill="#b9bfca"/><rect x="5" y="1" width="3" height="3" fill="#ffffff"/><rect x="7" y="3" width="1" height="1" fill="#b9bfca"/></svg>
+      <span class="cd" id="feedCd"></span>
+    </button>
   </div>
   <div class="controls">
     <button id="btnPause" type="button" aria-label="Pause"></button>
@@ -245,12 +406,15 @@
 </div>
 <div id="safe"></div>
 
+
 <script>
 "use strict";
 // =====================================================================
-// Ant Pop: Ameisenkolonie im Formicarium. Browser-Version der Godot-Fassung.
-// Gleiche Logik: Boden-Grid, Wegfelder, Zustandsmaschine pro Ameise,
-// Duftspuren, Flut als zellulärer Automat, Tausendfüßler, Tag und Nacht.
+// Ant Pop: Ameisenkolonie im Formicarium.
+// Jede Ameise lebt eigenständig: eigene Vorlieben, Hunger, Müdigkeit und Alter.
+// Es gibt keinen Bauplan und keine zentrale Aufgabenverteilung. Gänge und Kammern
+// entstehen aus den Entscheidungen der Ameisen, Kammern bekommen ihre Art durch
+// das, was die Ameisen dort ablegen.
 // =====================================================================
 
 const T = 3, W = 86, H = 156, G = 40, SURF = 39, ENT = 43, FRAME = 6;
@@ -259,14 +423,29 @@ const FULL_W = WPX + 2 * FRAME, FULL_H = HPX + 2 * FRAME;  // 270 x 480
 const INF = 1 << 28;
 const AIR = 0, SOIL = 1, TUNNEL = 2;
 const CH_GRANARY = 1, CH_BROOD = 2, CH_QUEEN = 3, CH_CEMETERY = 4, CH_TRASH = 5;
-const F_EXIT = 0, F_GRANARY = 1, F_BROOD = 2, F_QUEEN = 3, F_CEMETERY = 4, F_TRASH = 5, F_DIG = 6, F_CORPSE = 7, F_COUNT = 8;
+const ROOM_NAMES = ["Leere Kammer", "Kornkammer", "Brutkammer", "Königinnenkammer", "Friedhof", "Müllkammer"];
 const ARRIVED = -1, NO_PATH = -2;
 const LAYER_ROWS = [40, 79, 118];
-const SAVE_KEY = "antpop-save-v1";
+const SAVE_KEY = "antpop-save-v2";
 
-const S_IDLE = 0, S_DIG = 1, S_FORAGE = 2, S_CARRY = 3, S_NURSE = 4, S_UNDERTAKE = 5, S_SOLDIER = 6, S_QUEEN = 7;
 const R_WORKER = 0, R_SOLDIER = 1, R_QUEEN = 2;
-const C_NONE = 0, C_FOOD = 1, C_DIRT = 2, C_CORPSE = 3, C_TRASH = 4;
+const C_NONE = 0, C_FOOD = 1, C_DIRT = 2, C_CORPSE = 3, C_TRASH = 4, C_BROOD = 5;
+// Zustände der Zustandsmaschine
+const S_IDLE = 0, S_REST = 1, S_EAT = 2, S_DIG = 3, S_FORAGE = 4, S_CARRY = 5, S_NURSE = 6, S_CLEAN = 7, S_SOLDIER = 8, S_QUEEN = 9, S_FLEE = 10;
+// Aufgaben mit eigenen Schwellenwerten pro Ameise
+const TK_DIG = 0, TK_FORAGE = 1, TK_NURSE = 2, TK_CLEAN = 3;
+const TASK_NAMES = ["Graben", "Futtersuche", "Brutpflege", "Aufräumen"];
+const TASK_STATE = [S_DIG, S_FORAGE, S_NURSE, S_CLEAN];
+// Was eine Ameise gerade tut, für die Anzeige
+const D_IDLE = 0, D_REST = 1, D_SLEEP = 2, D_EAT = 3, D_DIG = 4, D_HAUL = 5, D_SEARCH = 6, D_FETCH = 7, D_FEEDLARVA = 8,
+  D_FEEDQUEEN = 9, D_MOVEBROOD = 10, D_CORPSE = 11, D_TRASH = 12, D_PATROL = 13, D_DEFEND = 14, D_FLEE = 15, D_LAY = 16, D_HOME = 17, D_STORE = 18;
+const DOING = ["Schaut sich um", "Ruht sich aus", "Schläft", "Isst", "Gräbt", "Trägt Erde hinaus", "Sucht Futter", "Trägt Futter heim",
+  "Füttert Larven", "Füttert die Königin", "Trägt Brut", "Trägt Tote weg", "Räumt Abfall weg", "Bewacht das Nest", "Verteidigt das Nest",
+  "Flieht", "Legt Eier", "Geht nach Hause", "Lagert Futter ein"];
+const NAMES = ["Anni", "Berta", "Clara", "Dora", "Emma", "Frieda", "Greta", "Hanna", "Ida", "Jule", "Karla", "Lotte", "Mia", "Nele",
+  "Olga", "Paula", "Resi", "Sina", "Thea", "Uschi", "Vera", "Wilma", "Xenia", "Yva", "Zoe", "Alma", "Bea", "Cleo", "Edda", "Fine",
+  "Gesa", "Hedi", "Ilse", "Juna", "Kira", "Lina", "Maja", "Nora", "Ottilie", "Pia", "Rieke", "Selma", "Tilda", "Ulla", "Wanda"];
+const antName = id => id === 0 ? "Königin Aurelia" : NAMES[(id - 1) % NAMES.length] + (id > NAMES.length ? " " + (Math.floor((id - 1) / NAMES.length) + 1) : "");
 
 // ---------------------------------------------------------------- Hilfen
 const rand = Math.random;
@@ -325,6 +504,8 @@ function pcircle(g, cx, cy, r) {
     if (hw > 0) g.fillRect(Math.floor(cx) - hw, Math.floor(cy) + dy, hw * 2, 1);
   }
 }
+
+// =====================================================================
 
 // =====================================================================
 // WELT: Grid, Tiles, Tunnel, Wegfelder, Wasser, Sandhügel, Früchte
@@ -480,21 +661,51 @@ function flushGround() {
   groundDirty.clear();
 }
 
+
+// ---- Gegenstände im Nest, Grabfront, Duftmarken fürs Graben und Alarm
+Object.assign(world, {
+  food: new Uint8Array(W * H), corpses: new Uint8Array(W * H), trash: new Uint8Array(W * H),
+  digPh: new Float32Array(W * H), alarm: new Float32Array(W * H), roomOf: new Int16Array(W * H).fill(-1),
+  rooms: [], tunnels: [], topo: 0, groundFood: [], simTime: 0,
+});
+const digPhActive = new Set(), alarmActive = new Set();
+
+// Grabfront: alle Erdzellen direkt neben einem Gang. Liste mit Positionsindex für schnelles Ziehen.
+const frontier = {
+  list: [], pos: new Int32Array(W * H).fill(-1),
+  add(i) { if (this.pos[i] >= 0) return; this.pos[i] = this.list.length; this.list.push(i); },
+  remove(i) {
+    const p = this.pos[i];
+    if (p < 0) return;
+    const last = this.list.pop();
+    if (last !== i) { this.list[p] = last; this.pos[last] = p; }
+    this.pos[i] = -1;
+  },
+  clear() { for (const i of this.list) this.pos[i] = -1; this.list.length = 0; },
+};
+const diggable = (x, y) => x >= 1 && x <= W - 2 && y >= G + 1 && y <= H - 2 && world.cells[idx(x, y)] === SOIL;
+function addFrontierAround(x, y) {
+  for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) if (diggable(x + dx, y + dy)) frontier.add(idx(x + dx, y + dy));
+}
+function rebuildRuntime() {
+  world.tunnels = [];
+  frontier.clear();
+  for (let i = 0; i < W * H; i++) if (world.cells[i] === TUNNEL) { world.tunnels.push(i); addFrontierAround(i % W, Math.floor(i / W)); }
+  world.digPh.fill(0); world.alarm.fill(0); digPhActive.clear(); alarmActive.clear();
+  world.water.fill(0); world.wet = false; world.waterShown = true;
+  world.topo++;
+  fieldCache.clear();
+  markFields();
+  rooms.dirty = true;
+}
+
 function newWorld(seed) {
   world.seed = seed;
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) world.cells[idx(x, y)] = y < G ? AIR : SOIL;
-  world.chamber.fill(0);
-  world.mound.fill(0);
+  world.chamber.fill(0); world.mound.fill(0);
+  world.food.fill(0); world.corpses.fill(0); world.trash.fill(0); world.roomOf.fill(-1);
+  world.groundFood = [];
   generateSources();
-  resetRuntime();
-  rebuildTiles();
-}
-function resetRuntime() {
-  world.chamberCells = [[], [], [], [], [], []];
-  for (let i = 0; i < W * H; i++) if (world.cells[i] === TUNNEL && world.chamber[i]) world.chamberCells[world.chamber[i]].push(i);
-  world.fields = []; world.dirty = []; world.has = [];
-  for (let f = 0; f < F_COUNT; f++) { world.fields.push(new Int32Array(W * H).fill(INF)); world.dirty.push(true); world.has.push(false); }
-  world.water.fill(0); world.wet = false; world.waterShown = true;
 }
 function generateSources() {
   const r = mulberry(world.seed);
@@ -521,40 +732,78 @@ function generateSources() {
 const isTunnel = (x, y) => inGrid(x, y) && world.cells[idx(x, y)] === TUNNEL;
 const cellAt = (x, y) => inGrid(x, y) ? world.cells[idx(x, y)] : SOIL;
 const chamberAt = (x, y) => inGrid(x, y) ? world.chamber[idx(x, y)] : 0;
-const digTime = y => 0.45 + 0.2 * layerOf(y);
-function markAllDirty() { for (let f = 0; f < F_COUNT; f++) world.dirty[f] = true; }
+const digTime = y => 0.5 + 0.22 * layerOf(y);
 
 function dig(x, y) {
-  if (!inGrid(x, y) || y < G) return;
+  if (!diggable(x, y)) return false;
   const i = idx(x, y);
-  if (world.cells[i] !== SOIL) return;
   world.cells[i] = TUNNEL;
-  if (world.chamber[i]) world.chamberCells[world.chamber[i]].push(i);
+  world.tunnels.push(i);
+  frontier.remove(i);
+  addFrontierAround(x, y);
+  // Duftmarke: hier wird gegraben, das lockt andere Gräberinnen an
+  for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+    if (!inGrid(x + dx, y + dy)) continue;
+    const j = idx(x + dx, y + dy);
+    world.digPh[j] = Math.min(1.5, world.digPh[j] + 0.5 / (1 + Math.abs(dx) + Math.abs(dy)));
+    digPhActive.add(j);
+  }
   updateTile(x, y); updateTile(x - 1, y); updateTile(x + 1, y); updateTile(x, y - 1); updateTile(x, y + 1);
-  markAllDirty();
+  world.topo++;
+  markFields();
+  rooms.dirty = true;
+  return true;
+}
+// Wo Dinge abgelegt werden, entsteht eine Duftmarke: dort wird eher eine Kammer gegraben
+function pileMark(i) {
+  const x0 = i % W, y0 = Math.floor(i / W);
+  for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+    if (!inGrid(x0 + dx, y0 + dy)) continue;
+    const j = idx(x0 + dx, y0 + dy);
+    if (world.cells[j] !== SOIL) continue;
+    world.digPh[j] = Math.min(1.5, world.digPh[j] + 0.25);
+    digPhActive.add(j);
+  }
+}
+function addAlarm(x, y, a) {
+  if (!inGrid(x, y)) return;
+  const i = idx(x, y);
+  world.alarm[i] = Math.min(1, world.alarm[i] + a);
+  alarmActive.add(i);
 }
 
-// ---- Wegfelder: Breitensuche durch die Tunnel
+// ---- Wegfelder: Breitensuche durch die Gänge zu dem, was eine Ameise gerade sucht
+const F_EXIT = 0, F_FOOD = 1, F_QUEEN = 2, F_HUNGRY = 3, F_BROODPILE = 4, F_LOOSEBROOD = 5, F_LOOSECORPSE = 6, F_GRAVE = 7, F_LOOSETRASH = 8, F_DUMP = 9, F_COUNT = 10;
+const fields = [], fieldDirty = [], fieldTime = [], fieldHas = [], fieldTopo = [];
+for (let f = 0; f < F_COUNT; f++) { fields.push(new Int32Array(W * H).fill(INF)); fieldDirty.push(true); fieldTime.push(-99); fieldHas.push(false); fieldTopo.push(-1); }
+let maxQueenDist = 0;
+function markFields() { for (let f = 0; f < F_COUNT; f++) fieldDirty[f] = true; }
+function markItems() { for (let f = 1; f < F_COUNT; f++) fieldDirty[f] = true; rooms.dirty = true; }
+const qDist = i => fields[F_QUEEN][i];
+const isGrave = i => qDist(i) < INF && qDist(i) >= Math.min(16, maxQueenDist * 0.7);
+const isDump = i => qDist(i) < INF && qDist(i) >= Math.min(14, maxQueenDist * 0.6) && world.food[i] === 0 && world.corpses[i] === 0;
 function fieldSources(fid) {
+  const out = [], t = world.tunnels;
   switch (fid) {
-    case F_EXIT: { const e = idx(ENT, G); return world.cells[e] === TUNNEL ? [e] : []; }
-    case F_GRANARY: return world.chamberCells[CH_GRANARY];
-    case F_BROOD: return world.chamberCells[CH_BROOD];
-    case F_QUEEN: return world.chamberCells[CH_QUEEN];
-    case F_CEMETERY: return world.chamberCells[CH_CEMETERY];
-    case F_TRASH: return world.chamberCells[CH_TRASH];
-    case F_DIG: return colony.digSources();
-    case F_CORPSE: return colony.corpses;
+    case F_EXIT: { const e = idx(ENT, G); if (world.cells[e] === TUNNEL) out.push(e); break; }
+    case F_FOOD: for (const i of t) if (world.food[i] > 0) out.push(i); break;
+    case F_QUEEN: { const q = ants.queenIndex(); if (q >= 0 && ants.cy[q] >= G) out.push(idx(ants.cx[q], ants.cy[q])); break; }
+    case F_HUNGRY: for (const b of colony.brood) if (b.s === 1 && !b.carried && b.fed < 0.5) out.push(b.cell); break;
+    case F_BROODPILE: getField(F_QUEEN); for (const b of colony.brood) if (!b.carried && qDist(b.cell) > 3) out.push(b.cell); break;
+    case F_LOOSEBROOD: getField(F_QUEEN); for (const b of colony.brood) if (!b.carried && qDist(b.cell) <= 3 && b.age > 4) out.push(b.cell); break;
+    case F_LOOSECORPSE: getField(F_QUEEN); for (const i of t) if (world.corpses[i] > 0 && !isGrave(i)) out.push(i); break;
+    case F_GRAVE: getField(F_QUEEN); for (const i of t) if (world.corpses[i] > 0 && isGrave(i)) out.push(i); break;
+    case F_LOOSETRASH: getField(F_QUEEN); for (const i of t) if (world.trash[i] > 0 && !isDump(i)) out.push(i); break;
+    case F_DUMP: getField(F_QUEEN); for (const i of t) if (world.trash[i] > 0 && isDump(i)) out.push(i); break;
   }
-  return [];
+  return out;
 }
 const bfsQueue = new Int32Array(W * H);
-function computeField(fid) {
-  const f = world.fields[fid], cells = world.cells;
+function bfs(f, sources) {
+  const cells = world.cells;
   f.fill(INF);
   let tail = 0;
-  for (const s of fieldSources(fid)) if (cells[s] === TUNNEL && f[s] !== 0) { f[s] = 0; bfsQueue[tail++] = s; }
-  world.has[fid] = tail > 0;
+  for (const s of sources) if (cells[s] === TUNNEL && f[s] !== 0) { f[s] = 0; bfsQueue[tail++] = s; }
   let head = 0;
   while (head < tail) {
     const i = bfsQueue[head++], d = f[i] + 1, x = i % W;
@@ -565,14 +814,40 @@ function computeField(fid) {
     if (x > 0) { n = i - 1; if (cells[n] === TUNNEL && f[n] > d) { f[n] = d; bfsQueue[tail++] = n; } }
     if (x < W - 1) { n = i + 1; if (cells[n] === TUNNEL && f[n] > d) { f[n] = d; bfsQueue[tail++] = n; } }
   }
-  world.dirty[fid] = false;
+  return tail;
 }
-function hasField(fid) { if (world.dirty[fid]) computeField(fid); return world.has[fid]; }
-function fieldValue(fid, x, y) { if (world.dirty[fid]) computeField(fid); return inGrid(x, y) ? world.fields[fid][idx(x, y)] : INF; }
-function nextStep(fid, x, y) {
-  if (world.dirty[fid]) computeField(fid);
+// Felder werden höchstens alle 0,4 s neu berechnet, nach einer Grabung sofort
+function getField(fid) {
+  if (fieldDirty[fid] && (world.simTime - fieldTime[fid] > 0.4 || fieldTopo[fid] !== world.topo)) {
+    const n = bfs(fields[fid], fieldSources(fid));
+    fieldHas[fid] = n > 0;
+    fieldDirty[fid] = false; fieldTime[fid] = world.simTime; fieldTopo[fid] = world.topo;
+    if (fid === F_QUEEN) {
+      maxQueenDist = 0;
+      for (const i of world.tunnels) { const v = fields[F_QUEEN][i]; if (v < INF && v > maxQueenDist) maxQueenDist = v; }
+    }
+  }
+  return fields[fid];
+}
+const hasField = fid => (getField(fid), fieldHas[fid]);
+function fieldValue(fid, x, y) { return inGrid(x, y) ? getField(fid)[idx(x, y)] : INF; }
+// Feld zu einer einzelnen Zelle, etwa zur gemerkten Grabstelle. Zwischengespeichert, bis sich die Gänge ändern.
+const fieldCache = new Map();
+function fieldTo(target) {
+  let e = fieldCache.get(target);
+  if (e && e.topo === world.topo) return e.f;
+  const src = [];
+  if (world.cells[target] === TUNNEL) src.push(target);
+  else { const x = target % W, y = Math.floor(target / W); for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) if (isTunnel(x + dx, y + dy)) src.push(idx(x + dx, y + dy)); }
+  if (fieldCache.size > 40) fieldCache.delete(fieldCache.keys().next().value);
+  const f = e ? e.f : new Int32Array(W * H);
+  bfs(f, src);
+  fieldCache.set(target, { topo: world.topo, f });
+  return f;
+}
+function stepOn(f, x, y) {
   if (!inGrid(x, y)) return NO_PATH;
-  const f = world.fields[fid], cur = f[idx(x, y)];
+  const cur = f[idx(x, y)];
   if (cur === 0) return ARRIVED;
   if (cur >= INF) return NO_PATH;
   const opts = [];
@@ -582,12 +857,22 @@ function nextStep(fid, x, y) {
   if (x < W - 1 && f[idx(x + 1, y)] < cur) opts.push(idx(x + 1, y));
   return opts.length ? opts[Math.floor(rand() * opts.length)] : NO_PATH;
 }
-function randomNeighbor(x, y, onlyCh = -1) {
-  const opts = [];
+// Weg weg von etwas: zum Nachbarn mit größerem Abstand, bis es nicht weiter geht
+function stepAway(f, x, y, avoid) {
+  const cur = f[idx(x, y)];
+  let best = [], bv = cur;
   for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
     const nx = x + dx, ny = y + dy;
-    if (isTunnel(nx, ny) && (onlyCh < 0 || world.chamber[idx(nx, ny)] === onlyCh)) opts.push(idx(nx, ny));
+    if (!isTunnel(nx, ny) || ny < G) continue;
+    const n = idx(nx, ny), v = f[n];
+    if (v >= INF || v <= cur || (avoid && avoid(n))) continue;
+    if (v > bv) { bv = v; best = [n]; } else if (v === bv) best.push(n);
   }
+  return best.length ? best[Math.floor(rand() * best.length)] : ARRIVED;
+}
+function randomNeighbor(x, y) {
+  const opts = [];
+  for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) if (isTunnel(x + dx, y + dy)) opts.push(idx(x + dx, y + dy));
   return opts.length ? opts[Math.floor(rand() * opts.length)] : idx(x, y);
 }
 function nearestTunnel(x, y, radius = 14) {
@@ -598,6 +883,102 @@ function nearestTunnel(x, y, radius = 14) {
     }
   return [ENT, G];
 }
+// freie Ablagezelle in der Nähe suchen (für Futter, Tote, Abfall)
+function dropCell(i, arr, max, avoid) {
+  if (world.cells[i] === TUNNEL && arr[i] < max && !(avoid && avoid(i))) return i;
+  const x0 = i % W, y0 = Math.floor(i / W);
+  for (let r = 1; r <= 3; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+    if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+    const x = x0 + dx, y = y0 + dy;
+    if (!isTunnel(x, y) || y <= G) continue;
+    const j = idx(x, y);
+    if (arr[j] < max && !(avoid && avoid(j))) return j;
+  }
+  return -1;
+}
+
+// ---- Kammern erkennen: weite Stellen im Gangnetz, ihre Art ergibt sich aus dem Inhalt
+const rooms = {
+  dirty: true, t: 0, seen: new Set(),
+  tick(dt) {
+    this.t -= dt;
+    if (this.dirty && this.t <= 0) { this.t = 1.5; this.dirty = false; this.detect(); }
+  },
+  detect() {
+    const cells = world.cells, roomOf = world.roomOf, wide = new Uint8Array(W * H);
+    for (const i of world.tunnels) {
+      const x = i % W, y = Math.floor(i / W);
+      if (y <= G) continue;
+      let n = 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (isTunnel(x + dx, y + dy)) n++;
+      if (n >= 7) wide[i] = 1;
+    }
+    roomOf.fill(-1);
+    const list = [];
+    const q = ants.queenIndex(), qCell = q >= 0 ? idx(ants.cx[q], ants.cy[q]) : -1;
+    const broodAt = new Map();
+    for (const b of colony.brood) if (!b.carried) broodAt.set(b.cell, (broodAt.get(b.cell) || 0) + 1);
+    for (const start of world.tunnels) {
+      if (!wide[start] || roomOf[start] >= 0) continue;
+      const id = list.length, comp = [start];
+      roomOf[start] = id;
+      for (let k = 0; k < comp.length; k++) {
+        const i = comp[k], x = i % W;
+        for (const n of [i - W, i + W, x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1]) if (n >= 0 && n < W * H && wide[n] && roomOf[n] < 0) { roomOf[n] = id; comp.push(n); }
+      }
+      // Rand der weiten Stelle mitnehmen
+      const border = [];
+      for (const i of comp) {
+        const x = i % W;
+        for (const n of [i - W, i + W, x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1]) if (n >= 0 && cells[n] === TUNNEL && roomOf[n] < 0 && Math.floor(n / W) > G) { roomOf[n] = id; border.push(n); }
+      }
+      const all = comp.concat(border);
+      list.push({ id, cells: all, size: all.length });
+    }
+    const rs = [];
+    for (const r of list) {
+      if (r.size < 8) { for (const i of r.cells) roomOf[i] = -1; continue; }
+      let food = 0, brood = 0, corpses = 0, trash = 0, queen = false, sx = 0, sy = 0;
+      for (const i of r.cells) {
+        food += world.food[i]; corpses += world.corpses[i]; trash += world.trash[i]; brood += broodAt.get(i) || 0;
+        if (i === qCell) queen = true;
+        sx += i % W; sy += Math.floor(i / W);
+      }
+      const score = [0, food, brood * 2, 0, corpses * 2, trash];
+      let type = 0, best = 0;
+      for (let k = 1; k < 6; k++) if (score[k] > best) { best = score[k]; type = k; }
+      if (queen) type = CH_QUEEN;
+      rs.push({ ...r, id: rs.length, type, food, brood, corpses, trash, cx: sx / r.size, cy: sy / r.size });
+    }
+    world.roomOf.fill(-1);
+    for (const r of rs) for (const i of r.cells) world.roomOf[i] = r.id;
+    world.rooms = rs;
+    // Farben der Kammern anpassen
+    for (const i of world.tunnels) {
+      const rid = world.roomOf[i], t = rid >= 0 ? rs[rid].type : 0;
+      if (world.chamber[i] !== t) { world.chamber[i] = t; updateTile(i % W, Math.floor(i / W)); }
+    }
+    for (const r of rs) if (r.type && !this.seen.has(r.type)) {
+      this.seen.add(r.type);
+      if (r.type !== CH_QUEEN) colony.log(`Die erste ${ROOM_NAMES[r.type]} ist entstanden`, true);
+    }
+  },
+};
+
+// ---- Futter an der Oberfläche: Fallobst, tote Käfer, Zucker
+function groundFoodAt(x) {
+  for (const g of world.groundFood) if (g.n > 0 && Math.abs(g.x - x) <= 1) return g;
+  return null;
+}
+function addGroundFood(x, n, kind) {
+  x = clamp(Math.round(x), 2, W - 3);
+  const g = world.groundFood.find(q => q.kind === kind && Math.abs(q.x - x) <= 1);
+  if (g) { g.n += n; g.t = 0; return g; }
+  const item = { x, n, kind, t: 0, max: n };
+  world.groundFood.push(item);
+  return item;
+}
+
 
 // ---- Früchte
 const sourceAt = x => world.byTrunk.has(x) ? world.byTrunk.get(x) : -1;
@@ -680,15 +1061,6 @@ function waterRender() {
   world.waterShown = world.wet;
 }
 
-function worldTick(dt) {
-  let done = 0;
-  for (let f = 0; f < F_COUNT; f++) if (world.dirty[f] && done < 3) { computeField(f); done++; }
-  for (const s of world.sources) for (const f of s.fruits)
-    if (!f.alive) { f.t += dt; if (f.t > 32) { f.alive = true; sky.dirty = true; } }
-  world.frame++;
-  if (world.wet && world.frame % 3 === 0) waterStep();
-  if ((world.wet || world.waterShown) && world.frame % 6 === 0) waterRender();
-}
 
 // =====================================================================
 // DUFTSPUREN: 2D-Array grid[y][x], verblassen alle 6 Frames
@@ -733,282 +1105,283 @@ const phero = {
 const [pheroC, pheroG] = canvas(W, G);
 const pheroImg = pheroG.createImageData(W, G);
 
+
 // =====================================================================
-// KOLONIE: Königin, Futter, Brut, Tote, Müll, Bauplan
+// KOLONIE: Brut, Vorräte, Reize für die Ameisen, Chronik und Verlauf
 // =====================================================================
+const EGG_T = 14, LARVA_T = 22, PUPA_T = 12;
 const colony = {
-  food: 20, brood: [], corpses: [], surfaceCorpses: [], trashWaiting: 0, trashStored: 0, buried: 0,
-  eggsLaid: 0, born: 0, died: 0, delivered: 0, queenAlive: true, plan: [], expansions: 0, starving: false,
-  eggT: 0, feedT: 0, starve: 0, killT: 0, jobsDirty: true, jobCells: new Set(), frontier: [], decorDirty: true,
-  EGG_TIME: 12, LARVA_TIME: 18, FRUIT_FOOD: 3, MAX_POP: 300,
+  brood: [], nextBrood: 1, foodTotal: 0, born: 0, died: 0, eggsLaid: 0, delivered: 0, dugTotal: 0,
+  stim: [0, 0, 0, 0], need: { room: 0.3 }, counts: {}, stimT: 0, eggT: 0, histT: 0, history: [], entries: [],
+  milestones: new Set(), queenAlive: true, starving: false,
 
-  newColony() {
-    Object.assign(this, { food: 20, brood: [], corpses: [], surfaceCorpses: [], trashWaiting: 0, trashStored: 0, buried: 0,
-      eggsLaid: 0, born: 0, died: 0, delivered: 0, queenAlive: true, plan: [], expansions: 0, starve: 0, starving: false });
-    for (const i of this.tunnelCells([ENT, G], [ENT, 52], 0)) world.cells[i] = TUNNEL;
-    for (const i of this.chamberCellsOf([ENT, 54], 6, 2.4, CH_QUEEN)) world.cells[i] = TUNNEL;
-    this.planItem([ENT - 4, 54], [23, 61], CH_BROOD, 6, 2.4);
-    this.planItem([ENT + 4, 53], [64, 48], CH_GRANARY, 6.5, 2.4);
-    this.planItem([ENT + 2, 56], [60, 68], CH_TRASH, 4.5, 2);
-    this.planItem([22, 63], [11, 76], CH_CEMETERY, 5, 2);
-    this.planItem([ENT, 56], [48, 96], CH_GRANARY, 6.5, 2.4);
-    this.planItem([46, 95], [22, 101], CH_BROOD, 6, 2.4);
-    this.planItem([62, 70], [74, 86], CH_GRANARY, 5.5, 2.2);
-    this.planItem([46, 98], [30, 128], CH_BROOD, 6, 2.4);
-    this.planItem([50, 98], [58, 132], CH_GRANARY, 6, 2.4);
-    this.planItem([60, 134], [74, 144], CH_CEMETERY, 5, 2);
-    resetRuntime();
+  reset() {
+    Object.assign(this, { brood: [], nextBrood: 1, foodTotal: 0, born: 0, died: 0, eggsLaid: 0, delivered: 0, dugTotal: 0,
+      stim: [0, 0, 0, 0], history: [], entries: [], milestones: new Set(), queenAlive: true, starving: false, eggT: 0, histT: 0 });
+    rooms.seen = new Set();
+  },
+  // Gründung: nur ein kurzer Schacht und eine kleine Kammer. Alles andere bauen die Ameisen selbst.
+  found() {
+    for (let y = G; y <= 49; y++) for (const x of [ENT, ENT + 1]) world.cells[idx(x, y)] = TUNNEL;
+    for (let y = 50; y <= 53; y++) for (let x = ENT - 3; x <= ENT + 4; x++) {
+      if ((y === 50 || y === 53) && (x === ENT - 3 || x === ENT + 4)) continue;
+      world.cells[idx(x, y)] = TUNNEL;
+    }
+    rebuildRuntime();
     rebuildTiles();
-    this.jobsDirty = true; this.decorDirty = true;
+    // Vorrat der Königin aus dem Hochzeitsflug
+    for (const [x, y] of [[ENT + 3, 53], [ENT + 4, 52], [ENT + 3, 52]]) for (let k = 0; k < 3; k++) this.addFood(idx(x, y));
   },
-  planItem(from, center, ch, rx, ry) {
-    const cells = this.tunnelCells(from, center, 0.28);
-    for (const i of this.chamberCellsOf(center, rx, ry, ch)) if (!cells.includes(i)) cells.push(i);
-    this.plan.push([cells, ch]);
-  },
-  addCell(out, x, y) {
-    if (x < 1 || x > W - 2 || y < G || y > H - 2) return;
-    const i = idx(x, y);
-    if (!out.includes(i)) out.push(i);
-  },
-  // Gang als zufälliger Weg mit zwei Zellen Breite
-  tunnelCells(from, to, wobble) {
-    const out = [];
-    let [x, y] = from;
-    for (let guard = 0; (x !== to[0] || y !== to[1]) && guard < 600; guard++) {
-      this.addCell(out, x, y);
-      const dx = to[0] - x, dy = to[1] - y;
-      let sx = 0, sy = 0;
-      if (rand() < wobble) { if (Math.abs(dx) > Math.abs(dy)) sy = rand() < 0.5 ? 1 : -1; else sx = rand() < 0.5 ? 1 : -1; }
-      else if (rand() * (Math.abs(dx) + Math.abs(dy)) < Math.abs(dx)) sx = sign(dx);
-      else sy = sign(dy);
-      x = clamp(x + sx, 2, W - 4); y = clamp(y + sy, G, H - 4);
-      if (sy !== 0) this.addCell(out, x + 1, y); else this.addCell(out, x, y + 1);
-    }
-    this.addCell(out, to[0], to[1]);
-    return out;
-  },
-  chamberCellsOf(c, rx, ry, ch) {
-    const out = [];
-    for (let dy = -Math.floor(ry) - 1; dy <= Math.floor(ry) + 1; dy++)
-      for (let dx = -Math.floor(rx) - 1; dx <= Math.floor(rx) + 1; dx++) {
-        const x = c[0] + dx, y = c[1] + dy;
-        if (x < 1 || x > W - 2 || y <= G || y > H - 2) continue;
-        const n = (hash2(x, y) % 100) / 100 * 0.5 - 0.2;
-        if ((dx / rx) ** 2 + (dy / ry) ** 2 <= 1 + n) { world.chamber[idx(x, y)] = ch; this.addCell(out, x, y); }
-      }
-    return out;
-  },
-  refreshJobs() {
-    this.jobsDirty = false;
-    this.jobCells.clear();
-    let active = 0;
-    for (const item of this.plan) {
-      let left = false;
-      for (const i of item[0]) if (world.cells[i] === SOIL) { this.jobCells.add(i); left = true; }
-      if (left && ++active >= 2) break;
-    }
-    if (active === 0 && this.tunnelCount() < 2600 && this.expansions < 40) {
-      this.planExpansion();
-      if (this.plan.length) for (const i of this.plan[this.plan.length - 1][0]) if (world.cells[i] === SOIL) this.jobCells.add(i);
-    }
-    const fr = new Set();
-    for (const i of this.jobCells) for (const n of [i - W, i + W, i - 1, i + 1])
-      if (n >= 0 && n < W * H && world.cells[n] === TUNNEL) fr.add(n);
-    this.frontier = [...fr];
-  },
-  tunnelCount() { let n = 0; for (let i = 0; i < W * H; i++) if (world.cells[i] === TUNNEL) n++; return n; },
-  planExpansion() {
-    this.expansions++;
-    const cc = world.chamberCells;
-    let ch = 0;
-    if (this.food > cc[CH_GRANARY].length * 3) ch = CH_GRANARY;
-    else if (this.brood.length > cc[CH_BROOD].length) ch = CH_BROOD;
-    else if (this.buried > cc[CH_CEMETERY].length * 3) ch = CH_CEMETERY;
-    else if (this.trashStored > cc[CH_TRASH].length * 3) ch = CH_TRASH;
-    for (let a = 0; a < 30; a++) {
-      const c = [ri(8, W - 9), ri(G + 10, H - 6)];
-      if (!this.areaFree(c, 8, 4)) continue;
-      const from = nearestTunnel(c[0], c[1], 40);
-      if (Math.hypot(from[0] - c[0], from[1] - c[1]) > 35) continue;
-      if (ch === 0) this.plan.push([this.tunnelCells(from, c, 0.35), 0]);
-      else this.planItem(from, c, ch, 5.5, 2.2);
-      return;
-    }
-  },
-  areaFree(c, rx, ry) {
-    for (let y = c[1] - ry; y <= c[1] + ry; y++) for (let x = c[0] - rx; x <= c[0] + rx; x++)
-      if (!inGrid(x, y) || world.cells[idx(x, y)] !== SOIL) return false;
+  addFood(i) {
+    const c = dropCell(i, world.food, 4);
+    if (c < 0) return false;
+    world.food[c]++; this.foodTotal++; markItems();
+    if (rand() < 0.3) pileMark(c);
     return true;
   },
-  digSources() { if (this.jobsDirty) this.refreshJobs(); return this.frontier; },
-  hasDigWork() { if (this.jobsDirty) this.refreshJobs(); return this.frontier.length > 0; },
-  digTargetNear(x, y) {
-    if (this.jobsDirty) this.refreshJobs();
-    for (const [dx, dy] of [[0, 1], [-1, 0], [1, 0], [0, -1]]) {
-      const nx = x + dx, ny = y + dy;
-      if (inGrid(nx, ny)) { const i = idx(nx, ny); if (this.jobCells.has(i) && world.cells[i] === SOIL) return [nx, ny]; }
-    }
-    return null;
-  },
-  onDug() { this.jobsDirty = true; world.dirty[F_DIG] = true; this.decorDirty = true; },
-  storeFood(a) { this.food += a; this.delivered++; this.decorDirty = true; },
-  takeFood(a) { if (this.food >= a) { this.food -= a; this.decorDirty = true; return true; } return false; },
-  broodCell() {
-    let cells = world.chamberCells[CH_BROOD];
-    if (!cells.length) cells = world.chamberCells[CH_QUEEN];
-    return cells.length ? cells[Math.floor(rand() * cells.length)] : idx(ENT, G);
-  },
-  larvae() { return this.brood.filter(b => b[0] === 1).length; },
-  hungryLarvae() { return this.brood.filter(b => b[0] === 1 && b[2] < 0.5).length; },
-  feedLarva() {
-    let best = -1, low = 99;
-    this.brood.forEach((b, k) => { if (b[0] === 1 && b[2] < low) { low = b[2]; best = k; } });
-    if (best >= 0) { this.brood[best][2] = 1; this.brood[best][3] = 0; }
-  },
-  broodCap() { return Math.max(6, 4 + Math.floor(world.chamberCells[CH_BROOD].length / 2)); },
-  addCorpse(x, y) {
-    this.died++;
-    if (y >= G && isTunnel(x, y)) { this.corpses.push(idx(x, y)); world.dirty[F_CORPSE] = true; }
-    else this.surfaceCorpses.push([x * T + 1.5, y * T + 1.5, 0]);
-    this.decorDirty = true;
-  },
-  takeCorpseAt(x, y) {
-    const k = this.corpses.indexOf(idx(x, y));
-    if (k < 0) return false;
-    this.corpses.splice(k, 1); world.dirty[F_CORPSE] = true; this.decorDirty = true;
+  takeFood(i) {
+    if (world.food[i] <= 0) return false;
+    world.food[i]--; this.foodTotal--; markItems();
     return true;
   },
-  bury() { this.buried++; this.decorDirty = true; },
-  takeTrash() { if (this.trashWaiting >= 1) { this.trashWaiting -= 1; this.decorDirty = true; return true; } return false; },
-  dumpTrash() { this.trashStored++; this.decorDirty = true; },
-
+  log(text, banner = false) {
+    this.entries.unshift({ day: events.day, text });
+    if (this.entries.length > 40) this.entries.pop();
+    if (banner) hud.banner(text, 4);
+  },
+  hatch(b) {
+    const x = b.cell % W, y = Math.floor(b.cell / W);
+    const i = ants.spawn(x, y, rand() < 0.12 ? R_SOLDIER : R_WORKER);
+    this.born++;
+    if (i >= 0 && this.born === 1) this.log(`${antName(ants.id[i])} ist als erste Tochter geschlüpft`, true);
+  },
   tick(dt) {
-    const pop = ants.count;
+    // Brut entwickelt sich
     for (let k = this.brood.length - 1; k >= 0; k--) {
       const b = this.brood[k];
-      if (b[0] === 0) {
-        b[1] += dt;
-        if (b[1] >= this.EGG_TIME) { b[0] = 1; b[1] = 0; b[2] = 0.6; this.decorDirty = true; }
+      b.age += dt;
+      if (b.carried) continue;
+      if (b.s === 0) { b.t += dt; if (b.t >= EGG_T) { b.s = 1; b.t = 0; b.fed = 0.7; markItems(); } }
+      else if (b.s === 1) {
+        b.fed = Math.max(0, b.fed - 0.022 * dt);
+        if (b.fed > 0) b.t += dt; else { b.t += dt * 0.15; b.starve += dt; }
+        if (b.fed < 0.5) fieldDirty[F_HUNGRY] = true;
+        if (b.starve > 60) { this.brood.splice(k, 1); world.corpses[b.cell] = Math.min(9, world.corpses[b.cell] + 1); this.died++; markItems(); continue; }
+        if (b.t >= LARVA_T) { b.s = 2; b.t = 0; markItems(); }
       } else {
-        b[2] = Math.max(0, b[2] - 0.03 * dt);
-        if (b[2] > 0) b[1] += dt; else { b[1] += dt * 0.2; b[3] += dt; }
-        if (b[3] > 50) { this.addCorpse(b[4] % W, Math.floor(b[4] / W)); this.brood.splice(k, 1); }
-        else if (b[1] >= this.LARVA_TIME) {
-          ants.spawn(b[4] % W, Math.floor(b[4] / W), rand() < 0.15 ? R_SOLDIER : R_WORKER);
-          this.born++; this.brood.splice(k, 1); this.decorDirty = true;
+        b.t += dt;
+        if (b.t >= PUPA_T) { this.brood.splice(k, 1); this.hatch(b); markItems(); }
+      }
+    }
+    // Die Königin legt Eier, wenn sie satt ist
+    const q = ants.queenIndex();
+    if (q >= 0) {
+      const workers = ants.count - 1, cap = 8 + Math.floor(workers * 0.6);
+      // nur wenn genug Vorrat für die Brut da ist
+      const enough = this.foodTotal >= 3 + this.brood.length * 0.5 || (ants.count <= 4 && this.brood.length < 3);
+      if (enough && ants.energy[q] > 0.45 && this.brood.length < cap && ants.count + this.brood.length < 300 && ants.cy[q] >= G) {
+        this.eggT += dt;
+        if (this.eggT >= 8 - ants.energy[q] * 4) {
+          this.eggT = 0;
+          ants.energy[q] -= 0.06;
+          this.brood.push({ id: this.nextBrood++, s: 0, t: 0, fed: 0, starve: 0, age: 0, cell: idx(ants.cx[q], ants.cy[q]), carried: false });
+          this.eggsLaid++;
+          ants.doing[q] = D_LAY;
+          markItems();
+          if (this.eggsLaid === 100 || this.eggsLaid === 500) this.log(`Die Königin hat ihr ${this.eggsLaid}. Ei gelegt`);
         }
       }
     }
-    // Königin legt Eier, wenn genug Futter da ist
-    const reserve = 3 + pop * 0.4;
-    if (this.queenAlive && this.brood.length < this.broodCap() && pop + this.brood.length < this.MAX_POP) {
-      this.eggT += dt;
-      let interval = 6 - Math.min(this.food / 15, 3.5);
-      if (this.food < reserve) interval = pop <= 4 ? 18 : 1e9;   // kleine Kolonie: die Königin zehrt von ihren Reserven
-      if (this.eggT >= interval) {
-        this.eggT = 0; this.food = Math.max(0, this.food - 0.6); this.eggsLaid++;
-        this.brood.push([0, 0, 0, 0, this.broodCell()]); this.decorDirty = true;
-      }
+    this.stimT -= dt;
+    if (this.stimT <= 0) { this.stimT = 1; this.updateStimuli(); }
+    this.histT -= dt;
+    if (this.histT <= 0) {
+      this.histT = 10;
+      this.history.push([ants.count, this.foodTotal]);
+      if (this.history.length > 90) this.history.shift();
     }
-    // Futterverbrauch jede Sekunde
-    this.feedT += dt;
-    if (this.feedT >= 1) {
-      this.feedT -= 1;
-      let need = Math.max(0, pop - 1) * 0.007 + (this.queenAlive ? 0.02 : 0);
-      if (events.isNight()) need *= 0.5;
-      if (this.food >= need) { this.food -= need; this.trashWaiting += need * 0.08; this.starve = Math.max(0, this.starve - 2); this.starving = false; }
-      else { this.food = 0; this.starve += 1; this.starving = this.starve > 4; }
-      this.decorDirty = true;
+    for (const m of [10, 25, 50, 100, 150, 200, 250, 300]) if (ants.count >= m && !this.milestones.has(m)) {
+      this.milestones.add(m);
+      this.log(`Die Kolonie hat ${m} Ameisen`, m >= 25);
     }
-    // Ohne Futter schrumpft die Kolonie
-    if (this.starve > 30) { this.killT += dt; if (this.killT > 5) { this.killT = 0; ants.killRandomWorker(); } }
-    for (const sc of this.surfaceCorpses) sc[2] += dt;
-    if (this.surfaceCorpses.length && this.surfaceCorpses[0][2] > 30) { this.surfaceCorpses.shift(); this.decorDirty = true; }
-    if (this.jobsDirty) this.refreshJobs();
   },
-  chamberInfo(ch) {
-    const size = world.chamberCells[ch] ? world.chamberCells[ch].length : 0;
-    switch (ch) {
-      case CH_GRANARY: return ["Kornkammer", [["Futter", Math.floor(this.food)], ["Bisher gesammelt", this.delivered], ["Größe", size + " Felder"]]];
-      case CH_BROOD: return ["Brutkammer", [["Eier", this.brood.length - this.larvae()], ["Larven", this.larvae()], ["Hungrige Larven", this.hungryLarvae()]]];
-      case CH_QUEEN: return ["Königinnenkammer", [["Königin", this.queenAlive ? "lebt" : "tot"], ["Eier gelegt", this.eggsLaid], ["Geschlüpft", this.born]]];
-      case CH_CEMETERY: return ["Friedhof", [["Begraben", this.buried], ["Noch im Nest", this.corpses.length], ["Gestorben", this.died]]];
-      case CH_TRASH: return ["Müllkammer", [["Abfall", this.trashStored], ["Wartet in der Kornkammer", Math.floor(this.trashWaiting)]]];
+  // Reize: wie dringend ist jede Aufgabe, gemessen an dem, was gerade fehlt und wer schon dabei ist
+  updateStimuli() {
+    const c = { workers: 0, soldiers: 0, byState: new Array(11).fill(0), hungryLarvae: 0, looseBrood: 0, eggs: 0, larvae: 0, pupae: 0 };
+    for (let i = 0; i < ants.count; i++) {
+      c.byState[ants.state[i]]++;
+      if (ants.role[i] === R_WORKER) c.workers++; else if (ants.role[i] === R_SOLDIER) c.soldiers++;
     }
-    return ["Gang", []];
+    getField(F_QUEEN);
+    for (const b of this.brood) {
+      if (b.s === 0) c.eggs++; else if (b.s === 1) c.larvae++; else c.pupae++;
+      if (b.s === 1 && b.fed < 0.5) c.hungryLarvae++;
+      if (!b.carried && qDist(b.cell) <= 3 && b.age > 4) c.looseBrood++;
+    }
+    let looseCorpses = 0, looseTrash = 0;
+    for (const i of world.tunnels) {
+      if (world.corpses[i] && !isGrave(i)) looseCorpses += world.corpses[i];
+      if (world.trash[i] && !isDump(i)) looseTrash += world.trash[i];
+    }
+    c.looseCorpses = looseCorpses; c.looseTrash = looseTrash;
+    this.counts = c;
+    const pop = ants.count, q = ants.queenIndex();
+    const queenHungry = q >= 0 && ants.energy[q] < 0.55;
+    const foodPerAnt = this.foodTotal / Math.max(1, pop);
+    const out = !events.isNight() && !events.raining;
+    const demand = [
+      clamp((70 + pop * 3.2 + this.foodTotal * 0.3 + this.brood.length - world.tunnels.length) / 20, 0, c.workers * 0.3),
+      out ? c.workers * clamp(0.75 - foodPerAnt / 8, 0.12, 0.7) : 0,
+      c.hungryLarvae * 0.6 + c.looseBrood * 0.4 + (queenHungry ? 1.5 : 0) + Math.min(3, this.brood.length * 0.15),
+      looseCorpses + looseTrash * 0.5,
+    ];
+    const doing = [c.byState[S_DIG], c.byState[S_FORAGE] + c.byState[S_CARRY], c.byState[S_NURSE], c.byState[S_CLEAN]];
+    for (let k = 0; k < 4; k++) this.stim[k] = clamp((demand[k] - doing[k]) / (demand[k] + 1) * 1.3, 0, 1);
+    // Braucht die Kolonie Platz zum Lagern? Dann graben die Ameisen eher Kammern als Gänge.
+    const roomCells = world.rooms.reduce((s, r) => s + r.size, 0);
+    let piles = 0;
+    for (const i of world.tunnels) piles += world.corpses[i] + world.trash[i];
+    this.need.room = clamp((this.foodTotal / 3 + this.brood.length + pop * 0.5 + piles / 4) / Math.max(10, roomCells) - 0.3, 0, 1);
+    this.starving = this.foodTotal === 0 && pop > 1;
+  },
+  roomInfo(r) {
+    const eggs = [0, 0, 0];
+    const set = new Set(r.cells);
+    for (const b of this.brood) if (!b.carried && set.has(b.cell)) eggs[b.s]++;
+    let here = 0;
+    for (let i = 0; i < ants.count; i++) if (set.has(idx(ants.cx[i], ants.cy[i]))) here++;
+    const rows = [["Größe", r.size + " Felder"]];
+    if (r.food) rows.push(["Futter", r.food]);
+    if (eggs[0] + eggs[1] + eggs[2]) rows.push(["Eier / Larven / Puppen", `${eggs[0]} / ${eggs[1]} / ${eggs[2]}`]);
+    if (r.corpses) rows.push(["Tote", r.corpses]);
+    if (r.trash) rows.push(["Abfall", r.trash]);
+    rows.push(["Ameisen hier", here]);
+    return [ROOM_NAMES[r.type], rows];
   },
 };
 
 // =====================================================================
-// AMEISEN: zentrale Arrays, Zustandsmaschine, Zeichnen in einem Durchgang
+// AMEISEN: Daten zentral in Arrays, gezeichnet in einem Durchgang
 // =====================================================================
 const MAX_ANTS = 320;
 const SPEED = [10, 11, 3];
 const ants = {
-  count: 0,
+  count: 0, nextId: 1, assignT: 0, kills: new Map(),
   px: new Float32Array(MAX_ANTS), py: new Float32Array(MAX_ANTS),
   cx: new Int16Array(MAX_ANTS), cy: new Int16Array(MAX_ANTS), tx: new Int16Array(MAX_ANTS), ty: new Int16Array(MAX_ANTS),
-  state: new Uint8Array(MAX_ANTS), phase: new Uint8Array(MAX_ANTS), role: new Uint8Array(MAX_ANTS), carry: new Uint8Array(MAX_ANTS),
-  face: new Uint8Array(MAX_ANTS), dir: new Int8Array(MAX_ANTS), gx: new Int16Array(MAX_ANTS), gy: new Int16Array(MAX_ANTS), tk: new Int16Array(MAX_ANTS),
+  state: new Uint8Array(MAX_ANTS), phase: new Uint8Array(MAX_ANTS), sub: new Uint8Array(MAX_ANTS), role: new Uint8Array(MAX_ANTS),
+  carry: new Uint8Array(MAX_ANTS), face: new Uint8Array(MAX_ANTS), dir: new Int8Array(MAX_ANTS), doing: new Uint8Array(MAX_ANTS),
+  gx: new Int16Array(MAX_ANTS), gy: new Int16Array(MAX_ANTS), tk: new Int16Array(MAX_ANTS), load: new Uint8Array(MAX_ANTS),
+  id: new Int32Array(MAX_ANTS), digSpot: new Int32Array(MAX_ANTS), bref: new Int32Array(MAX_ANTS), home: new Int32Array(MAX_ANTS),
+  dug: new Uint16Array(MAX_ANTS), fetched: new Uint16Array(MAX_ANTS),
   age: new Float32Array(MAX_ANTS), maxAge: new Float32Array(MAX_ANTS), hp: new Float32Array(MAX_ANTS), timer: new Float32Array(MAX_ANTS),
   wt: new Float32Array(MAX_ANTS), trail: new Float32Array(MAX_ANTS), anim: new Float32Array(MAX_ANTS),
-  kills: new Map(), assignT: 0,
-  KEYS: ["px", "py", "cx", "cy", "tx", "ty", "state", "phase", "role", "carry", "face", "dir", "gx", "gy", "tk", "age", "maxAge", "hp", "timer", "wt", "trail", "anim"],
+  energy: new Float32Array(MAX_ANTS), fatigue: new Float32Array(MAX_ANTS), speed: new Float32Array(MAX_ANTS),
+  th: new Float32Array(MAX_ANTS * 4),
+  KEYS: ["px", "py", "cx", "cy", "tx", "ty", "state", "phase", "sub", "role", "carry", "face", "dir", "doing", "gx", "gy", "tk", "load",
+    "id", "digSpot", "bref", "home", "dug", "fetched", "age", "maxAge", "hp", "timer", "wt", "trail", "anim", "energy", "fatigue", "speed"],
+  _queen: -1,
 
-  clear() { this.count = 0; this.kills.clear(); },
-  spawn(x, y, r, startAge = 0) {
+  clear() { this.count = 0; this.kills.clear(); this._queen = -1; },
+  queenIndex() {
+    if (this._queen >= 0 && this._queen < this.count && this.role[this._queen] === R_QUEEN) return this._queen;
+    for (let i = 0; i < this.count; i++) if (this.role[i] === R_QUEEN) return (this._queen = i);
+    return (this._queen = -1);
+  },
+  indexOfId(id) { for (let i = 0; i < this.count; i++) if (this.id[i] === id) return i; return -1; },
+  spawn(x, y, r, opts = {}) {
     if (this.count >= MAX_ANTS) return -1;
     const i = this.count++;
     this.px[i] = x * T + 1.5; this.py[i] = y * T + 1.5;
     this.cx[i] = this.tx[i] = this.gx[i] = this.tk[i] = x;
     this.cy[i] = this.ty[i] = this.gy[i] = y;
     this.role[i] = r;
-    this.state[i] = r === R_QUEEN ? S_QUEEN : (r === R_SOLDIER ? S_SOLDIER : S_IDLE);
-    this.phase[i] = 0; this.carry[i] = 0; this.face[i] = 0; this.dir[i] = 1;
-    this.age[i] = startAge;
-    this.maxAge[i] = r === R_QUEEN ? 1e9 : rf(300, 600);
+    this.state[i] = r === R_QUEEN ? S_QUEEN : S_IDLE;
+    this.phase[i] = 0; this.sub[i] = 0; this.carry[i] = 0; this.face[i] = 0; this.dir[i] = 1; this.doing[i] = D_IDLE; this.load[i] = 0;
+    this.id[i] = opts.id ?? (r === R_QUEEN ? 0 : this.nextId++);
+    this.digSpot[i] = -1; this.bref[i] = -1; this.home[i] = idx(x, y);
+    this.dug[i] = opts.dug || 0; this.fetched[i] = opts.fetched || 0;
+    this.age[i] = opts.age || 0;
+    this.maxAge[i] = opts.maxAge || (r === R_QUEEN ? 1e9 : rf(420, 780));
     this.hp[i] = r === R_QUEEN ? 3 : (r === R_SOLDIER ? 1.5 : 1);
     this.timer[i] = rf(0, 0.6); this.wt[i] = 0; this.trail[i] = 0; this.anim[i] = rand() * 4;
+    this.energy[i] = opts.energy ?? rf(0.7, 1); this.fatigue[i] = opts.fatigue ?? rf(0, 0.3);
+    this.speed[i] = opts.speed || rf(0.85, 1.15);
+    // eigene Vorlieben: niedrige Schwelle heißt, diese Arbeit reizt sie schnell
+    for (let k = 0; k < 4; k++) this.th[i * 4 + k] = opts.th ? opts.th[k] : rf(0.15, 0.85);
+    if (r === R_QUEEN) this._queen = i;
     return i;
   },
-  requestKill(i, corpse) { if (i >= 0 && i < this.count) this.kills.set(i, corpse); },
-  killRandomWorker() {
-    if (this.count <= 1) return;
-    for (let t = 0; t < 10; t++) { const i = Math.floor(rand() * this.count); if (this.role[i] !== R_QUEEN) { this.requestKill(i, true); return; } }
-  },
+  requestKill(i, corpse, cause) { if (i >= 0 && i < this.count && !this.kills.has(i)) this.kills.set(i, [corpse, cause]); },
   processKills() {
     if (!this.kills.size) return;
     const list = [...this.kills.keys()].sort((a, b) => b - a);
     for (const i of list) {
       if (i >= this.count) continue;
-      if (this.kills.get(i)) colony.addCorpse(this.cx[i], this.cy[i]); else colony.died++;
-      if (this.role[i] === R_QUEEN) { colony.queenAlive = false; hud.banner("Die Königin ist tot", 6); }
+      const [corpse, cause] = this.kills.get(i);
+      this.dropCarried(i);
+      if (corpse && this.cy[i] > G && isTunnel(this.cx[i], this.cy[i])) { world.corpses[idx(this.cx[i], this.cy[i])]++; markItems(); }
+      else if (corpse && this.cy[i] <= SURF) addGroundFood(this.cx[i], 1, "corpse");
+      colony.died++;
+      if (this.role[i] === R_QUEEN) { colony.queenAlive = false; colony.log("Die Königin ist gestorben", true); }
+      else if (cause && game.sel === this.id[i]) colony.log(`${antName(this.id[i])} ${cause}`, true);
+      else if (cause === "wurde von einem Vogel geschnappt") colony.log(`${antName(this.id[i])} ${cause}`);
       const j = this.count - 1;
-      if (i !== j) for (const k of this.KEYS) this[k][i] = this[k][j];
+      if (i !== j) {
+        for (const k of this.KEYS) this[k][i] = this[k][j];
+        for (let t = 0; t < 4; t++) this.th[i * 4 + t] = this.th[j * 4 + t];
+      }
       this.count--;
+      this._queen = -1;
     }
     this.kills.clear();
   },
-  setState(i, s) { this.state[i] = s; this.phase[i] = 0; this.wt[i] = 0; this.trail[i] = 0; },
+  // was eine sterbende Ameise trägt, fällt zu Boden
+  dropCarried(i) {
+    const cell = idx(this.cx[i], this.cy[i]), under = this.cy[i] > G && isTunnel(this.cx[i], this.cy[i]);
+    if (this.carry[i] === C_FOOD) { if (under) colony.addFood(cell); else addGroundFood(this.cx[i], 1, "fruit"); }
+    else if (this.carry[i] === C_CORPSE && under) world.corpses[cell]++;
+    else if (this.carry[i] === C_TRASH && under) world.trash[cell]++;
+    else if (this.carry[i] === C_BROOD) {
+      const b = colony.brood.find(q => q.id === this.bref[i]);
+      if (b) { b.carried = false; b.cell = under ? cell : idx(ENT, G + 1); }
+    }
+    this.carry[i] = C_NONE; this.bref[i] = -1;
+    markItems();
+  },
+  setState(i, s) { this.state[i] = s; this.phase[i] = 0; this.sub[i] = 0; this.wt[i] = 0; },
   countRole(r) { let n = 0; for (let i = 0; i < this.count; i++) if (this.role[i] === r) n++; return n; },
-  countState(s) { let n = 0; for (let i = 0; i < this.count; i++) if (this.state[i] === s) n++; return n; },
+  favorite(i) { let k = 0; for (let t = 1; t < 4; t++) if (this.th[i * 4 + t] < this.th[i * 4 + k]) k = t; return k; },
 
   tick(dt) {
     const wet = world.wet;
     for (let i = 0; i < this.count; i++) {
       this.age[i] += dt; this.wt[i] += dt;
-      if (this.age[i] > this.maxAge[i]) { this.requestKill(i, true); continue; }
+      if (this.age[i] > this.maxAge[i]) { this.requestKill(i, true, "ist an Altersschwäche gestorben"); continue; }
+      // Hunger und Müdigkeit
+      const resting = this.state[i] === S_REST, queen = this.role[i] === R_QUEEN;
+      this.energy[i] -= dt / (queen ? 280 : 210) * (resting ? 0.6 : 1);
+      if (!queen) this.fatigue[i] = clamp(this.fatigue[i] + (resting ? -dt / 22 : dt / 140), 0, 1.5);
+      if (this.energy[i] <= 0) {
+        this.energy[i] = 0;
+        this.hp[i] -= dt * 0.025;
+        if (this.hp[i] <= 0) { this.requestKill(i, true, "ist verhungert"); continue; }
+      }
       // Wasser in tiefen Gängen ertränkt Ameisen
       if (wet && waterAt(this.cx[i], this.cy[i]) > 0.55) {
-        this.hp[i] -= dt * (this.role[i] === R_QUEEN ? 0.05 : 0.7);
-        if (this.hp[i] <= 0) { this.requestKill(i, true); continue; }
+        this.hp[i] -= dt * (queen ? 0.05 : 0.7);
+        if (this.hp[i] <= 0) { this.requestKill(i, true, "ist in der Flut ertrunken"); continue; }
+      }
+      // Alarm: Arbeiterinnen fliehen, Soldatinnen eilen herbei
+      if (this.role[i] === R_WORKER && this.state[i] !== S_FLEE && this.cy[i] > G && world.alarm[idx(this.cx[i], this.cy[i])] > 0.3) {
+        this.dropCarried(i); this.setState(i, S_FLEE); this.timer[i] = 0;
       }
       if (this.timer[i] > 0) { this.timer[i] -= dt; this.anim[i] += dt * 0.5; continue; }
       const gx = this.tx[i] * T + 1.5, gy = this.ty[i] * T + 1.5;
       const dx = gx - this.px[i], dy = gy - this.py[i], dist = Math.sqrt(dx * dx + dy * dy);
-      let sp = SPEED[this.role[i]];
+      let sp = SPEED[this.role[i]] * this.speed[i];
       if (this.carry[i]) sp *= 0.8;
+      if (this.energy[i] < 0.15) sp *= 0.7;
       const step = sp * dt;
       if (dist <= step) {
         this.px[i] = gx; this.py[i] = gy; this.cx[i] = this.tx[i]; this.cy[i] = this.ty[i];
@@ -1019,42 +1392,8 @@ const ants = {
       }
     }
     this.processKills();
-    this.assignT += dt;
-    if (this.assignT > 0.7) { this.assignT = 0; this.assignJobs(); }
   },
-  // Freie Arbeiterinnen bekommen die Aufgabe, die gerade am meisten fehlt
-  assignJobs() {
-    const counts = [0, 0, 0, 0, 0, 0, 0, 0], idle = [];
-    let workers = 0;
-    for (let i = 0; i < this.count; i++) {
-      counts[this.state[i]]++;
-      if (this.role[i] === R_WORKER) {
-        workers++;
-        if (this.state[i] === S_IDLE && this.timer[i] <= 0 && this.cy[i] >= G) idle.push(i);
-      }
-    }
-    if (!idle.length) return;
-    idle.sort(() => rand() - 0.5);
-    const wantDig = colony.hasDigWork() ? clamp(2 + Math.floor(workers / 8), 2, 16) : 0;
-    const larvae = colony.larvae();
-    let wantNurse = 0;
-    if (larvae > 0) wantNurse = clamp(Math.ceil(larvae / 3), 1, 14);
-    else if (colony.brood.length && workers > 8) wantNurse = 1;
-    let wantUnder = 0;
-    if (colony.corpses.length || colony.trashWaiting >= 1) wantUnder = clamp(1 + Math.floor(colony.corpses.length / 3), 1, 6);
-    const wantForage = Math.max(2, Math.ceil(workers * 0.6));
-    const goOut = !events.isNight() && !events.raining;
-    for (const i of idle) {
-      let s = -1;
-      if (counts[S_NURSE] < wantNurse) s = S_NURSE;
-      else if (counts[S_UNDERTAKE] < wantUnder) s = S_UNDERTAKE;
-      else if (counts[S_DIG] < wantDig) s = S_DIG;
-      else if (goOut && counts[S_FORAGE] + counts[S_CARRY] < wantForage) s = S_FORAGE;
-      if (s < 0) continue;
-      counts[s]++; counts[S_IDLE]--;
-      this.setState(i, s);
-    }
-  },
+  killRandom() { for (let t = 0; t < 10; t++) { const i = Math.floor(rand() * this.count); if (this.role[i] !== R_QUEEN) return this.requestKill(i, true); } },
   draw(g, F) {
     buildAntAtlas();
     const half = ACELL >> 1;
@@ -1074,10 +1413,34 @@ const ants = {
       g.drawImage(antAtlas, fr * ACELL, f * ACELL, ACELL, ACELL, F + Math.round(x * PIX) - half, F + Math.round(y * PIX) - half, ACELL, ACELL);
     }
   },
+  pos(i) {
+    let y = this.py[i];
+    if (y < G * T && y > SURF * T - 1) y -= surfaceOffset(Math.floor(this.px[i] / T));
+    return [this.px[i], y];
+  },
 };
 
+function worldTick(dt) {
+  world.simTime += dt;
+  for (const s of world.sources) for (const f of s.fruits)
+    if (!f.alive) { f.t += dt; if (f.t > 24) { f.alive = true; sky.dirty = true; } }
+  world.frame++;
+  if (world.wet && world.frame % 3 === 0) waterStep();
+  if ((world.wet || world.waterShown) && world.frame % 6 === 0) waterRender();
+  // Duftmarken verblassen
+  if (world.frame % 30 === 0) for (const i of digPhActive) {
+    world.digPh[i] *= 0.92;
+    if (world.digPh[i] < 0.02) { world.digPh[i] = 0; digPhActive.delete(i); }
+  }
+  for (const i of alarmActive) {
+    world.alarm[i] *= 0.985;
+    if (world.alarm[i] < 0.01) { world.alarm[i] = 0; alarmActive.delete(i); }
+  }
+  rooms.tick(dt);
+}
+
 // Ameisen als fein gezeichnete Sprites in der Seitenansicht, Blick nach rechts
-const AFW = 12, AFH = 9, A_FRAMES = 14;   // Rahmen in Weltpixeln
+const AFW = 12, AFH = 9, A_FRAMES = 16;   // Rahmen in Weltpixeln
 let AS = 0;                               // Atlas-Pixel pro Weltpixel, passend zum Zoom
 const [antAtlas, antAtlasG] = canvas(1, 1);
 function drawAntShape(g, kind, phase, item) {
@@ -1151,6 +1514,9 @@ function drawAntShape(g, kind, phase, item) {
       g.beginPath(); g.ellipse(ix + 0.1, iy, 1.2, 0.55, 0.3, 0, Math.PI * 2); g.fill();
       g.strokeStyle = "#4a3a32"; g.lineWidth = 0.2;
       for (const o of [-0.4, 0.2, 0.7]) { g.beginPath(); g.moveTo(ix + o, iy + 0.3); g.lineTo(ix + o + 0.2, iy + 1.0); g.stroke(); }
+    } else if (item === C_BROOD) {
+      g.fillStyle = "#fbf6e8"; g.beginPath(); g.ellipse(ix, iy, 1.2, 0.75, 0.4, 0, Math.PI * 2); g.fill();
+      g.fillStyle = "#d9cfb0"; g.fillRect(ix - 0.2, iy - 0.6, 0.35, 1.2);
     } else {
       g.fillStyle = "#8f7048"; g.beginPath(); g.ellipse(ix, iy, 0.9, 0.6, 0.6, 0, Math.PI * 2); g.fill();
     }
@@ -1170,7 +1536,7 @@ function buildAntAtlas() {
   const frames = [];
   for (let a = 0; a < 2; a++) {
     frames[a] = [0, a, 0]; frames[2 + a] = [1, a, 0]; frames[4 + a] = [2, a, 0];
-    for (let c = 1; c < 5; c++) frames[4 + c * 2 + a] = [0, a, c];
+    for (let c = 1; c < 6; c++) frames[4 + c * 2 + a] = [0, a, c];
   }
   FACES.forEach(([a, b, c, d], o) => frames.forEach(([kind, phase, item], f) => {
     const k = AS * SS * (kind === 2 ? 1.15 : (kind === 1 ? 1.05 : 0.92));
@@ -1190,28 +1556,50 @@ function buildAntAtlas() {
   g.putImageData(img, 0, 0);
 }
 
-// ---------------------------------------------------------------- Zustandsmaschine einer Ameise
+
+// ---------------------------------------------------------------- Das Leben einer Ameise
+// Jede Ameise entscheidet selbst. Sie spürt Hunger und Müdigkeit, nimmt Reize aus dem Nest wahr
+// und vergleicht sie mit ihren eigenen Schwellen. Was sie oft tut, fällt ihr leichter.
 const Ant = {
   think(i) {
     switch (ants.state[i]) {
       case S_IDLE: return this.idle(i);
+      case S_REST: return this.rest(i);
+      case S_EAT: return this.eat(i);
       case S_DIG: return this.dig(i);
       case S_FORAGE: return this.forage(i);
-      case S_CARRY: return this.carry(i);
+      case S_CARRY: return this.carryFood(i);
       case S_NURSE: return this.nurse(i);
-      case S_UNDERTAKE: return this.undertake(i);
+      case S_CLEAN: return this.clean(i);
       case S_SOLDIER: return this.soldier(i);
       case S_QUEEN: return this.queen(i);
+      case S_FLEE: return this.flee(i);
     }
   },
   go(i, x, y) { ants.tx[i] = x; ants.ty[i] = y; },
   goIdx(i, c) { ants.tx[i] = c % W; ants.ty[i] = Math.floor(c / W); },
   wait(i, t) { ants.tx[i] = ants.cx[i]; ants.ty[i] = ants.cy[i]; ants.timer[i] = t; },
-  wander(i, ch = -1) {
-    const n = randomNeighbor(ants.cx[i], ants.cy[i], ch);
-    if (n === idx(ants.cx[i], ants.cy[i])) this.wait(i, 0.5); else this.goIdx(i, n);
+  cell(i) { return idx(ants.cx[i], ants.cy[i]); },
+  done(i, t = 0.3) { ants.setState(i, S_IDLE); this.wait(i, t); },
+  wander(i) {
+    const n = randomNeighbor(ants.cx[i], ants.cy[i]);
+    if (n === this.cell(i)) this.wait(i, 0.5); else this.goIdx(i, n);
   },
-  // Oberirdisch zurück zum Eingang und hinab. true, solange die Ameise oben ist.
+  learn(i, k) {
+    for (let t = 0; t < 4; t++) {
+      const j = i * 4 + t;
+      ants.th[j] = t === k ? Math.max(0.05, ants.th[j] - 0.025) : Math.min(1, ants.th[j] + 0.005);
+    }
+  },
+  effTh(i, k) {
+    // junge Ameisen pflegen lieber die Brut, ältere gehen lieber hinaus
+    const a = ants.age[i] / ants.maxAge[i];
+    let t = ants.th[i * 4 + k];
+    if (k === TK_NURSE) t += a * 0.5 - 0.15;
+    if (k === TK_FORAGE) t += 0.12 - a * 0.4;
+    return clamp(t, 0.03, 1.2);
+  },
+  // oberirdisch zurück zum Eingang und hinab; true, solange die Ameise oben ist
   headHome(i) {
     const x = ants.cx[i], y = ants.cy[i];
     if (y >= G) return false;
@@ -1219,8 +1607,8 @@ const Ant = {
     if (x !== ENT) this.go(i, x + sign(ENT - x), y); else this.go(i, x, G);
     return true;
   },
-  // Einem Wegfeld folgen. 0 = unterwegs, 1 = angekommen, 2 = kein Weg.
-  travel(i, fid) {
+  // einem Feld folgen: 0 unterwegs, 1 angekommen, 2 kein Weg
+  travelF(i, f) {
     if (this.headHome(i)) return 0;
     const x = ants.cx[i], y = ants.cy[i];
     if (!isTunnel(x, y)) {
@@ -1228,13 +1616,13 @@ const Ant = {
       if (t[0] !== x) this.go(i, x + sign(t[0] - x), y); else this.go(i, x, y + sign(t[1] - y));
       return 0;
     }
-    const s = nextStep(fid, x, y);
+    const s = stepOn(f, x, y);
     if (s === ARRIVED) return 1;
     if (s === NO_PATH) return 2;
     this.goIdx(i, s);
     return 0;
   },
-  pick(fids) { for (const f of fids) if (hasField(f)) return f; return F_EXIT; },
+  travel(i, fid) { return hasField(fid) ? this.travelF(i, fields[fid]) : (this.headHome(i) ? 0 : 2); },
   goSurface(i) {
     if (ants.cy[i] < G) return true;
     const r = this.travel(i, F_EXIT);
@@ -1242,86 +1630,212 @@ const Ant = {
     return false;
   },
 
+  // ---- frei: Bedürfnisse zuerst, dann eine Aufgabe nach eigenem Geschmack
   idle(i) {
-    if (this.headHome(i)) return;
+    ants.doing[i] = D_IDLE;
+    if (this.headHome(i)) { ants.doing[i] = D_HOME; return; }
     if (!isTunnel(ants.cx[i], ants.cy[i])) { this.travel(i, F_EXIT); return; }
-    if (hasField(F_QUEEN) && fieldValue(F_QUEEN, ants.cx[i], ants.cy[i]) > 22 && this.travel(i, F_QUEEN) === 0) return;
-    if (rand() < 0.4) this.wait(i, rf(0.5, 2)); else this.wander(i);
+    if (ants.energy[i] < 0.35 && colony.foodTotal > 0) { ants.setState(i, S_EAT); return this.eat(i); }
+    const night = events.isNight();
+    if (ants.fatigue[i] > 1 || (night && ants.fatigue[i] > 0.15 && rand() < 0.5)) { ants.setState(i, S_REST); return this.rest(i); }
+    if (ants.role[i] === R_SOLDIER) { ants.setState(i, S_SOLDIER); return this.soldier(i); }
+    const order = [0, 1, 2, 3].sort(() => rand() - 0.5);
+    for (const k of order) {
+      const s = colony.stim[k], th = this.effTh(i, k);
+      if (s > 0 && rand() < (s * s) / (s * s + th * th)) { ants.setState(i, TASK_STATE[k]); return this.think(i); }
+    }
+    // nichts reizt sie gerade: zum Herz des Nests schlendern oder kurz verweilen
+    if (hasField(F_QUEEN) && qDist(this.cell(i)) > 12 && rand() < 0.5 && this.travel(i, F_QUEEN) === 0) return;
+    if (rand() < 0.5) this.wait(i, rf(0.6, 2)); else this.wander(i);
+  },
+  rest(i) {
+    const night = events.isNight();
+    ants.doing[i] = night ? D_SLEEP : D_REST;
+    if (this.headHome(i)) return;
+    if (ants.phase[i] === 0) {
+      if (hasField(F_QUEEN) && qDist(this.cell(i)) > 10 && this.travel(i, F_QUEEN) === 0) return;
+      ants.phase[i] = 1;
+      return this.wait(i, rf(4, 9));
+    }
+    if (ants.fatigue[i] < 0.15 && !(night && rand() < 0.7)) return this.done(i, 0.2);
+    this.wait(i, rf(3, 7));
+  },
+  eat(i) {
+    ants.doing[i] = D_EAT;
+    const r = this.travel(i, F_FOOD);
+    if (r === 0) return;
+    if (r === 1 && colony.takeFood(this.cell(i))) {
+      ants.energy[i] = 1; ants.hp[i] = Math.max(ants.hp[i], ants.role[i] === R_SOLDIER ? 1.5 : 1);
+      if (rand() < 0.12) { world.trash[this.cell(i)] = Math.min(9, world.trash[this.cell(i)] + 1); markItems(); }
+      return this.done(i, 1.2);
+    }
+    this.done(i, r === 2 ? 1 : 0.2);
+  },
+
+  // ---- Graben: ohne Plan, nur nach Duftmarken, Platzbedarf und eigener Laune
+  digScore(c, ax, ay, last) {
+    const x = c % W, y = Math.floor(c / W);
+    if (y < G + 3 && Math.abs(x - ENT) > 2) return -1e9;
+    if (y > H - 4 || x < 3 || x > W - 4) return -1e9;
+    // aus welcher Richtung wird gegraben?
+    let dxn = 0, dyn = 0, nt = 0;
+    for (const [dx, dy] of [[0, 1], [1, 0], [-1, 0], [0, -1]]) if (isTunnel(x - dx, y - dy)) { dxn = dx; dyn = dy; nt++; }
+    if (!nt) return -1e9;
+    const soil = (xx, yy) => !inGrid(xx, yy) || world.cells[idx(xx, yy)] === SOIL;
+    const px = -dyn, py = dxn;
+    // vorne bleibt Erde, damit kein Gang in einen anderen bricht
+    if (!soil(x + dxn, y + dyn) || !soil(x + 2 * dxn, y + 2 * dyn) || !soil(x + dxn + px, y + dyn + py) || !soil(x + dxn - px, y + dyn - py)) return -1e9;
+    let n3 = 0, n5 = 0, nearRoom = -1;
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+      if (!isTunnel(x + dx, y + dy)) continue;
+      n5++;
+      if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) { n3++; const r = world.roomOf[idx(x + dx, y + dy)]; if (r >= 0) nearRoom = r; }
+    }
+    const room = colony.need.room;
+    const lateral = soil(x + px, y + py) && soil(x - px, y - py) && soil(x + 2 * px, y + 2 * py) && soil(x - 2 * px, y - 2 * py)
+      && soil(x + dxn + 2 * px, y + dyn + 2 * py) && soil(x + dxn - 2 * px, y + dyn - 2 * py)
+      && soil(x + 3 * px, y + 3 * py) && soil(x - 3 * px, y - 3 * py);
+    let s = rand() * 0.6 + world.digPh[c] * 0.8;
+    if (nt === 1 && lateral) {
+      // Gang verlängern oder abzweigen, mit dicken Wänden. Abzweigungen sind seltener.
+      s += (1 - room) * 0.9 + 0.2;
+      s += dyn > 0 ? 0.2 : (dyn < 0 ? -0.8 : 0.2);
+      // Abzweigung von einem Gang: selten und nur mit Abstand zu anderen Abzweigungen
+      if (isTunnel(x - dxn + px, y - dyn + py) || isTunnel(x - dxn - px, y - dyn - py)) {
+        s -= 1.4;
+        for (let k = -6; k <= 6; k++) if (k && (!soil(x + px * k, y + py * k) || !soil(x + dxn + px * k, y + dyn + py * k))) return -1e9;
+      }
+    } else if (room > 0.12 && y > G + 5 && (nearRoom >= 0 || n3 >= 3 || world.digPh[c] > 0.35)) {
+      // Kammer erweitern, aber nicht zu groß und nicht in andere Gänge hinein
+      if (n5 > 13) return -1e9;
+      if (nearRoom >= 0 && world.rooms[nearRoom] && world.rooms[nearRoom].size > 44) return -1e9;
+      s += room * 1.5;
+    } else return -1e9;
+    s += (y - G) / H * 0.5;
+    s -= Math.hypot(x - ax, y - ay) * 0.025;
+    if (last >= 0 && c - last === dxn + dyn * W) s += 1.0;
+    return s;
+  },
+  chooseDigSite(i, near) {
+    const L = frontier.list;
+    if (!L.length) return -1;
+    const ax = near >= 0 ? near % W : ants.cx[i], ay = near >= 0 ? Math.floor(near / W) : ants.cy[i];
+    const cand = [];
+    const R = near >= 0 ? 2 : 6;
+    for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
+      const x = ax + dx, y = ay + dy;
+      if (inGrid(x, y) && frontier.pos[idx(x, y)] >= 0) cand.push(idx(x, y));
+    }
+    if (near < 0) {
+      for (let k = 0; k < 12; k++) cand.push(L[Math.floor(rand() * L.length)]);
+      // Stellen mit Duftmarken (frisch gegraben oder neben Vorräten) bekommen eine Chance
+      if (rand() < 0.5 + colony.need.room * 0.5) {
+        let n = 0;
+        for (const j of digPhActive) {
+          if (frontier.pos[j] >= 0 && world.digPh[j] > 0.3 && rand() < 0.5) { cand.push(j); if (++n >= 16) break; }
+        }
+      }
+    }
+    let best = -1, bs = -1e8;
+    for (const c of cand) { const s = this.digScore(c, ax, ay, near); if (s > bs) { bs = s; best = c; } }
+    return best;
   },
   dig(i) {
+    const spot = ants.digSpot[i];
     switch (ants.phase[i]) {
       case 0: {
-        const r = this.travel(i, F_DIG);
-        if (r === 2) {
-          if (ants.carry[i] === C_DIRT) { ants.phase[i] = 2; return this.dig(i); }
-          ants.setState(i, S_IDLE); this.wait(i, 0.3);
-        } else if (r === 1) {
-          const t = colony.digTargetNear(ants.cx[i], ants.cy[i]);
-          if (!t) { world.dirty[F_DIG] = true; this.wait(i, 0.4); return; }
-          ants.gx[i] = t[0]; ants.gy[i] = t[1]; ants.phase[i] = 1;
-          ants.face[i] = t[0] > ants.cx[i] ? 0 : (t[0] < ants.cx[i] ? 1 : (t[1] < ants.cy[i] ? 2 : 3));
-          this.wait(i, digTime(t[1]));
+        ants.doing[i] = D_DIG;
+        if (ants.carry[i] === C_DIRT && ants.load[i] >= 3) { ants.phase[i] = 3; return this.dig(i); }
+        if (!(spot >= 0 && world.cells[spot] === SOIL && frontier.pos[spot] >= 0)) ants.digSpot[i] = this.chooseDigSite(i, -1);
+        if (ants.digSpot[i] < 0) return ants.carry[i] === C_DIRT ? ((ants.phase[i] = 3), this.dig(i)) : this.done(i);
+        ants.phase[i] = 1;
+        return this.dig(i);
+      }
+      case 1: {
+        ants.doing[i] = D_DIG;
+        if (spot < 0 || world.cells[spot] !== SOIL) { ants.digSpot[i] = -1; ants.phase[i] = 0; return this.wait(i, 0.1); }
+        const r = this.travelF(i, fieldTo(spot));
+        if (r === 1) {
+          const sx = spot % W, sy = Math.floor(spot / W);
+          ants.face[i] = sx > ants.cx[i] ? 0 : (sx < ants.cx[i] ? 1 : (sy < ants.cy[i] ? 2 : 3));
+          ants.phase[i] = 2;
+          return this.wait(i, digTime(sy) / ants.speed[i]);
         }
+        if (r === 2) { ants.digSpot[i] = -1; if (ants.carry[i] === C_DIRT) ants.phase[i] = 3; else return this.done(i); }
         return;
       }
-      case 1:
-        if (cellAt(ants.gx[i], ants.gy[i]) === SOIL) {
-          dig(ants.gx[i], ants.gy[i]); colony.onDug();
-          ants.carry[i] = C_DIRT; ants.trail[i] += 1;
+      case 2: {
+        const sx = spot % W, sy = Math.floor(spot / W);
+        if (spot >= 0 && dig(sx, sy)) {
+          ants.dug[i]++; colony.dugTotal++;
+          ants.carry[i] = C_DIRT; ants.load[i]++;
         }
-        // erst mit voller Ladung nach oben
-        if (ants.carry[i] === C_DIRT && (ants.trail[i] >= 3 || !colony.hasDigWork())) { ants.phase[i] = 2; return this.dig(i); }
-        ants.phase[i] = 0; this.wait(i, 0.1);
-        return;
-      case 2:
+        ants.digSpot[i] = this.chooseDigSite(i, spot);
+        ants.phase[i] = ants.load[i] >= 3 || ants.digSpot[i] < 0 ? 3 : 1;
+        return this.wait(i, 0.1);
+      }
+      case 3:
+        ants.doing[i] = D_HAUL;
         if (this.goSurface(i)) {
-          ants.phase[i] = 3;
+          ants.phase[i] = 4;
           ants.gx[i] = clamp(ENT + (rand() < 0.5 ? -1 : 1) * ri(2, 11), 2, W - 3);
           return this.dig(i);
         }
         return;
-      case 3: {
+      case 4: {
+        ants.doing[i] = D_HAUL;
         const x = ants.cx[i];
-        if (x !== ants.gx[i]) this.go(i, x + sign(ants.gx[i] - x), SURF);
-        else {
-          for (let k = 0; k < Math.max(1, Math.floor(ants.trail[i])); k++) addDirt(x + k % 2);
-          ants.trail[i] = 0; ants.carry[i] = C_NONE; ants.phase[i] = 4; this.wait(i, 0.3);
-        }
-        return;
+        if (x !== ants.gx[i]) return this.go(i, x + sign(ants.gx[i] - x), SURF);
+        for (let k = 0; k < Math.max(1, ants.load[i]); k++) addDirt(x + k % 2);
+        ants.load[i] = 0; ants.carry[i] = C_NONE; ants.phase[i] = 5;
+        return this.wait(i, 0.3);
       }
-      case 4:
-        if (!this.headHome(i)) { ants.phase[i] = 0; this.dig(i); }
+      case 5:
+        ants.doing[i] = D_HOME;
+        if (this.headHome(i)) return;
+        this.learn(i, TK_DIG);
+        if (colony.stim[TK_DIG] < 0.05 || rand() < 0.25 + (1 - colony.stim[TK_DIG]) * 0.5 || ants.energy[i] < 0.35 || ants.fatigue[i] > 1) return this.done(i, 0.2);
+        ants.phase[i] = 0;
+        return this.dig(i);
     }
   },
+
+  // ---- Futtersuche: oben herumlaufen, Duftspuren folgen, sich an gute Stellen erinnern
   forage(i) {
     if (ants.phase[i] <= 1 && (events.isNight() || events.raining)) { ants.setState(i, S_IDLE); return this.idle(i); }
+    ants.doing[i] = D_SEARCH;
     switch (ants.phase[i]) {
       case 0:
         if (this.goSurface(i)) {
           ants.phase[i] = 1; ants.wt[i] = 0; ants.dir[i] = rand() < 0.5 ? -1 : 1;
-          // Gedächtnis: zurück zur letzten ergiebigen Quelle
-          const mem = sourceAt(ants.tk[i]);
-          if (mem >= 0 && ants.tk[i] !== ants.cx[i] && hasFruit(mem) && rand() < 0.75) {
-            ants.dir[i] = sign(ants.tk[i] - ants.cx[i]);
-            ants.trail[i] = -Math.abs(ants.tk[i] - ants.cx[i]);
+          const mem = ants.tk[i], src = sourceAt(mem);
+          if (mem !== ants.cx[i] && ((src >= 0 && hasFruit(src)) || groundFoodAt(mem)) && rand() < 0.75) {
+            ants.dir[i] = sign(mem - ants.cx[i]);
+            ants.trail[i] = -Math.abs(mem - ants.cx[i]);
           }
           this.forage(i);
         }
         return;
       case 1: {
-        if (ants.wt[i] > 50) { ants.setState(i, S_IDLE); return this.idle(i); }
-        const x = ants.cx[i], si = sourceAt(x);
+        if (ants.wt[i] > 60 || ants.energy[i] < 0.25) { ants.setState(i, S_IDLE); return this.idle(i); }
+        const x = ants.cx[i];
+        const g = groundFoodAt(x);
+        if (g) {
+          g.n--;
+          ants.tk[i] = x; ants.carry[i] = C_FOOD; ants.setState(i, S_CARRY); ants.trail[i] = 1;
+          return this.carryFood(i);
+        }
+        const si = sourceAt(x);
         if (si >= 0) {
           if (hasFruit(si) && rand() < 0.85) {
             const f = pickFruit(si);
             ants.tk[i] = x; ants.gx[i] = f.x; ants.gy[i] = f.y; ants.phase[i] = 2;
             return this.forage(i);
           }
-          if (!hasFruit(si)) ants.trail[i] = -10;   // leere Quelle: Duft eine Weile ignorieren
+          if (!hasFruit(si)) ants.trail[i] = -10;
         }
         if (ants.trail[i] < 0) ants.trail[i] += 1;
         else {
-          // Der Duft ist nahe am Futter am stärksten: dem Anstieg folgen
           const far = phero.sense(x, SURF, 6);
           if (far[0] + far[1] > 0.08) {
             const near = phero.sense(x, SURF, 2);
@@ -1331,14 +1845,12 @@ const Ant = {
         }
         let nx = x + ants.dir[i];
         if (nx < 1 || nx > W - 2) { ants.dir[i] = -ants.dir[i]; nx = x + ants.dir[i]; }
-        this.go(i, nx, SURF);
-        return;
+        return this.go(i, nx, SURF);
       }
       case 2: {
-        // den Stamm hoch und am Ast entlang zur Frucht
         const x = ants.cx[i], y = ants.cy[i];
         if (x === ants.gx[i] && y === ants.gy[i]) {
-          if (takeFruit(x, y)) { ants.carry[i] = C_FOOD; ants.setState(i, S_CARRY); ants.trail[i] = 1; return this.carry(i); }
+          if (takeFruit(x, y)) { ants.carry[i] = C_FOOD; ants.setState(i, S_CARRY); ants.trail[i] = 1; return this.carryFood(i); }
           ants.phase[i] = 3; return this.forage(i);
         }
         if (y > ants.gy[i] && x === ants.tk[i]) this.go(i, x, y - 1);
@@ -1353,117 +1865,220 @@ const Ant = {
       }
     }
   },
-  carry(i) {
+  // ---- Futter heimtragen: oben eine Spur legen, unten zum nächsten Vorrat oder in die Tiefe
+  carryFood(i) {
+    ants.doing[i] = D_FETCH;
     if (ants.phase[i] === 0) {
-      // oben: zum Eingang und dabei eine Duftspur legen
       if (ants.cy[i] < G) {
         phero.deposit(ants.cx[i], ants.cy[i], ants.trail[i]);
         ants.trail[i] = Math.max(0.25, ants.trail[i] * 0.975);
         this.headHome(i);
         return;
       }
-      ants.phase[i] = 1;
+      ants.phase[i] = hasField(F_FOOD) ? 1 : 2;
     }
-    const r = this.travel(i, this.pick([F_GRANARY, F_QUEEN]));
-    if (r !== 0) { colony.storeFood(colony.FRUIT_FOOD); ants.carry[i] = C_NONE; ants.setState(i, S_IDLE); this.wait(i, 0.5); }
+    ants.doing[i] = D_STORE;
+    const c = this.cell(i);
+    if (ants.phase[i] === 1) {
+      const r = this.travel(i, F_FOOD);
+      if (r === 0) return;
+      if (r === 2) { ants.phase[i] = 2; return this.carryFood(i); }
+    } else {
+      const ex = getField(F_EXIT)[c];
+      const s = ex < 14 ? stepAway(getField(F_EXIT), ants.cx[i], ants.cy[i]) : ARRIVED;
+      if (s !== ARRIVED) return this.goIdx(i, s);
+    }
+    // eine Frucht ergibt drei Portionen im Vorrat
+    if (!colony.addFood(c)) { ants.phase[i] = 2; return this.wander(i); }
+    colony.addFood(c); colony.addFood(c);
+    ants.carry[i] = C_NONE; ants.fetched[i]++; colony.delivered++;
+    this.learn(i, TK_FORAGE);
+    this.done(i, 0.5);
   },
+
+  // ---- Brutpflege: Königin füttern, Larven füttern, Brut in die Brutkammer tragen
   nurse(i) {
-    switch (ants.phase[i]) {
-      case 0: {
-        if (!colony.brood.length) { ants.setState(i, S_IDLE); return this.idle(i); }
-        const r = this.travel(i, this.pick([F_GRANARY, F_QUEEN]));
-        if (r !== 0) { if (colony.takeFood(0.3)) ants.carry[i] = C_FOOD; ants.phase[i] = 1; this.wait(i, 0.4); }
-        return;
-      }
-      case 1: {
-        const r = this.travel(i, this.pick([F_BROOD, F_QUEEN]));
-        if (r !== 0) {
-          if (ants.carry[i] === C_FOOD) { colony.feedLarva(); ants.carry[i] = C_NONE; }
-          ants.phase[i] = 2; ants.wt[i] = 0; this.wait(i, 0.6);
-        }
-        return;
-      }
-      case 2: {
-        // Brut pflegen: in der Kammer umhergehen
-        if (ants.wt[i] > 7) {
-          if (colony.hungryLarvae() > 0) { ants.phase[i] = 0; return this.nurse(i); }
-          ants.setState(i, S_IDLE); return this.wait(i, 0.5);
-        }
-        const ch = chamberAt(ants.cx[i], ants.cy[i]);
-        if (rand() < 0.4) this.wait(i, rf(0.4, 1.2)); else this.wander(i, ch || -1);
-      }
-    }
-  },
-  undertake(i) {
+    const q = ants.queenIndex(), c = this.cell(i);
     switch (ants.phase[i]) {
       case 0:
-        if (colony.corpses.length) {
-          const r = this.travel(i, F_CORPSE);
-          if (r === 1) {
-            if (colony.takeCorpseAt(ants.cx[i], ants.cy[i])) { ants.carry[i] = C_CORPSE; ants.phase[i] = 1; this.wait(i, 0.4); }
-            else this.wait(i, 0.2);
-          } else if (r === 2) {
-            if (colony.trashWaiting >= 1) ants.phase[i] = 3; else ants.setState(i, S_IDLE);
-            this.wait(i, 0.3);
-          }
-        } else if (colony.trashWaiting >= 1) { ants.phase[i] = 3; this.undertake(i); }
-        else { ants.setState(i, S_IDLE); this.idle(i); }
-        return;
+        if (q >= 0 && ants.energy[q] < 0.55 && colony.foodTotal > 0) { ants.sub[i] = 1; ants.phase[i] = 1; }
+        else if (colony.counts.hungryLarvae > 0 && colony.foodTotal > 0 && hasField(F_HUNGRY)) { ants.sub[i] = 2; ants.phase[i] = 1; }
+        else if (hasField(F_LOOSEBROOD)) { ants.sub[i] = 3; ants.phase[i] = 3; }
+        else { ants.sub[i] = 4; ants.phase[i] = 5; ants.wt[i] = 0; }
+        return this.nurse(i);
       case 1: {
-        // Tote zum Friedhof
-        const r = this.travel(i, this.pick([F_CEMETERY, F_TRASH, F_EXIT]));
-        if (r !== 0) { colony.bury(); ants.carry[i] = C_NONE; ants.setState(i, S_IDLE); this.wait(i, 0.4); }
-        return;
+        ants.doing[i] = ants.sub[i] === 1 ? D_FEEDQUEEN : D_FEEDLARVA;
+        const r = this.travel(i, F_FOOD);
+        if (r === 0) return;
+        if (r === 1 && colony.takeFood(c)) { ants.carry[i] = C_FOOD; ants.phase[i] = 2; return this.wait(i, 0.4); }
+        return this.done(i);
+      }
+      case 2: {
+        ants.doing[i] = ants.sub[i] === 1 ? D_FEEDQUEEN : D_FEEDLARVA;
+        const r = this.travel(i, ants.sub[i] === 1 ? F_QUEEN : F_HUNGRY);
+        if (r === 0) return;
+        let fed = false;
+        if (r === 1 && ants.sub[i] === 1 && q >= 0) { ants.energy[q] = Math.min(1, ants.energy[q] + 0.45); fed = true; }
+        if (r === 1 && ants.sub[i] === 2) {
+          let best = null;
+          for (const b of colony.brood) if (b.cell === c && b.s === 1 && !b.carried && (!best || b.fed < best.fed)) best = b;
+          if (best) { best.fed = 1; best.starve = 0; fed = true; fieldDirty[F_HUNGRY] = true; }
+        }
+        if (!fed) colony.addFood(c);
+        ants.carry[i] = C_NONE;
+        if (fed) this.learn(i, TK_NURSE);
+        return this.done(i, 0.6);
       }
       case 3: {
-        const r = this.travel(i, this.pick([F_GRANARY, F_QUEEN]));
-        if (r !== 0) {
-          if (colony.takeTrash()) { ants.carry[i] = C_TRASH; ants.phase[i] = 4; } else ants.setState(i, S_IDLE);
-          this.wait(i, 0.3);
+        ants.doing[i] = D_MOVEBROOD;
+        const r = this.travel(i, F_LOOSEBROOD);
+        if (r === 0) return;
+        const b = r === 1 ? colony.brood.find(q2 => q2.cell === c && !q2.carried) : null;
+        if (!b) return this.done(i);
+        b.carried = true; ants.bref[i] = b.id; ants.carry[i] = C_BROOD; ants.phase[i] = 4; markItems();
+        return this.wait(i, 0.4);
+      }
+      case 4: {
+        ants.doing[i] = D_MOVEBROOD;
+        let here = false;
+        if (hasField(F_BROODPILE)) {
+          const r = this.travel(i, F_BROODPILE);
+          if (r === 0) return;
+          here = true;
+        } else {
+          getField(F_QUEEN);
+          if (qDist(c) >= 5) here = true;
+          else {
+            const s = stepAway(fields[F_QUEEN], ants.cx[i], ants.cy[i]);
+            if (s === ARRIVED) here = true; else return this.goIdx(i, s);
+          }
+        }
+        if (here) {
+          const b = colony.brood.find(q2 => q2.id === ants.bref[i]);
+          if (b) { b.carried = false; b.cell = this.cell(i); pileMark(b.cell); }
+          ants.bref[i] = -1; ants.carry[i] = C_NONE; markItems();
+          this.learn(i, TK_NURSE);
+          return this.done(i, 0.5);
         }
         return;
       }
-      case 4: {
-        // Abfall in die Müllkammer
-        const r = this.travel(i, this.pick([F_TRASH, F_CEMETERY, F_EXIT]));
-        if (r !== 0) { colony.dumpTrash(); ants.carry[i] = C_NONE; ants.setState(i, S_IDLE); this.wait(i, 0.4); }
+      case 5: {
+        ants.doing[i] = D_FEEDLARVA;
+        if (ants.wt[i] > 6) return this.done(i);
+        const fid = hasField(F_BROODPILE) ? F_BROODPILE : F_QUEEN;
+        if (getField(fid)[c] > 2 && this.travel(i, fid) === 0) return;
+        if (rand() < 0.5) this.wait(i, rf(0.5, 1.5)); else this.wander(i);
       }
     }
   },
+
+  // ---- Aufräumen: Tote weit weg vom Nestherz, Abfall auf einen eigenen Haufen
+  clean(i) {
+    const c = this.cell(i);
+    switch (ants.phase[i]) {
+      case 0:
+        if (hasField(F_LOOSECORPSE)) ants.sub[i] = 1;
+        else if (hasField(F_LOOSETRASH)) ants.sub[i] = 2;
+        else return this.done(i);
+        ants.phase[i] = 1;
+        return this.clean(i);
+      case 1: {
+        ants.doing[i] = ants.sub[i] === 1 ? D_CORPSE : D_TRASH;
+        const r = this.travel(i, ants.sub[i] === 1 ? F_LOOSECORPSE : F_LOOSETRASH);
+        if (r === 0) return;
+        const arr = ants.sub[i] === 1 ? world.corpses : world.trash;
+        if (r !== 1 || arr[c] === 0) return this.done(i);
+        arr[c]--; markItems();
+        ants.carry[i] = ants.sub[i] === 1 ? C_CORPSE : C_TRASH; ants.phase[i] = 2;
+        return this.wait(i, 0.4);
+      }
+      case 2: {
+        ants.doing[i] = ants.sub[i] === 1 ? D_CORPSE : D_TRASH;
+        const corpse = ants.sub[i] === 1, pile = corpse ? F_GRAVE : F_DUMP;
+        let here = false;
+        if (hasField(pile)) {
+          const r = this.travel(i, pile);
+          if (r === 0) return;
+          here = true;
+        } else {
+          getField(F_QUEEN);
+          const avoid = corpse ? null : (n => world.corpses[n] > 0 || world.food[n] > 0);
+          const s = stepAway(fields[F_QUEEN], ants.cx[i], ants.cy[i], avoid);
+          if (s === ARRIVED) here = true; else return this.goIdx(i, s);
+        }
+        if (here) {
+          const arr = corpse ? world.corpses : world.trash;
+          const d = dropCell(this.cell(i), arr, corpse ? 6 : 8);
+          if (d >= 0) arr[d]++; else arr[this.cell(i)] = Math.min(255, arr[this.cell(i)] + 1);
+          pileMark(d >= 0 ? d : this.cell(i));
+          ants.carry[i] = C_NONE; markItems();
+          this.learn(i, TK_CLEAN);
+          return this.done(i, 0.5);
+        }
+      }
+    }
+  },
+
+  // ---- Soldatinnen: wachen nahe der Königin, folgen dem Alarmduft
   soldier(i) {
+    ants.doing[i] = D_PATROL;
     if (events.centActive && !events.centFleeing) {
-      const hx = events.centX, hy = events.centY;
-      if (Math.hypot(ants.px[i] - hx, ants.py[i] - hy) < 90 && hy > G * T) {
-        // Angriff: direkt auf den Kopf zu, notfalls durch die Erde
-        const cx = Math.floor(hx / T), cy = Math.floor(hy / T), x = ants.cx[i], y = ants.cy[i];
-        if (Math.abs(cx - x) <= 1 && Math.abs(cy - y) <= 1) this.wait(i, 0.25);
-        else if (Math.abs(cx - x) > Math.abs(cy - y)) this.go(i, x + sign(cx - x), y);
-        else this.go(i, x, Math.max(G, y + sign(cy - y)));
-        return;
+      const d = Math.hypot(ants.px[i] - events.centX, ants.py[i] - events.centY);
+      if (d < 40 && events.centY > G * T) {
+        ants.doing[i] = D_DEFEND;
+        const hx = Math.floor(events.centX / T), hy = Math.floor(events.centY / T), x = ants.cx[i], y = ants.cy[i];
+        if (Math.abs(hx - x) <= 1 && Math.abs(hy - y) <= 1) return this.wait(i, 0.25);
+        if (Math.abs(hx - x) > Math.abs(hy - y)) return this.go(i, x + sign(hx - x), y);
+        return this.go(i, x, Math.max(G + 1, y + sign(hy - y)));
       }
     }
     if (this.headHome(i)) return;
-    if (hasField(F_QUEEN) && fieldValue(F_QUEEN, ants.cx[i], ants.cy[i]) > 16 && this.travel(i, F_QUEEN) === 0) return;
-    if (!isTunnel(ants.cx[i], ants.cy[i])) { this.travel(i, F_EXIT); return; }
+    const x = ants.cx[i], y = ants.cy[i];
+    if (!isTunnel(x, y)) { this.travel(i, F_EXIT); return; }
+    let best = -1, bv = 0.04;
+    for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) if (isTunnel(x + dx, y + dy)) {
+      const v = world.alarm[idx(x + dx, y + dy)];
+      if (v > bv) { bv = v; best = idx(x + dx, y + dy); }
+    }
+    if (best >= 0) { ants.doing[i] = D_DEFEND; return this.goIdx(i, best); }
+    if (ants.energy[i] < 0.35 && colony.foodTotal > 0) { ants.setState(i, S_EAT); return this.eat(i); }
+    if (ants.fatigue[i] > 1) { ants.setState(i, S_REST); return this.rest(i); }
+    if (hasField(F_QUEEN) && qDist(this.cell(i)) > 14 && this.travel(i, F_QUEEN) === 0) return;
     if (rand() < 0.5) this.wait(i, rf(0.5, 2.5)); else this.wander(i);
   },
+  flee(i) {
+    ants.doing[i] = D_FLEE;
+    const x = ants.cx[i], y = ants.cy[i], here = world.alarm[this.cell(i)];
+    if (here < 0.05 && ants.wt[i] > 2) return this.done(i, 0.5);
+    let best = -1, bv = here;
+    for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) if (isTunnel(x + dx, y + dy) && y + dy > G) {
+      const v = world.alarm[idx(x + dx, y + dy)];
+      if (v < bv) { bv = v; best = idx(x + dx, y + dy); }
+    }
+    if (best >= 0) this.goIdx(i, best); else this.wander(i);
+  },
   queen(i) {
-    if (chamberAt(ants.cx[i], ants.cy[i]) !== CH_QUEEN && hasField(F_QUEEN) && this.travel(i, F_QUEEN) === 0) return;
-    if (rand() < 0.6) this.wait(i, rf(1, 3)); else this.wander(i, CH_QUEEN);
+    if (ants.doing[i] !== D_LAY || rand() < 0.3) ants.doing[i] = D_REST;
+    const f = fieldTo(ants.home[i]), c = this.cell(i);
+    if (f[c] > 3 && f[c] < INF) { const s = stepOn(f, ants.cx[i], ants.cy[i]); if (s >= 0) return this.goIdx(i, s); }
+    if (rand() < 0.6) return this.wait(i, rf(1, 3));
+    const n = randomNeighbor(ants.cx[i], ants.cy[i]);
+    if (f[n] <= 3) this.goIdx(i, n); else this.wait(i, 1);
   },
 };
 
 // =====================================================================
-// EREIGNISSE: Tag und Nacht, Flut, Tausendfüßler
+// EREIGNISSE: Tag und Nacht, Flut, Tausendfüßler, Vögel, Käfer und Fallobst
 // =====================================================================
 const DAY_LENGTH = 300, SEGS = 12, SPACING = 3;
 const events = {
   time: 0.3, day: 1, raining: false, rainT: 0, nextFlood: 0, drops: [],
   centActive: false, centFleeing: false, centX: 0, centY: 0, centHp: 0, angle: 0, life: 0, segs: [], nextCent: 0, eatCd: 0,
   targetX: 0, targetY: 0, targetT: 0, walk: 0,
+  bird: null, nextBird: 0, nextBeetle: 0, fruitT: 0,
   reset() {
     this.raining = false; this.centActive = false; this.drops = [];
-    this.nextFlood = rf(300, 450); this.nextCent = rf(200, 320);
+    this.nextFlood = rf(300, 450); this.nextCent = rf(200, 320); this.bird = null; this.nextBird = rf(160, 260); this.nextBeetle = rf(90, 180);
   },
   daylight() { return clamp(0.5 - 0.5 * Math.cos(this.time * Math.PI * 2), 0, 1); },
   isNight() { return this.daylight() < 0.2; },
@@ -1479,11 +2094,13 @@ const events = {
     if (this.time >= 1) { this.time -= 1; this.day++; }
     this.tickFlood(dt);
     this.tickCentipede(dt);
+    this.tickBird(dt);
+    this.tickSurface(dt);
   },
   tickFlood(dt) {
     if (!this.raining) {
       this.nextFlood -= dt;
-      if (this.nextFlood <= 0 && colony.tunnelCount() > 220) this.startFlood();
+      if (this.nextFlood <= 0 && world.tunnels.length > 220) this.startFlood();
       return;
     }
     this.rainT -= dt;
@@ -1495,7 +2112,7 @@ const events = {
     }
     if (this.rainT <= 0) { this.raining = false; this.drops = []; this.nextFlood = rf(220, 420); }
   },
-  startFlood() { this.raining = true; this.rainT = 20; hud.banner("Flut! Der Regen läuft ins Nest", 4); },
+  startFlood() { this.raining = true; this.rainT = 20; colony.log("Flut! Der Regen läuft ins Nest", true); },
   startCentipede() {
     this.centActive = true; this.centFleeing = false; this.centHp = 24; this.life = 0; this.eatCd = 1;
     const left = rand() < 0.5;
@@ -1504,7 +2121,7 @@ const events = {
     this.segs = [];
     for (let k = 0; k < SEGS; k++) this.segs.push([this.centX - Math.cos(this.angle) * SPACING * k, this.centY]);
     this.targetX = ENT * T; this.targetY = (G + 20) * T;
-    hud.banner("Ein Tausendfüßler greift an", 4);
+    colony.log("Ein Tausendfüßler greift an", true);
   },
   tickCentipede(dt) {
     if (!this.centActive) {
@@ -1515,7 +2132,7 @@ const events = {
     this.life += dt; this.walk += dt;
     if (!this.centFleeing && (this.centHp <= 0 || this.life > 40)) {
       this.centFleeing = true;
-      if (this.centHp <= 0) hud.banner("Die Soldaten verjagen den Tausendfüßler", 4);
+      if (this.centHp <= 0) colony.log("Die Soldatinnen haben den Tausendfüßler verjagt", true);
     }
     // Ziel: nächste Ameise unter der Erde
     this.targetT -= dt;
@@ -1546,18 +2163,93 @@ const events = {
     }
     // fressen und kämpfen
     this.eatCd -= dt;
+    // Alarmduft: wer den Tausendfüßler sieht, warnt die anderen
+    if (!this.centFleeing) addAlarm(Math.floor(this.centX / T), Math.floor(this.centY / T), dt * 3);
     if (!this.centFleeing) for (let i = 0; i < ants.count; i++) {
       const d = Math.hypot(ants.px[i] - this.centX, ants.py[i] - this.centY);
+      if (d < 18 && ants.cy[i] > G) addAlarm(ants.cx[i], ants.cy[i], dt * 2);
       if (d > 7) continue;
       if (ants.role[i] === R_SOLDIER) this.centHp -= 2.6 * dt;
       else if (d < 4.5) {
         this.centHp -= 0.35 * dt;
-        if (this.eatCd <= 0 && ants.role[i] !== R_QUEEN) { ants.requestKill(i, false); this.eatCd = 3; }
+        if (this.eatCd <= 0 && ants.role[i] !== R_QUEEN) { ants.requestKill(i, false, "wurde vom Tausendfüßler gefressen"); this.eatCd = 3; }
       }
     }
     if (this.centFleeing && (this.centX < -30 || this.centX > WPX + 30)) { this.centActive = false; this.nextCent = rf(150, 300); }
   },
+  // Ein Vogel jagt tagsüber Ameisen an der Oberfläche
+  tickBird(dt) {
+    const b = this.bird;
+    if (!b) {
+      this.nextBird -= dt;
+      if (this.nextBird > 0 || this.isNight() || this.raining) return;
+      let on = 0;
+      for (let i = 0; i < ants.count; i++) if (ants.cy[i] <= SURF) on++;
+      if (on < 2) return;
+      const left = rand() < 0.5;
+      this.bird = { x: left ? -12 : WPX + 12, y: rf(14, 26), vx: left ? 38 : -38, mode: 0, target: -1, flap: 0, tx: 0, ty: 0 };
+      return;
+    }
+    b.flap += dt * 10;
+    if (b.mode === 0) {
+      b.x += b.vx * dt; b.y += Math.sin(b.flap * 0.3) * dt * 3;
+      // Beute suchen: eine Ameise auf dem Boden unter dem Vogel
+      for (let i = 0; i < ants.count; i++) {
+        if (ants.cy[i] > SURF || ants.role[i] === R_QUEEN) continue;
+        if (Math.abs(ants.px[i] - b.x - b.vx * 0.4) < 6 && rand() < 0.5) { b.mode = 1; b.target = ants.id[i]; break; }
+      }
+      if (b.x < -20 || b.x > WPX + 20) { this.bird = null; this.nextBird = rf(140, 260); }
+    } else if (b.mode === 1) {
+      const i = ants.indexOfId(b.target);
+      if (i < 0 || ants.cy[i] > SURF) { b.mode = 2; return; }
+      const dx = ants.px[i] - b.x, dy = ants.py[i] - 2 - b.y, d = Math.hypot(dx, dy);
+      if (d < 2.5) { ants.requestKill(i, false, "wurde von einem Vogel geschnappt"); b.mode = 2; b.prey = true; return; }
+      b.x += dx / d * 55 * dt; b.y += dy / d * 55 * dt;
+    } else {
+      b.y -= 30 * dt; b.x += b.vx * dt;
+      if (b.y < -15 || b.x < -20 || b.x > WPX + 20) { this.bird = null; this.nextBird = rf(140, 260); }
+    }
+  },
+  // Fallobst, tote Käfer und Verderben an der Oberfläche
+  tickSurface(dt) {
+    this.fruitT -= dt;
+    if (this.fruitT <= 0) {
+      this.fruitT = 1;
+      for (const s of world.sources) for (const f of s.fruits) if (f.alive && s.kind === 0 && rand() < 0.0015) {
+        f.alive = false; f.t = 0; sky.dirty = true;
+        addGroundFood(f.x + ri(-1, 1), 2, "fruit");
+      }
+    }
+    this.nextBeetle -= dt;
+    if (this.nextBeetle <= 0) {
+      this.nextBeetle = rf(200, 380);
+      let x = ri(4, W - 5);
+      if (Math.abs(x - ENT) < 6) x = clamp(x + 12, 4, W - 5);
+      addGroundFood(x, 12, "beetle");
+      colony.log("Ein toter Käfer liegt im Gras", true);
+    }
+    for (let k = world.groundFood.length - 1; k >= 0; k--) {
+      const g = world.groundFood[k];
+      g.t += dt;
+      const life = g.kind === "beetle" ? 420 : (g.kind === "sugar" ? 360 : (g.kind === "corpse" ? 60 : 200));
+      if (g.n <= 0 || g.t > life) world.groundFood.splice(k, 1);
+    }
+  },
+  drawBird(F) {
+    const b = this.bird;
+    if (!b) return;
+    const up = Math.sin(b.flap) > 0, dir = b.vx > 0 ? 1 : -1;
+    P.fill("#3b3f4a").ellipse(b.x, b.y, 2.6, 1.3);
+    P.fill("#2a2d36").disc(b.x + dir * 2.4, b.y - 0.6, 1.1);
+    P.fill("#f2b33a").rect(b.x + dir * 3.3 - (dir < 0 ? 1 : 0), b.y - 0.6, 1, 0.5);
+    P.fill("#4c5260");
+    if (up) { P.line(b.x - dir * 0.5, b.y - 0.5, b.x - dir * 2, b.y - 3.5); P.line(b.x + dir * 0.2, b.y - 0.5, b.x - dir * 0.6, b.y - 3.5); }
+    else { P.line(b.x - dir * 0.5, b.y + 0.3, b.x - dir * 2.5, b.y + 2.6); P.line(b.x + dir * 0.2, b.y + 0.3, b.x - dir * 0.8, b.y + 2.6); }
+    P.fill("#2a2d36").line(b.x - dir * 2.4, b.y, b.x - dir * 4, b.y + 0.6);
+    if (b.prey) P.fill("#2a140e").rect(b.x + dir * 2.6, b.y + 1, 1.5, 0.5);
+  },
   draw(F) {
+    this.drawBird(F);
     if (this.drops.length) {
       P.fill("rgba(190,215,250,0.7)");
       for (const d of this.drops) P.line(d[0], d[1], d[0] - 0.5, d[1] + 3);
@@ -1585,6 +2277,7 @@ const events = {
     }
   },
 };
+
 
 // =====================================================================
 // HIMMEL: Sonne, Mond, Wolken, Bäume, Büsche, Gras, Blumen, Sandhügel
@@ -1731,52 +2424,60 @@ const sky = {
 };
 
 // =====================================================================
-// KAMMERINHALT: Futter, Eier, Larven, Tote, Abfall
+
+// =====================================================================
+// GEGENSTÄNDE: Futter, Brut, Tote, Abfall im Nest und Futter an der Oberfläche
 // =====================================================================
 const decor = {
-  slots: [[0.7, 2.0], [2.2, 2.0], [1.5, 0.9]],
-  sorted(ch) { return [...world.chamberCells[ch]].sort((a, b) => b - a); },
+  slots: [[0.7, 2.1], [2.3, 2.1], [1.5, 1.0], [0.6, 0.9], [2.4, 0.9]],
   deadAnt(x, y) {
     P.fill("#3b2a22").ellipse(x - 0.6, y, 1.1, 0.6).disc(x + 0.9, y - 0.1, 0.55);
     P.line(x - 0.4, y + 0.2, x, y - 0.9); P.line(x + 0.4, y + 0.2, x + 0.8, y - 0.9);
   },
   draw() {
     const foodCols = ["#d8352a", "#f08c2a", "#f2c84b"];
-    const gran = this.sorted(CH_GRANARY);
-    let k = 0;
-    const items = Math.floor(colony.food);
-    outer: for (const cell of gran) for (const s of this.slots) {
-      if (k >= items) break outer;
-      P.fill(foodCols[hash2(cell, k) % 3]).disc((cell % W) * T + s[0], Math.floor(cell / W) * T + s[1], 0.75);
-      k++;
+    for (const i of world.tunnels) {
+      const f = world.food[i], c = world.corpses[i], t = world.trash[i];
+      if (!f && !c && !t) continue;
+      const x = (i % W) * T, y = Math.floor(i / W) * T;
+      for (let k = 0; k < f; k++) P.fill(foodCols[hash2(i, k) % 3]).disc(x + this.slots[k][0], y + this.slots[k][1], 0.8);
+      for (let k = 0; k < Math.min(t, 5); k++) P.fill(hash2(i, k + 9) % 2 ? "#8b806b" : "#6e5236").ellipse(x + this.slots[k][0], y + this.slots[k][1] + 0.3, 0.7, 0.45);
+      for (let k = 0; k < Math.min(c, 3); k++) this.deadAnt(x + 1.5 + (k % 2 ? 0.6 : -0.3), y + 2.2 - k * 0.9);
     }
-    P.fill("#6e5236");
-    for (let n = 0; n < Math.min(Math.floor(colony.trashWaiting), gran.length); n++) {
-      const c = gran[gran.length - 1 - n]; P.rect((c % W) * T + 1.2, Math.floor(c / W) * T + 2, 0.5, 0.5);
-    }
-    let bi = 0;
     for (const b of colony.brood) {
-      const c = b[4], o = hash2(c, bi++) % 3 * 0.6, x = (c % W) * T + 0.8 + o, y = Math.floor(c / W) * T + 1.9;
-      if (b[0] === 0) P.fill("#fbf6e8").ellipse(x, y, 0.5, 0.8);
-      else {
-        P.fill(b[2] > 0.3 ? "#f6e3b0" : "#d9d2bf").ellipse(x, y, 1.1, 0.75);
+      if (b.carried) continue;
+      const h = hash2(b.id, 3), x = (b.cell % W) * T + 0.6 + (h % 4) * 0.55, y = Math.floor(b.cell / W) * T + 1.4 + ((h >> 4) % 3) * 0.45;
+      if (b.s === 0) P.fill("#fbf6e8").ellipse(x, y, 0.5, 0.8);
+      else if (b.s === 1) {
+        P.fill(b.fed > 0.3 ? "#f6e3b0" : "#d2c8b0").ellipse(x, y, 1.1, 0.75);
         P.fill("rgba(120,90,50,0.5)").rect(x - 0.3, y - 0.5, 0.5, 1);
+      } else {
+        P.fill("#c9a46a").ellipse(x, y, 1.3, 0.8);
+        P.fill("#a9844d").rect(x - 0.6, y - 0.5, 0.5, 1);
       }
     }
-    const cem = this.sorted(CH_CEMETERY);
-    for (let n = 0; n < Math.min(colony.buried, cem.length * 2); n++) {
-      const c = cem[n % cem.length]; this.deadAnt((c % W) * T + 1.5, Math.floor(c / W) * T + (n < cem.length ? 2.2 : 1.0));
-    }
-    const tr = this.sorted(CH_TRASH);
-    for (let n = 0; n < Math.min(colony.trashStored, tr.length * 3); n++) {
-      const c = tr[n % tr.length], s = this.slots[Math.floor(n / tr.length) % 3];
-      P.fill(hash2(c, n) % 2 ? "#8b806b" : "#6e5236").ellipse((c % W) * T + s[0], Math.floor(c / W) * T + s[1], 0.7, 0.5);
-    }
-    for (const c of colony.corpses) this.deadAnt((c % W) * T + 1.5, Math.floor(c / W) * T + 2);
-    for (const sc of colony.surfaceCorpses) {
-      P.g.globalAlpha = clamp(1 - sc[2] / 30, 0, 1);
-      this.deadAnt(sc[0], sc[1] + 0.8 - surfaceOffset(Math.floor(sc[0] / T)));
-      P.g.globalAlpha = 1;
+    // Futter an der Oberfläche
+    for (const g of world.groundFood) {
+      const x = g.x * T + 1.5, y = SURF * T + 2.4 - surfaceOffset(g.x);
+      if (g.kind === "fruit") {
+        for (let k = 0; k < Math.min(g.n, 3); k++) {
+          P.fill("#9e1f18").disc(x + k * 1.6 - 1, y - 0.2, 1.3);
+          P.fill("#d4352a").disc(x + k * 1.6 - 1.1, y - 0.4, 1.2);
+          P.fill("#ffc2b4").dot(x + k * 1.6 - 1.6, y - 0.9);
+        }
+      } else if (g.kind === "sugar") {
+        for (let k = 0; k < Math.min(g.n, 8); k++) {
+          const h = hash2(k, g.x);
+          P.fill(k % 3 ? "#ffffff" : "#e6e9ef").rect(x - 2 + (h % 5), y - 0.5 - ((h >> 3) % 3) * 0.7, 1, 1);
+        }
+      } else if (g.kind === "beetle") {
+        const s = 0.55 + 0.45 * g.n / g.max;
+        P.fill("#1d2a24");
+        for (const o of [-1.6, 0, 1.6]) { P.line(x + o * s, y, x + o * s - 0.8, y + 1.2); P.line(x + o * s, y, x + o * s + 0.8, y + 1.2); }
+        P.fill("#2c4a3a").ellipse(x, y - 0.6, 3.6 * s, 1.9 * s);
+        P.fill("#1d2a24").disc(x + 3.6 * s, y - 0.4, 1.0 * s);
+        P.fill("#5f8f74").rect(x - 1.5 * s, y - 1.9 * s, 2 * s, 0.5);
+      } else this.deadAnt(x, y);
     }
   },
 };
@@ -1808,24 +2509,37 @@ function buildFrame() {
 }
 
 // =====================================================================
-// ANZEIGE: HTML über dem Spielfeld, gut lesbar in jeder Größe
+
+// =====================================================================
+// ANZEIGE: Schild, Kammer-Infos, Ameisen-Steckbrief, Kolonie-Panel, Werkzeuge
 // =====================================================================
 const $ = id => document.getElementById(id);
-const ICON_PAUSE = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1.2"/><rect x="14" y="5" width="4" height="14" rx="1.2"/></svg>';
-const ICON_PLAY = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.2-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>';
+const ICON_PAUSE = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>';
+const ICON_PLAY = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5h2v2h2v2h2v2h2v2h-2v2h-2v2h-2v2H8z"/></svg>';
+const TASK_GROUPS = [
+  ["Graben", "#b07a4a", [D_DIG, D_HAUL]],
+  ["Futter holen", "#e0a43a", [D_SEARCH, D_FETCH, D_STORE]],
+  ["Brutpflege", "#a07cb0", [D_FEEDLARVA, D_FEEDQUEEN, D_MOVEBROOD]],
+  ["Aufräumen", "#8e9a7e", [D_CORPSE, D_TRASH]],
+  ["Wache", "#c95a42", [D_PATROL, D_DEFEND]],
+  ["Ruhe und Essen", "#6f8fa8", [D_REST, D_SLEEP, D_EAT, D_IDLE, D_HOME, D_FLEE, D_LAY]],
+];
 const hud = {
-  infoT: 0, bannerT: 0, hintT: 10, t: 0, last: {},
+  infoT: 0, bannerT: 0, hintT: 12, t: 0, last: {}, panelOpen: false,
   set(id, v) { if (this.last[id] !== v) { this.last[id] = v; $(id).textContent = v; } },
-  showInfo(title, rows, ch) {
-    $("infoTitle").textContent = title;
-    $("swatch").style.background = ch > 0 ? css(CHAMBER_COLORS[ch]) : "#8a7a5a";
-    const dl = $("infoRows");
+  rows(dl, rows) {
     dl.replaceChildren();
     for (const [k, v] of rows) {
       const dt = document.createElement("dt"), dd = document.createElement("dd");
       dt.textContent = k; dd.textContent = v;
       dl.append(dt, dd);
     }
+  },
+  showInfo(title, rows, ch) {
+    this.closeAnt();
+    $("infoTitle").textContent = title;
+    $("swatch").style.background = ch > 0 ? css(CHAMBER_COLORS[ch]) : "#8a6a48";
+    this.rows($("infoRows"), rows);
     $("info").hidden = false; $("hint").hidden = true;
     this.infoT = 6; this.hintT = 0;
   },
@@ -1835,25 +2549,137 @@ const hud = {
     $("btnPause").innerHTML = game.paused ? ICON_PLAY : ICON_PAUSE;
     $("btnPause").setAttribute("aria-label", game.paused ? "Weiter" : "Pause");
     $("btnSpeed").textContent = game.speed + "×";
+    $("btnFeed").classList.toggle("on", game.feedMode);
+    $("btnFeed").setAttribute("aria-pressed", game.feedMode ? "true" : "false");
+  },
+  // ---- Steckbrief einer Ameise
+  openAnt(i) {
+    this.hideInfo(); this.closePanel();
+    game.sel = ants.id[i]; game.follow = true;
+    $("antCard").hidden = false; $("hint").hidden = true; this.hintT = 0;
+    this.updateAnt();
+  },
+  closeAnt() { game.sel = null; game.follow = false; $("antCard").hidden = true; },
+  updateAnt() {
+    if (game.sel === null) return;
+    const i = ants.indexOfId(game.sel);
+    if (i < 0) { this.closeAnt(); return; }
+    const role = ants.role[i];
+    this.set("antName", antName(ants.id[i]));
+    this.set("antRole", role === R_QUEEN ? "Königin" : (role === R_SOLDIER ? "Soldatin" : "Arbeiterin"));
+    this.set("antDoing", DOING[ants.doing[i]]);
+    $("barFood").style.width = Math.round(clamp(ants.energy[i], 0, 1) * 100) + "%";
+    $("barTired").style.width = Math.round(clamp(ants.fatigue[i], 0, 1) * 100) + "%";
+    $("barFood").classList.toggle("low", ants.energy[i] < 0.3);
+    const ageMin = Math.floor(ants.age[i] / 60);
+    const rows = [["Alter", role === R_QUEEN ? `${events.day} Tage` : (ageMin < 1 ? "frisch geschlüpft" : ageMin + " Min.")]];
+    if (role === R_WORKER) rows.push(["Liebste Arbeit", TASK_NAMES[ants.favorite(i)]]);
+    if (role === R_QUEEN) rows.push(["Eier gelegt", colony.eggsLaid]);
+    else rows.push(["Felder gegraben", ants.dug[i]], ["Futter geholt", ants.fetched[i]]);
+    const key = rows.map(r => r.join(":")).join("|");
+    if (this.last.antRows !== key) { this.last.antRows = key; this.rows($("antRows"), rows); }
+  },
+  // ---- Kolonie-Panel
+  openPanel() { this.closeAnt(); this.hideInfo(); this.panelOpen = true; $("panel").hidden = false; $("confirmNew").hidden = true; this.updatePanel(); },
+  closePanel() { this.panelOpen = false; $("panel").hidden = true; },
+  updatePanel() {
+    const c = colony.counts || {};
+    const eggs = c.eggs || 0, larvae = c.larvae || 0, pupae = c.pupae || 0;
+    this.set("tPop", String(ants.count));
+    this.set("tSoldiers", String(ants.countRole(R_SOLDIER)));
+    this.set("tBrood", `${eggs + larvae + pupae}`);
+    this.set("tBroodSub", `${eggs} Eier · ${larvae} Larven · ${pupae} Puppen`);
+    this.set("tFood", String(colony.foodTotal));
+    this.set("tRooms", String(world.rooms.filter(r => r.type).length));
+    this.set("tTunnels", String(world.tunnels.length));
+    this.set("tBorn", String(colony.born));
+    this.set("tDied", String(colony.died));
+    // Aufgabenverteilung
+    const cnt = TASK_GROUPS.map(() => 0);
+    for (let i = 0; i < ants.count; i++) TASK_GROUPS.forEach((g, k) => { if (g[2].includes(ants.doing[i])) cnt[k]++; });
+    const total = Math.max(1, ants.count);
+    const bars = $("taskBars");
+    if (!bars.children.length) for (const g of TASK_GROUPS) {
+      const row = document.createElement("div");
+      row.className = "task";
+      row.innerHTML = `<span class="tname"></span><span class="track"><span class="fill" style="background:${g[1]}"></span></span><span class="tnum"></span>`;
+      row.querySelector(".tname").textContent = g[0];
+      bars.append(row);
+    }
+    [...bars.children].forEach((row, k) => {
+      row.querySelector(".fill").style.width = Math.round(cnt[k] / total * 100) + "%";
+      row.querySelector(".tnum").textContent = cnt[k];
+    });
+    this.drawChart();
+    const ol = $("chron"), key = colony.entries.length + ":" + (colony.entries[0] ? colony.entries[0].text : "");
+    if (this.last.chron !== key) {
+      this.last.chron = key;
+      ol.replaceChildren();
+      for (const e of colony.entries.slice(0, 14)) {
+        const li = document.createElement("li");
+        const d = document.createElement("span"); d.className = "day"; d.textContent = "Tag " + e.day;
+        li.append(d, document.createTextNode(e.text));
+        ol.append(li);
+      }
+      if (!colony.entries.length) { const li = document.createElement("li"); li.textContent = "Noch ist nichts Besonderes passiert."; ol.append(li); }
+    }
+  },
+  drawChart() {
+    const cvs = $("chart"), g = cvs.getContext("2d"), w = cvs.width, h = cvs.height, hist = colony.history.concat([[ants.count, colony.foodTotal]]);
+    g.fillStyle = "#132a1b"; g.fillRect(0, 0, w, h);
+    g.fillStyle = "#24442e";
+    for (let y = 0; y < h; y += 20) g.fillRect(0, y, w, 1);
+    const maxV = Math.max(10, ...hist.map(p => Math.max(p[0], p[1])));
+    const n = hist.length;
+    const plot = (k, col) => {
+      g.fillStyle = col;
+      let py = null;
+      for (let s = 0; s < n; s++) {
+        const x = Math.round(n === 1 ? w - 3 : s / (n - 1) * (w - 3)), y = Math.round(h - 3 - hist[s][k] / maxV * (h - 8));
+        if (py !== null) { const a = Math.min(py, y), b = Math.max(py, y); g.fillRect(x, a, 3, b - a + 3); }
+        g.fillRect(x, y, 3, 3);
+        py = y;
+      }
+    };
+    plot(1, "#e0a43a");
+    plot(0, "#f4edd3");
   },
   tick(dt) {
     if (this.infoT > 0 && (this.infoT -= dt) <= 0) this.hideInfo();
     if (this.bannerT > 0 && (this.bannerT -= dt) <= 0) $("banner").hidden = true;
     if (this.hintT > 0 && (this.hintT -= dt) <= 0) $("hint").hidden = true;
+    if (game.feedCd > 0) {
+      game.feedCd = Math.max(0, game.feedCd - dt);
+      $("feedCd").style.height = Math.round(game.feedCd / 20 * 100) + "%";
+    }
     this.t -= dt;
     if (this.t > 0) return;
     this.t = 0.25;
     this.set("pop", String(ants.count));
-    this.set("food", String(Math.floor(colony.food)));
+    this.set("food", String(colony.foodTotal));
     this.set("day", String(events.day));
     const hungry = colony.starving;
     if (this.last.hunger !== hungry) { this.last.hunger = hungry; $("hunger").hidden = !hungry; }
+    this.updateAnt();
+    if (this.panelOpen) this.updatePanel();
   },
 };
 $("btnPause").addEventListener("click", () => { game.paused = !game.paused; hud.updateButtons(); });
 $("btnSpeed").addEventListener("click", () => { game.speed = game.speed >= 4 ? 1 : game.speed * 2; hud.updateButtons(); });
+$("btnFeed").addEventListener("click", () => {
+  if (game.feedCd > 0 && !game.feedMode) return hud.banner("Der Zucker ist gleich wieder bereit", 2);
+  game.feedMode = !game.feedMode; hud.updateButtons();
+  if (game.feedMode) hud.banner("Tippe auf das Gras, um Zucker zu streuen", 3);
+});
 $("info").addEventListener("click", () => hud.hideInfo());
 $("hint").addEventListener("click", () => { $("hint").hidden = true; hud.hintT = 0; });
+$("sign").addEventListener("click", () => hud.panelOpen ? hud.closePanel() : hud.openPanel());
+$("panelClose").addEventListener("click", () => hud.closePanel());
+$("antClose").addEventListener("click", () => hud.closeAnt());
+$("antFollow").addEventListener("click", () => { game.follow = true; if (view.z < 2.5) animateZoom(3, view.cssW / 2, view.cssH / 2); });
+$("btnNew").addEventListener("click", () => { $("confirmNew").hidden = false; });
+$("btnNewNo").addEventListener("click", () => { $("confirmNew").hidden = true; });
+$("btnNewYes").addEventListener("click", () => { try { localStorage.removeItem(SAVE_KEY); } catch (_) { } hud.closePanel(); newGame(); });
 
 // =====================================================================
 // KAMERA UND EINGABE: zwei Finger zoomen, ein Finger schiebt, Doppeltippen zoomt
@@ -1915,7 +2741,7 @@ cv.addEventListener("pointerdown", e => {
 });
 cv.addEventListener("pointermove", e => {
   const p = pos(e);
-  if (rightDrag) { view.x -= e.movementX / scale(); view.y -= e.movementY / scale(); clampView(); return; }
+  if (rightDrag) { game.follow = false; view.x -= e.movementX / scale(); view.y -= e.movementY / scale(); clampView(); return; }
   if (!pointers.has(e.pointerId)) return;
   const old = pointers.get(e.pointerId);
   pointers.set(e.pointerId, p);
@@ -1932,6 +2758,7 @@ cv.addEventListener("pointermove", e => {
   if (tapStart && !tapStart.moved && Math.hypot(p[0] - tapStart.x, p[1] - tapStart.y) > TAP_MOVE) tapStart.moved = true;
   if (!tapStart || tapStart.moved) {
     // ein Finger verschiebt die Ansicht
+    game.follow = false;
     view.x -= (p[0] - old[0]) / scale(); view.y -= (p[1] - old[1]) / scale();
     clampView();
   }
@@ -1953,6 +2780,7 @@ cv.addEventListener("wheel", e => {
 }, { passive: false });
 document.addEventListener("gesturestart", e => e.preventDefault());
 
+
 function onTap(sx, sy) {
   const now = performance.now();
   if (now - lastTap.t < 320 && Math.hypot(sx - lastTap.x, sy - lastTap.y) < TAP_MOVE * 2.5) {
@@ -1963,19 +2791,45 @@ function onTap(sx, sy) {
   lastTap = { t: now, x: sx, y: sy };
   if (navigator.vibrate) try { navigator.vibrate(10); } catch (_) { }
   const [wx, wy] = toWorld(sx, sy), x = Math.floor(wx / T), y = Math.floor(wy / T);
-  if (!inGrid(x, y)) return hud.hideInfo();
-  if (y >= G) {
+  // Zucker streuen
+  if (game.feedMode) {
+    if (y >= 2 && y <= G && x >= 1 && x < W - 1) {
+      addGroundFood(x, 8, "sugar");
+      game.feedMode = false; game.feedCd = 20;
+      hud.updateButtons();
+      hud.banner("Zucker liegt im Gras. Mal sehen, wer ihn findet", 3);
+    } else hud.banner("Tippe auf das Gras über der Erde", 2);
+    return;
+  }
+  // Ameise antippen
+  const reach = Math.max(3.5, 16 / scale());
+  let best = -1, bd = reach;
+  for (let i = 0; i < ants.count; i++) {
+    const [ax, ay] = ants.pos(i), d = Math.hypot(ax - wx, ay - wy);
+    if (d < bd) { bd = d; best = i; }
+  }
+  if (best >= 0) return hud.openAnt(best);
+  if (!inGrid(x, y)) { hud.hideInfo(); hud.closeAnt(); return; }
+  if (y > G) {
     for (let r = 0; r < 3; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
-      const ch = chamberAt(x + dx, y + dy);
-      if (ch && isTunnel(x + dx, y + dy)) { const info = colony.chamberInfo(ch); return hud.showInfo(info[0], info[1], ch); }
+      if (!inGrid(x + dx, y + dy)) continue;
+      const rid = world.roomOf[idx(x + dx, y + dy)];
+      if (rid >= 0 && world.rooms[rid]) { const r2 = world.rooms[rid], info = colony.roomInfo(r2); return hud.showInfo(info[0], info[1], r2.type); }
     }
-    if (isTunnel(x, y)) return hud.showInfo("Gang", [["Ameisen", ants.count], ["Soldaten", ants.countRole(R_SOLDIER)], ["Beim Graben", ants.countState(S_DIG)]], 0);
+    if (isTunnel(x, y)) return hud.showInfo("Gang", [["Ameisen im Nest", ants.count], ["Gegrabene Felder", world.tunnels.length]], 0);
     return hud.showInfo("Erde", [["Schicht", layerOf(y) + 1], ["Tiefe", (y - G) * 3 + " mm"]], 0);
   }
-  for (const s of world.sources) if (Math.abs(s.trunk - x) <= s.r && y >= s.cy - s.r) {
-    return hud.showInfo(s.kind === 0 ? "Baum" : "Busch", [["Reife Früchte", s.fruits.filter(f => f.alive).length], ["Ameisen auf Futtersuche", ants.countState(S_FORAGE)]], 0);
+  const g = world.groundFood.find(q => Math.abs(q.x - x) <= 2 && y >= SURF - 3);
+  if (g) {
+    const names = { fruit: "Fallobst", sugar: "Zucker", beetle: "Toter Käfer", corpse: "Tote Ameise" };
+    return hud.showInfo(names[g.kind], [["Noch übrig", g.n + " Portionen"]], 0);
   }
-  hud.hideInfo();
+  for (const s of world.sources) if (Math.abs(s.trunk - x) <= s.r && y >= s.cy - s.r) {
+    let n = 0;
+    for (let i = 0; i < ants.count; i++) if (ants.doing[i] === D_SEARCH) n++;
+    return hud.showInfo(s.kind === 0 ? "Apfelbaum" : "Beerenbusch", [["Reife Früchte", s.fruits.filter(f => f.alive).length], ["Ameisen auf Futtersuche", n]], 0);
+  }
+  hud.hideInfo(); hud.closeAnt();
 }
 
 let wakeLock = null;
@@ -1987,54 +2841,67 @@ async function requestWakeLock() {
 // =====================================================================
 // SPIEL: Takt, Zeichnen, Speichern
 // =====================================================================
-const game = { paused: false, speed: 1, deadT: -1, saveT: 0 };
+const game = { paused: false, speed: 1, deadT: -1, saveT: 0, sel: null, follow: false, feedMode: false, feedCd: 0 };
 
 function newGame() {
   newWorld(Math.floor(rand() * 1e6) + 1);
   phero.clear();
-  colony.newColony();
-  ants.clear();
-  events.reset();
-  ants.spawn(ENT, 54, R_QUEEN);
-  const cells = world.chamberCells[CH_QUEEN];
-  for (let k = 0; k < 5; k++) { const c = cells[Math.floor(rand() * cells.length)]; ants.spawn(c % W, Math.floor(c / W), R_WORKER, rf(0, 60)); }
-  game.deadT = -1;
-  hud.banner("Eine neue Kolonie", 3);
+  colony.reset();
+  ants.clear(); ants.nextId = 1;
+  events.reset(); events.time = 0.3; events.day = 1;
+  colony.found();
+  const q = ants.spawn(ENT, 52, R_QUEEN, { energy: 1 });
+  ants.home[q] = idx(ENT, 52);
+  for (let k = 0; k < 5; k++) ants.spawn(ENT - 2 + k, 52 + (k % 2), R_WORKER, { age: rf(0, 80) });
+  game.deadT = -1; game.sel = null; game.follow = false;
+  hud.closeAnt(); hud.closePanel();
+  colony.log("Eine junge Königin gründet eine neue Kolonie", true);
 }
 
 function b64(u8) { let s = ""; for (let i = 0; i < u8.length; i += 4096) s += String.fromCharCode.apply(null, u8.subarray(i, i + 4096)); return btoa(s); }
 function unb64(s) { const b = atob(s), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; }
 function serialize() {
   const a = [];
-  for (let i = 0; i < ants.count; i++) a.push([ants.cx[i], ants.cy[i], ants.role[i], Math.round(ants.age[i]), Math.round(ants.maxAge[i])]);
+  for (let i = 0; i < ants.count; i++) a.push([ants.id[i], ants.cx[i], ants.cy[i], ants.role[i], Math.round(ants.age[i]), Math.round(ants.maxAge[i]),
+    +ants.energy[i].toFixed(2), +ants.fatigue[i].toFixed(2), +ants.speed[i].toFixed(2), Array.from(ants.th.subarray(i * 4, i * 4 + 4), v => +v.toFixed(2)),
+    ants.dug[i], ants.fetched[i], ants.home[i]]);
   return {
-    v: 1, seed: world.seed, cells: b64(world.cells), chamber: b64(world.chamber), mound: Array.from(world.mound, v => +v.toFixed(2)),
+    v: 2, seed: world.seed, cells: b64(world.cells), food: b64(world.food), corpses: b64(world.corpses), trash: b64(world.trash),
+    mound: Array.from(world.mound, v => +v.toFixed(2)),
     fruits: world.sources.flatMap(s => s.fruits.map(f => [f.alive ? 1 : 0, +f.t.toFixed(1)])),
-    colony: {
-      food: colony.food, brood: colony.brood, corpses: colony.corpses, trashWaiting: colony.trashWaiting, trashStored: colony.trashStored,
-      buried: colony.buried, eggsLaid: colony.eggsLaid, born: colony.born, died: colony.died, delivered: colony.delivered,
-      queenAlive: colony.queenAlive, expansions: colony.expansions, starve: colony.starve, plan: colony.plan,
-    },
-    ants: a, time: events.time, day: events.day, nextFlood: events.nextFlood, nextCent: events.nextCent,
-    view: [view.x, view.y, view.z], speed: game.speed,
+    ground: world.groundFood,
+    colony: { brood: colony.brood.map(b => ({ ...b, carried: false })), nextBrood: colony.nextBrood, born: colony.born, died: colony.died,
+      eggsLaid: colony.eggsLaid, delivered: colony.delivered, dugTotal: colony.dugTotal, history: colony.history, entries: colony.entries,
+      milestones: [...colony.milestones], seen: [...rooms.seen], queenAlive: colony.queenAlive },
+    ants: a, nextId: ants.nextId, time: events.time, day: events.day, nextFlood: events.nextFlood, nextCent: events.nextCent,
+    nextBird: events.nextBird, nextBeetle: events.nextBeetle, view: [view.x, view.y, view.z], speed: game.speed,
   };
 }
 function deserialize(d) {
-  if (!d || d.v !== 1) return false;
-  const c = unb64(d.cells), ch = unb64(d.chamber);
-  if (c.length !== W * H || ch.length !== W * H) return false;
-  world.seed = d.seed; world.cells.set(c); world.chamber.set(ch);
-  world.mound.fill(0); (d.mound || []).forEach((v, x) => { if (x < W) world.mound[x] = v; });
-  generateSources();
+  if (!d || d.v !== 2) return false;
+  const c = unb64(d.cells);
+  if (c.length !== W * H) return false;
+  newWorld(d.seed);
+  world.cells.set(c); world.food.set(unb64(d.food)); world.corpses.set(unb64(d.corpses)); world.trash.set(unb64(d.trash));
+  (d.mound || []).forEach((v, x) => { if (x < W) world.mound[x] = v; });
   let k = 0;
   for (const s of world.sources) for (const f of s.fruits) { const q = d.fruits[k++]; if (q) { f.alive = q[0] === 1; f.t = q[1]; } }
-  resetRuntime(); rebuildTiles();
+  world.groundFood = d.ground || [];
   phero.clear();
-  Object.assign(colony, d.colony, { surfaceCorpses: [], jobsDirty: true, decorDirty: true });
-  ants.clear();
-  for (const q of d.ants) { const i = ants.spawn(q[0], q[1], q[2], q[3]); if (i >= 0) ants.maxAge[i] = q[4]; }
+  colony.reset();
+  const cd = d.colony;
+  Object.assign(colony, { brood: cd.brood, nextBrood: cd.nextBrood, born: cd.born, died: cd.died, eggsLaid: cd.eggsLaid, delivered: cd.delivered,
+    dugTotal: cd.dugTotal, history: cd.history || [], entries: cd.entries || [], milestones: new Set(cd.milestones || []), queenAlive: cd.queenAlive });
+  rooms.seen = new Set(cd.seen || []);
+  colony.foodTotal = world.food.reduce((s, v) => s + v, 0);
+  rebuildRuntime(); rebuildTiles();
+  ants.clear(); ants.nextId = d.nextId || 1;
+  for (const q of d.ants) {
+    const i = ants.spawn(q[1], q[2], q[3], { id: q[0], age: q[4], maxAge: q[5], energy: q[6], fatigue: q[7], speed: q[8], th: q[9], dug: q[10], fetched: q[11] });
+    if (i >= 0) ants.home[i] = q[12];
+  }
   events.reset();
-  Object.assign(events, { time: d.time, day: d.day, nextFlood: d.nextFlood, nextCent: d.nextCent });
+  Object.assign(events, { time: d.time, day: d.day, nextFlood: d.nextFlood, nextCent: d.nextCent, nextBird: d.nextBird ?? 200, nextBeetle: d.nextBeetle ?? 200 });
   if (d.view) { view.x = d.view[0]; view.y = d.view[1]; view.z = d.view[2]; }
   game.speed = d.speed || 1;
   clampView();
@@ -2057,6 +2924,7 @@ function step(dt) {
 // mit harten Kanten vergrößert und dann minimal angepasst. So bleiben alle Pixel gleich groß.
 const [sceneC, sceneG] = canvas(FULL_W * PIX, FULL_H * PIX);
 const [upC, upG] = canvas(1, 1);
+let blink = 0;
 function render() {
   flushGround();
   const F = FRAME * PIX, g = sceneG;
@@ -2071,15 +2939,21 @@ function render() {
   if (world.waterShown || world.wet) g.drawImage(waterC, 0, 0, W, H, F, F, WPX * PIX, HPX * PIX);
   P.use(g, F, F);
   events.draw(F);
+  // Markierung über der ausgewählten Ameise
+  if (game.sel !== null) {
+    const i = ants.indexOfId(game.sel);
+    if (i >= 0 && Math.floor(blink * 3) % 2 === 0) {
+      const [x, y] = ants.pos(i);
+      P.fill("#ffe14d").rect(x - 1.5, y - 7, 3, 0.5).rect(x - 1, y - 6.5, 2, 0.5).rect(x - 0.5, y - 6, 1, 0.5);
+    }
+  }
   g.drawImage(frameC, 0, 0);
-  // Tag und Nacht: Farbe über die ganze Szene legen
   const c = events.light();
   if (c[0] < 0.999 || c[1] < 0.999 || c[2] < 0.999) {
     g.globalCompositeOperation = "multiply";
     g.fillStyle = css(c); g.fillRect(0, 0, sceneC.width, sceneC.height);
     g.globalCompositeOperation = "source-over";
   }
-  // auf den Bildschirm
   const cw = cv.width, ch = cv.height, s = scale() * view.dpr / PIX;
   const ox = cw / 2 - (view.x + FRAME) * PIX * s, oy = ch / 2 - (view.y + FRAME) * PIX * s;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -2089,7 +2963,7 @@ function render() {
   const aw = ax1 - ax0, ah = ay1 - ay0;
   if (aw <= 0 || ah <= 0) return;
   const k = Math.max(1, Math.min(Math.ceil(s - 0.01), Math.floor(4096 / Math.max(aw, ah))));
-  if (upC.width < aw * k || upC.height < ah * k) { upC.width = Math.max(upC.width, aw * k); upC.height = Math.max(upC.height, ah * k); upG.imageSmoothingEnabled = false; }
+  if (upC.width < aw * k || upC.height < ah * k) { upC.width = Math.max(upC.width, aw * k); upC.height = Math.max(upC.height, ah * k); }
   upG.imageSmoothingEnabled = false;
   upG.drawImage(sceneC, ax0, ay0, aw, ah, 0, 0, aw * k, ah * k);
   ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "medium";
@@ -2100,18 +2974,28 @@ let last = performance.now(), acc = 0;
 function frame(now) {
   const dt = Math.min((now - last) / 1000, 0.1);
   last = now;
+  blink += dt;
   if (zoomAnim) {
     zoomAnim.t = Math.min(1, zoomAnim.t + dt / 0.25);
     const e = 1 - (1 - zoomAnim.t) ** 2;
     zoomAt(zoomAnim.from + (zoomAnim.to - zoomAnim.from) * e, zoomAnim.sx, zoomAnim.sy);
     if (zoomAnim.t >= 1) zoomAnim = null;
   }
-  // feste Schritte von 1/60 s, bei 2x und 4x mehrere pro Bild
   if (!game.paused) {
     acc += dt * game.speed;
     let n = 0;
     while (acc >= 1 / 60 && n < 12) { step(1 / 60); acc -= 1 / 60; n++; }
     if (n === 12) acc = 0;
+  }
+  // Kamera folgt der ausgewählten Ameise
+  if (game.sel !== null && game.follow && !zoomAnim) {
+    const i = ants.indexOfId(game.sel);
+    if (i >= 0) {
+      const [x, y0] = ants.pos(i), k = Math.min(1, dt * 5);
+      const y = y0 + view.cssH * 0.2 / scale();
+      view.x += (x - view.x) * k; view.y += (y - view.y) * k;
+      clampView();
+    }
   }
   sky.tick(dt); hud.tick(dt);
   if (ants.count === 0) {

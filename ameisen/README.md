@@ -12,7 +12,15 @@ Das Spiel läuft auf iPhone, Android, Tablet und PC. Die Basisauflösung ist 270
 
 ## Im Browser spielen
 
-`web/AntPop.html` ist eine Browser-Version mit derselben Logik und Grafik, geschrieben in JavaScript. Sie läuft auf dem iPhone in Safari ohne Installation. Der Spielstand liegt dort im Speicher des Browsers.
+`web/AntPop.html` ist eine eigenständige Browser-Version in JavaScript. Sie läuft auf dem iPhone in Safari ohne Installation und ist weiter ausgebaut als die Godot-Fassung:
+
+- Jede Ameise lebt eigenständig. Sie hat einen Namen, eigene Vorlieben für Arbeiten, Hunger, Müdigkeit und ein Alter. Junge Ameisen pflegen lieber die Brut, ältere gehen lieber hinaus. Was eine Ameise oft tut, fällt ihr leichter.
+- Es gibt keinen Bauplan. Die Ameisen graben Gänge mit dicken Erdwänden, nach Duftmarken und nach Platzbedarf. Kammern entstehen von selbst. Ihre Art ergibt sich aus dem, was die Ameisen dort ablegen: Futter, Brut, Tote oder Abfall.
+- Die Königin legt nur Eier, wenn sie gefüttert wird und genug Vorrat da ist. Eier werden zu Larven und Puppen. Ammen tragen die Brut in eine eigene Kammer und füttern die Larven.
+- An der Oberfläche fällt Obst von den Bäumen, tote Käfer liegen im Gras, und ein Vogel jagt Ameisen. Beim Tausendfüßler verbreiten die Ameisen Alarmduft: Arbeiterinnen fliehen, Soldatinnen eilen herbei.
+- Tippe auf eine Ameise, um ihr zu folgen und ihren Steckbrief zu sehen. Das Schild öffnet das Kolonie-Panel mit Aufgabenverteilung, Verlauf und Chronik. Unten links streust du Zucker ins Gras.
+
+Der Spielstand liegt dort im Speicher des Browsers.
 
 ## Bedienung
 
