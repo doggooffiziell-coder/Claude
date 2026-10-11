@@ -1,12 +1,23 @@
 <title>Ant Pop</title>
 <meta name="theme-color" content="#0f2a19">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@600;700;800&display=swap">
 <style>
-  /* Ein Bildschirm, ein Formicarium: das Spielfeld füllt das Display, der Rahmen ist dunkelgrün. */
+  /* Ein Formicarium auf dem Display: Spielfeld in der Mitte, Holzschild oben, Bedienung unten mit Daumenabstand. */
   :root {
     --frame: #0f2a19;
     --board: #24502f;
-    --cream: #f0e8c7;
+    --board-deep: #1a3d24;
+    --board-light: #4b845b;
+    --cream: #f4edd3;
+    --cream-dim: #d9cfae;
+    --brass: #d1a94e;
+    --warn: #ff7a5c;
+    --ink: #08140c;
+    --font-display: "Fredoka", ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+    --font-body: "Nunito", ui-rounded, system-ui, -apple-system, "Segoe UI", sans-serif;
     color-scheme: dark;
   }
   html, body {
@@ -14,9 +25,9 @@
     margin: 0;
     background: var(--frame);
     color: var(--cream);
+    font-family: var(--font-body);
     overflow: hidden;
     overscroll-behavior: none;
-    touch-action: none;
     -webkit-user-select: none;
     user-select: none;
     -webkit-touch-callout: none;
@@ -28,10 +39,14 @@
     width: 100%;
     height: 100%;
     display: block;
-    image-rendering: pixelated;
-    image-rendering: crisp-edges;
+    touch-action: none;
     background: var(--frame);
-    cursor: default;
+  }
+  #hud {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    font-variant-numeric: tabular-nums;
   }
   #safe {
     position: fixed;
@@ -40,9 +55,191 @@
     padding-top: env(safe-area-inset-top, 0px);
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
+
+  /* Holzschild oben links */
+  .sign {
+    position: absolute;
+    top: calc(env(safe-area-inset-top, 0px) + 8px);
+    left: 10px;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    column-gap: 10px;
+    padding: 6px 14px 6px 12px;
+    background:
+      repeating-linear-gradient(180deg, transparent 0 15px, rgba(0,0,0,0.16) 15px 16px),
+      linear-gradient(180deg, var(--board) 0%, var(--board-deep) 100%);
+    border: 2px solid var(--board-light);
+    border-radius: 6px;
+    clip-path: polygon(14px 0, 100% 0, 100% 100%, 0 100%, 0 14px);
+    box-shadow: 0 3px 0 rgba(0,0,0,0.3);
+    filter: drop-shadow(0 2px 6px rgba(0,0,0,0.35));
+  }
+  .sign::before {
+    content: "";
+    position: absolute;
+    top: 7px;
+    left: 7px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #f8e3a0, var(--brass) 55%, #6d5420);
+  }
+  .ant-icon { width: 24px; height: 28px; margin-top: 4px; }
+  .sign-text { display: grid; line-height: 1; }
+  .sign-label {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    color: var(--cream-dim);
+  }
+  .sign-count {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 28px;
+    color: var(--cream);
+    margin-top: 1px;
+  }
+  .sign-stats {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 10px;
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid rgba(0,0,0,0.25);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--cream-dim);
+    white-space: nowrap;
+  }
+  .sign-stats b { color: var(--cream); font-weight: 800; }
+  .sign-stats .warn { color: var(--warn); }
+
+  /* Meldung bei Ereignissen */
+  .banner {
+    position: absolute;
+    top: calc(env(safe-area-inset-top, 0px) + 96px);
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: calc(100% - 32px);
+    padding: 9px 18px;
+    border-radius: 999px;
+    background: rgba(8, 20, 12, 0.88);
+    border: 2px solid var(--brass);
+    color: #ffe39a;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 17px;
+    text-align: center;
+    text-wrap: balance;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+    animation: pop 0.25s ease-out;
+  }
+  @keyframes pop { from { transform: translateX(-50%) scale(0.9); opacity: 0; } }
+
+  /* Infokarte unten */
+  .sheet {
+    position: absolute;
+    left: 50%;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 76px);
+    transform: translateX(-50%);
+    width: min(340px, calc(100% - 24px));
+    box-sizing: border-box;
+    padding: 14px 18px 12px;
+    border-radius: 16px;
+    background: rgba(20, 45, 28, 0.95);
+    border: 2px solid var(--board-light);
+    box-shadow: 0 10px 28px rgba(0,0,0,0.45);
+    pointer-events: auto;
+    animation: rise 0.2s ease-out;
+  }
+  @keyframes rise { from { transform: translate(-50%, 10px); opacity: 0; } }
+  .sheet-head { display: flex; align-items: center; gap: 10px; }
+  .swatch { width: 16px; height: 16px; border-radius: 5px; border: 2px solid rgba(255,255,255,0.25); flex: none; }
+  .sheet h2 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 21px;
+    color: var(--cream);
+  }
+  .sheet dl {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 6px 16px;
+    margin: 10px 0 0;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255,255,255,0.12);
+    font-size: 16px;
+  }
+  .sheet dt { color: var(--cream-dim); font-weight: 700; }
+  .sheet dd { margin: 0; text-align: right; font-weight: 800; color: var(--cream); }
+  .hint p { margin: 0; font-size: 16px; line-height: 1.45; font-weight: 700; color: var(--cream); }
+  .hint p + p { margin-top: 4px; }
+  .hint span { color: var(--brass); }
+
+  /* Knöpfe unten rechts */
+  .controls {
+    position: absolute;
+    right: 12px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+    display: flex;
+    gap: 10px;
+  }
+  .controls button {
+    pointer-events: auto;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    border: 2px solid var(--board-light);
+    background: linear-gradient(180deg, var(--board) 0%, var(--board-deep) 100%);
+    color: var(--cream);
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 18px;
+    display: grid;
+    place-items: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .controls button:active { transform: scale(0.94); }
+  .controls button:focus-visible { outline: 3px solid var(--brass); outline-offset: 2px; }
+  .controls svg { width: 22px; height: 22px; fill: currentColor; }
+  @media (prefers-reduced-motion: reduce) {
+    .banner, .sheet { animation: none; }
+  }
 </style>
 
 <canvas id="game" aria-label="Ameisenkolonie im Querschnitt durch den Boden"></canvas>
+<div id="hud">
+  <div class="sign" role="status" aria-live="polite">
+    <svg class="ant-icon" viewBox="0 0 30 34" aria-hidden="true">
+      <g fill="#f4edd3" stroke="#f4edd3" stroke-linecap="round" stroke-width="1.8">
+        <ellipse cx="15" cy="6.5" rx="3.6" ry="3.4" stroke="none"/>
+        <ellipse cx="15" cy="14" rx="3" ry="4" stroke="none"/>
+        <ellipse cx="15" cy="25" rx="5" ry="7" stroke="none"/>
+        <path d="M13 4 L9 0.8 M17 4 L21 0.8 M12.5 12 L5 8 M17.5 12 L25 8 M12.5 15 L4 15.5 M17.5 15 L26 15.5 M13 17 L6 24 M17 17 L24 24" fill="none"/>
+      </g>
+    </svg>
+    <div class="sign-text"><span class="sign-label">ANT POP.</span><span class="sign-count" id="pop">6</span></div>
+    <div class="sign-stats"><span>Futter <b id="food">20</b></span><span>Tag <b id="day">1</b></span><span class="warn" id="hunger" hidden>Hunger!</span></div>
+  </div>
+  <div class="banner" id="banner" hidden></div>
+  <div class="sheet hint" id="hint">
+    <p>Tippe auf eine <span>Kammer</span>, um zu sehen, was darin liegt.</p>
+    <p>Zwei Finger zoomen. Doppeltippen holt dich näher heran.</p>
+  </div>
+  <div class="sheet" id="info" hidden>
+    <div class="sheet-head"><span class="swatch" id="swatch"></span><h2 id="infoTitle"></h2></div>
+    <dl id="infoRows"></dl>
+  </div>
+  <div class="controls">
+    <button id="btnPause" type="button" aria-label="Pause"></button>
+    <button id="btnSpeed" type="button" aria-label="Tempo ändern">1×</button>
+  </div>
+</div>
 <div id="safe"></div>
 
 <script>
@@ -126,40 +323,6 @@ function pcircle(g, cx, cy, r) {
   }
 }
 
-// ---------------------------------------------------------------- Pixelschrift 3x5
-const GLYPHS = {
-  A: [".#.", "#.#", "###", "#.#", "#.#"], B: ["##.", "#.#", "##.", "#.#", "##."], C: [".##", "#..", "#..", "#..", ".##"],
-  D: ["##.", "#.#", "#.#", "#.#", "##."], E: ["###", "#..", "##.", "#..", "###"], F: ["###", "#..", "##.", "#..", "#.."],
-  G: [".##", "#..", "#.#", "#.#", ".##"], H: ["#.#", "#.#", "###", "#.#", "#.#"], I: ["###", ".#.", ".#.", ".#.", "###"],
-  J: ["..#", "..#", "..#", "#.#", ".#."], K: ["#.#", "#.#", "##.", "#.#", "#.#"], L: ["#..", "#..", "#..", "#..", "###"],
-  M: ["#.#", "###", "###", "#.#", "#.#"], N: ["##.", "#.#", "#.#", "#.#", "#.#"], O: [".#.", "#.#", "#.#", "#.#", ".#."],
-  P: ["##.", "#.#", "##.", "#..", "#.."], Q: [".#.", "#.#", "#.#", "##.", ".##"], R: ["##.", "#.#", "##.", "#.#", "#.#"],
-  S: [".##", "#..", ".#.", "..#", "##."], T: ["###", ".#.", ".#.", ".#.", ".#."], U: ["#.#", "#.#", "#.#", "#.#", "###"],
-  V: ["#.#", "#.#", "#.#", "#.#", ".#."], W: ["#.#", "#.#", "###", "###", "#.#"], X: ["#.#", "#.#", ".#.", "#.#", "#.#"],
-  Y: ["#.#", "#.#", ".#.", ".#.", ".#."], Z: ["###", "..#", ".#.", "#..", "###"],
-  "Ä": ["#.#", "...", ".#.", "###", "#.#"], "Ö": ["#.#", "...", "###", "#.#", "###"], "Ü": ["#.#", "...", "#.#", "#.#", "###"],
-  0: ["###", "#.#", "#.#", "#.#", "###"], 1: [".#.", "##.", ".#.", ".#.", "###"], 2: ["##.", "..#", ".#.", "#..", "###"],
-  3: ["##.", "..#", ".#.", "..#", "##."], 4: ["#.#", "#.#", "###", "..#", "..#"], 5: ["###", "#..", "##.", "..#", "##."],
-  6: [".##", "#..", "###", "#.#", "###"], 7: ["###", "..#", ".#.", ".#.", ".#."], 8: ["###", "#.#", "###", "#.#", "###"],
-  9: ["###", "#.#", "###", "..#", "##."], "-": ["...", "...", "###", "...", "..."], ".": ["...", "...", "...", "...", ".#."],
-  ":": ["...", ".#.", "...", ".#.", "..."], "!": [".#.", ".#.", ".#.", "...", ".#."], "+": ["...", ".#.", "###", ".#.", "..."],
-  "/": ["..#", "..#", ".#.", "#..", "#.."], "%": ["#.#", "..#", ".#.", "#..", "#.#"],
-};
-const Font = {
-  width: (t, s = 1) => t.length ? (t.length * 4 - 1) * s : 0,
-  draw(g, x, y, text, color, s = 1) {
-    g.fillStyle = color;
-    x = Math.floor(x); y = Math.floor(y);
-    for (const ch of text.toUpperCase()) {
-      const rows = GLYPHS[ch];
-      if (rows) for (let r = 0; r < 5; r++) for (let c = 0; c < 3; c++) if (rows[r][c] === "#") g.fillRect(x + c * s, y + r * s, s, s);
-      x += 4 * s;
-    }
-  },
-  shadow(g, x, y, text, color, sh, s = 1) { this.draw(g, x + s, y + s, text, sh, s); this.draw(g, x, y, text, color, s); },
-  center(g, cx, y, text, color, s = 1) { this.draw(g, Math.round(cx - this.width(text, s) / 2), y, text, color, s); },
-};
-
 // =====================================================================
 // WELT: Grid, Tiles, Tunnel, Wegfelder, Wasser, Sandhügel, Früchte
 // =====================================================================
@@ -172,96 +335,123 @@ const world = {
   fields: [], dirty: [], has: [], water: new Float32Array(W * H), wet: false, waterShown: false,
   mound: new Float32Array(W), sources: [], byTrunk: new Map(), frame: 0,
 };
-const [groundC, groundG] = canvas(WPX, HPX);
-const groundImg = groundG.createImageData(WPX, HPX);
-let groundDirty = true;
-let atlasPx = null;   // Uint8ClampedArray, 16 x 12 Tiles zu je 3 x 3 Pixeln
+// ---- Boden in hoher Auflösung: Erdschichten mit Körnung, runde Tunnel mit Rand
+const GS = 5;                                  // Pixel pro Weltpixel im Zwischenspeicher
+const RIM_DARK = mix(TUNNEL_COLOR, [0.2, 0.12, 0.07], 0.5);
+const [soilC, soilG] = canvas(WPX * GS, HPX * GS);
+const [groundC, groundG] = canvas(WPX * GS, HPX * GS);
+soilG.imageSmoothingEnabled = true; groundG.imageSmoothingEnabled = true;
+let soilSeed = -1;
+const groundDirty = new Set();
 
-function buildAtlas() {
-  const aw = 16 * T, ah = 12 * T;
-  atlasPx = new Uint8ClampedArray(aw * ah * 4);
-  const r = mulberry(4242);
-  const set = (x, y, c) => { const o = (y * aw + x) * 4; atlasPx[o] = c[0] * 255; atlasPx[o + 1] = c[1] * 255; atlasPx[o + 2] = c[2] * 255; atlasPx[o + 3] = 255; };
-  const soil = (col, row, layer, variant, dash) => {
-    const base = SOIL_COLORS[layer];
-    for (let py = 0; py < T; py++) for (let px = 0; px < T; px++) {
-      const n = r.rf(-0.035, 0.035);
-      let c = [base[0] + n, base[1] + n, base[2] + n * 0.8];
-      if (r() < 0.06) c = lighten(c, 0.12);
-      set(col * T + px, row * T + py, c);
-    }
-    if (variant === 5) set(col * T + r.ri(0, 2), row * T + r.ri(0, 2), darken(base, 0.35));
-    if (variant === 6) {
-      const ox = r.ri(0, 1), oy = r.ri(0, 1), st = [0.55, 0.52, 0.48];
-      set(col * T + ox, row * T + oy, lighten(st, 0.2)); set(col * T + ox + 1, row * T + oy, st);
-      set(col * T + ox, row * T + oy + 1, st); set(col * T + ox + 1, row * T + oy + 1, darken(st, 0.25));
-    }
-    if (variant === 7) {
-      set(col * T + r.ri(0, 2), row * T + r.ri(0, 2), darken(base, 0.2));
-      set(col * T + r.ri(0, 2), row * T + r.ri(0, 2), lighten(base, 0.2));
-    }
-    if (dash >= 0) {
-      const line = darken(base, 0.42);
-      if (dash === 0) for (let px = 0; px < 3; px++) set(col * T + px, row * T, line);
-      if (dash === 1) { set(col * T, row * T, line); set(col * T + 1, row * T, line); }
-      if (dash === 2) { set(col * T + 1, row * T + 1, line); set(col * T + 2, row * T + 1, line); }
-      if (dash === 3) set(col * T + 2, row * T, line);
-    }
-  };
-  const hollow = (col, row, base, rim, mask) => {
-    for (let py = 0; py < T; py++) for (let px = 0; px < T; px++) {
-      const n = r.rf(-0.03, 0.03);
-      let c = [base[0] + n, base[1] + n, base[2] + n];
-      if (r() < 0.1) c = darken(c, 0.18);
-      const edge = (mask & 1 && py === 0) || (mask & 2 && px === T - 1) || (mask & 4 && py === T - 1) || (mask & 8 && px === 0);
-      if (edge) { const k = r(); if (k < 0.45) c = rim; else if (k < 0.6) c = darken(base, 0.3); }
-      set(col * T + px, row * T + py, c);
-    }
-  };
-  for (let l = 0; l < 3; l++) for (let v = 0; v < 8; v++) soil(v, l, l, v, -1);
-  for (let l = 0; l < 2; l++) for (let v = 0; v < 4; v++) soil(l * 4 + v, 3, l + 1, r.ri(0, 4), v);
-  for (let v = 0; v < 3; v++) for (let m = 0; m < 16; m++) hollow(m, 4 + v, TUNNEL_COLOR, RIM_COLOR, m);
-  for (let ch = 1; ch < 6; ch++) for (let m = 0; m < 16; m++) hollow(m, 6 + ch, CHAMBER_COLORS[ch], mix(CHAMBER_COLORS[ch], RIM_COLOR, 0.5), m);
-}
-
-function writeTile(x, y, col, row) {
-  const d = groundImg.data, aw = 16 * T;
-  for (let py = 0; py < T; py++) for (let px = 0; px < T; px++) {
-    const s = ((row * T + py) * aw + col * T + px) * 4, o = ((y * T + py) * WPX + x * T + px) * 4;
-    d[o] = atlasPx[s]; d[o + 1] = atlasPx[s + 1]; d[o + 2] = atlasPx[s + 2]; d[o + 3] = 255;
-  }
-  groundDirty = true;
-}
 function solid(x, y) {
   if (y < G) return false;
   if (x < 0 || x >= W || y >= H) return true;
   return world.cells[idx(x, y)] === SOIL;
 }
-function soilTile(x, y) {
-  const l = layerOf(y), h = hash2(x, y);
-  if ((y === LAYER_ROWS[1] || y === LAYER_ROWS[2]) && h % 7 !== 0) return [(l - 1) * 4 + (h >> 4) % 4, 3];
-  const v = h % 100;
-  let variant = (h >> 5) % 5;
-  if (v >= 98) variant = 6; else if (v >= 93) variant = 7; else if (v >= 86) variant = 5;
-  return [variant, l];
-}
-function updateTile(x, y) {
-  if (x < 0 || x >= W || y < G || y >= H) return;
-  const i = idx(x, y), c = world.cells[i];
-  if (c === SOIL) { const t = soilTile(x, y); writeTile(x, y, t[0], t[1]); }
-  else if (c === TUNNEL) {
-    let m = 0;
-    if (solid(x, y - 1)) m |= 1;
-    if (solid(x + 1, y)) m |= 2;
-    if (solid(x, y + 1)) m |= 4;
-    if (solid(x - 1, y)) m |= 8;
-    const ch = world.chamber[i];
-    writeTile(x, y, m, ch === 0 ? 4 + hash2(x, y) % 3 : 6 + ch);
+function buildSoil() {
+  soilSeed = world.seed;
+  const g = soilG, r = mulberry(world.seed + 7), top = G * T;
+  g.setTransform(GS, 0, 0, GS, 0, 0);
+  g.clearRect(0, 0, WPX, HPX);
+  const ys = [top, LAYER_ROWS[1] * T, LAYER_ROWS[2] * T, HPX];
+  for (let l = 0; l < 3; l++) {
+    const gr = g.createLinearGradient(0, ys[l], 0, ys[l + 1]);
+    gr.addColorStop(0, css(lighten(SOIL_COLORS[l], 0.05)));
+    gr.addColorStop(1, css(darken(SOIL_COLORS[l], 0.05)));
+    g.fillStyle = gr;
+    g.fillRect(0, ys[l], WPX, ys[l + 1] - ys[l]);
   }
+  // Sandkörner
+  for (let k = 0; k < 14000; k++) {
+    const x = r() * WPX, y = top + r() * (HPX - top), base = SOIL_COLORS[layerOf(Math.floor(y / T))];
+    const c = r() < 0.55 ? darken(base, r.rf(0.08, 0.28)) : lighten(base, r.rf(0.12, 0.35));
+    const s = r.rf(0.22, 0.55);
+    g.fillStyle = css(c, r.rf(0.45, 0.9));
+    g.fillRect(x, y, s, s);
+  }
+  // kleine Steine
+  for (let k = 0; k < 240; k++) {
+    const x = r() * WPX, y = top + 2 + r() * (HPX - top - 2), base = SOIL_COLORS[layerOf(Math.floor(y / T))];
+    const rx = r.rf(0.5, 1.5), ry = rx * r.rf(0.55, 0.85), rot = r.rf(-0.6, 0.6);
+    const stone = mix([0.56, 0.53, 0.49], base, r.rf(0.1, 0.4));
+    g.fillStyle = css(darken(stone, 0.3));
+    g.beginPath(); g.ellipse(x + 0.12, y + 0.15, rx, ry, rot, 0, Math.PI * 2); g.fill();
+    g.fillStyle = css(stone);
+    g.beginPath(); g.ellipse(x, y, rx, ry, rot, 0, Math.PI * 2); g.fill();
+    g.fillStyle = css(lighten(stone, 0.35), 0.8);
+    g.beginPath(); g.ellipse(x - rx * 0.3, y - ry * 0.35, rx * 0.35, ry * 0.3, rot, 0, Math.PI * 2); g.fill();
+  }
+  // gestrichelte Linien zwischen den Schichten
+  g.lineCap = "round";
+  for (const row of [LAYER_ROWS[1], LAYER_ROWS[2]]) {
+    const y = row * T;
+    g.strokeStyle = css(darken(SOIL_COLORS[layerOf(row)], 0.38), 0.85);
+    g.lineWidth = 0.55;
+    g.setLineDash([3.2, 1.8, 1.4, 1.8]);
+    g.beginPath();
+    for (let x = 0; x <= WPX; x += 2) {
+      const yy = y + Math.sin(x * 0.11 + row) * 0.7 + Math.sin(x * 0.37) * 0.25;
+      if (x === 0) g.moveTo(x, yy); else g.lineTo(x, yy);
+    }
+    g.stroke();
+  }
+  g.setLineDash([]);
+  // dunkle Kante an der Oberfläche
+  g.fillStyle = css(darken(SOIL_COLORS[0], 0.18), 0.6);
+  g.fillRect(0, top, WPX, 0.6);
+  g.setTransform(1, 0, 0, 1, 0, 0);
 }
+function drawGroundRegion(x0, y0, x1, y1) {
+  const g = groundG;
+  x0 = Math.max(0, x0); x1 = Math.min(W - 1, x1); y0 = Math.max(G, y0); y1 = Math.min(H - 1, y1);
+  if (x1 < x0 || y1 < y0) return;
+  const px = x0 * T, py = y0 * T, pw = (x1 - x0 + 1) * T, ph = (y1 - y0 + 1) * T;
+  g.save();
+  g.setTransform(GS, 0, 0, GS, 0, 0);
+  g.beginPath(); g.rect(px, py, pw, ph); g.clip();
+  g.clearRect(px, py, pw, ph);
+  g.drawImage(soilC, px * GS, py * GS, pw * GS, ph * GS, px, py, pw, ph);
+  const m = 2;
+  for (let pass = 0; pass < 3; pass++) {
+    for (let y = Math.max(G, y0 - m); y <= Math.min(H - 1, y1 + m); y++) for (let x = Math.max(0, x0 - m); x <= Math.min(W - 1, x1 + m); x++) {
+      const i = idx(x, y);
+      if (world.cells[i] !== TUNNEL) continue;
+      const ch = world.chamber[i], h = hash2(x, y), cx = x * T + 1.5, cy = y * T + 1.5;
+      if (pass === 0) {
+        // krümeliger Rand
+        g.fillStyle = css(ch ? darken(CHAMBER_COLORS[ch], 0.38) : RIM_DARK);
+        g.beginPath(); g.arc(cx + ((h >> 3) % 3 - 1) * 0.15, cy + ((h >> 5) % 3 - 1) * 0.15, 2.75 + (h % 5) * 0.06, 0, Math.PI * 2); g.fill();
+      } else if (pass === 1) {
+        g.fillStyle = css(ch ? CHAMBER_COLORS[ch] : TUNNEL_COLOR);
+        g.beginPath(); g.arc(cx, cy, 2.25 + (h % 3) * 0.04, 0, Math.PI * 2); g.fill();
+      } else {
+        // Schatten am Boden des Gangs und ein paar Krümel
+        if (solid(x, y + 1)) {
+          g.fillStyle = "rgba(0,0,0,0.14)";
+          g.beginPath(); g.ellipse(cx, cy + 1.1, 1.7, 0.55, 0, 0, Math.PI * 2); g.fill();
+        }
+        if (h % 5 === 0) {
+          g.fillStyle = css(ch ? darken(CHAMBER_COLORS[ch], 0.2) : lighten(TUNNEL_COLOR, 0.15), 0.8);
+          g.fillRect(cx + ((h >> 4) % 3) - 1, cy + ((h >> 6) % 2), 0.45, 0.45);
+        }
+      }
+    }
+  }
+  g.restore();
+}
+function updateTile(x, y) { if (inGrid(x, y) && y >= G) groundDirty.add(idx(x, y)); }
 function rebuildTiles() {
-  groundImg.data.fill(0);
-  for (let y = G; y < H; y++) for (let x = 0; x < W; x++) updateTile(x, y);
+  if (soilSeed !== world.seed) buildSoil();
+  groundDirty.clear();
+  groundG.setTransform(1, 0, 0, 1, 0, 0);
+  groundG.clearRect(0, 0, groundC.width, groundC.height);
+  drawGroundRegion(0, G, W - 1, H - 1);
+}
+function flushGround() {
+  if (!groundDirty.size) return;
+  for (const i of groundDirty) { const x = i % W, y = Math.floor(i / W); drawGroundRegion(x - 1, y - 1, x + 1, y + 1); }
+  groundDirty.clear();
 }
 
 function newWorld(seed) {
@@ -714,13 +904,13 @@ const colony = {
   chamberInfo(ch) {
     const size = world.chamberCells[ch] ? world.chamberCells[ch].length : 0;
     switch (ch) {
-      case CH_GRANARY: return ["KORNKAMMER", ["FUTTER: " + Math.floor(this.food), "GESAMMELT: " + this.delivered, "GRÖSSE: " + size]];
-      case CH_BROOD: return ["BRUTKAMMER", ["EIER: " + (this.brood.length - this.larvae()), "LARVEN: " + this.larvae(), "HUNGRIG: " + this.hungryLarvae()]];
-      case CH_QUEEN: return ["KÖNIGINNENKAMMER", ["KÖNIGIN: " + (this.queenAlive ? "LEBT" : "TOT"), "EIER GELEGT: " + this.eggsLaid, "GEBOREN: " + this.born]];
-      case CH_CEMETERY: return ["FRIEDHOF", ["TOTE: " + this.buried, "NOCH IM NEST: " + this.corpses.length, "GESTORBEN: " + this.died]];
-      case CH_TRASH: return ["MÜLLKAMMER", ["ABFALL: " + this.trashStored, "WARTET: " + Math.floor(this.trashWaiting)]];
+      case CH_GRANARY: return ["Kornkammer", [["Futter", Math.floor(this.food)], ["Bisher gesammelt", this.delivered], ["Größe", size + " Felder"]]];
+      case CH_BROOD: return ["Brutkammer", [["Eier", this.brood.length - this.larvae()], ["Larven", this.larvae()], ["Hungrige Larven", this.hungryLarvae()]]];
+      case CH_QUEEN: return ["Königinnenkammer", [["Königin", this.queenAlive ? "lebt" : "tot"], ["Eier gelegt", this.eggsLaid], ["Geschlüpft", this.born]]];
+      case CH_CEMETERY: return ["Friedhof", [["Begraben", this.buried], ["Noch im Nest", this.corpses.length], ["Gestorben", this.died]]];
+      case CH_TRASH: return ["Müllkammer", [["Abfall", this.trashStored], ["Wartet in der Kornkammer", Math.floor(this.trashWaiting)]]];
     }
-    return ["GANG", []];
+    return ["Gang", []];
   },
 };
 
@@ -767,7 +957,7 @@ const ants = {
     for (const i of list) {
       if (i >= this.count) continue;
       if (this.kills.get(i)) colony.addCorpse(this.cx[i], this.cy[i]); else colony.died++;
-      if (this.role[i] === R_QUEEN) { colony.queenAlive = false; hud.banner("DIE KÖNIGIN IST TOT", 6); }
+      if (this.role[i] === R_QUEEN) { colony.queenAlive = false; hud.banner("Die Königin ist tot", 6); }
       const j = this.count - 1;
       if (i !== j) for (const k of this.KEYS) this[k][i] = this[k][j];
       this.count--;
@@ -839,54 +1029,134 @@ const ants = {
       this.setState(i, s);
     }
   },
-  draw(g) {
+  draw(g, s, ox, oy, vis) {
+    buildAntAtlas(s);
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    const half = ACELL / 2;
     for (let i = 0; i < this.count; i++) {
       const dxs = this.tx[i] - this.cx[i], dys = this.ty[i] - this.cy[i];
       let f = this.face[i];
       if (dxs > 0) f = 0; else if (dxs < 0) f = 1; else if (dys < 0) f = 2; else if (dys > 0) f = 3;
       this.face[i] = f;
       let x = this.px[i], y = this.py[i];
+      if (x < vis[0] || x > vis[2] || y < vis[1] || y > vis[3]) continue;
       if (y < G * T && y > SURF * T - 1) y -= surfaceOffset(Math.floor(x / T));
-      x = Math.round(x + FRAME); y = Math.round(y + FRAME);
-      if (f === 0) g.setTransform(1, 0, 0, 1, x, y);
-      else if (f === 1) g.setTransform(-1, 0, 0, 1, x, y);
-      else if (f === 2) g.setTransform(0, -1, 1, 0, x, y);
-      else g.setTransform(0, 1, -1, 0, x, y);
+      y -= 0.4;
       let fr = 0;
       if (this.role[i] === R_SOLDIER) fr = 2;
       else if (this.role[i] === R_QUEEN) fr = 4;
       else if (this.carry[i]) fr = 4 + this.carry[i] * 2;
       fr += Math.floor(this.anim[i] * 2) & 1;
-      g.drawImage(antAtlas, fr * 8, 0, 8, 6, -4, -3, 8, 6);
+      g.drawImage(antAtlas, fr * ACELL, f * ACELL, ACELL, ACELL, Math.round(ox + x * s - half), Math.round(oy + y * s - half), ACELL, ACELL);
     }
-    g.setTransform(1, 0, 0, 1, 0, 0);
   },
 };
 
-// Ameisen-Sprites als Pixel-Muster, Blick nach rechts
-const SPRITES = {
-  worker: [["........", "......#.", ".+#.#.##", "#######.", ".#.#.#..", "........"], ["........", ".......#", ".+#.#.##", "#######.", "#.#.#.#.", "........"]],
-  soldier: [["........", ".....##.", ".+#.####", "########", ".#.#.#..", "........"], ["........", ".....##.", ".+#.####", "#######.", "#.#.#.##", "........"]],
-  queen: [[".....y.y", ".....yyy", "+##.#.##", "#######.", "###.#.#.", ".#......"], [".....y.y", ".....yyy", "+##.#.##", "#######.", "###..#.#", "..#.#..."]],
-};
-const ITEM_COLORS = [null, [0.88, 0.2, 0.15], [0.86, 0.74, 0.5], [0.25, 0.22, 0.2], [0.6, 0.47, 0.3]];
-const [antAtlas, antAtlasG] = canvas(8 * 14, 6);
-function buildAntAtlas() {
-  const paint = (frame, rows, item) => {
-    for (let y = 0; y < 6; y++) for (let x = 0; x < 8; x++) {
-      const ch = rows[y][x];
-      const col = ch === "#" ? [0.11, 0.06, 0.05] : ch === "+" ? [0.36, 0.2, 0.14] : ch === "y" ? [0.98, 0.82, 0.2] : null;
-      if (col) { antAtlasG.fillStyle = css(col); antAtlasG.fillRect(frame * 8 + x, y, 1, 1); }
+// Ameisen als fein gezeichnete Sprites in der Seitenansicht, Blick nach rechts
+const AFW = 12, AFH = 9, A_FRAMES = 14;   // Rahmen in Weltpixeln
+let AS = 0;                               // Atlas-Pixel pro Weltpixel, passend zum Zoom
+const [antAtlas, antAtlasG] = canvas(1, 1);
+function drawAntShape(g, kind, phase, item) {
+  const queen = kind === 2, soldier = kind === 1;
+  const body = "#2a140e", mid = "#46241a", legC = "#1f0f0a";
+  g.lineCap = "round"; g.lineJoin = "round";
+  // Beine: hintere Seite heller, vordere Seite dunkel
+  for (const side of [0, 1]) {
+    g.strokeStyle = side ? legC : "rgba(60,32,22,0.75)";
+    g.lineWidth = 0.32;
+    for (let k = 0; k < 3; k++) {
+      const ax = -0.5 + k * 0.55 + side * 0.15, swing = ((k + side + phase) % 2 ? 1 : -1) * 0.45;
+      const kneeX = ax + (k - 1) * 0.9 + swing * 0.4, footX = ax + (k - 1) * 1.5 + swing;
+      g.beginPath(); g.moveTo(ax, 0.35); g.lineTo(kneeX, -0.4 + side * 0.2); g.lineTo(footX, 2.2); g.stroke();
     }
-    if (item) for (let y = 0; y < 2; y++) for (let x = 4; x < 7; x++) {
-      antAtlasG.fillStyle = css((x + y) % 3 ? item : lighten(item, 0.25));
-      antAtlasG.fillRect(frame * 8 + x, y, 1, 1);
-    }
-  };
-  for (let a = 0; a < 2; a++) {
-    paint(a, SPRITES.worker[a]); paint(2 + a, SPRITES.soldier[a]); paint(4 + a, SPRITES.queen[a]);
-    for (let c = 1; c < 5; c++) paint(4 + c * 2 + a, SPRITES.worker[a], ITEM_COLORS[c]);
   }
+  // Hinterleib
+  const ar = queen ? [2.5, 1.55] : [1.75, 1.2];
+  const ax = queen ? -2.9 : -2.35;
+  let gr = g.createRadialGradient(ax + 0.4, -0.6, 0.2, ax, 0, ar[0]);
+  gr.addColorStop(0, "#6a3826"); gr.addColorStop(1, body);
+  g.fillStyle = gr;
+  g.beginPath(); g.ellipse(ax, 0.05, ar[0], ar[1], -0.12, 0, Math.PI * 2); g.fill();
+  if (queen) {
+    g.strokeStyle = "rgba(255,210,170,0.18)"; g.lineWidth = 0.22;
+    for (const o of [-0.7, 0.2, 1.1]) { g.beginPath(); g.ellipse(ax + o, 0.05, 0.25, ar[1] * 0.9, 0, -1.2, 1.2); g.stroke(); }
+  }
+  // Stielchen und Brust
+  g.fillStyle = mid;
+  g.beginPath(); g.ellipse(-0.55, 0.1, 0.38, 0.32, 0, 0, Math.PI * 2); g.fill();
+  gr = g.createRadialGradient(0.35, -0.35, 0.1, 0.4, 0, 1.1);
+  gr.addColorStop(0, "#5c3021"); gr.addColorStop(1, body);
+  g.fillStyle = gr;
+  g.beginPath(); g.ellipse(0.4, -0.05, queen ? 1.1 : 0.95, 0.6, -0.2, 0, Math.PI * 2); g.fill();
+  // Kopf
+  const hr = soldier ? 1.2 : 0.85, hx = soldier ? 2.35 : 2.05;
+  gr = g.createRadialGradient(hx - 0.2, -0.45, 0.1, hx, -0.1, hr);
+  gr.addColorStop(0, "#64341f"); gr.addColorStop(1, body);
+  g.fillStyle = gr;
+  g.beginPath(); g.ellipse(hx, -0.15, hr, hr * 0.85, 0, 0, Math.PI * 2); g.fill();
+  g.fillStyle = "rgba(255,235,210,0.55)";
+  g.beginPath(); g.arc(hx + hr * 0.35, -0.35, 0.14, 0, Math.PI * 2); g.fill();
+  // Mandibeln
+  g.strokeStyle = body; g.lineWidth = soldier ? 0.42 : 0.28;
+  g.beginPath(); g.moveTo(hx + hr * 0.8, 0.15); g.quadraticCurveTo(hx + hr + 0.8, 0.35, hx + hr + 0.6, 0.85); g.stroke();
+  // Fühler
+  g.strokeStyle = legC; g.lineWidth = 0.26;
+  const sw = phase ? 0.25 : -0.1;
+  g.beginPath(); g.moveTo(hx + 0.2, -0.85); g.quadraticCurveTo(hx + 0.6, -2.5 + sw, hx + 1.9, -2.0 + sw); g.stroke();
+  if (queen) {
+    // kleine goldene Krone
+    g.fillStyle = "#f2c94c"; g.strokeStyle = "#8a6a14"; g.lineWidth = 0.15;
+    const cx = hx - 0.1, cy = -1.25;
+    g.beginPath();
+    g.moveTo(cx - 0.95, cy); g.lineTo(cx - 1.0, cy - 1.1); g.lineTo(cx - 0.45, cy - 0.55); g.lineTo(cx, cy - 1.35);
+    g.lineTo(cx + 0.45, cy - 0.55); g.lineTo(cx + 1.0, cy - 1.1); g.lineTo(cx + 0.95, cy); g.closePath();
+    g.fill(); g.stroke();
+    g.fillStyle = "#e0453a"; g.beginPath(); g.arc(cx, cy - 0.45, 0.17, 0, Math.PI * 2); g.fill();
+  }
+  if (item) {
+    const ix = hx + hr + 0.9, iy = -0.9;
+    if (item === C_FOOD) {
+      g.fillStyle = "#d8352a"; g.beginPath(); g.arc(ix, iy, 1.05, 0, Math.PI * 2); g.fill();
+      g.fillStyle = "rgba(255,200,190,0.8)"; g.beginPath(); g.arc(ix - 0.35, iy - 0.35, 0.3, 0, Math.PI * 2); g.fill();
+    } else if (item === C_DIRT) {
+      g.fillStyle = "#c9a76c";
+      for (const [dx, dy, r] of [[-0.3, 0.1, 0.65], [0.35, -0.2, 0.6], [0.1, 0.4, 0.5]]) { g.beginPath(); g.arc(ix + dx, iy + dy, r, 0, Math.PI * 2); g.fill(); }
+      g.fillStyle = "#9c7b45"; g.fillRect(ix - 0.2, iy + 0.1, 0.3, 0.3);
+    } else if (item === C_CORPSE) {
+      g.fillStyle = "#4a3a32";
+      g.beginPath(); g.ellipse(ix + 0.1, iy, 1.2, 0.55, 0.3, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = "#4a3a32"; g.lineWidth = 0.2;
+      for (const o of [-0.4, 0.2, 0.7]) { g.beginPath(); g.moveTo(ix + o, iy + 0.3); g.lineTo(ix + o + 0.2, iy + 1.0); g.stroke(); }
+    } else {
+      g.fillStyle = "#8f7048"; g.beginPath(); g.ellipse(ix, iy, 0.9, 0.6, 0.6, 0, Math.PI * 2); g.fill();
+    }
+  }
+}
+// Der Atlas wird in der Größe gezeichnet, in der die Ameisen gerade auf dem Bildschirm erscheinen,
+// und zwar in allen vier Blickrichtungen. Beim Zeichnen wird nur noch kopiert, nichts gedreht.
+const FACES = [[1, 0, 0, 1], [-1, 0, 0, 1], [0, -1, 1, 0], [0, 1, -1, 0]];
+let ACELL = 0;
+function buildAntAtlas(scale) {
+  const want = clamp(Math.round(scale * 4) / 4, 1.5, 24);
+  if (want === AS) return;
+  AS = want;
+  ACELL = Math.ceil(AFW * AS * 1.15);
+  antAtlas.width = ACELL * A_FRAMES; antAtlas.height = ACELL * 4;
+  const g = antAtlasG;
+  g.imageSmoothingEnabled = true;
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.clearRect(0, 0, antAtlas.width, antAtlas.height);
+  const frames = [];
+  for (let a = 0; a < 2; a++) {
+    frames[a] = [0, a, 0]; frames[2 + a] = [1, a, 0]; frames[4 + a] = [2, a, 0];
+    for (let c = 1; c < 5; c++) frames[4 + c * 2 + a] = [0, a, c];
+  }
+  FACES.forEach(([a, b, c, d], o) => frames.forEach(([kind, phase, item], f) => {
+    const k = AS * (kind === 2 ? 1.15 : (kind === 1 ? 1.05 : 0.92));
+    g.setTransform(a * k, b * k, c * k, d * k, f * ACELL + ACELL / 2, o * ACELL + ACELL / 2);
+    drawAntShape(g, kind, phase, item);
+  }));
+  g.setTransform(1, 0, 0, 1, 0, 0);
 }
 
 // ---------------------------------------------------------------- Zustandsmaschine einer Ameise
@@ -1194,7 +1464,7 @@ const events = {
     }
     if (this.rainT <= 0) { this.raining = false; this.drops = []; this.nextFlood = rf(220, 420); }
   },
-  startFlood() { this.raining = true; this.rainT = 20; hud.banner("FLUT! REGEN LÄUFT INS NEST", 4); },
+  startFlood() { this.raining = true; this.rainT = 20; hud.banner("Flut! Der Regen läuft ins Nest", 4); },
   startCentipede() {
     this.centActive = true; this.centFleeing = false; this.centHp = 24; this.life = 0; this.eatCd = 1;
     const left = rand() < 0.5;
@@ -1203,7 +1473,7 @@ const events = {
     this.segs = [];
     for (let k = 0; k < SEGS; k++) this.segs.push([this.centX - Math.cos(this.angle) * SPACING * k, this.centY]);
     this.targetX = ENT * T; this.targetY = (G + 20) * T;
-    hud.banner("TAUSENDFÜSSLER!", 4);
+    hud.banner("Ein Tausendfüßler greift an", 4);
   },
   tickCentipede(dt) {
     if (!this.centActive) {
@@ -1214,7 +1484,7 @@ const events = {
     this.life += dt; this.walk += dt;
     if (!this.centFleeing && (this.centHp <= 0 || this.life > 40)) {
       this.centFleeing = true;
-      if (this.centHp <= 0) hud.banner("SOLDATEN VERJAGEN DEN TAUSENDFÜSSLER", 4);
+      if (this.centHp <= 0) hud.banner("Die Soldaten verjagen den Tausendfüßler", 4);
     }
     // Ziel: nächste Ameise unter der Erde
     this.targetT -= dt;
@@ -1257,28 +1527,41 @@ const events = {
     if (this.centFleeing && (this.centX < -30 || this.centX > WPX + 30)) { this.centActive = false; this.nextCent = rf(150, 300); }
   },
   draw(g) {
-    g.fillStyle = "rgba(179,209,250,0.7)";
-    for (const d of this.drops) g.fillRect(Math.floor(d[0]) + FRAME, Math.floor(d[1]) + FRAME, 1, 3);
+    if (this.drops.length) {
+      g.strokeStyle = "rgba(190,215,250,0.65)"; g.lineWidth = 0.3; g.lineCap = "round";
+      g.beginPath();
+      for (const d of this.drops) { g.moveTo(d[0], d[1]); g.lineTo(d[0] - 0.5, d[1] + 3.2); }
+      g.stroke();
+    }
     if (!this.centActive) return;
+    g.lineCap = "round";
     for (let k = SEGS - 1; k >= 0; k--) {
-      const p = this.segs[k], x = Math.floor(p[0]) + FRAME, y = Math.floor(p[1]) + FRAME;
-      const n = this.segs[Math.max(k - 1, 0)];
+      const p = this.segs[k], n = this.segs[Math.max(k - 1, 0)];
       let fx = Math.cos(this.angle), fy = Math.sin(this.angle);
       if (k > 0) { const d = Math.hypot(n[0] - p[0], n[1] - p[1]) || 1; fx = (n[0] - p[0]) / d; fy = (n[1] - p[1]) / d; }
-      const sx = -fy, sy = fx, sw = Math.sin(this.walk * 14 + k * 1.3) * 1.2;
-      g.fillStyle = css([0.30, 0.12, 0.08]);
-      pline(g, x + sx * 1.5, y + sy * 1.5, x + sx * 3.5 + fx * sw, y + sy * 3.5 + fy * sw);
-      pline(g, x - sx * 1.5, y - sy * 1.5, x - sx * 3.5 - fx * sw, y - sy * 3.5 - fy * sw);
+      const sx = -fy, sy = fx, sw = Math.sin(this.walk * 14 + k * 1.3) * 1.1;
+      g.strokeStyle = "#5a2414"; g.lineWidth = 0.38;
+      g.beginPath();
+      g.moveTo(p[0] + sx * 1.2, p[1] + sy * 1.2); g.lineTo(p[0] + sx * 3.4 + fx * sw, p[1] + sy * 3.4 + fy * sw);
+      g.moveTo(p[0] - sx * 1.2, p[1] - sy * 1.2); g.lineTo(p[0] - sx * 3.4 - fx * sw, p[1] - sy * 3.4 - fy * sw);
+      g.stroke();
       if (k === 0) {
-        g.fillStyle = css([0.3, 0.1, 0.06]); g.fillRect(x - 2, y - 2, 5, 4);
-        g.fillStyle = css([0.30, 0.12, 0.08]);
-        pline(g, x + fx * 2 + sx, y + fy * 2 + sy, x + fx * 6 + sx * 3, y + fy * 6 + sy * 3);
-        pline(g, x + fx * 2 - sx, y + fy * 2 - sy, x + fx * 6 - sx * 3, y + fy * 6 - sy * 3);
-        g.fillStyle = css([0.9, 0.8, 0.3]); g.fillRect(Math.round(x + fx * 2), Math.round(y + fy * 2), 1, 1);
+        g.strokeStyle = "#3a160c"; g.lineWidth = 0.32;
+        g.beginPath();
+        g.moveTo(p[0] + fx * 1.5 + sx * 0.6, p[1] + fy * 1.5 + sy * 0.6);
+        g.quadraticCurveTo(p[0] + fx * 4 + sx * 1.5, p[1] + fy * 4 + sy * 1.5, p[0] + fx * 5.5 + sx * 3.2, p[1] + fy * 5.5 + sy * 3.2);
+        g.moveTo(p[0] + fx * 1.5 - sx * 0.6, p[1] + fy * 1.5 - sy * 0.6);
+        g.quadraticCurveTo(p[0] + fx * 4 - sx * 1.5, p[1] + fy * 4 - sy * 1.5, p[0] + fx * 5.5 - sx * 3.2, p[1] + fy * 5.5 - sy * 3.2);
+        g.stroke();
+        g.fillStyle = "#3d150b"; g.beginPath(); g.arc(p[0], p[1], 1.9, 0, Math.PI * 2); g.fill();
+        g.fillStyle = "#f0c04a";
+        g.beginPath(); g.arc(p[0] + fx * 0.9 + sx * 0.7, p[1] + fy * 0.9 + sy * 0.7, 0.32, 0, Math.PI * 2); g.fill();
+        g.beginPath(); g.arc(p[0] + fx * 0.9 - sx * 0.7, p[1] + fy * 0.9 - sy * 0.7, 0.32, 0, Math.PI * 2); g.fill();
       } else {
-        const c = k % 2 === 0 ? [0.55, 0.20, 0.12] : [0.42, 0.14, 0.09];
-        g.fillStyle = css(c); g.fillRect(x - 2, y - 1, 4, 3);
-        g.fillStyle = css(lighten(c, 0.25)); g.fillRect(x - 1, y - 1, 2, 1);
+        g.fillStyle = k % 2 ? "#7a2c18" : "#9a3a1e";
+        g.beginPath(); g.ellipse(p[0], p[1], 1.75, 1.45, Math.atan2(fy, fx), 0, Math.PI * 2); g.fill();
+        g.fillStyle = "rgba(255,190,140,0.3)";
+        g.beginPath(); g.ellipse(p[0] - sx * 0.5, p[1] - sy * 0.5, 0.9, 0.45, Math.atan2(fy, fx), 0, Math.PI * 2); g.fill();
       }
     }
   },
@@ -1286,130 +1569,165 @@ const events = {
 
 // =====================================================================
 // HIMMEL: Sonne, Mond, Wolken, Bäume, Büsche, Gras, Blumen, Sandhügel
+// Alles wird jedes Bild als Vektorgrafik gezeichnet und bleibt beim Zoomen scharf.
 // =====================================================================
-const SKY_TOP = [0.60, 0.78, 0.92], SKY_LOW = [0.86, 0.93, 0.95];
-const TRUNK = [0.47, 0.31, 0.19], TRUNK_DARK = [0.33, 0.21, 0.12];
-const LEAF = [[0.36, 0.58, 0.30], [0.47, 0.68, 0.36], [0.28, 0.48, 0.25]], LEAF_LIGHT = [0.62, 0.79, 0.47];
-const SAND = [0.88, 0.77, 0.55], SAND_DARK = [0.78, 0.66, 0.45];
-const [skyC, skyG] = canvas(WPX, G * T);
+const SKY_TOP = [0.56, 0.76, 0.92], SKY_LOW = [0.86, 0.93, 0.95];
+const TRUNK = [0.45, 0.30, 0.19], TRUNK_DARK = [0.31, 0.20, 0.12];
+const LEAF = [[0.33, 0.56, 0.29], [0.45, 0.67, 0.35], [0.26, 0.46, 0.24]], LEAF_LIGHT = [0.66, 0.82, 0.5];
+const SAND = [0.89, 0.78, 0.56], SAND_DARK = [0.76, 0.64, 0.44];
+const TAU = Math.PI * 2;
 const sky = {
-  dirty: true, t: 0, clock: 0, seed: -1, stalks: [], tufts: [], stars: [], clouds: [],
+  dirty: true, clock: 0, seed: -1, stalks: [], tufts: [], stars: [], clouds: [],
   generate() {
     this.seed = world.seed;
     const r = mulberry(world.seed + 99);
     this.stalks = []; this.tufts = []; this.stars = []; this.clouds = [];
     for (let k = 0; k < 70; k++) {
-      const x = r.ri(1, WPX - 2);
+      const x = r.rf(1, WPX - 2);
       if (Math.abs(x - ENT * T) < 30 && r() < 0.7) continue;
       const q = r();
-      this.stalks.push([x, r.ri(6, 30), r.rf(-0.12, 0.12), q < 0.35 ? 1 : (q < 0.5 ? 2 : 0), r.ri(0, 2)]);
+      this.stalks.push([x, r.ri(7, 30), r.rf(-0.12, 0.12), q < 0.35 ? 1 : (q < 0.55 ? 2 : 0), r.ri(0, 2)]);
     }
-    for (let k = 0; k < 140; k++) this.tufts.push([r.ri(0, WPX - 1), r.ri(1, 4), r.ri(0, 2)]);
-    for (let k = 0; k < 40; k++) this.stars.push([r.ri(2, WPX - 3), r.ri(2, 90)]);
-    for (let k = 0; k < 5; k++) this.clouds.push([r.rf(0, WPX), r.ri(6, 40), r.ri(10, 22), r.rf(1, 2.5)]);
+    for (let k = 0; k < 220; k++) this.tufts.push([r.rf(0, WPX), r.rf(1.2, 4.5), r.rf(-0.8, 0.8), r.ri(0, 2)]);
+    for (let k = 0; k < 50; k++) this.stars.push([r.rf(2, WPX - 3), r.rf(2, 90), r.rf(0.25, 0.55)]);
+    for (let k = 0; k < 5; k++) this.clouds.push([r.rf(0, WPX), r.rf(8, 42), r.rf(12, 24), r.rf(1, 2.5)]);
   },
-  tick(dt) {
-    this.clock += dt; this.t -= dt;
-    if (this.dirty || this.t <= 0) { this.t = 0.25; this.dirty = false; this.draw(); }
-  },
-  draw() {
-    const g = skyG, gy = G * T;
+  tick(dt) { this.clock += dt; },
+  circle(g, x, y, r) { g.moveTo(x + r, y); g.arc(x, y, r, 0, TAU); },
+  draw(g) {
     if (this.seed !== world.seed) this.generate();
-    g.clearRect(0, 0, WPX, gy);
-    for (let b = 0; b < 16; b++) {
-      let c = mix(SKY_TOP, SKY_LOW, b / 15);
-      if (events.raining) c = mix(c, [0.55, 0.6, 0.65], 0.55);
-      g.fillStyle = css(c); g.fillRect(0, Math.floor(b * gy / 16), WPX, Math.ceil(gy / 16) + 1);
-    }
-    const light = events.daylight();
+    const gy = G * T, light = events.daylight();
+    let top = SKY_TOP, low = SKY_LOW;
+    if (events.raining) { top = mix(top, [0.5, 0.55, 0.6], 0.6); low = mix(low, [0.62, 0.66, 0.7], 0.6); }
+    const gr = g.createLinearGradient(0, 0, 0, gy);
+    gr.addColorStop(0, css(top)); gr.addColorStop(1, css(low));
+    g.fillStyle = gr; g.fillRect(-0.5, -0.5, WPX + 1, gy + 1);
     if (light < 0.45) {
       const a = clamp((0.45 - light) * 3, 0, 1);
-      for (const s of this.stars) { g.fillStyle = `rgba(255,255,230,${a * (0.6 + 0.4 * Math.sin(this.clock * 2 + s[0]))})`; g.fillRect(s[0], s[1], 1, 1); }
+      g.fillStyle = "#fffbe6";
+      for (const s of this.stars) { g.globalAlpha = a * (0.55 + 0.45 * Math.sin(this.clock * 2 + s[0])); g.beginPath(); this.circle(g, s[0], s[1], s[2]); g.fill(); }
+      g.globalAlpha = 1;
     }
-    // Sonne und Mond
+    // Sonne
     const dayT = (events.time - 0.22) / 0.56;
     if (dayT > 0 && dayT < 1) {
-      const px = 18 + (WPX - 36) * dayT, py = 34 - Math.sin(dayT * Math.PI) * 22;
-      for (let k = 0; k < 3; k++) { g.fillStyle = `rgba(255,237,153,${0.12 + k * 0.05})`; pcircle(g, px, py, 11 - k * 2); }
-      g.fillStyle = css([1, 0.92, 0.55]); pcircle(g, px, py, 6);
-      g.fillStyle = css([1, 0.97, 0.78]); pcircle(g, px - 1, py - 1, 4);
+      const px = 18 + (WPX - 36) * dayT, py = 32 - Math.sin(dayT * Math.PI) * 20;
+      const glow = g.createRadialGradient(px, py, 3, px, py, 16);
+      glow.addColorStop(0, "rgba(255,240,170,0.65)"); glow.addColorStop(1, "rgba(255,240,170,0)");
+      g.fillStyle = glow; g.beginPath(); this.circle(g, px, py, 16); g.fill();
+      g.fillStyle = "#ffe98c"; g.beginPath(); this.circle(g, px, py, 5.6); g.fill();
+      g.fillStyle = "#fff6cc"; g.beginPath(); this.circle(g, px - 1, py - 1, 3.4); g.fill();
     }
+    // Mond
     const nT = (((events.time + 0.5) % 1) - 0.22) / 0.56;
     if (nT > 0 && nT < 1) {
-      const mx = 18 + (WPX - 36) * nT, my = 30 - Math.sin(nT * Math.PI) * 18;
-      g.fillStyle = css([0.95, 0.95, 0.85]); pcircle(g, mx, my, 5);
-      g.fillStyle = css(darken(SKY_TOP, 0.6)); pcircle(g, mx + 2, my - 1, 4);
+      const mx = 18 + (WPX - 36) * nT, my = 28 - Math.sin(nT * Math.PI) * 16;
+      g.fillStyle = "#f3f0dc"; g.beginPath(); this.circle(g, mx, my, 4.6); g.fill();
+      g.fillStyle = css(mix(top, [0.1, 0.12, 0.25], 0.5)); g.beginPath(); this.circle(g, mx + 2, my - 1, 3.8); g.fill();
     }
     // Wolken
     for (const c of this.clouds) {
-      const x = Math.floor(((c[0] + this.clock * c[3]) % (WPX + 60)) - 30), y = c[1], w = c[2];
-      const col = events.raining ? [0.55, 0.58, 0.62] : [0.97, 0.98, 1];
-      g.fillStyle = css(darken(col, 0.12)); g.fillRect(x, y + 2, w, 3);
-      g.fillStyle = css(col); g.fillRect(x + 2, y, w - 5, 3); g.fillRect(Math.floor(x + w * 0.3), y - 2, Math.floor(w * 0.4), 3);
+      const x = ((c[0] + this.clock * c[3]) % (WPX + 60)) - 30, y = c[1], w = c[2];
+      const col = events.raining ? [0.58, 0.61, 0.66] : [0.98, 0.99, 1];
+      g.fillStyle = css(darken(col, 0.1));
+      g.beginPath(); this.circle(g, x + w * 0.25, y + 1.2, w * 0.2); this.circle(g, x + w * 0.55, y + 1.4, w * 0.24); this.circle(g, x + w * 0.8, y + 1.2, w * 0.17); g.fill();
+      g.fillStyle = css(col);
+      g.beginPath(); this.circle(g, x + w * 0.25, y, w * 0.2); this.circle(g, x + w * 0.52, y - w * 0.12, w * 0.25); this.circle(g, x + w * 0.8, y, w * 0.17); g.fill();
+      g.fillRect(x + w * 0.25, y - 0.5, w * 0.55, w * 0.18);
     }
-    for (const s of world.sources) if (s.kind === 0) this.tree(s);
-    for (const st of this.stalks) this.stalk(st, gy);
-    for (const s of world.sources) if (s.kind === 1) this.bush(s);
-    // Sandhügel
-    for (let x = 0; x < W; x++) {
-      const h = world.mound[x];
-      if (h < 0.4) continue;
-      const hp = Math.ceil(h);
-      g.fillStyle = css(SAND); g.fillRect(x * T, gy - hp, T, hp);
-      g.fillStyle = css(lighten(SAND, 0.15)); g.fillRect(x * T, gy - hp, T, 1);
-      g.fillStyle = css(SAND_DARK);
-      for (let k = 0; k < Math.floor(hp / 3); k++) if (hash2(x, k) % 3 === 0) g.fillRect(x * T + k % 3, gy - hp + 2 + k * 3, 1, 1);
+    for (const s of world.sources) if (s.kind === 0) this.tree(g, s);
+    for (const st of this.stalks) this.stalk(g, st, gy);
+    for (const s of world.sources) if (s.kind === 1) this.bush(g, s);
+    this.mound(g, gy);
+    // Grasbüschel am Boden
+    g.lineCap = "round"; g.lineWidth = 0.42;
+    for (let c = 0; c < 3; c++) {
+      g.strokeStyle = css(LEAF[c]); g.beginPath();
+      for (const t of this.tufts) if (t[3] === c) {
+        const sway = Math.sin(this.clock * 1.2 + t[0] * 0.2) * 0.25;
+        g.moveTo(t[0], gy + 0.3); g.quadraticCurveTo(t[0] + t[2] * 0.4, gy - t[1] * 0.5, t[0] + t[2] + sway, gy - t[1]);
+      }
+      g.stroke();
     }
-    for (const tf of this.tufts) { g.fillStyle = css(LEAF[tf[2]]); g.fillRect(tf[0], gy - tf[1], 1, tf[1]); }
-    g.fillStyle = css([0.40, 0.62, 0.30]); g.fillRect(0, gy - 1, WPX, 1);
   },
-  blob(px, py, r, col) {
-    const g = skyG, rr = Math.floor(r);
-    g.fillStyle = css(col);
-    for (let dy = -rr; dy <= rr; dy += 2) {
-      const hw = Math.floor(Math.sqrt(Math.max(r * r - dy * dy, 0)));
-      g.fillRect(Math.floor(px) - hw, Math.floor(py) + dy, hw * 2, 2);
-    }
-    g.fillStyle = css(darken(col, 0.15)); g.fillRect(Math.floor(px - rr * 0.5), Math.floor(py + rr * 0.5), rr, 2);
-  },
-  tree(s) {
-    const g = skyG, tx = s.trunk * T + 1, top = s.cy * T, gy = G * T;
-    g.fillStyle = css(TRUNK); g.fillRect(tx - 1, top, 4, gy - top); g.fillRect(tx - 2, gy - 3, 6, 3);
-    g.fillStyle = css(TRUNK_DARK); g.fillRect(tx + 2, top, 1, gy - top);
+  tree(g, s) {
+    const tx = s.trunk * T + 1.5, top = s.cy * T, gy = G * T;
+    g.fillStyle = css(TRUNK);
+    g.beginPath(); g.moveTo(tx - 2.1, gy + 0.3); g.quadraticCurveTo(tx - 1.0, gy - 6, tx - 0.95, top); g.lineTo(tx + 0.95, top);
+    g.quadraticCurveTo(tx + 1.0, gy - 6, tx + 2.1, gy + 0.3); g.closePath(); g.fill();
+    g.strokeStyle = css(TRUNK_DARK); g.lineWidth = 0.5;
+    g.beginPath(); g.moveTo(tx + 0.7, top + 2); g.lineTo(tx + 0.9, gy - 1); g.stroke();
+    g.strokeStyle = css(TRUNK); g.lineWidth = 0.8; g.lineCap = "round";
+    g.beginPath(); g.moveTo(tx, top + 4); g.lineTo(tx - 5, top - 2); g.moveTo(tx, top + 6); g.lineTo(tx + 6, top); g.stroke();
     const cx = s.cx * T + 1.5, cy = s.cy * T;
-    for (const b of s.blobs) this.blob(cx + b[0] * T, cy + b[1] * T, b[2] * T, LEAF[b[3]]);
-    g.fillStyle = css(LEAF_LIGHT);
-    for (const b of s.blobs) g.fillRect(Math.floor(cx + b[0] * T - b[2] * T * 0.45), Math.floor(cy + b[1] * T - b[2] * T * 0.45), 3, 2);
-    this.fruits(s);
+    for (const pass of [0, 1, 2]) for (const b of s.blobs) {
+      const bx = cx + b[0] * T, by = cy + b[1] * T, br = b[2] * T;
+      if (pass === 0) { g.fillStyle = css(darken(LEAF[b[3]], 0.22)); g.beginPath(); this.circle(g, bx + 0.6, by + 1, br); g.fill(); }
+      else if (pass === 1) { g.fillStyle = css(LEAF[b[3]]); g.beginPath(); this.circle(g, bx, by, br * 0.94); g.fill(); }
+      else { g.fillStyle = css(LEAF_LIGHT, 0.55); g.beginPath(); this.circle(g, bx - br * 0.32, by - br * 0.35, br * 0.38); g.fill(); }
+    }
+    this.fruits(g, s);
   },
-  bush(s) {
+  bush(g, s) {
     const cx = s.cx * T + 1.5, cy = (SURF - 2) * T;
-    for (const b of s.blobs) this.blob(cx + b[0] * T, cy + b[1] * T, b[2] * T, LEAF[b[3]]);
-    this.fruits(s);
+    for (const pass of [0, 1, 2]) for (const b of s.blobs) {
+      const bx = cx + b[0] * T, by = cy + b[1] * T, br = b[2] * T;
+      if (pass === 0) { g.fillStyle = css(darken(LEAF[b[3]], 0.22)); g.beginPath(); this.circle(g, bx + 0.5, by + 0.8, br); g.fill(); }
+      else if (pass === 1) { g.fillStyle = css(LEAF[b[3]]); g.beginPath(); this.circle(g, bx, by, br * 0.94); g.fill(); }
+      else { g.fillStyle = css(LEAF_LIGHT, 0.5); g.beginPath(); this.circle(g, bx - br * 0.3, by - br * 0.35, br * 0.35); g.fill(); }
+    }
+    this.fruits(g, s);
   },
-  fruits(s) {
-    const g = skyG;
+  fruits(g, s) {
     for (const f of s.fruits) {
       if (!f.alive) continue;
-      const x = f.x * T, y = f.y * T;
-      g.fillStyle = css([0.86, 0.22, 0.16]); g.fillRect(x, y, 3, 3);
-      g.fillStyle = css([1, 0.55, 0.45]); g.fillRect(x, y, 1, 1);
-      g.fillStyle = css(TRUNK_DARK); g.fillRect(x + 1, y - 1, 1, 1);
+      const x = f.x * T + 1.5, y = f.y * T + 1.5;
+      g.strokeStyle = css(TRUNK_DARK); g.lineWidth = 0.35;
+      g.beginPath(); g.moveTo(x, y - 1.2); g.lineTo(x + 0.4, y - 2.2); g.stroke();
+      g.fillStyle = "#d4352a"; g.beginPath(); this.circle(g, x, y, 1.45); g.fill();
+      g.fillStyle = "rgba(255,190,175,0.85)"; g.beginPath(); this.circle(g, x - 0.5, y - 0.5, 0.45); g.fill();
     }
   },
-  stalk(st, gy) {
-    const g = skyG, x = st[0], h = st[1], lean = st[2] + Math.sin(this.clock * 0.8 + x * 0.3) * 0.04;
-    g.fillStyle = css(LEAF[st[4]]);
-    for (let k = 0; k < h; k++) g.fillRect(Math.floor(x + lean * k), gy - 1 - k, 1, 1);
-    const tx = Math.floor(x + lean * h), ty = gy - 1 - h;
-    if (h > 10) g.fillRect(Math.floor(x + lean * h * 0.5) - 2, Math.floor(gy - h * 0.5), 2, 1);
+  stalk(g, st, gy) {
+    const x = st[0], h = st[1], lean = st[2] + Math.sin(this.clock * 0.8 + x * 0.3) * 0.04;
+    const tx = x + lean * h, ty = gy - h;
+    g.strokeStyle = css(LEAF[st[4]]); g.lineWidth = 0.45; g.lineCap = "round";
+    g.beginPath(); g.moveTo(x, gy); g.quadraticCurveTo(x + lean * h * 0.3, gy - h * 0.5, tx, ty); g.stroke();
+    if (h > 10) {
+      g.fillStyle = css(LEAF[st[4]]);
+      g.beginPath(); g.ellipse(x + lean * h * 0.4 - 1.2, gy - h * 0.45, 1.4, 0.45, -0.5, 0, TAU); g.fill();
+    }
     if (st[3] === 1) {
-      g.fillStyle = css([0.93, 0.76, 0.22]); g.fillRect(tx - 1, ty - 3, 2, 4);
-      g.fillStyle = css([1, 0.92, 0.5]); g.fillRect(tx - 1, ty - 3, 1, 1);
+      g.fillStyle = "#e9b93a"; g.beginPath(); g.ellipse(tx, ty - 1.4, 0.9, 1.9, lean, 0, TAU); g.fill();
+      g.fillStyle = "#fbe08a"; g.beginPath(); g.ellipse(tx - 0.3, ty - 2, 0.35, 0.8, lean, 0, TAU); g.fill();
     } else if (st[3] === 2) {
-      g.fillStyle = css([0.98, 0.85, 0.3]);
-      g.fillRect(tx - 1, ty - 2, 3, 3); g.fillRect(tx - 2, ty - 1, 5, 1); g.fillRect(tx, ty - 3, 1, 5);
-      g.fillStyle = css([0.85, 0.55, 0.15]); g.fillRect(tx, ty - 1, 1, 1);
+      g.fillStyle = "#fbd85a";
+      for (let k = 0; k < 6; k++) { const a = k / 6 * TAU + x; g.beginPath(); g.ellipse(tx + Math.cos(a) * 1.3, ty + Math.sin(a) * 1.3, 1.0, 0.6, a, 0, TAU); g.fill(); }
+      g.fillStyle = "#d98a24"; g.beginPath(); this.circle(g, tx, ty, 0.75); g.fill();
+    }
+  },
+  mound(g, gy) {
+    // weicher Sandhügel aus dem Aushub
+    const m = world.mound;
+    let any = false;
+    for (let x = 0; x < W; x++) if (m[x] > 0.4) { any = true; break; }
+    if (!any) return;
+    const pts = [];
+    for (let x = 0; x < W; x++) pts.push([x * T + 1.5, gy - m[x]]);
+    g.fillStyle = css(SAND);
+    g.beginPath(); g.moveTo(0, gy + 0.5); g.lineTo(0, pts[0][1]);
+    for (let k = 1; k < pts.length; k++) {
+      const mx = (pts[k - 1][0] + pts[k][0]) / 2, my = (pts[k - 1][1] + pts[k][1]) / 2;
+      g.quadraticCurveTo(pts[k - 1][0], pts[k - 1][1], mx, my);
+    }
+    g.lineTo(WPX, pts[pts.length - 1][1]); g.lineTo(WPX, gy + 0.5); g.closePath(); g.fill();
+    g.fillStyle = css(SAND_DARK, 0.7);
+    for (let x = 0; x < W; x++) {
+      const h = m[x];
+      for (let k = 0; k < Math.floor(h / 2.5); k++) {
+        const hh = hash2(x, k);
+        g.fillRect(x * T + (hh % 30) / 10, gy - h + 1 + k * 2.5 + (hh >> 5) % 2, 0.5, 0.5);
+      }
     }
   },
 };
@@ -1417,54 +1735,57 @@ const sky = {
 // =====================================================================
 // KAMMERINHALT: Futter, Eier, Larven, Tote, Abfall
 // =====================================================================
-const [decorC, decorG] = canvas(WPX, HPX);
 const decor = {
-  t: 0,
-  tick(dt) { this.t -= dt; if (colony.decorDirty && this.t <= 0) { this.t = 0.25; colony.decorDirty = false; this.draw(); } },
+  slots: [[0.8, 2.1], [2.2, 2.1], [1.5, 1.0]],
   sorted(ch) { return [...world.chamberCells[ch]].sort((a, b) => b - a); },
   deadAnt(g, x, y) {
-    g.fillStyle = css([0.16, 0.11, 0.09]); g.fillRect(x, y + 1, 3, 1);
-    g.fillStyle = css([0.28, 0.22, 0.2]); g.fillRect(x, y, 1, 1); g.fillRect(x + 2, y, 1, 1);
+    g.fillStyle = "#3b2a22";
+    g.beginPath(); g.ellipse(x - 0.6, y, 1.1, 0.6, 0, 0, TAU); g.ellipse(x + 0.9, y - 0.1, 0.55, 0.5, 0, 0, TAU); g.fill();
+    g.strokeStyle = "#3b2a22"; g.lineWidth = 0.22;
+    g.beginPath(); for (const o of [-0.5, 0.1, 0.6]) { g.moveTo(x + o, y + 0.2); g.lineTo(x + o + 0.4, y - 0.9); } g.stroke();
   },
-  draw() {
-    const g = decorG, slots = [[0, 2], [2, 2], [1, 1]];
-    const foodCols = [[0.86, 0.22, 0.16], [0.95, 0.55, 0.15], [0.95, 0.8, 0.25]];
-    g.clearRect(0, 0, WPX, HPX);
+  draw(g) {
+    const foodCols = ["#d8352a", "#f08c2a", "#f2c84b"];
     const gran = this.sorted(CH_GRANARY);
     let k = 0;
     const items = Math.floor(colony.food);
-    outer: for (const cell of gran) for (const s of slots) {
+    outer: for (const cell of gran) for (const s of this.slots) {
       if (k >= items) break outer;
-      g.fillStyle = css(foodCols[hash2(cell, k) % 3]); g.fillRect((cell % W) * T + s[0], Math.floor(cell / W) * T + s[1], 1, 1);
+      const x = (cell % W) * T + s[0], y = Math.floor(cell / W) * T + s[1];
+      g.fillStyle = foodCols[hash2(cell, k) % 3]; g.beginPath(); g.arc(x, y, 0.75, 0, TAU); g.fill();
       k++;
     }
-    g.fillStyle = css([0.45, 0.35, 0.22]);
+    g.fillStyle = "#6e5236";
     for (let n = 0; n < Math.min(Math.floor(colony.trashWaiting), gran.length); n++) {
-      const c = gran[gran.length - 1 - n]; g.fillRect((c % W) * T + 1, Math.floor(c / W) * T + 2, 1, 1);
+      const c = gran[gran.length - 1 - n]; g.beginPath(); g.arc((c % W) * T + 1.5, Math.floor(c / W) * T + 2.2, 0.5, 0, TAU); g.fill();
     }
+    let bi = 0;
     for (const b of colony.brood) {
-      const c = b[4], o = hash2(c, Math.floor(b[1] * 10) % 3) % 2, x = (c % W) * T + o, y = Math.floor(c / W) * T + 1;
-      if (b[0] === 0) { g.fillStyle = css([0.97, 0.95, 0.88]); g.fillRect(x, y, 1, 2); }
-      else {
-        const col = b[2] > 0.3 ? [0.96, 0.88, 0.68] : [0.85, 0.82, 0.75];
-        g.fillStyle = css(col); g.fillRect(x, y, 2, 2);
-        g.fillStyle = css(darken(col, 0.2)); g.fillRect(x, y, 1, 1);
+      const c = b[4], o = hash2(c, bi++) % 3 * 0.6, x = (c % W) * T + 0.8 + o, y = Math.floor(c / W) * T + 1.9;
+      if (b[0] === 0) {
+        g.fillStyle = "#fbf6e8"; g.beginPath(); g.ellipse(x, y, 0.5, 0.75, 0.3, 0, TAU); g.fill();
+      } else {
+        g.fillStyle = b[2] > 0.3 ? "#f6e3b0" : "#d9d2bf";
+        g.beginPath(); g.ellipse(x, y, 1.1, 0.7, 0.2, 0, TAU); g.fill();
+        g.strokeStyle = "rgba(120,90,50,0.45)"; g.lineWidth = 0.15;
+        g.beginPath(); g.moveTo(x - 0.3, y - 0.6); g.lineTo(x - 0.3, y + 0.6); g.moveTo(x + 0.3, y - 0.6); g.lineTo(x + 0.3, y + 0.6); g.stroke();
       }
     }
     const cem = this.sorted(CH_CEMETERY);
     for (let n = 0; n < Math.min(colony.buried, cem.length * 2); n++) {
-      const c = cem[n % cem.length]; this.deadAnt(g, (c % W) * T, Math.floor(c / W) * T + (n < cem.length ? 2 : 0));
+      const c = cem[n % cem.length]; this.deadAnt(g, (c % W) * T + 1.5, Math.floor(c / W) * T + (n < cem.length ? 2.2 : 1.0));
     }
     const tr = this.sorted(CH_TRASH);
     for (let n = 0; n < Math.min(colony.trashStored, tr.length * 3); n++) {
-      const c = tr[n % tr.length], s = slots[Math.floor(n / tr.length) % 3];
-      g.fillStyle = css(hash2(c, n) % 2 ? [0.55, 0.5, 0.42] : [0.45, 0.33, 0.2]);
-      g.fillRect((c % W) * T + s[0], Math.floor(c / W) * T + s[1], 1, 1);
+      const c = tr[n % tr.length], s = this.slots[Math.floor(n / tr.length) % 3];
+      g.fillStyle = hash2(c, n) % 2 ? "#8b806b" : "#6e5236";
+      g.beginPath(); g.ellipse((c % W) * T + s[0], Math.floor(c / W) * T + s[1], 0.7, 0.45, n, 0, TAU); g.fill();
     }
-    for (const c of colony.corpses) this.deadAnt(g, (c % W) * T, Math.floor(c / W) * T + 1);
+    for (const c of colony.corpses) this.deadAnt(g, (c % W) * T + 1.5, Math.floor(c / W) * T + 2);
     for (const sc of colony.surfaceCorpses) {
-      g.fillStyle = `rgba(38,26,20,${clamp(1 - sc[2] / 30, 0, 1)})`;
-      g.fillRect(Math.floor(sc[0] - 1.5), Math.floor(sc[1] - surfaceOffset(Math.floor(sc[0] / T))), 3, 1);
+      g.globalAlpha = clamp(1 - sc[2] / 30, 0, 1);
+      this.deadAnt(g, sc[0], sc[1] + 0.8 - surfaceOffset(Math.floor(sc[0] / T)));
+      g.globalAlpha = 1;
     }
   },
 };
@@ -1472,155 +1793,126 @@ const decor = {
 // =====================================================================
 // RAHMEN: dunkelgrünes Formicarium mit Glas
 // =====================================================================
-const [frameC, frameG] = canvas(FULL_W, FULL_H);
-function drawFrame() {
-  const g = frameG, f = FRAME, w = WPX, h = HPX;
-  g.translate(f, f);
-  g.fillStyle = css([0.10, 0.25, 0.14]);
-  g.fillRect(-f, -f, w + 2 * f, f); g.fillRect(-f, h, w + 2 * f, f); g.fillRect(-f, 0, f, h); g.fillRect(w, 0, f, h);
-  g.fillStyle = css([0.20, 0.42, 0.26]);
-  g.fillRect(-f, -f, w + 2 * f, 1); g.fillRect(-f, -f, 1, h + 2 * f); g.fillRect(-1, h, w + 2, 1); g.fillRect(w, -1, 1, h + 2);
-  g.fillStyle = css([0.05, 0.14, 0.08]);
-  g.fillRect(-1, -1, w + 2, 1); g.fillRect(-1, -1, 1, h + 2); g.fillRect(-f, h + f - 1, w + 2 * f, 1); g.fillRect(w + f - 1, -f, 1, h + 2 * f);
-  for (const [px, py] of [[-3, -3], [w + 2, -3], [-3, h + 2], [w + 2, h + 2]]) {
-    g.fillStyle = css([0.55, 0.6, 0.5]); g.fillRect(px - 1, py - 1, 2, 2);
-    g.fillStyle = css([0.8, 0.85, 0.75]); g.fillRect(px - 1, py - 1, 1, 1);
+function drawFrame(g) {
+  const f = FRAME, w = WPX, h = HPX;
+  g.fillStyle = "#17402a";
+  g.beginPath(); g.rect(-f, -f, w + 2 * f, h + 2 * f); g.rect(0, 0, w, h); g.fill("evenodd");
+  g.strokeStyle = "#3f7a52"; g.lineWidth = 0.8;
+  g.strokeRect(-f + 0.4, -f + 0.4, w + 2 * f - 0.8, h + 2 * f - 0.8);
+  g.strokeStyle = "#0a1f12"; g.lineWidth = 0.9;
+  g.strokeRect(-0.45, -0.45, w + 0.9, h + 0.9);
+  g.strokeStyle = "rgba(120,190,140,0.35)"; g.lineWidth = 0.4;
+  g.strokeRect(-1.4, -1.4, w + 2.8, h + 2.8);
+  for (const [px, py] of [[-3, -3], [w + 3, -3], [-3, h + 3], [w + 3, h + 3]]) {
+    const sg = g.createRadialGradient(px - 0.4, py - 0.4, 0.1, px, py, 1.5);
+    sg.addColorStop(0, "#e8ecd8"); sg.addColorStop(1, "#7d8a72");
+    g.fillStyle = sg; g.beginPath(); g.arc(px, py, 1.4, 0, TAU); g.fill();
+    g.strokeStyle = "#4a5644"; g.lineWidth = 0.3;
+    g.beginPath(); g.moveTo(px - 0.9, py + 0.4); g.lineTo(px + 0.9, py - 0.4); g.stroke();
   }
   // Glas: zarte Spiegelung
+  g.save();
+  g.beginPath(); g.rect(0, 0, w, h); g.clip();
   g.fillStyle = "rgba(255,255,255,0.05)";
-  for (let k = 0; k < 3; k++) for (let s = 0; s < 300; s++) {
-    const x = 30 + k * 9 + s * 160 / 300, y = h - s;
-    g.fillRect(Math.floor(x), Math.floor(y), k === 2 ? 1 : 2, 1);
+  for (const [x0, bw] of [[20, 14], [42, 5]]) {
+    g.beginPath(); g.moveTo(x0, h); g.lineTo(x0 + bw, h); g.lineTo(x0 + bw + 200, h - 360); g.lineTo(x0 + 200, h - 360); g.closePath(); g.fill();
   }
-  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.restore();
 }
 
 // =====================================================================
-// ANZEIGE: grünes Holzschild, Kammer-Infos, Meldungen, Knöpfe
+// ANZEIGE: HTML über dem Spielfeld, gut lesbar in jeder Größe
 // =====================================================================
-const CREAM = "#f0e8c7", BOARD = css([0.14, 0.31, 0.21]), BOARD_LIGHT = css([0.29, 0.50, 0.36]), BOARD_DARK = css([0.09, 0.21, 0.14]);
-const ANT_ICON = [".#...#.", "..#.#..", "...#...", "#.###.#", ".#.#.#.", "..###..", "#.###.#", "..###..", "...#..."];
+const $ = id => document.getElementById(id);
+const ICON_PAUSE = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1.2"/><rect x="14" y="5" width="4" height="14" rx="1.2"/></svg>';
+const ICON_PLAY = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.2-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>';
 const hud = {
-  infoTitle: "", infoLines: [], infoColor: CREAM, infoT: 0, bannerText: "", bannerT: 0, blink: 0, buttons: [], hintT: 9,
-  showInfo(title, lines, ch) { this.infoTitle = title; this.infoLines = lines; this.infoColor = ch > 0 ? css(CHAMBER_COLORS[ch]) : CREAM; this.infoT = 5; this.hintT = 0; },
-  hideInfo() { this.infoT = 0; },
-  banner(t, time = 4) { this.bannerText = t; this.bannerT = time; },
-  tick(dt) { this.blink += dt; this.infoT = Math.max(0, this.infoT - dt); this.bannerT = Math.max(0, this.bannerT - dt); this.hintT = Math.max(0, this.hintT - dt); },
-  handleTap(x, y) {
-    for (const b of this.buttons) {
-      if (x >= b.x - 4 && x <= b.x + b.w + 4 && y >= b.y - 4 && y <= b.y + b.h + 4) {
-        if (b.id === "pause") game.paused = !game.paused;
-        else game.speed = game.speed >= 4 ? 1 : game.speed * 2;
-        return true;
-      }
+  infoT: 0, bannerT: 0, hintT: 10, t: 0, last: {},
+  set(id, v) { if (this.last[id] !== v) { this.last[id] = v; $(id).textContent = v; } },
+  showInfo(title, rows, ch) {
+    $("infoTitle").textContent = title;
+    $("swatch").style.background = ch > 0 ? css(CHAMBER_COLORS[ch]) : "#8a7a5a";
+    const dl = $("infoRows");
+    dl.replaceChildren();
+    for (const [k, v] of rows) {
+      const dt = document.createElement("dt"), dd = document.createElement("dd");
+      dt.textContent = k; dd.textContent = v;
+      dl.append(dt, dd);
     }
-    return false;
+    $("info").hidden = false; $("hint").hidden = true;
+    this.infoT = 6; this.hintT = 0;
   },
-  panel(g, x, y, w, h) {
-    g.fillStyle = "rgba(0,0,0,0.35)"; g.fillRect(x + 2, y + 2, w, h);
-    g.fillStyle = BOARD_LIGHT; g.fillRect(x, y, w, h);
-    g.fillStyle = BOARD; g.fillRect(x + 1, y + 1, w - 2, h - 2);
+  hideInfo() { $("info").hidden = true; this.infoT = 0; },
+  banner(text, time = 4) { const b = $("banner"); b.textContent = text; b.hidden = false; this.bannerT = time; },
+  updateButtons() {
+    $("btnPause").innerHTML = game.paused ? ICON_PLAY : ICON_PAUSE;
+    $("btnPause").setAttribute("aria-label", game.paused ? "Weiter" : "Pause");
+    $("btnSpeed").textContent = game.speed + "×";
   },
-  draw(g, bw, bh, top, bottom) {
-    // Holzschild oben links
-    const ox = 3, oy = 3 + top, w = 74, h = 30;
-    const poly = (pts, color) => { g.fillStyle = color; g.beginPath(); pts.forEach((p, k) => k ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.closePath(); g.fill(); };
-    poly([[ox + 9, oy + 2], [ox + w + 2, oy + 2], [ox + w + 2, oy + h + 2], [ox + 2, oy + h + 2], [ox + 2, oy + 9]], "rgba(0,0,0,0.35)");
-    poly([[ox + 7, oy], [ox + w, oy], [ox + w, oy + h], [ox, oy + h], [ox, oy + 7]], BOARD_LIGHT);
-    poly([[ox + 7, oy + 1], [ox + w - 1, oy + 1], [ox + w - 1, oy + h - 1], [ox + 1, oy + h - 1], [ox + 1, oy + 7]], BOARD);
-    for (let k = 6; k < h - 2; k += 6) {
-      g.fillStyle = BOARD_DARK; g.fillRect(ox + 2, oy + k, w - 3, 1);
-      g.fillStyle = css([0.18, 0.36, 0.25]); g.fillRect(ox + 10 + (k * 7) % 23, oy + k - 2, 8, 1);
-    }
-    g.fillStyle = BOARD_DARK; g.fillRect(ox + 1, oy + h - 2, w - 2, 1);
-    g.fillStyle = css([0.75, 0.6, 0.25]); g.fillRect(ox + 4, oy + 7, 5, 5);
-    g.fillStyle = css([0.2, 0.18, 0.12]); g.fillRect(ox + 5, oy + 8, 3, 3);
-    g.fillStyle = css([1, 0.9, 0.55]); g.fillRect(ox + 5, oy + 8, 1, 1);
-    Font.draw(g, ox + 15, oy + 5, "ANT POP.", CREAM);
-    g.fillStyle = "#f7f2e0";
-    ANT_ICON.forEach((row, y) => { for (let x = 0; x < row.length; x++) if (row[x] === "#") g.fillRect(ox + 4 + x, oy + 14 + y, 1, 1); });
-    Font.draw(g, ox + 16, oy + 13, String(ants.count), CREAM, 2);
-    Font.shadow(g, 5, 37 + top, `FUTTER ${Math.floor(colony.food)}  TAG ${events.day}`, CREAM, "rgba(0,0,0,0.6)");
-    if (colony.starving && this.blink % 1 < 0.6) Font.shadow(g, 5, 44 + top, "HUNGER!", "#ff6a4d", "rgba(0,0,0,0.6)");
-    // Meldung
-    if (this.bannerT > 0) {
-      const tw = Font.width(this.bannerText), x = Math.round(bw / 2 - tw / 2) - 4, y = 58 + top;
-      g.fillStyle = "rgba(13,31,20,0.85)"; g.fillRect(x, y, tw + 8, 11);
-      g.fillStyle = BOARD_LIGHT; g.fillRect(x, y, tw + 8, 1); g.fillRect(x, y + 10, tw + 8, 1);
-      Font.center(g, bw / 2, y + 3, this.bannerText, this.blink % 0.8 < 0.5 ? "#ffd95a" : CREAM);
-    }
-    // Knöpfe unten rechts: Pause und Tempo
-    this.buttons = [];
-    const by = Math.round(bh - 22 - bottom), pause = { id: "pause", x: bw - 60, y: by, w: 26, h: 18 }, speed = { id: "speed", x: bw - 30, y: by, w: 26, h: 18 };
-    for (const b of [pause, speed]) { this.panel(g, b.x, b.y, b.w, b.h); this.buttons.push(b); }
-    g.fillStyle = CREAM;
-    const pcx = pause.x + 13, pcy = pause.y + 9;
-    if (game.paused) { g.beginPath(); g.moveTo(pcx - 3, pcy - 5); g.lineTo(pcx + 4, pcy); g.lineTo(pcx - 3, pcy + 5); g.closePath(); g.fill(); }
-    else { g.fillRect(pcx - 4, pcy - 4, 3, 9); g.fillRect(pcx + 1, pcy - 4, 3, 9); }
-    Font.center(g, speed.x + 14, speed.y + 7, game.speed + "X", CREAM);
-    if (game.paused) Font.shadow(g, bw - 60, by - 9, "PAUSE", CREAM, "rgba(0,0,0,0.6)");
-    // Hinweis beim Start
-    if (this.hintT > 0 && this.infoT <= 0) {
-      const lines = ["TIPPE AUF EINE KAMMER", "ZWEI FINGER ZOOMEN", "ZWEIMAL TIPPEN: NÄHER"];
-      const pw = 104, ph = 8 + lines.length * 7, px = Math.round((bw - pw) / 2), py = Math.round(bh - ph - 30 - bottom);
-      this.panel(g, px, py, pw, ph);
-      lines.forEach((l, k) => Font.center(g, bw / 2, py + 5 + k * 7, l, CREAM));
-    }
-    // Kammer-Info
-    if (this.infoT > 0) {
-      const pw = 150, ph = 16 + this.infoLines.length * 7, px = Math.round((bw - pw) / 2), py = Math.round(bh - ph - 30 - bottom);
-      this.panel(g, px, py, pw, ph);
-      g.fillStyle = this.infoColor; g.fillRect(px + 5, py + 5, 5, 5);
-      Font.draw(g, px + 14, py + 5, this.infoTitle, CREAM);
-      g.fillStyle = BOARD_DARK; g.fillRect(px + 4, py + 12, pw - 8, 1);
-      this.infoLines.forEach((l, k) => Font.draw(g, px + 8, py + 15 + k * 7, l, "#e2d9b8"));
-    }
+  tick(dt) {
+    if (this.infoT > 0 && (this.infoT -= dt) <= 0) this.hideInfo();
+    if (this.bannerT > 0 && (this.bannerT -= dt) <= 0) $("banner").hidden = true;
+    if (this.hintT > 0 && (this.hintT -= dt) <= 0) $("hint").hidden = true;
+    this.t -= dt;
+    if (this.t > 0) return;
+    this.t = 0.25;
+    this.set("pop", String(ants.count));
+    this.set("food", String(Math.floor(colony.food)));
+    this.set("day", String(events.day));
+    const hungry = colony.starving;
+    if (this.last.hunger !== hungry) { this.last.hunger = hungry; $("hunger").hidden = !hungry; }
   },
 };
+$("btnPause").addEventListener("click", () => { game.paused = !game.paused; hud.updateButtons(); });
+$("btnSpeed").addEventListener("click", () => { game.speed = game.speed >= 4 ? 1 : game.speed * 2; hud.updateButtons(); });
+$("info").addEventListener("click", () => hud.hideInfo());
+$("hint").addEventListener("click", () => { $("hint").hidden = true; hud.hintT = 0; });
 
 // =====================================================================
 // KAMERA UND EINGABE: zwei Finger zoomen, ein Finger schiebt, Doppeltippen zoomt
 // =====================================================================
-const view = { x: WPX / 2, y: HPX / 2, z: 1, bw: FULL_W, bh: FULL_H, cssW: 1, cssH: 1, top: 0, bottom: 0 };
-const minZoom = () => Math.min(view.bw / FULL_W, view.bh / FULL_H);
+const MAX_ZOOM = 6;
+const view = { x: WPX / 2, y: HPX / 2, z: 1, cssW: 1, cssH: 1, dpr: 1, top: 0, bottom: 0 };
+const cv = $("game");
+const ctx = cv.getContext("2d", { alpha: false });
+// Platz oben für das Schild, unten für die Knöpfe: das Feld passt dazwischen
+const padTop = () => view.top + 4;
+const padBottom = () => view.bottom + 4;
+const fitScale = () => Math.min(view.cssW / FULL_W, (view.cssH - padTop() - padBottom()) / FULL_H);
+const scale = () => fitScale() * view.z;
 function clampView() {
-  view.z = clamp(view.z, minZoom(), 6);
-  const vw = view.bw / view.z, vh = view.bh / view.z;
+  view.z = clamp(view.z, 1, MAX_ZOOM);
+  const s = scale(), vw = view.cssW / s, vh = view.cssH / s;
   view.x = vw >= FULL_W ? WPX / 2 : clamp(view.x, -FRAME + vw / 2, WPX + FRAME - vw / 2);
-  view.y = vh >= FULL_H ? HPX / 2 : clamp(view.y, -FRAME + vh / 2, HPX + FRAME - vh / 2);
+  if (vh >= FULL_H + (padTop() + padBottom()) / s) {
+    const regionCenter = (padTop() + view.cssH - padBottom()) / 2;
+    view.y = HPX / 2 - (regionCenter - view.cssH / 2) / s;
+  } else view.y = clamp(view.y, -FRAME + vh / 2 - padTop() / s, HPX + FRAME - vh / 2 + padBottom() / s);
 }
-const toWorld = (sx, sy) => [view.x + (sx - view.bw / 2) / view.z, view.y + (sy - view.bh / 2) / view.z];
+const toWorld = (sx, sy) => [view.x + (sx - view.cssW / 2) / scale(), view.y + (sy - view.cssH / 2) / scale()];
 function zoomAt(z, sx, sy) {
   const [wx, wy] = toWorld(sx, sy);
-  view.z = clamp(z, minZoom(), 6);
-  view.x = wx - (sx - view.bw / 2) / view.z; view.y = wy - (sy - view.bh / 2) / view.z;
+  view.z = clamp(z, 1, MAX_ZOOM);
+  view.x = wx - (sx - view.cssW / 2) / scale(); view.y = wy - (sy - view.cssH / 2) / scale();
   clampView();
 }
 let zoomAnim = null;
 function animateZoom(target, sx, sy) { zoomAnim = { from: view.z, to: target, sx, sy, t: 0 }; }
-
-const cv = document.getElementById("game");
-const ctx = cv.getContext("2d");
-const [worldC, worldG] = canvas(FULL_W, FULL_H);
 function resize() {
   view.cssW = window.innerWidth; view.cssH = window.innerHeight;
-  const ratio = view.cssH / view.cssW;
-  if (ratio >= FULL_H / FULL_W) { view.bw = FULL_W; view.bh = Math.round(FULL_W * ratio); }
-  else { view.bh = FULL_H; view.bw = Math.round(FULL_H / ratio); }
-  cv.width = view.bw; cv.height = view.bh;
-  ctx.imageSmoothingEnabled = false;
-  const st = getComputedStyle(document.getElementById("safe"));
-  const k = view.bh / view.cssH;
-  view.top = (parseFloat(st.paddingTop) || 0) * k;
-  view.bottom = (parseFloat(st.paddingBottom) || 0) * k;
+  view.dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+  cv.width = Math.round(view.cssW * view.dpr); cv.height = Math.round(view.cssH * view.dpr);
+  const st = getComputedStyle($("safe"));
+  view.top = parseFloat(st.paddingTop) || 0;
+  view.bottom = parseFloat(st.paddingBottom) || 0;
   clampView();
 }
 window.addEventListener("resize", resize);
 
 const pointers = new Map();
 let tapStart = null, pinch = null, lastTap = { t: -1000, x: 0, y: 0 }, rightDrag = false;
-const TAP_MOVE = 8;
-const toBase = e => [e.clientX * view.bw / view.cssW, e.clientY * view.bh / view.cssH];
+const TAP_MOVE = 10;
+const pos = e => [e.clientX, e.clientY];
 function startPinch() {
   const p = [...pointers.values()];
   pinch = { d: Math.max(1, Math.hypot(p[0][0] - p[1][0], p[0][1] - p[1][1])), mx: (p[0][0] + p[1][0]) / 2, my: (p[0][1] + p[1][1]) / 2 };
@@ -1628,15 +1920,15 @@ function startPinch() {
 cv.addEventListener("pointerdown", e => {
   cv.setPointerCapture(e.pointerId);
   requestWakeLock();
-  const p = toBase(e);
+  const p = pos(e);
   if (e.pointerType === "mouse" && e.button !== 0) { rightDrag = true; return; }
   pointers.set(e.pointerId, p);
   if (pointers.size === 1) tapStart = { x: p[0], y: p[1], t: performance.now(), moved: false };
   else { tapStart = null; startPinch(); }
 });
 cv.addEventListener("pointermove", e => {
-  const p = toBase(e);
-  if (rightDrag) { view.x -= e.movementX * view.bw / view.cssW / view.z; view.y -= e.movementY * view.bh / view.cssH / view.z; clampView(); return; }
+  const p = pos(e);
+  if (rightDrag) { view.x -= e.movementX / scale(); view.y -= e.movementY / scale(); clampView(); return; }
   if (!pointers.has(e.pointerId)) return;
   const old = pointers.get(e.pointerId);
   pointers.set(e.pointerId, p);
@@ -1644,8 +1936,8 @@ cv.addEventListener("pointermove", e => {
     const q = [...pointers.values()];
     const d = Math.max(1, Math.hypot(q[0][0] - q[1][0], q[0][1] - q[1][1])), mx = (q[0][0] + q[1][0]) / 2, my = (q[0][1] + q[1][1]) / 2;
     const [ax, ay] = toWorld(pinch.mx, pinch.my);
-    view.z = clamp(view.z * d / pinch.d, minZoom(), 6);
-    view.x = ax - (mx - view.bw / 2) / view.z; view.y = ay - (my - view.bh / 2) / view.z;
+    view.z = clamp(view.z * d / pinch.d, 1, MAX_ZOOM);
+    view.x = ax - (mx - view.cssW / 2) / scale(); view.y = ay - (my - view.cssH / 2) / scale();
     clampView();
     pinch = { d, mx, my };
     return;
@@ -1653,7 +1945,7 @@ cv.addEventListener("pointermove", e => {
   if (tapStart && !tapStart.moved && Math.hypot(p[0] - tapStart.x, p[1] - tapStart.y) > TAP_MOVE) tapStart.moved = true;
   if (!tapStart || tapStart.moved) {
     // ein Finger verschiebt die Ansicht
-    view.x -= (p[0] - old[0]) / view.z; view.y -= (p[1] - old[1]) / view.z;
+    view.x -= (p[0] - old[0]) / scale(); view.y -= (p[1] - old[1]) / scale();
     clampView();
   }
 });
@@ -1670,17 +1962,15 @@ cv.addEventListener("pointercancel", endPointer);
 cv.addEventListener("contextmenu", e => e.preventDefault());
 cv.addEventListener("wheel", e => {
   e.preventDefault();
-  const [x, y] = toBase(e);
-  zoomAt(view.z * (e.deltaY < 0 ? 1.15 : 1 / 1.15), x, y);
+  zoomAt(view.z * (e.deltaY < 0 ? 1.15 : 1 / 1.15), e.clientX, e.clientY);
 }, { passive: false });
 document.addEventListener("gesturestart", e => e.preventDefault());
 
 function onTap(sx, sy) {
-  if (hud.handleTap(sx, sy)) return;
   const now = performance.now();
-  if (now - lastTap.t < 320 && Math.hypot(sx - lastTap.x, sy - lastTap.y) < TAP_MOVE * 2) {
+  if (now - lastTap.t < 320 && Math.hypot(sx - lastTap.x, sy - lastTap.y) < TAP_MOVE * 2.5) {
     lastTap.t = -1000;
-    animateZoom(view.z < 3 * 0.8 ? 3 : minZoom(), sx, sy);
+    animateZoom(view.z < 2.4 ? 3 : 1, sx, sy);
     return;
   }
   lastTap = { t: now, x: sx, y: sy };
@@ -1692,11 +1982,11 @@ function onTap(sx, sy) {
       const ch = chamberAt(x + dx, y + dy);
       if (ch && isTunnel(x + dx, y + dy)) { const info = colony.chamberInfo(ch); return hud.showInfo(info[0], info[1], ch); }
     }
-    if (isTunnel(x, y)) return hud.showInfo("GANG", ["AMEISEN: " + ants.count, "SOLDATEN: " + ants.countRole(R_SOLDIER), "GRABEN: " + ants.countState(S_DIG)], 0);
-    return hud.showInfo("ERDE", ["SCHICHT " + (layerOf(y) + 1), "TIEFE: " + (y - G)], 0);
+    if (isTunnel(x, y)) return hud.showInfo("Gang", [["Ameisen", ants.count], ["Soldaten", ants.countRole(R_SOLDIER)], ["Beim Graben", ants.countState(S_DIG)]], 0);
+    return hud.showInfo("Erde", [["Schicht", layerOf(y) + 1], ["Tiefe", (y - G) * 3 + " mm"]], 0);
   }
   for (const s of world.sources) if (Math.abs(s.trunk - x) <= s.r && y >= s.cy - s.r) {
-    return hud.showInfo(s.kind === 0 ? "BAUM" : "BUSCH", ["FRÜCHTE: " + s.fruits.filter(f => f.alive).length, "SAMMLER: " + ants.countState(S_FORAGE)], 0);
+    return hud.showInfo(s.kind === 0 ? "Baum" : "Busch", [["Reife Früchte", s.fruits.filter(f => f.alive).length], ["Ameisen auf Futtersuche", ants.countState(S_FORAGE)]], 0);
   }
   hud.hideInfo();
 }
@@ -1722,7 +2012,7 @@ function newGame() {
   const cells = world.chamberCells[CH_QUEEN];
   for (let k = 0; k < 5; k++) { const c = cells[Math.floor(rand() * cells.length)]; ants.spawn(c % W, Math.floor(c / W), R_WORKER, rf(0, 60)); }
   game.deadT = -1;
-  hud.banner("EINE NEUE KOLONIE", 3);
+  hud.banner("Eine neue Kolonie", 3);
 }
 
 function b64(u8) { let s = ""; for (let i = 0; i < u8.length; i += 4096) s += String.fromCharCode.apply(null, u8.subarray(i, i + 4096)); return btoa(s); }
@@ -1777,55 +2067,53 @@ function step(dt) {
   events.tick(dt); colony.tick(dt); ants.tick(dt); worldTick(dt); phero.tick();
 }
 function render() {
-  const g = worldG;
-  g.setTransform(1, 0, 0, 1, 0, 0);
-  g.clearRect(0, 0, FULL_W, FULL_H);
-  g.drawImage(skyC, FRAME, FRAME);
-  if (groundDirty) { groundG.putImageData(groundImg, 0, 0); groundDirty = false; }
-  g.drawImage(groundC, FRAME, FRAME);
-  g.drawImage(decorC, FRAME, FRAME);
-  g.drawImage(pheroC, 0, 0, W, G, FRAME, FRAME, WPX, G * T);
-  ants.draw(g);
-  if (world.waterShown || world.wet) g.drawImage(waterC, 0, 0, W, H, FRAME, FRAME, WPX, HPX);
-  events.draw(g);
-  g.drawImage(frameC, 0, 0);
+  flushGround();
+  const cw = cv.width, ch = cv.height, s = scale() * view.dpr;
+  const ox = cw / 2 - view.x * s, oy = ch / 2 - view.y * s;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalCompositeOperation = "source-over";
+  ctx.fillStyle = "#0f2a19"; ctx.fillRect(0, 0, cw, ch);
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "low";
+  ctx.setTransform(s, 0, 0, s, ox, oy);
+  sky.draw(ctx);
+  ctx.drawImage(groundC, 0, G * T * GS, WPX * GS, (HPX - G * T) * GS, 0, G * T, WPX, HPX - G * T);
+  decor.draw(ctx);
+  ctx.drawImage(pheroC, 0, 0, W, G, 0, 0, WPX, G * T);
+  ants.draw(ctx, s, ox, oy, [-ox / s - 8, -oy / s - 8, (cw - ox) / s + 8, (ch - oy) / s + 8]);
+  ctx.setTransform(s, 0, 0, s, ox, oy);
+  if (world.waterShown || world.wet) ctx.drawImage(waterC, 0, 0, W, H, 0, 0, WPX, HPX);
+  events.draw(ctx);
+  drawFrame(ctx);
   // Tag und Nacht: Farbe über die ganze Szene legen
   const c = events.light();
   if (c[0] < 0.999 || c[1] < 0.999 || c[2] < 0.999) {
-    g.globalCompositeOperation = "multiply";
-    g.fillStyle = css(c); g.fillRect(0, 0, FULL_W, FULL_H);
-    g.globalCompositeOperation = "source-over";
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalCompositeOperation = "multiply";
+    ctx.fillStyle = css(c); ctx.fillRect(0, 0, cw, ch);
+    ctx.globalCompositeOperation = "source-over";
   }
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = "#0f2a19"; ctx.fillRect(0, 0, view.bw, view.bh);
-  ctx.imageSmoothingEnabled = false;
-  const z = view.z;
-  ctx.setTransform(z, 0, 0, z, Math.round(view.bw / 2 - (view.x + FRAME) * z), Math.round(view.bh / 2 - (view.y + FRAME) * z));
-  ctx.drawImage(worldC, 0, 0);
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  hud.draw(ctx, view.bw, view.bh, view.top, view.bottom);
 }
 
 let last = performance.now(), acc = 0;
 function frame(now) {
-  let dt = Math.min((now - last) / 1000, 0.1);
+  const dt = Math.min((now - last) / 1000, 0.1);
   last = now;
   if (zoomAnim) {
-    zoomAnim.t = Math.min(1, zoomAnim.t + dt / 0.22);
+    zoomAnim.t = Math.min(1, zoomAnim.t + dt / 0.25);
     const e = 1 - (1 - zoomAnim.t) ** 2;
     zoomAt(zoomAnim.from + (zoomAnim.to - zoomAnim.from) * e, zoomAnim.sx, zoomAnim.sy);
     if (zoomAnim.t >= 1) zoomAnim = null;
   }
-  // feste Schritte von 1/60 s, bei 2x und 4x mehrere pro Frame
+  // feste Schritte von 1/60 s, bei 2x und 4x mehrere pro Bild
   if (!game.paused) {
     acc += dt * game.speed;
     let n = 0;
     while (acc >= 1 / 60 && n < 12) { step(1 / 60); acc -= 1 / 60; n++; }
     if (n === 12) acc = 0;
   }
-  sky.tick(dt); decor.tick(dt); hud.tick(dt);
+  sky.tick(dt); hud.tick(dt);
   if (ants.count === 0) {
-    if (game.deadT < 0) { game.deadT = 0; hud.banner("DIE KOLONIE IST AUSGESTORBEN", 6); }
+    if (game.deadT < 0) { game.deadT = 0; hud.banner("Die Kolonie ist ausgestorben", 6); }
     game.deadT += dt;
     if (game.deadT > 6) { try { localStorage.removeItem(SAVE_KEY); } catch (_) { } newGame(); }
   }
@@ -1836,8 +2124,9 @@ function frame(now) {
 }
 
 function start(data) {
-  buildAtlas(); buildAntAtlas(); drawFrame(); resize();
+  resize();
   if (!(data && data.save && deserialize(data.save)) && !loadLocal()) newGame();
+  hud.updateButtons();
   window.claude?.hot?.snapshot?.(() => ({ save: serialize() }));
   last = performance.now();
   requestAnimationFrame(frame);
