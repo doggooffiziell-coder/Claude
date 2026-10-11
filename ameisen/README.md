@@ -14,6 +14,8 @@ Das Spiel läuft auf iPhone, Android, Tablet und PC. Die Basisauflösung ist 270
 
 `web/AntPop.html` ist eine eigenständige Browser-Version in JavaScript. Sie läuft auf dem iPhone in Safari ohne Installation und ist weiter ausgebaut als die Godot-Fassung:
 
+- Beim Start zeigt ein Ladebildschirm einen Balken, über den eine Blattschneiderin läuft, dazu wechselnde Tipps. Danach öffnet sich das Hauptmenü über der lebenden Kolonie, die Kamera fährt langsam über das Nest.
+- Im Hauptmenü spielst du weiter, gründest eine neue Kolonie oder liest die Anleitung. Für eine neue Kolonie wählst du den Namen der Kolonie und der Königin, die Schwierigkeit, die Zahl der Gründerinnen, die Länge eines Tages, ob Fluten und der Vogel vorkommen, und eine Weltnummer. Gleiche Weltnummer heißt gleiche Bäume und gleicher Boden. Über das Kolonie-Panel kommst du jederzeit zurück ins Hauptmenü.
 - Jede Ameise lebt eigenständig. Sie hat einen Namen, eigene Vorlieben für Arbeiten, Hunger, Müdigkeit und ein Alter. Junge Ameisen pflegen lieber die Brut, ältere gehen lieber hinaus. Was eine Ameise oft tut, fällt ihr leichter.
 - Es gibt keinen festen Bauplan. Wenn die Kolonie Platz für Futter, Brut, Tote oder Abfall braucht, wählen die Ameisen einen passenden Ort, graben einen Verbindungsgang und heben die Kammer gemeinsam aus. Danach bringen sie alles an den richtigen Ort: Futter in die Kornkammer, Eier in die Brutkammer, Tote auf den Friedhof, Abfall in die Müllkammer.
 - Die Königin legt nur Eier, wenn sie gefüttert wird und genug Vorrat da ist. Eier werden zu Larven und Puppen. Ammen tragen die Brut in die Brutkammer und füttern die Larven.
