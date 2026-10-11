@@ -39,6 +39,7 @@ Das Spiel läuft auf iPhone, Android, Tablet und PC. Die Basisauflösung ist 270
   - Windrad: Drei Minuten lang jagt der Vogel in seiner Nähe keine Ameisen.
   - Blattdach: Vier Minuten lang läuft kein Regen in den Eingang.
   - Wärme: Zwei Minuten lang reift die Brut in einer Kammer schneller, und Ruhende erholen sich schneller.
+- Jede Futtereinheit im Nest hat ihre Sorte: Apfelstück, Zuckerwürfel, Käferstück, Honigtau oder Pilzknolle. Die Kammern zeigen genau das, was gerade darin liegt, und beim Antippen steht die Menge jeder Sorte. Auch die Ameisen tragen sichtbar die Sorte, die sie geholt haben.
 - Die Bäume haben breite Stämme, ihre Wurzeln wachsen sichtbar aus dem Stammfuß in die Erde. Äpfel wachsen nur an den Bäumen, die Büsche liefern Blätter.
 
 Der Spielstand liegt dort im Speicher des Browsers.

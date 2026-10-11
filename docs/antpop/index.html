@@ -657,7 +657,13 @@ const SAVE_KEY = "antpop-save-v3";
 
 // Honigtöpfe sind umgebaute Arbeiterinnen, Prinzessinnen und Männchen haben Flügel
 const R_WORKER = 0, R_SOLDIER = 1, R_QUEEN = 2, R_REPLETE = 3, R_PRINCESS = 4, R_MALE = 5;
-const C_NONE = 0, C_FOOD = 1, C_DIRT = 2, C_CORPSE = 3, C_TRASH = 4, C_BROOD = 5, C_LEAF = 6, C_SUGAR = 7, C_DEW = 8;
+const C_NONE = 0, C_FOOD = 1, C_DIRT = 2, C_CORPSE = 3, C_TRASH = 4, C_BROOD = 5, C_LEAF = 6, C_SUGAR = 7, C_DEW = 8, C_MEAT = 9, C_FUNGUS = 10;
+// Futtersorten im Nest: jede eingelagerte Einheit weiß, was sie ist
+const FK_APPLE = 1, FK_SUGAR = 2, FK_MEAT = 3, FK_DEW = 4, FK_FUNGUS = 5;
+const FOOD_NAMES = ["", "Äpfel", "Zucker", "Käferfleisch", "Honigtau", "Pilzknollen"];
+const CARRY_OF_FOOD = [C_FOOD, C_FOOD, C_SUGAR, C_MEAT, C_DEW, C_FUNGUS];
+const foodOfCarry = c => c === C_SUGAR ? FK_SUGAR : (c === C_MEAT ? FK_MEAT : (c === C_DEW ? FK_DEW : (c === C_FUNGUS ? FK_FUNGUS : FK_APPLE)));
+const isFoodCarry = c => c === C_FOOD || c === C_SUGAR || c === C_DEW || c === C_MEAT || c === C_FUNGUS;
 // Zustände der Zustandsmaschine
 const S_IDLE = 0, S_REST = 1, S_EAT = 2, S_DIG = 3, S_FORAGE = 4, S_CARRY = 5, S_NURSE = 6, S_CLEAN = 7, S_SOLDIER = 8, S_QUEEN = 9, S_FLEE = 10,
   S_REPLETE = 11, S_ALATE = 12, S_COUNT = 13;
@@ -950,9 +956,24 @@ Object.assign(world, {
   digPh: new Float32Array(W * H), alarm: new Float32Array(W * H), roomOf: new Int16Array(W * H).fill(-1),
   rooms: [], tunnels: [], topo: 0, groundFood: [], simTime: 0,
   // Blätter im Pilzgarten, Wachstum des Pilzes, Verkehr in den Gängen
-  leaf: new Uint8Array(W * H), fgrow: new Float32Array(W * H), traffic: new Float32Array(W * H),
+  leaf: new Uint8Array(W * H), fk: new Uint8Array(W * H * 4), fgrow: new Float32Array(W * H), traffic: new Float32Array(W * H),
   roots: [], rootTips: [], doneTypes: new Uint16Array(CH_COUNT),
 });
+// Futter auf eine Zelle legen oder von dort nehmen, mit Sorte. Bis zu 4 Stück liegen sichtbar übereinander.
+function pushFood(c, kind) {
+  const n = world.food[c];
+  if (n < 4) world.fk[c * 4 + n] = kind || FK_APPLE;
+  world.food[c] = Math.min(255, n + 1);
+}
+function popFood(c) {
+  const n = world.food[c];
+  if (!n) return 0;
+  world.food[c] = n - 1;
+  if (n > 4) return FK_APPLE;
+  const k = world.fk[c * 4 + n - 1] || FK_APPLE;
+  world.fk[c * 4 + n - 1] = 0;
+  return k;
+}
 // welche Kammerarten fertig sind, wird oft gefragt und deshalb mitgezählt
 function refreshRoomTypes() {
   world.doneTypes.fill(0);
@@ -996,7 +1017,7 @@ function newWorld(seed) {
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) world.cells[idx(x, y)] = y < G ? AIR : SOIL;
   world.chamber.fill(0); world.mound.fill(0);
   world.food.fill(0); world.corpses.fill(0); world.trash.fill(0); world.roomOf.fill(-1);
-  world.leaf.fill(0); world.fgrow.fill(0); world.traffic.fill(0); world.doneTypes.fill(0);
+  world.leaf.fill(0); world.fk.fill(0); world.fgrow.fill(0); world.traffic.fill(0); world.doneTypes.fill(0);
   world.groundFood = []; world.rooms = []; world.pinwheels = []; world.falling = [];
   generateSources();
 }
@@ -1485,7 +1506,8 @@ const colony = {
     rebuildRuntime();
     rebuildTiles();
     // Vorrat der Königin aus dem Hochzeitsflug
-    for (let k = 0; k < diff().start; k++) this.addFood(idx(ENT + 3, 53));
+    // Vorrat der Königin: Honigtau-Tröpfchen aus ihrem Kropf
+    for (let k = 0; k < diff().start; k++) this.addFood(idx(ENT + 3, 53), 0, FK_DEW);
   },
   // ---- Kammerbau: Bedarf erkennen, Ort wählen, gemeinsam ausheben
   jobsDirty: true, jobCells: new Set(), frontier: [], planT: 0,
@@ -1739,7 +1761,7 @@ const colony = {
             world.fgrow[i] = 0; world.leaf[i]--;
             for (let k = 0; k < 3; k++) {
               const c = dropCell(i, world.food, 4, n => roomType(n) !== CH_FUNGUS);
-              if (c >= 0) { world.food[c]++; this.foodTotal++; }
+              if (c >= 0) { pushFood(c, FK_FUNGUS); this.foodTotal++; }
             }
             if (!this.milestones.has("pilz")) { this.milestones.add("pilz"); this.log("Im Pilzgarten wachsen die ersten Pilzknollen", true); }
             markItems();
@@ -1765,7 +1787,7 @@ const colony = {
       this.releaseT = 1.5;
       let best = -1;
       for (let i = 0; i < ants.count; i++) if (ants.role[i] === R_REPLETE && ants.load[i] > 0 && ants.phase[i] === 1 && (best < 0 || ants.load[i] > ants.load[best])) best = i;
-      if (best >= 0 && this.addFood(idx(ants.cx[best], ants.cy[best]))) {
+      if (best >= 0 && this.addFood(idx(ants.cx[best], ants.cy[best]), 0, FK_DEW)) {
         ants.load[best]--;
         if (this.releaseDay !== events.day) { this.releaseDay = events.day; this.log("Die Honigtöpfe geben ihren Vorrat ab", true); }
       }
@@ -1808,16 +1830,23 @@ const colony = {
       }
     }
   },
-  addFood(i, type = 0) {
+  addFood(i, type = 0, kind = FK_APPLE) {
     const c = dropCell(i, world.food, 4, type ? (n => roomType(n) !== type) : null);
     if (c < 0) return false;
-    world.food[c]++; this.foodTotal++; markItems();
+    pushFood(c, kind); this.foodTotal++; markItems();
     return true;
   },
+  // gibt die Sorte zurück, 0 heißt: hier liegt nichts
   takeFood(i) {
-    if (world.food[i] <= 0) return false;
-    world.food[i]--; this.foodTotal--; markItems();
-    return true;
+    const k = popFood(i);
+    if (!k) return 0;
+    this.foodTotal--; markItems();
+    return k;
+  },
+  foodByKind(cells) {
+    const n = [0, 0, 0, 0, 0, 0];
+    for (const i of cells) for (let k = 0; k < world.food[i]; k++) n[k < 4 ? (world.fk[i * 4 + k] || FK_APPLE) : FK_APPLE]++;
+    return n;
   },
   log(text, banner = false) {
     this.entries.unshift({ day: events.day, text });
@@ -1977,7 +2006,10 @@ const colony = {
     rows.push(["Größe", r.size + " Felder"]);
     let food = 0, corpses = 0, trash = 0;
     for (const i of r.cells) { food += world.food[i]; corpses += world.corpses[i]; trash += world.trash[i]; }
-    if (food && r.type !== CH_FUNGUS) rows.push([r.type === CH_HONEY ? "Abgegebener Zucker" : "Futter", food]);
+    if (food && r.type !== CH_FUNGUS) {
+      const byKind = this.foodByKind(r.cells);
+      for (let k = 1; k <= 5; k++) if (byKind[k]) rows.push([FOOD_NAMES[k], byKind[k]]);
+    }
     if (eggs[0] + eggs[1] + eggs[2]) rows.push(["Eier / Larven / Puppen", `${eggs[0]} / ${eggs[1]} / ${eggs[2]}`]);
     if (corpses) rows.push(["Tote", corpses]);
     if (trash) rows.push(["Abfall", trash]);
@@ -2075,7 +2107,7 @@ const ants = {
       if (corpse && this.cy[i] > G && isTunnel(this.cx[i], this.cy[i])) { world.corpses[idx(this.cx[i], this.cy[i])]++; markItems(); }
       else if (corpse && this.cy[i] <= SURF) addGroundFood(this.cx[i], 1, "corpse");
       // ein toter Honigtopf platzt, sein Zucker bleibt liegen
-      if (corpse && this.role[i] === R_REPLETE && this.load[i] && this.cy[i] > G) for (let k = 0; k < this.load[i]; k++) colony.addFood(idx(this.cx[i], this.cy[i]));
+      if (corpse && this.role[i] === R_REPLETE && this.load[i] && this.cy[i] > G) for (let k = 0; k < this.load[i]; k++) colony.addFood(idx(this.cx[i], this.cy[i]), 0, FK_DEW);
       if (!flown) colony.died++;
       if (this.role[i] === R_QUEEN) { colony.queenAlive = false; colony.log("Die Königin ist gestorben", true); }
       else if (flown) { }
@@ -2094,7 +2126,7 @@ const ants = {
   // was eine sterbende Ameise trägt, fällt zu Boden
   dropCarried(i) {
     const cell = idx(this.cx[i], this.cy[i]), under = this.cy[i] > G && isTunnel(this.cx[i], this.cy[i]);
-    if (this.carry[i] === C_FOOD || this.carry[i] === C_SUGAR || this.carry[i] === C_DEW) { if (under) colony.addFood(cell); else addGroundFood(this.cx[i], 1, this.carry[i] === C_SUGAR ? "sugar" : "fruit"); }
+    if (isFoodCarry(this.carry[i])) { if (under) colony.addFood(cell, 0, foodOfCarry(this.carry[i])); else addGroundFood(this.cx[i], 1, this.carry[i] === C_SUGAR ? "sugar" : (this.carry[i] === C_MEAT ? "beetle" : "fruit")); }
     else if (this.carry[i] === C_LEAF && under) world.trash[cell]++;
     else if (this.carry[i] === C_CORPSE && under) world.corpses[cell]++;
     else if (this.carry[i] === C_TRASH && under) world.trash[cell]++;
@@ -2188,13 +2220,13 @@ const ants = {
       if (role === R_SOLDIER) fr = 2;
       else if (role === R_QUEEN) fr = 4;
       else if (role === R_REPLETE) {
-        fr = 22 + Math.min(3, Math.floor(this.load[i] / REPLETE_MAX * 3.99)) * 2;
+        fr = 26 + Math.min(3, Math.floor(this.load[i] / REPLETE_MAX * 3.99)) * 2;
         // hängt kopfüber an der Decke, der volle Hinterleib baumelt
         // Kopf oben an der Decke, der Hinterleib hängt nach unten
         if (this.phase[i] === 1 && this.state[i] === S_REPLETE) { f = 2; y = this.cy[i] * T + 1.2 + Math.sin(blink * 0.8 + this.id[i]) * 0.15; }
       }
-      else if (role === R_PRINCESS) fr = 30;
-      else if (role === R_MALE) fr = 32;
+      else if (role === R_PRINCESS) fr = 34;
+      else if (role === R_MALE) fr = 36;
       else if (this.carry[i]) fr = 4 + this.carry[i] * 2;
       fr += Math.floor(this.anim[i] * 2) & 1;
       g.drawImage(antAtlas, fr * ACELL, f * ACELL, ACELL, ACELL, F + Math.round(x * PIX) - half, F + Math.round(y * PIX) - half, ACELL, ACELL);
@@ -2235,7 +2267,7 @@ function worldTick(dt) {
 }
 
 // Ameisen als fein gezeichnete Sprites in der Seitenansicht, Blick nach rechts
-const AFW = 12, AFH = 9, A_FRAMES = 34;   // Rahmen in Weltpixeln
+const AFW = 12, AFH = 9, A_FRAMES = 38;   // Rahmen in Weltpixeln
 let AS = 0;                               // Atlas-Pixel pro Weltpixel, passend zum Zoom
 const [antAtlas, antAtlasG] = canvas(1, 1);
 function drawAntShape(g, kind, phase, item, fill = 0) {
@@ -2325,8 +2357,23 @@ function drawAntShape(g, kind, phase, item, fill = 0) {
   if (item) {
     const ix = hx + hr + 0.9, iy = -0.9;
     if (item === C_FOOD) {
+      // ein Stück Apfel: rote Schale, helles Fruchtfleisch an der Schnittkante
+      g.fillStyle = "#9e1f18"; g.beginPath(); g.arc(ix + 0.1, iy + 0.1, 1.1, 0, Math.PI * 2); g.fill();
       g.fillStyle = "#d8352a"; g.beginPath(); g.arc(ix, iy, 1.05, 0, Math.PI * 2); g.fill();
-      g.fillStyle = "rgba(255,200,190,0.8)"; g.beginPath(); g.arc(ix - 0.35, iy - 0.35, 0.3, 0, Math.PI * 2); g.fill();
+      g.fillStyle = "#f7e7b8"; g.beginPath(); g.moveTo(ix, iy); g.arc(ix, iy, 1.05, -0.2, 1.0); g.closePath(); g.fill();
+      g.fillStyle = "rgba(255,210,200,0.9)"; g.beginPath(); g.arc(ix - 0.45, iy - 0.4, 0.28, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = "#5a3a22"; g.lineWidth = 0.22; g.beginPath(); g.moveTo(ix, iy - 0.9); g.lineTo(ix + 0.2, iy - 1.5); g.stroke();
+    } else if (item === C_MEAT) {
+      // Stück vom Käferpanzer mit Beinchen
+      g.fillStyle = "#1d2a24"; g.beginPath(); g.ellipse(ix, iy, 1.15, 0.8, 0.3, 0, Math.PI * 2); g.fill();
+      g.fillStyle = "#2f5040"; g.beginPath(); g.ellipse(ix - 0.1, iy - 0.1, 0.95, 0.6, 0.3, 0, Math.PI * 2); g.fill();
+      g.fillStyle = "#7fb596"; g.beginPath(); g.arc(ix - 0.4, iy - 0.35, 0.22, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = "#1d2a24"; g.lineWidth = 0.2;
+      g.beginPath(); g.moveTo(ix + 0.4, iy + 0.5); g.lineTo(ix + 0.8, iy + 1.2); g.moveTo(ix - 0.2, iy + 0.6); g.lineTo(ix - 0.3, iy + 1.3); g.stroke();
+    } else if (item === C_FUNGUS) {
+      g.fillStyle = "#cbbf9f"; g.beginPath(); g.arc(ix + 0.15, iy + 0.15, 0.95, 0, Math.PI * 2); g.fill();
+      g.fillStyle = "#f7f2e4"; g.beginPath(); g.arc(ix, iy, 0.9, 0, Math.PI * 2); g.fill();
+      g.fillStyle = "#ffffff"; g.beginPath(); g.arc(ix - 0.3, iy - 0.3, 0.3, 0, Math.PI * 2); g.fill();
     } else if (item === C_DIRT) {
       g.fillStyle = "#c9a76c";
       for (const [dx, dy, r] of [[-0.3, 0.1, 0.65], [0.35, -0.2, 0.6], [0.1, 0.4, 0.5]]) { g.beginPath(); g.arc(ix + dx, iy + dy, r, 0, Math.PI * 2); g.fill(); }
@@ -2375,9 +2422,9 @@ function buildAntAtlas() {
   const frames = [];
   for (let a = 0; a < 2; a++) {
     frames[a] = [0, a, 0]; frames[2 + a] = [1, a, 0]; frames[4 + a] = [2, a, 0];
-    for (let c = 1; c <= 8; c++) frames[4 + c * 2 + a] = [0, a, c];
-    for (let l = 0; l < 4; l++) frames[22 + l * 2 + a] = [3, a, 0, l / 3];
-    frames[30 + a] = [4, a, 0]; frames[32 + a] = [5, a, 0];
+    for (let c = 1; c <= 10; c++) frames[4 + c * 2 + a] = [0, a, c];
+    for (let l = 0; l < 4; l++) frames[26 + l * 2 + a] = [3, a, 0, l / 3];
+    frames[34 + a] = [4, a, 0]; frames[36 + a] = [5, a, 0];
   }
   FACES.forEach(([a, b, c, d], o) => frames.forEach(([kind, phase, item, fill], f) => {
     const k = AS * SS * (kind === 2 || kind === 4 ? 1.08 : (kind === 1 ? 1.05 : (kind === 5 ? 0.86 : 0.92)));
@@ -2608,7 +2655,7 @@ const Ant = {
         const g = groundFoodAt(x);
         if (g) {
           g.n--;
-          ants.tk[i] = x; ants.carry[i] = g.kind === "sugar" ? C_SUGAR : (g.kind === "leaves" ? C_LEAF : C_FOOD); ants.setState(i, S_CARRY); ants.trail[i] = 1;
+          ants.tk[i] = x; ants.carry[i] = g.kind === "sugar" ? C_SUGAR : (g.kind === "leaves" ? C_LEAF : (g.kind === "beetle" || g.kind === "corpse" ? C_MEAT : C_FOOD)); ants.setState(i, S_CARRY); ants.trail[i] = 1;
           return this.carryFood(i);
         }
         const si = sourceAt(x);
@@ -2705,13 +2752,13 @@ const Ant = {
         ants.load[j] += add; left -= add;
         if (!colony.milestones.has("topf")) { colony.milestones.add("topf"); colony.log(`${antName(ants.id[j])} speichert den ersten Zucker im Hinterleib`, true); }
       }
-      for (let n = 0; n < left; n++) colony.addFood(c);
+      for (let n = 0; n < left; n++) colony.addFood(c, 0, foodOfCarry(k));
       fieldDirty[F_POTSPACE] = true;
       colony.delivered++;
     } else {
       const type = target === F_GRANSPACE ? CH_GRANARY : 0;
       let stored = 0;
-      for (let n = 0; n < units; n++) if (colony.addFood(c, type) || colony.addFood(c)) stored++;
+      for (let n = 0; n < units; n++) if (colony.addFood(c, type, foodOfCarry(k)) || colony.addFood(c, 0, foodOfCarry(k))) stored++;
       if (!stored) return this.wander(i);
       colony.delivered++;
     }
@@ -2734,7 +2781,8 @@ const Ant = {
         ants.doing[i] = ants.sub[i] === 1 ? D_FEEDQUEEN : D_FEEDLARVA;
         const r = this.travel(i, F_FOOD);
         if (r === 0) return;
-        if (r === 1 && colony.takeFood(c)) { ants.carry[i] = C_FOOD; ants.phase[i] = 2; return this.wait(i, 0.4); }
+        const got = r === 1 ? colony.takeFood(c) : 0;
+        if (got) { ants.carry[i] = CARRY_OF_FOOD[got]; ants.phase[i] = 2; return this.wait(i, 0.4); }
         return this.done(i);
       }
       case 2: {
@@ -2748,7 +2796,7 @@ const Ant = {
           for (const b of colony.brood) if (b.cell === c && b.s === 1 && !b.carried && (!best || b.fed < best.fed)) best = b;
           if (best) { best.fed = 1; best.starve = 0; fed = true; fieldDirty[F_HUNGRY] = true; }
         }
-        if (!fed) colony.addFood(c);
+        if (!fed) colony.addFood(c, 0, foodOfCarry(ants.carry[i]));
         ants.carry[i] = C_NONE;
         if (fed) this.learn(i, TK_NURSE);
         return this.done(i, 0.6);
@@ -2818,10 +2866,10 @@ const Ant = {
         const r = this.travel(i, j[0]);
         if (r === 0) return;
         if (r !== 1 || j[2][c] === 0 || roomType(c) === j[5]) return this.done(i);
-        j[2][c]--;
-        if (j[2] === world.food) colony.foodTotal--;
+        let carry = j[3];
+        if (j[2] === world.food) { carry = CARRY_OF_FOOD[popFood(c)]; colony.foodTotal--; } else j[2][c]--;
         markItems();
-        ants.carry[i] = j[3]; ants.phase[i] = 2;
+        ants.carry[i] = carry; ants.phase[i] = 2;
         return this.wait(i, 0.4);
       }
       case 2: {
@@ -2831,8 +2879,8 @@ const Ant = {
         if (r === 0) return;
         const d = dropCell(this.cell(i), j[2], j[6], n => roomType(n) !== j[5]);
         const at = d >= 0 ? d : this.cell(i);
-        j[2][at] = Math.min(255, j[2][at] + 1);
-        if (j[2] === world.food) colony.foodTotal++;
+        if (j[2] === world.food) { pushFood(at, foodOfCarry(ants.carry[i])); colony.foodTotal++; }
+        else j[2][at] = Math.min(255, j[2][at] + 1);
         ants.carry[i] = C_NONE; markItems();
         if (r === 1) this.learn(i, TK_CLEAN);
         return this.done(i, 0.5);
@@ -3421,12 +3469,57 @@ const sky = {
 // =====================================================================
 const decor = {
   slots: [[0.7, 2.1], [2.3, 2.1], [1.5, 1.0], [0.6, 0.9], [2.4, 0.9]],
+  pile: [[0.9, 2.1], [2.2, 2.15], [1.55, 1.8], [1.5, 0.75]],
+  // eine Futtereinheit, etwa 1,7 Weltpixel groß
+  food(kind, x, y, h) {
+    switch (kind) {
+      case FK_SUGAR:
+        // Zuckerwürfel mit heller Oberseite und Schattenseite
+        P.fill("#9aa2ae").rect(x - 0.8, y - 0.6, 2, 1.6);
+        P.fill("#eef1f6").rect(x - 1, y - 0.9, 1.9, 1.6);
+        P.fill("#ffffff").rect(x - 1, y - 0.9, 1.9, 0.5);
+        P.fill("#ffffff").rect(x - 1, y - 0.9, 0.5, 1.6);
+        P.fill("#c9d0db").rect(x + 0.4, y + 0.2, 0.5, 0.5);
+        break;
+      case FK_MEAT:
+        // Käferstück: grüner Panzer mit Glanzlicht und zwei Beinchen
+        P.fill("#141e19").ellipse(x + 0.1, y + 0.2, 1.4, 1);
+        P.fill("#2f5040").ellipse(x - 0.05, y - 0.05, 1.2, 0.8);
+        P.fill("#3f6b55").rect(x - 0.9, y - 0.5, 1.5, 0.5);
+        P.fill("#a6d8bd").dot(x - 0.6, y - 0.6);
+        P.fill("#141e19").line(x + 0.6, y + 0.7, x + 1.2, y + 1.3);
+        P.line(x - 0.5, y + 0.8, x - 0.9, y + 1.4);
+        break;
+      case FK_DEW:
+        // Honigtau-Tropfen mit Spitze und Lichtpunkt
+        P.fill("#a8661a").disc(x + 0.15, y + 0.2, 1);
+        P.fill("#eaa634").disc(x, y, 0.95);
+        P.fill("#eaa634").rect(x - 0.4, y - 1.3, 0.8, 0.5).rect(x - 0.15, y - 1.7, 0.5, 0.5);
+        P.fill("#ffd77a").disc(x - 0.2, y - 0.1, 0.45);
+        P.fill("#fff6d6").dot(x - 0.5, y - 0.5);
+        break;
+      case FK_FUNGUS:
+        // Pilzknolle: weiße Kugel mit feinem Geflecht
+        P.fill("#bfb393").disc(x + 0.2, y + 0.25, 1.05);
+        P.fill("#f7f2e4").disc(x, y, 1);
+        P.fill("#ffffff").disc(x - 0.35, y - 0.35, 0.4);
+        P.fill("#d8cdb0").dot(x + 0.4, y + 0.2).dot(x - 0.1, y + 0.5);
+        break;
+      default:
+        // Apfelstück: rote Schale, angebissenes helles Fruchtfleisch, Stiel mit Blättchen
+        P.fill("#8a1a14").disc(x + 0.2, y + 0.2, 1.1);
+        P.fill("#d4352a").disc(x, y, 1.05);
+        P.fill("#f4e2b0").rect(x + (h % 2 ? -1 : 0.15), y - 0.35, 0.9, 1);
+        P.fill("#ffc2b4").dot(x - 0.55, y - 0.6);
+        P.fill("#5a3a22").rect(x - 0.1, y - 1.5, 0.5, 0.6);
+        P.fill("#62a84c").rect(x + 0.4, y - 1.5, 0.6, 0.5);
+    }
+  },
   deadAnt(x, y) {
     P.fill("#3b2a22").ellipse(x - 0.6, y, 1.1, 0.6).disc(x + 0.9, y - 0.1, 0.55);
     P.line(x - 0.4, y + 0.2, x, y - 0.9); P.line(x + 0.4, y + 0.2, x + 0.8, y - 0.9);
   },
   draw() {
-    const foodCols = ["#d8352a", "#f08c2a", "#f2c84b"];
     this.rooms();
     for (const i of world.tunnels) {
       const f = world.food[i], c = world.corpses[i], t = world.trash[i], lf = world.leaf[i];
@@ -3443,18 +3536,8 @@ const decor = {
         P.fill("#f1ecdf");
         for (let k = 0; k < fuzz; k++) { const h = hash2(i, k + 40); P.dot(x + (h % 6) * 0.5, y + 1.2 + ((h >> 4) % 4) * 0.5); }
       }
-      for (let k = 0; k < f; k++) {
-        const sx = x + this.slots[k][0], sy = y + this.slots[k][1];
-        if (rt === CH_FUNGUS) {
-          // Pilzknollen: kleine weiße Kugeln mit Schatten
-          P.fill("#cbbf9f").disc(sx + 0.2, sy + 0.2, 0.8);
-          P.fill("#f7f2e4").disc(sx, sy, 0.75);
-          P.fill("#ffffff").dot(sx - 0.3, sy - 0.3);
-        } else if (rt === CH_HONEY) {
-          P.fill("#c9811f").disc(sx, sy + 0.1, 0.75);
-          P.fill("#f4c35a").disc(sx - 0.1, sy, 0.6);
-        } else P.fill(foodCols[hash2(i, k) % 3]).disc(sx, sy, 0.8);
-      }
+      // Futter liegt als kleiner Haufen auf dem Boden, jede Einheit in ihrer echten Sorte
+      for (let k = 0; k < Math.min(f, 4); k++) this.food(world.fk[i * 4 + k] || FK_APPLE, x + this.pile[k][0], y + this.pile[k][1], hash2(i, k));
       for (let k = 0; k < Math.min(t, 5); k++) P.fill(hash2(i, k + 9) % 2 ? "#8b806b" : "#6e5236").ellipse(x + this.slots[k][0], y + this.slots[k][1] + 0.3, 0.7, 0.45);
       for (let k = 0; k < Math.min(c, 3); k++) this.deadAnt(x + 1.5 + (k % 2 ? 0.6 : -0.3), y + 2.2 - k * 0.9);
     }
@@ -4331,7 +4414,7 @@ function serialize() {
     +ants.energy[i].toFixed(2), +ants.fatigue[i].toFixed(2), +ants.speed[i].toFixed(2), Array.from(ants.th.subarray(i * 4, i * 4 + 4), v => +v.toFixed(2)),
     ants.dug[i], ants.fetched[i], ants.home[i], ants.role[i] === R_REPLETE ? ants.load[i] : 0]);
   return {
-    v: 3, seed: world.seed, cells: b64(world.cells), food: b64(world.food), corpses: b64(world.corpses), trash: b64(world.trash), leaf: b64(world.leaf),
+    v: 3, seed: world.seed, cells: b64(world.cells), food: b64(world.food), fk: b64(world.fk), corpses: b64(world.corpses), trash: b64(world.trash), leaf: b64(world.leaf),
     mound: Array.from(world.mound, v => +v.toFixed(2)),
     fruits: world.sources.flatMap(s => s.fruits.map(f => [f.alive ? 1 : 0, +f.t.toFixed(1)])),
     ground: world.groundFood, pinwheels: world.pinwheels, roofT: events.roofT,
@@ -4357,6 +4440,7 @@ function deserialize(d) {
   newWorld(d.seed);
   world.cells.set(c); world.food.set(unb64(d.food)); world.corpses.set(unb64(d.corpses)); world.trash.set(unb64(d.trash));
   if (d.leaf) world.leaf.set(unb64(d.leaf));
+  if (d.fk) world.fk.set(unb64(d.fk));
   (d.mound || []).forEach((v, x) => { if (x < W) world.mound[x] = v; });
   let k = 0;
   for (const s of world.sources) for (const f of s.fruits) { const q = d.fruits[k++]; if (q) { f.alive = q[0] === 1; f.t = q[1]; } }
