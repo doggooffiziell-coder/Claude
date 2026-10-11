@@ -32,6 +32,15 @@ Das Spiel läuft auf iPhone, Android, Tablet und PC. Die Basisauflösung ist 270
   - Prinzessinnenkammer: Ab 60 Ameisen zieht die Königin Prinzessinnen und Männchen mit Flügeln auf. An einem warmen, trockenen Tag klettern alle auf Grashalme und starten zum Hochzeitsflug.
 - Der Ameisenhaufen: Aus dem Aushub wächst über dem Eingang ein Hügel mit Krater, Nadeln und Ästchen. Ist er hoch genug, wird er zu festem Boden, in den die Ameisen graben. Dort entstehen Sonnenkammern. Wie bei der Roten Waldameise tragen die Ammen tagsüber Larven und Puppen hinauf ins Warme, wo sie 1,8 mal schneller reifen. Abends und bei Regen tragen sie die Brut wieder hinunter.
 - Wird es eng, laufen die Ameisen in vollen Gängen langsamer. Dann verbreitern sie die meistbenutzten Gänge, graben neue Seitengänge und legen Abkürzungen an.
+- Jahreszeiten: Jede Jahreszeit dauert drei Spieltage. Im Frühling blühen die Bäume, und die Schneeschmelze bringt Wasser. Im Sommer reifen Äpfel schnell, mittags macht die Hitze Sammlerinnen müde. Im Herbst färbt sich das Laub, Äpfel fallen, Laub weht. Im Winter sind die Bäume kahl, Schnee liegt und fällt, niemand geht hinaus, und die Kolonie hält Winterruhe mit wenig Verbrauch.
+- Ameisenarten: Rote Gartenameise, Rote Waldameise, Blattschneiderameise, Honigtopfameise und Ernteameise. Jede Art hat eigene Farben und Stärken, zum Beispiel einen großen Hügel, einen frühen Pilzgarten, viele Honigtöpfe oder Samen von den Gräsern als Futter.
+- Hygiene: Liegen Tote oder Abfall zu lange am falschen Ort, wächst Schimmel. Er breitet sich auf Abfall aus, verdirbt Futter und macht Ameisen krank. Aufräumerinnen kratzen ihn ab und tragen die Ursache weg.
+- Futter teilen: Hungrige Ameisen betteln Sammlerinnen und Honigtöpfe an und bekommen Futter von Mund zu Mund. Ein goldener Tropfen glänzt zwischen ihren Köpfen.
+- Nachbarn: Auf Wunsch lebt am Rand eine fremde Kolonie mit schwarzen Ameisen. Sie sammelt an denselben Bäumen, kämpft um Futter und schickt Räuberinnen ins Nest, die Futter und Puppen stehlen. Nach einem Hochzeitsflug gründet eine Prinzessin am Rand eine friedliche Tochterkolonie.
+- Lebenslauf: Jede Ameise sammelt Erlebnisse, zum Beispiel ihre erste Grabung, den Vogel vertrieben oder den Winter überstanden. Sie stehen im Steckbrief.
+- Abzeichen: 22 Abzeichen gelten über alle Kolonien. Beim Freischalten erscheint eine Medaille mit Fanfare. Die Sammlung steht im Hauptmenü.
+- Ton: Graben, Regen, Wind, Vogelgezwitscher, Klicks und leise Musik werden im Browser erzeugt. Im Hauptmenü unter Ton stellst du Geräusche, Musik und Lautstärke ein.
+- Fotomodus: Die Kamera unten rechts blendet die Bedienung aus. Du wählst den Ausschnitt, und das Foto bekommt ein Schild mit Name, Tag, Jahreszeit und Ameisenzahl. Du teilst es oder hältst es gedrückt, um es zu sichern.
 - Das Kolonie-Panel zeigt alle Sonderkammern mit ihrem Zustand, die Zahl der Hochzeitsflüge und das Gedränge in den Gängen.
 - Tippe auf eine Ameise, um ihr zu folgen und ihren Steckbrief zu sehen. Das Schild öffnet das Kolonie-Panel mit Aufgabenverteilung, Verlauf und Chronik.
 - Tippst du eine Kammer an, steht unter ihrem Namen, wozu sie da ist. Das gilt auch für Kammern im Bau, für Gänge, Erde, Bäume, Büsche, den Ameisenhaufen und Futter im Gras.
@@ -42,6 +51,9 @@ Das Spiel läuft auf iPhone, Android, Tablet und PC. Die Basisauflösung ist 270
   - Windrad: Drei Minuten lang jagt der Vogel in seiner Nähe keine Ameisen.
   - Blattdach: Vier Minuten lang läuft kein Regen in den Eingang.
   - Wärme: Zwei Minuten lang reift die Brut in einer Kammer schneller, und Ruhende erholen sich schneller.
+  - Wassertropfen: Erfrischt Sammlerinnen, die in der Sommerhitze müde geworden sind.
+  - Futterschale: Füllt fünf Minuten lang alle 45 Sekunden Obst nach.
+  - Stöckchen: Lehnt an einem Baum, dort klettern die Ameisen doppelt so schnell.
 - Jede Futtereinheit im Nest hat ihre Sorte: Apfelstück, Zuckerwürfel, Käferstück, Honigtau oder Pilzknolle. Die Kammern zeigen genau das, was gerade darin liegt, und beim Antippen steht die Menge jeder Sorte. Auch die Ameisen tragen sichtbar die Sorte, die sie geholt haben.
 - Die Bäume haben breite Stämme, ihre Wurzeln wachsen sichtbar aus dem Stammfuß in die Erde. Äpfel wachsen nur an den Bäumen, die Büsche liefern Blätter.
 
