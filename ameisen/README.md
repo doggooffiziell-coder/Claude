@@ -15,9 +15,9 @@ Das Spiel läuft auf iPhone, Android, Tablet und PC. Die Basisauflösung ist 270
 `web/AntPop.html` ist eine eigenständige Browser-Version in JavaScript. Sie läuft auf dem iPhone in Safari ohne Installation und ist weiter ausgebaut als die Godot-Fassung:
 
 - Jede Ameise lebt eigenständig. Sie hat einen Namen, eigene Vorlieben für Arbeiten, Hunger, Müdigkeit und ein Alter. Junge Ameisen pflegen lieber die Brut, ältere gehen lieber hinaus. Was eine Ameise oft tut, fällt ihr leichter.
-- Es gibt keinen Bauplan. Die Ameisen graben Gänge mit dicken Erdwänden, nach Duftmarken und nach Platzbedarf. Kammern entstehen von selbst. Ihre Art ergibt sich aus dem, was die Ameisen dort ablegen: Futter, Brut, Tote oder Abfall.
-- Die Königin legt nur Eier, wenn sie gefüttert wird und genug Vorrat da ist. Eier werden zu Larven und Puppen. Ammen tragen die Brut in eine eigene Kammer und füttern die Larven.
-- An der Oberfläche fällt Obst von den Bäumen, tote Käfer liegen im Gras, und ein Vogel jagt Ameisen. Beim Tausendfüßler verbreiten die Ameisen Alarmduft: Arbeiterinnen fliehen, Soldatinnen eilen herbei.
+- Es gibt keinen festen Bauplan. Wenn die Kolonie Platz für Futter, Brut, Tote oder Abfall braucht, wählen die Ameisen einen passenden Ort, graben einen Verbindungsgang und heben die Kammer gemeinsam aus. Danach bringen sie alles an den richtigen Ort: Futter in die Kornkammer, Eier in die Brutkammer, Tote auf den Friedhof, Abfall in die Müllkammer.
+- Die Königin legt nur Eier, wenn sie gefüttert wird und genug Vorrat da ist. Eier werden zu Larven und Puppen. Ammen tragen die Brut in die Brutkammer und füttern die Larven.
+- An der Oberfläche fällt Obst von den Bäumen, tote Käfer liegen im Gras, und ein Vogel jagt Ameisen. Der Tausendfüßler ist vorerst abgeschaltet.
 - Tippe auf eine Ameise, um ihr zu folgen und ihren Steckbrief zu sehen. Das Schild öffnet das Kolonie-Panel mit Aufgabenverteilung, Verlauf und Chronik. Unten links streust du Zucker ins Gras.
 
 Der Spielstand liegt dort im Speicher des Browsers.
