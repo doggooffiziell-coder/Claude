@@ -524,6 +524,58 @@
   .story ol { list-style: none; margin: 6px 0 0; padding: 0; max-height: 128px; overflow-y: auto; }
   .story li { padding: 2px 0; color: var(--cream); line-height: 1.15; }
   .story li span { color: var(--brass); margin-right: 8px; }
+
+  /* Spielmenü oben rechts */
+  .gm-btn {
+    position: absolute; top: calc(env(safe-area-inset-top, 0px) + 8px); right: 12px; pointer-events: auto;
+    width: 52px; height: 52px; display: grid; place-items: center; padding: 0;
+    border: 2px solid var(--board-light); clip-path: var(--notch); cursor: pointer; touch-action: manipulation;
+    background: linear-gradient(180deg, var(--board) 0%, var(--board-deep) 100%); color: var(--cream);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  }
+  .gm-btn svg { width: 22px; height: 22px; }
+  .gm-btn:active { transform: scale(0.94); }
+  .gm-btn:focus-visible { outline: 3px solid var(--brass); outline-offset: 2px; }
+  .gm-btn .dot { position: absolute; top: 6px; right: 6px; width: 10px; height: 10px; background: #e8553f; box-shadow: 0 0 0 2px var(--board-deep); }
+  .gm-btn .dot[hidden] { display: none; }
+  .gm-shade { position: fixed; inset: 0; z-index: 12; background: rgba(6, 14, 9, 0.6); pointer-events: auto; animation: fade 0.2s ease-out; }
+  .gm-shade[hidden] { display: none; }
+  @keyframes fade { from { opacity: 0; } }
+  .gmenu {
+    z-index: 13; top: calc(env(safe-area-inset-top, 0px) + 10px); bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+    left: 10px; right: 10px; max-width: 420px; margin: 0 auto; padding: 14px 16px 16px;
+    display: flex; flex-direction: column; gap: 10px; overflow: hidden; animation: rise2 0.22s ease-out;
+  }
+  .gmenu[hidden] { display: none; }
+  .gm-view { display: grid; gap: 10px; align-content: start; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; min-height: 0; flex: 1; }
+  .gm-view[hidden] { display: none; }
+  .gm-head { display: flex; align-items: center; gap: 10px; flex: none; }
+  .gm-head h2 { margin: 0; flex: 1; font-family: var(--font-display); font-weight: 400; font-size: 30px; }
+  .gm-back { width: 44px; height: 44px; flex: none; display: grid; place-items: center; border: 2px solid var(--board-light); background: var(--board-deep); color: var(--cream); clip-path: var(--notch); cursor: pointer; font: inherit; font-size: 26px; }
+  .gm-back[hidden] { display: none; }
+  .gm-status { margin: 0; font-size: 18px; color: var(--cream-dim); letter-spacing: 0.03em; }
+  .gm-status b { font-weight: 400; color: var(--cream); }
+  .gm-badgecard { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 6px 12px; text-align: left; padding: 12px 14px; border: 2px solid var(--brass); background: #1a3320; color: var(--cream); font: inherit; clip-path: var(--notch); cursor: pointer; }
+  .gm-badgecard:active { transform: scale(0.98); }
+  .gm-badgecard .mlabel { font-size: 26px; }
+  .gm-badgecard .count { font-size: 22px; color: #ffe39a; }
+  .gm-recent { grid-column: 1 / -1; display: flex; gap: 6px; min-height: 36px; align-items: center; }
+  .gm-recent svg { width: 36px; height: 36px; image-rendering: pixelated; }
+  .gm-recent small { font-size: 16px; color: var(--cream-dim); }
+  .gm-bar { grid-column: 1 / -1; height: 10px; background: #0d1f14; border: 2px solid var(--board-light); }
+  .gm-bar span { display: block; height: 100%; background: linear-gradient(90deg, #b88a2e, #f2d88a); }
+  .gm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .gm-grid .mbtn { min-height: 0; padding: 10px 12px; }
+  .gm-grid .mlabel { font-size: 22px; }
+  .gm-grid .msub { font-size: 15px; }
+  .gm-view .badges { max-height: none; overflow: visible; }
+  .badge { position: relative; }
+  .badge .new { position: absolute; top: 4px; right: 4px; padding: 0 4px; font-size: 12px; letter-spacing: 0.08em; background: #e8553f; color: #fff; }
+  .gm-help ul { margin: 0; padding: 0 0 0 18px; display: grid; gap: 8px; font-size: 19px; line-height: 1.22; }
+  .gm-help b { font-weight: 400; color: #ffe39a; }
+  .gm-saved { min-height: 20px; margin: 0; text-align: center; font-size: 16px; color: #a99f80; }
+  body.photo .gm-btn, body.cinema .gm-btn { display: none; }
+  @media (prefers-reduced-motion: reduce) { .gmenu, .gm-shade { animation: none; } }
   body.photo #hud, body.cinema #hud { display: none; }
   .viewmenu {
     position: absolute; right: 12px; bottom: calc(env(safe-area-inset-bottom, 0px) + 74px);
@@ -579,6 +631,37 @@
     <div class="sign-stats"><span>Futter <b id="food">20</b></span><span>Tag <b id="day">1</b></span><span class="season" id="season"></span><span class="warn" id="hunger" hidden>Hunger!</span></div>
     <span class="sign-more">Kolonie ansehen ›</span>
   </button>
+  <button class="gm-btn" id="btnGameMenu" type="button" aria-label="Spielmenü" aria-haspopup="dialog"><svg viewBox="0 0 13 13" aria-hidden="true" shape-rendering="crispEdges" fill="currentColor"><rect x="1" y="2" width="11" height="2"/><rect x="1" y="6" width="11" height="2"/><rect x="1" y="10" width="11" height="2"/></svg><span class="dot" id="gmDot" hidden></span></button>
+  <div class="gm-shade" id="gmShade" hidden></div>
+  <div class="box gmenu" id="gameMenu" hidden role="dialog" aria-modal="true" aria-labelledby="gmTitle">
+    <div class="gm-head"><button class="gm-back" id="gmBack" type="button" aria-label="Zurück" hidden>‹</button><h2 id="gmTitle">Spielmenü</h2><button class="x" id="gmClose" type="button" aria-label="Schließen">×</button></div>
+    <div class="gm-view" id="gmMain">
+      <p class="gm-status" id="gmStatus"></p>
+      <button class="mbtn primary" id="gmResume" type="button"><span class="mlabel">Weiterspielen</span><span class="msub">Das Spiel ist pausiert, solange das Menü offen ist</span></button>
+      <button class="gm-badgecard" id="gmBadges" type="button"><span class="mlabel">Abzeichen</span><span class="count" id="gmBadgeCount"></span><span class="gm-bar"><span id="gmBadgeBar"></span></span><span class="gm-recent" id="gmRecent"></span></button>
+      <div class="gm-grid">
+        <button class="mbtn" id="gmColony" type="button"><span class="mlabel">Kolonie</span><span class="msub">Zahlen und Chronik</span></button>
+        <button class="mbtn" id="gmSound" type="button"><span class="mlabel">Ton</span><span class="msub" id="gmSoundSub"></span></button>
+        <button class="mbtn" id="gmPhoto" type="button"><span class="mlabel">Foto</span><span class="msub">Bild vom Nest</span></button>
+        <button class="mbtn" id="gmCinema" type="button"><span class="mlabel">Kinomodus</span><span class="msub">Rundgang durchs Nest</span></button>
+        <button class="mbtn" id="gmHelp" type="button"><span class="mlabel">Hilfe</span><span class="msub">So spielst du</span></button>
+        <button class="mbtn" id="gmSave" type="button"><span class="mlabel">Speichern</span><span class="msub" id="gmSaveSub">Jetzt sichern</span></button>
+      </div>
+      <button class="mbtn" id="gmMainMenu" type="button"><span class="mlabel">Zum Hauptmenü</span><span class="msub">Neue Kolonie gründen oder weiterspielen</span></button>
+      <p class="gm-saved" id="gmSaved">Dein Spiel speichert sich alle 30 Sekunden von selbst.</p>
+    </div>
+    <div class="gm-view" id="gmBadgeView" hidden>
+      <p class="gm-status" id="gmBadgeInfo"></p>
+      <div class="seg" id="gmFilter"><button type="button" data-f="all" aria-pressed="true">Alle</button><button type="button" data-f="got" aria-pressed="false">Gesammelt</button><button type="button" data-f="open" aria-pressed="false">Offen</button></div>
+      <div class="badges" id="gmBadgeGrid"></div>
+    </div>
+    <div class="gm-view" id="gmSoundView" hidden>
+      <div class="toggles"><button class="toggle" type="button" id="gSound"><i></i>Geräusche</button><button class="toggle" type="button" id="gMusic"><i></i>Musik</button></div>
+      <label class="field"><span>Lautstärke</span><input type="range" id="gVolume" min="0" max="100" step="5"></label>
+      <p class="mfoot">Die Einstellung gilt auch im Hauptmenü.</p>
+    </div>
+    <div class="gm-view gm-help" id="gmHelpView" hidden></div>
+  </div>
   <div class="banner" id="banner" hidden></div>
   <div class="toast" id="toast" hidden role="status"></div>
   <div class="sheet hint" id="hint">
@@ -749,6 +832,7 @@
         <li><b>Hygiene:</b> Liegen Tote oder Abfall zu lange herum, wächst Schimmel. Aufräumerinnen und eine Müllkammer halten das Nest sauber.</li>
         <li><b>Nachbarn:</b> Eine fremde Kolonie kämpft um Futter und schickt Räuberinnen. Nach Hochzeitsflügen entstehen Tochterkolonien.</li>
         <li><b>Die Kamera</b> unten rechts macht ein Foto von deinem Nest.</li>
+        <li><b>Das Spielmenü</b> oben rechts pausiert das Spiel. Dort findest du Abzeichen, Ton, Hilfe, Speichern und den Weg zum Hauptmenü. Ein roter Punkt zeigt neue Abzeichen.</li>
         <li><b>Ziel:</b> Lass die Kolonie wachsen, schick Prinzessinnen auf den Hochzeitsflug und sammle alle Abzeichen.</li>
       </ul>
       <div class="card-actions"><button class="btn" type="button" data-back>Zurück</button></div>
@@ -5683,6 +5767,9 @@ const sound = {
     $("setSound").setAttribute("aria-pressed", String(this.on));
     $("setMusic").setAttribute("aria-pressed", String(this.music));
     $("setVolume").value = Math.round(this.vol * 100);
+    $("gSound").setAttribute("aria-pressed", String(this.on));
+    $("gMusic").setAttribute("aria-pressed", String(this.music));
+    $("gVolume").value = Math.round(this.vol * 100);
     $("mSoundSub").textContent = this.on || this.music ? `Lautstärke ${Math.round(this.vol * 100)} %` : "aus";
   },
 };
@@ -5692,6 +5779,9 @@ document.addEventListener("click", e => { if (e.target.closest("button")) { soun
 $("setSound").addEventListener("click", () => { sound.on = !sound.on; sound.save(); sound.syncUi(); });
 $("setMusic").addEventListener("click", () => { sound.music = !sound.music; sound.save(); sound.syncUi(); });
 $("setVolume").addEventListener("input", e => { sound.vol = +e.target.value / 100; sound.save(); sound.syncUi(); });
+$("gSound").addEventListener("click", () => { sound.on = !sound.on; sound.save(); sound.syncUi(); });
+$("gMusic").addEventListener("click", () => { sound.music = !sound.music; sound.save(); sound.syncUi(); });
+$("gVolume").addEventListener("input", e => { sound.vol = +e.target.value / 100; sound.save(); sound.syncUi(); });
 
 // =====================================================================
 // ERFOLGE UND ABZEICHEN: gelten über alle Kolonien hinweg
@@ -5763,7 +5853,7 @@ const achievements = {
     }
   },
   unlock(b) {
-    this.store.got[b.id] = { day: events.day, colony: colony.name };
+    this.store.got[b.id] = { day: events.day, colony: colony.name, at: Date.now() };
     this.save();
     colony.log(`Abzeichen: ${b.name}`);
     const t = $("toast");
@@ -5772,6 +5862,7 @@ const achievements = {
     clearTimeout(this.toastT); this.toastT = setTimeout(() => { t.hidden = true; }, 4200);
     if (typeof sound !== "undefined") sound.jingle();
     this.confetti();
+    if (typeof gameMenu !== "undefined") gameMenu.onBadge();
   },
   // bunte Pixel fallen von oben über den Bildschirm
   confetti() {
@@ -5793,20 +5884,26 @@ const achievements = {
     clearTimeout(this.confT); this.confT = setTimeout(() => box.replaceChildren(), 3200);
   },
   tick(dt) { this.t -= dt; if (this.t <= 0) { this.t = 2; this.check(); } },
+  // neue Abzeichen, die noch niemand in der Liste angesehen hat
+  unseen() { const s = this.store.seenAt || 0; return BADGES.filter(b => { const g = this.store.got[b.id]; return g && (g.at || 0) > s; }).length; },
+  markSeen() { this.store.seenAt = Date.now(); this.save(); },
   count() { return BADGES.filter(b => this.store.got[b.id]).length; },
-  render() {
-    const grid = $("badgeGrid");
+  render(gridId = "badgeGrid", filter = "all") {
+    const grid = $(gridId);
     grid.replaceChildren();
+    const seen = this.store.seenAt || 0;
     for (const b of BADGES) {
       const got = this.store.got[b.id];
+      if ((filter === "got" && !got) || (filter === "open" && got)) continue;
       const el = document.createElement("div");
       el.className = "badge" + (got ? " got" : "");
       el.innerHTML = `${badgeSvg(b, !!got)}<b></b><small></small>`;
       el.querySelector("b").textContent = got ? b.name : "???";
       el.querySelector("small").textContent = got ? b.desc + ` (${got.colony}, Tag ${got.day})` : b.desc;
+      if (got && (got.at || 0) > seen) { const n = document.createElement("span"); n.className = "new"; n.textContent = "NEU"; el.append(n); }
       grid.append(el);
     }
-    $("badgeCount").textContent = `${this.count()} von ${BADGES.length} gesammelt`;
+    if (gridId === "badgeGrid") $("badgeCount").textContent = `${this.count()} von ${BADGES.length} gesammelt`;
   },
 };
 achievements.load();
@@ -6056,6 +6153,7 @@ const loader = {
 const menu = {
   draft: null,
   open() {
+    if (typeof gameMenu !== "undefined") gameMenu.close(false);
     game.sel = null; game.follow = false; game.tool = null; tools.toggleMenu(false);
     hud.closeAnt(); hud.closePanel(); hud.hideInfo();
     if (!game.menu) { game.view = [view.x, view.y, view.z]; game.menuSpeed = game.speed; }
@@ -6180,6 +6278,119 @@ document.addEventListener("keydown", e => {
   if ($("menuMain").hidden) menu.show("menuMain");
   else if (!game.demo) menu.close();
 });
+
+// =====================================================================
+// SPIELMENÜ: oben rechts, pausiert das Spiel, zeigt Abzeichen, Ton, Hilfe und mehr
+// =====================================================================
+const GM_TITLES = { gmMain: "Spielmenü", gmBadgeView: "Abzeichen", gmSoundView: "Ton", gmHelpView: "So spielst du" };
+const gameMenu = {
+  isOpen: false, view: "gmMain", wasPaused: false, filter: "all",
+  open() {
+    if (game.menu || this.isOpen || document.body.classList.contains("photo")) return;
+    game.sel = null; game.follow = false; game.tool = null; tools.toggleMenu(false);
+    $("viewMenu").hidden = true; views.stopCinema();
+    hud.closeAnt(); hud.closePanel(); hud.hideInfo();
+    this.wasPaused = game.paused;
+    game.paused = true; hud.updateButtons();
+    this.isOpen = true;
+    $("gmShade").hidden = false; $("gameMenu").hidden = false;
+    $("btnGameMenu").setAttribute("aria-expanded", "true");
+    this.go("gmMain");
+    $("gmResume").focus({ preventScroll: true });
+  },
+  // resume: vorherigen Pausenzustand wiederherstellen
+  close(resume = true) {
+    if (!this.isOpen) return;
+    if (this.view === "gmBadgeView") achievements.markSeen();
+    this.isOpen = false;
+    $("gmShade").hidden = true; $("gameMenu").hidden = true;
+    $("btnGameMenu").setAttribute("aria-expanded", "false");
+    if (resume) game.paused = this.wasPaused;
+    hud.updateButtons();
+    this.updateDot();
+  },
+  go(id) {
+    if (this.view === "gmBadgeView" && id !== "gmBadgeView") achievements.markSeen();
+    this.view = id;
+    for (const v of Object.keys(GM_TITLES)) $(v).hidden = v !== id;
+    $("gmTitle").textContent = GM_TITLES[id];
+    $("gmBack").hidden = id === "gmMain";
+    $(id).scrollTop = 0;
+    if (id === "gmMain") this.refresh();
+    if (id === "gmBadgeView") this.renderBadges();
+    if (id === "gmSoundView") sound.syncUi();
+    this.updateDot();
+  },
+  refresh() {
+    const st = $("gmStatus");
+    st.replaceChildren();
+    const parts = [colony.name, `Tag ${events.day}`, seasons.on() ? seasons.name() : null, `${ants.count} Ameisen`].filter(Boolean);
+    parts.forEach((p, k) => { const b = document.createElement("b"); b.textContent = p; st.append(b); if (k < parts.length - 1) st.append(" · "); });
+    const n = achievements.count(), all = BADGES.length, fresh = achievements.unseen();
+    $("gmBadgeCount").textContent = `${n} von ${all}${fresh ? ` · ${fresh} neu` : ""}`;
+    $("gmBadgeBar").style.width = (n / all * 100).toFixed(1) + "%";
+    // die drei zuletzt verdienten Abzeichen
+    const recent = BADGES.filter(b => achievements.store.got[b.id])
+      .sort((a, b) => (achievements.store.got[b.id].at || 0) - (achievements.store.got[a.id].at || 0)).slice(0, 3);
+    const box = $("gmRecent");
+    box.innerHTML = recent.map(b => badgeSvg(b, true)).join("");
+    const note = document.createElement("small");
+    note.textContent = recent.length ? `Zuletzt: ${recent[0].name}` : "Noch keins. Das erste kommt bald.";
+    box.append(note);
+    $("gmSoundSub").textContent = sound.on || sound.music ? `Lautstärke ${Math.round(sound.vol * 100)} %` : "aus";
+  },
+  renderBadges() {
+    achievements.render("gmBadgeGrid", this.filter);
+    const n = achievements.count();
+    $("gmBadgeInfo").textContent = n === BADGES.length ? "Du hast alle Abzeichen gesammelt." : `${n} von ${BADGES.length} gesammelt. Abzeichen gelten für alle deine Kolonien.`;
+    for (const b of $("gmFilter").children) b.setAttribute("aria-pressed", String(b.dataset.f === this.filter));
+    if (!$("gmBadgeGrid").children.length) {
+      const p = document.createElement("p"); p.className = "mfoot";
+      p.textContent = this.filter === "got" ? "Noch keine Abzeichen gesammelt." : "Alle gesammelt.";
+      $("gmBadgeGrid").append(p);
+    }
+  },
+  updateDot() { $("gmDot").hidden = !achievements.unseen(); },
+  onBadge() {
+    this.updateDot();
+    if (!this.isOpen) return;
+    if (this.view === "gmBadgeView") this.renderBadges(); else if (this.view === "gmMain") this.refresh();
+  },
+};
+// Hilfe aus dem Hauptmenü übernehmen
+$("gmHelpView").append($("menuHelp").querySelector("ul").cloneNode(true));
+$("btnGameMenu").addEventListener("click", () => gameMenu.open());
+$("gmClose").addEventListener("click", () => gameMenu.close());
+$("gmShade").addEventListener("click", () => gameMenu.close());
+$("gmBack").addEventListener("click", () => gameMenu.go("gmMain"));
+$("gmResume").addEventListener("click", () => gameMenu.close());
+$("gmBadges").addEventListener("click", () => gameMenu.go("gmBadgeView"));
+$("gmSound").addEventListener("click", () => gameMenu.go("gmSoundView"));
+$("gmHelp").addEventListener("click", () => gameMenu.go("gmHelpView"));
+$("gmColony").addEventListener("click", () => { gameMenu.close(); hud.openPanel(); });
+$("gmPhoto").addEventListener("click", () => { gameMenu.close(); photo.open(); });
+$("gmCinema").addEventListener("click", () => { gameMenu.close(); views.set("cinema"); });
+$("gmSave").addEventListener("click", () => {
+  save();
+  const t = new Date();
+  $("gmSaveSub").textContent = `Gesichert ${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
+});
+$("gmMainMenu").addEventListener("click", () => { gameMenu.close(); save(); menu.open(); });
+$("gmFilter").addEventListener("click", e => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  gameMenu.filter = b.dataset.f;
+  gameMenu.renderBadges();
+});
+document.addEventListener("keydown", e => {
+  if (game.menu) return;
+  if (e.key === "Escape") {
+    if (!gameMenu.isOpen) gameMenu.open();
+    else if (gameMenu.view !== "gmMain") gameMenu.go("gmMain");
+    else gameMenu.close();
+  }
+});
+gameMenu.updateDot();
 
 function onTap(sx, sy) {
   const now = performance.now();
