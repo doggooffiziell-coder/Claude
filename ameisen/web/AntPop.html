@@ -576,6 +576,51 @@
   .gm-saved { min-height: 20px; margin: 0; text-align: center; font-size: 16px; color: #a99f80; }
   body.photo .gm-btn, body.cinema .gm-btn { display: none; }
   @media (prefers-reduced-motion: reduce) { .gmenu, .gm-shade { animation: none; } }
+
+  /* Ameisenleben */
+  .life-card, .task-card { position: absolute; left: 10px; pointer-events: auto; box-sizing: border-box; background: rgba(20, 45, 28, 0.95); border: 2px solid var(--board-light); clip-path: var(--notch); color: var(--cream); box-shadow: 0 6px 16px rgba(0,0,0,0.4); }
+  .life-card[hidden], .task-card[hidden], .life-actions[hidden] { display: none; }
+  .life-card { top: calc(env(safe-area-inset-top, 0px) + 8px); width: min(300px, calc(100% - 84px)); padding: 6px 8px 6px 10px; display: grid; gap: 3px; }
+  .lc-head { display: flex; align-items: baseline; gap: 8px; }
+  .lc-head b { font-family: var(--font-display); font-weight: 400; font-size: 21px; line-height: 1; }
+  .lc-head span { font-size: 15px; color: var(--brass); letter-spacing: 0.06em; text-transform: uppercase; }
+  .lc-head button { margin-left: auto; width: 30px; height: 30px; flex: none; display: grid; place-items: center; border: 2px solid var(--board-light); background: var(--board-deep); color: var(--cream); clip-path: var(--notch); cursor: pointer; padding: 0; }
+  .lc-head button svg { width: 16px; height: 16px; }
+  .lc-bars { display: grid; grid-template-columns: auto 1fr auto 1fr auto 1fr; gap: 3px 5px; align-items: center; font-size: 13px; color: var(--cream-dim); }
+  .lc-bars .bar { height: 8px; border-width: 1px; }
+  .bar > span.age { background: #c9a46a; }
+  .lc-foot { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--cream-dim); }
+  .task-card { top: calc(env(safe-area-inset-top, 0px) + 92px); width: min(360px, calc(100% - 20px)); padding: 6px 10px 6px; display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; border-color: var(--brass); }
+  .task-card.new { animation: rise2 0.4s ease-out; }
+  .task-card.done { animation: glow 0.7s ease-out; }
+  @keyframes glow { 0% { background: rgba(120, 100, 30, 0.98); } }
+  .task-card small { font-size: 12px; letter-spacing: 0.14em; color: var(--brass); text-transform: uppercase; }
+  .task-card h3 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 20px; line-height: 1.05; grid-column: 1; }
+  .task-card p { margin: 0; grid-column: 1 / -1; font-size: 15px; line-height: 1.15; color: var(--cream); }
+  .task-side { grid-column: 2; grid-row: 1 / span 2; display: grid; justify-items: end; align-content: start; gap: 2px; }
+  .task-arrow { font-size: 26px; line-height: 1; color: #ffd75a; display: inline-block; transition: transform 0.2s; }
+  .task-arrow[hidden] { display: none; }
+  .task-prog { font-size: 16px; color: #ffe39a; }
+  .task-foot { grid-column: 1 / -1; display: flex; justify-content: flex-end; }
+  .task-foot button { border: 0; background: none; color: var(--cream-dim); font: inherit; font-size: 13px; text-decoration: underline; cursor: pointer; padding: 6px 0 2px; min-height: 28px; }
+  .life-actions { position: absolute; left: 10px; right: 10px; bottom: calc(env(safe-area-inset-bottom, 0px) + 76px); display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; pointer-events: none; }
+  .life-actions .act { pointer-events: auto; min-height: 48px; padding: 0 16px; border: 2px solid var(--board-light); background: linear-gradient(180deg, var(--board) 0%, var(--board-deep) 100%); color: var(--cream); font: inherit; font-size: 20px; clip-path: var(--notch); cursor: pointer; touch-action: manipulation; box-shadow: 0 4px 12px rgba(0,0,0,0.45); animation: rise2 0.18s ease-out; }
+  .life-actions .act.main { background: linear-gradient(180deg, #8a6a24 0%, #6d5420 100%); border-color: var(--brass); }
+  .life-actions .act:active { transform: scale(0.95); }
+  body.life .sign, body.life #hint, body.life .tools, body.life #antCard { display: none; }
+  body.life .banner { top: calc(env(safe-area-inset-top, 0px) + 212px); }
+  body.life .toast { top: auto; bottom: calc(env(safe-area-inset-bottom, 0px) + 140px); }
+  body:not(.life) .life-card, body:not(.life) .task-card, body:not(.life) .life-actions { display: none; }
+  .life-dialog { position: fixed; inset: 0; z-index: 16; display: grid; place-items: center; padding: 16px; background: rgba(6, 14, 9, 0.6); pointer-events: auto; }
+  .life-dialog[hidden] { display: none; }
+  .life-dialog .menu-card { max-width: 380px; max-height: calc(100dvh - 40px); overflow-y: auto; align-self: center; }
+  .life-dialog p { margin: 0; font-size: 18px; line-height: 1.25; }
+  .life-dialog .how { display: grid; gap: 6px; margin: 0; padding: 0 0 0 18px; font-size: 17px; line-height: 1.2; color: var(--cream-dim); }
+  .life-dialog .how b { font-weight: 400; color: #ffe39a; }
+  .life-dialog dl { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; margin: 0; font-size: 18px; }
+  .life-dialog dt { color: var(--cream-dim); } .life-dialog dd { margin: 0; text-align: right; }
+  .life-dialog ol { margin: 0; padding-left: 20px; font-size: 16px; color: var(--cream-dim); display: grid; gap: 2px; }
+  .life-dialog .cause { color: #ffc9b8; }
   body.photo #hud, body.cinema #hud { display: none; }
   .viewmenu {
     position: absolute; right: 12px; bottom: calc(env(safe-area-inset-bottom, 0px) + 74px);
@@ -637,6 +682,7 @@
     <div class="gm-head"><button class="gm-back" id="gmBack" type="button" aria-label="Zurück" hidden>‹</button><h2 id="gmTitle">Spielmenü</h2><button class="x" id="gmClose" type="button" aria-label="Schließen">×</button></div>
     <div class="gm-view" id="gmMain">
       <p class="gm-status" id="gmStatus"></p>
+      <button class="mbtn" id="gmLife" type="button"><span class="mlabel" id="gmLifeLabel">Als Ameise leben</span><span class="msub" id="gmLifeSub">Schlüpfe als Ameise und erfülle Aufgaben</span></button>
       <button class="mbtn primary" id="gmResume" type="button"><span class="mlabel">Weiterspielen</span><span class="msub">Das Spiel ist pausiert, solange das Menü offen ist</span></button>
       <button class="gm-badgecard" id="gmBadges" type="button"><span class="mlabel">Abzeichen</span><span class="count" id="gmBadgeCount"></span><span class="gm-bar"><span id="gmBadgeBar"></span></span><span class="gm-recent" id="gmRecent"></span></button>
       <div class="gm-grid">
@@ -662,6 +708,19 @@
     </div>
     <div class="gm-view gm-help" id="gmHelpView" hidden></div>
   </div>
+  <div class="life-card" id="lifeCard">
+    <div class="lc-head"><b id="lifeName"></b><span id="lifeStage"></span><button type="button" id="lifeCenter" aria-label="Zu mir"><svg viewBox="0 0 9 9" aria-hidden="true" shape-rendering="crispEdges" fill="currentColor"><rect x="4" y="0" width="1" height="3"/><rect x="4" y="6" width="1" height="3"/><rect x="0" y="4" width="3" height="1"/><rect x="6" y="4" width="3" height="1"/><rect x="3" y="3" width="3" height="3"/></svg></button></div>
+    <div class="lc-bars"><span>Satt</span><span class="bar"><span id="lifeFood"></span></span><span>Müde</span><span class="bar"><span id="lifeTired" class="tired"></span></span><span>Leben</span><span class="bar"><span id="lifeAge" class="age"></span></span></div>
+    <div class="lc-foot"><span id="lifeCarry"></span><span id="lifeXp"></span></div>
+  </div>
+  <div class="task-card" id="taskCard" role="status">
+    <small>Deine Aufgabe</small>
+    <div class="task-side"><span class="task-arrow" id="taskArrow" aria-hidden="true">➜</span><span class="task-prog" id="taskProg"></span></div>
+    <h3 id="taskTitle"></h3>
+    <p id="taskText"></p>
+    <div class="task-foot"><button type="button" id="taskSkip">Andere Aufgabe</button></div>
+  </div>
+  <div class="life-actions" id="lifeActions"></div>
   <div class="banner" id="banner" hidden></div>
   <div class="toast" id="toast" hidden role="status"></div>
   <div class="sheet hint" id="hint">
@@ -729,6 +788,28 @@
 <div class="cine-ui" id="cineUi" hidden>
   <div class="cine-cap" id="cineCap"><b id="cineTitle"></b><span id="cineText"></span></div>
   <button class="btn" id="cineStop" type="button">Kinomodus beenden</button>
+</div>
+<div class="life-dialog" id="lifeIntro" hidden role="dialog" aria-modal="true" aria-labelledby="lifeIntroName">
+  <div class="menu-card">
+    <div class="card-head"><h2 id="lifeIntroName"></h2></div>
+    <p id="lifeIntroText"></p>
+    <ul class="how">
+      <li><b>Tippe</b> auf einen Gang oder ins Gras, dann läufst du dorthin.</li>
+      <li><b>Knöpfe unten</b> zeigen, was du an deinem Ort tun kannst: essen, tragen, graben, füttern.</li>
+      <li><b>Der gelbe Pfeil</b> zeigt das Ziel deiner Aufgabe.</li>
+      <li><b>Achte</b> auf Hunger und Müdigkeit. Mit dem Alter wechseln deine Aufgaben: erst Brutpflege, dann Bauen, dann Futtersuche.</li>
+    </ul>
+    <div class="card-actions"><button class="btn go" type="button" id="lifeIntroGo">Los geht's</button></div>
+  </div>
+</div>
+<div class="life-dialog" id="lifeEnd" hidden role="dialog" aria-modal="true" aria-labelledby="lifeEndTitle">
+  <div class="menu-card">
+    <div class="card-head"><h2 id="lifeEndTitle"></h2></div>
+    <p class="cause" id="lifeEndCause"></p>
+    <dl id="lifeEndRows"></dl>
+    <ol id="lifeEndStory"></ol>
+    <div class="card-actions"><button class="btn" type="button" id="lifeEndColony">Zur Kolonie</button><button class="btn go" type="button" id="lifeEndAgain">Neu schlüpfen</button></div>
+  </div>
 </div>
 <div class="confetti" id="confetti" aria-hidden="true"></div>
 <div class="photo-ui" id="photoUi" hidden>
@@ -832,6 +913,7 @@
         <li><b>Hygiene:</b> Liegen Tote oder Abfall zu lange herum, wächst Schimmel. Aufräumerinnen und eine Müllkammer halten das Nest sauber.</li>
         <li><b>Nachbarn:</b> Eine fremde Kolonie kämpft um Futter und schickt Räuberinnen. Nach Hochzeitsflügen entstehen Tochterkolonien.</li>
         <li><b>Die Kamera</b> unten rechts macht ein Foto von deinem Nest.</li>
+        <li><b>Ameisenleben:</b> Im Spielmenü wählst du "Als Ameise leben". Dann schlüpfst du selbst, läufst per Tippen und erfüllst Aufgaben bis zum Ende deines Lebens.</li>
         <li><b>Das Spielmenü</b> oben rechts pausiert das Spiel. Dort findest du Abzeichen, Ton, Hilfe, Speichern und den Weg zum Hauptmenü. Ein roter Punkt zeigt neue Abzeichen.</li>
         <li><b>Ziel:</b> Lass die Kolonie wachsen, schick Prinzessinnen auf den Hochzeitsflug und sammle alle Abzeichen.</li>
       </ul>
@@ -2093,7 +2175,7 @@ const colony = {
     if (home < 0) return;
     let pick = -1, pa = 1;
     for (let i = 0; i < ants.count; i++) {
-      if (ants.role[i] !== R_WORKER || ants.carry[i] || ants.state[i] === S_DIG) continue;
+      if (ants.role[i] !== R_WORKER || ants.carry[i] || ants.state[i] === S_DIG || (life.on && ants.id[i] === life.id)) continue;
       const a = ants.age[i] / ants.maxAge[i];
       if (a < pa) { pa = a; pick = i; }
     }
@@ -2535,6 +2617,7 @@ const ants = {
       else if (flown) { }
       else if (cause && game.sel === this.id[i]) colony.log(`${antName(this.id[i])} ${cause}`, true);
       else if (cause === "wurde von einem Vogel geschnappt") colony.log(`${antName(this.id[i])} ${cause}`);
+      if (life.on && this.id[i] === life.id) life.onDeath(i, cause);
       stories.delete(this.id[i]);
       const j = this.count - 1;
       if (i !== j) {
@@ -2566,6 +2649,8 @@ const ants = {
 
   tick(dt) {
     const wet = world.wet, occ = this.occ, hungerK = diff().hunger * seasons.restK();
+    // die Ameise, die du selbst steuerst
+    const pl = life.idx();
     // wie viele Ameisen stehen auf jeder Zelle? Volle Gänge bremsen.
     for (let i = 0; i < this.count; i++) occ[this.cy[i] * W + this.cx[i]]++;
     this.jamT -= dt;
@@ -2584,13 +2669,13 @@ const ants = {
       const inBed = resting && world.chamber[this.cy[i] * W + this.cx[i]] === CH_SLEEP;
       // eine Königin ohne Arbeiterinnen lebt von ihren Flugmuskeln und Fettreserven
       if (queen && this.count === 1) { this.energy[i] = Math.max(this.energy[i], 0.6); }
-      this.energy[i] -= dt / (queen ? 280 : 210) * (resting ? (inBed ? 0.5 : 0.6) : 1) * hungerK;
+      this.energy[i] -= dt / (queen ? 280 : 210) * (resting ? (inBed ? 0.5 : 0.6) : 1) * hungerK * (i === pl ? 0.6 : 1);
       // Honigtöpfe zehren von ihrem eigenen Vorrat
       if (this.role[i] === R_REPLETE && this.energy[i] < 0.4 && this.load[i] > 0) { this.load[i]--; this.energy[i] = 1; }
       const warm = resting && toolFx.warmAt(this.cy[i] * W + this.cx[i]) ? 1.5 : 1;
       // Sommerhitze an der Oberfläche macht schnell müde
       const hot = !resting && seasons.heat() && this.cy[i] < G && world.cells[this.cy[i] * W + this.cx[i]] !== TUNNEL ? 2.5 : 1;
-      if (!queen) this.fatigue[i] = clamp(this.fatigue[i] + (resting ? -dt / (inBed ? 10 : 22) * warm : dt / 140 * hot), 0, 1.5);
+      if (!queen) this.fatigue[i] = clamp(this.fatigue[i] + (resting ? -dt / (inBed ? 10 : 22) * warm : dt / 140 * hot * (i === pl ? 0.6 : 1)), 0, 1.5);
       if (this.energy[i] <= 0) {
         this.energy[i] = 0;
         this.hp[i] -= dt * 0.025;
@@ -2606,7 +2691,7 @@ const ants = {
         if (this.hp[i] <= 0) { this.requestKill(i, true, "ist in der Flut ertrunken"); continue; }
       }
       // Alarm: Arbeiterinnen fliehen, Soldatinnen eilen herbei
-      if (this.role[i] === R_WORKER && this.state[i] !== S_FLEE && inNest(this.cx[i], this.cy[i]) && world.alarm[idx(this.cx[i], this.cy[i])] > 0.3) {
+      if (this.role[i] === R_WORKER && i !== pl && this.state[i] !== S_FLEE && inNest(this.cx[i], this.cy[i]) && world.alarm[idx(this.cx[i], this.cy[i])] > 0.3) {
         this.dropCarried(i); this.setState(i, S_FLEE); this.timer[i] = 0;
       }
       if (this.timer[i] > 0) { this.timer[i] -= dt; this.anim[i] += dt * 0.5; continue; }
@@ -2628,7 +2713,7 @@ const ants = {
         this.px[i] = gx; this.py[i] = gy; this.cx[i] = this.tx[i]; this.cy[i] = this.ty[i];
         const nc = this.cy[i] * W + this.cx[i];
         if (nc !== oc) { occ[oc]--; occ[nc]++; world.traffic[nc] += 1; if (world.wear[nc] < 1) world.wear[nc] = Math.min(1, world.wear[nc] + 0.01); }
-        Ant.think(i);
+        if (i === pl) life.think(i); else Ant.think(i);
       } else {
         this.px[i] += dx / dist * step; this.py[i] += dy / dist * step;
         this.anim[i] += dt * sp * 0.35;
@@ -5883,6 +5968,8 @@ const BADGES = [
   { id: "patience", name: "Geduld", desc: "Im Tempo Natürlich 50 Ameisen erreicht.", glyph: "star", col: "#d1a94e", test: () => settings.tempo === 1 && ants.count >= 50 },
   { id: "tools", name: "Helfende Hand", desc: "Jedes Werkzeug einmal benutzt.", glyph: "hand", col: "#e6c9a0", test: () => achievements.store.tools && achievements.store.tools.length >= TOOLS.length },
   { id: "species", name: "Artenkennerin", desc: "Mit drei verschiedenen Ameisenarten gespielt.", glyph: "star", col: "#a8e0d0", test: () => achievements.store.species && achievements.store.species.length >= 3 },
+  { id: "life", name: "Ein Ameisenleben", desc: "Als Ameise ein ganzes Leben gelebt.", glyph: "ant", col: "#e8c27a", test: () => (achievements.store.lifeDone || 0) >= 1 },
+  { id: "lifehero", name: "Fleißige Schwester", desc: "In einem Ameisenleben zehn Aufgaben geschafft.", glyph: "star", col: "#f2b84b", test: () => !!achievements.store.lifeHero },
   { id: "photo", name: "Erinnerung", desc: "Ein Foto vom Nest gemacht.", glyph: "camera", col: "#d9cfae", test: () => !!achievements.store.photo },
 ];
 const badgeSvg = (b, got) => `<svg viewBox="0 0 13 13" aria-hidden="true" shape-rendering="crispEdges">
@@ -6393,6 +6480,8 @@ const gameMenu = {
     const note = document.createElement("small");
     note.textContent = recent.length ? `Zuletzt: ${recent[0].name}` : "Noch keins. Das erste kommt bald.";
     box.append(note);
+    $("gmLifeLabel").textContent = life.on ? "Ameisenleben beenden" : "Als Ameise leben";
+    $("gmLifeSub").textContent = life.on ? `${antName(life.id)} lebt dann selbstständig weiter` : "Schlüpfe als Ameise und erfülle Aufgaben";
     $("gmSoundSub").textContent = sound.on || sound.music ? `Lautstärke ${Math.round(sound.vol * 100)} %` : "aus";
   },
   renderBadges() {
@@ -6431,6 +6520,7 @@ $("gmSave").addEventListener("click", () => {
   const t = new Date();
   $("gmSaveSub").textContent = `Gesichert ${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
 });
+$("gmLife").addEventListener("click", () => { const was = life.on; gameMenu.close(); if (was) life.stop(); else life.start(); });
 $("gmMainMenu").addEventListener("click", () => { gameMenu.close(); save(); menu.open(); });
 $("gmFilter").addEventListener("click", e => {
   const b = e.target.closest("button");
@@ -6448,6 +6538,485 @@ document.addEventListener("keydown", e => {
 });
 gameMenu.updateDot();
 
+// =====================================================================
+// AMEISENLEBEN: Du schlüpfst als Ameise in deiner Kolonie, bekommst Aufgaben und lebst bis zum Ende
+// =====================================================================
+const LIFE_KEY = "antpop-life-v1";
+const BROOD_NAMES = ["Ei", "Larve", "Puppe"];
+const CARRY_NAMES = ["nichts", "ein Stück Apfel", "Erde", "eine tote Schwester", "Abfall", "Brut", "ein Blatt", "Zucker", "Honigtau", "ein Stück Käfer", "Pilz", "Samen"];
+// nächste Zelle aus einer Quelle eines Felds, für den Zielpfeil
+function nearestOf(cells, x, y) {
+  let best = -1, bd = 1e9;
+  for (const c of cells) { const d = Math.abs(c % W - x) + Math.abs(Math.floor(c / W) - y); if (d < bd) { bd = d; best = c; } }
+  return best;
+}
+const LIFE_TASKS = {
+  eat: { t: "Die erste Mahlzeit", d: "Frisch geschlüpft hast du Hunger. Geh zum Futtervorrat und tippe auf Essen.", ev: "eat", n: 1, ok: () => colony.foodTotal > 0 },
+  hunger: { t: "Hunger!", d: "Dein Magen ist fast leer. Iss im Vorrat oder bettle eine Schwester an, die Futter trägt.", ev: "eat", n: 1, ok: () => true },
+  feedLarva: { t: "Larven füttern", d: "Nimm Futter aus dem Vorrat und bring es zu einer hungrigen Larve.", ev: "feedLarva", n: 2, ok: () => colony.foodTotal > 0 && colony.brood.some(b => b.s === 1) },
+  queen: { t: "Besuch bei der Königin", d: "Geh zur Königin und putze sie mit den Fühlern. So trägst du ihren Duft weiter.", ev: "groom", n: 1, ok: () => ants.queenIndex() >= 0 },
+  feedQueen: { t: "Die Königin füttern", d: "Hol Futter aus dem Vorrat und bring es der Königin.", ev: "feedQueen", n: 1, ok: () => ants.queenIndex() >= 0 && colony.foodTotal > 0 },
+  brood: { t: "Brut umbetten", d: "Brut liegt am falschen Ort. Heb sie auf und trag sie in die richtige Kammer.", ev: "placeBrood", n: 1, ok: () => hasField(F_LOOSEBROOD) },
+  dig: { t: "Graben", d: "Die Kolonie baut. Geh zur Baustelle und grabe drei Felder Erde los.", ev: "dig", n: 3, ok: () => colony.hasDigWork() },
+  dirt: { t: "Erde hinaustragen", d: "Bring die Erde nach oben und lade sie auf dem Hügel ab.", ev: "dumpDirt", n: 1, ok: () => true },
+  clean: { t: "Aufräumen", d: "Trag Tote auf den Friedhof oder Abfall in die Müllkammer. Schimmel kratzt du ab.", ev: "clean", n: 1, ok: () => hasField(F_LOOSECORPSE) || hasField(F_LOOSETRASH) || hasField(F_MOLD) },
+  outside: { t: "Hinaus ins Freie", d: "Zum ersten Mal ans Licht. Geh durch den Ausgang nach oben.", ev: "surface", n: 1, ok: () => !events.isNight() && !events.raining },
+  forage: { t: "Futter sammeln", d: "Such draußen Futter: Äpfel am Baum, Zucker, Samen oder Käfer im Gras. Bring es in den Vorrat.", ev: "store", n: 2, ok: () => !events.isNight() && !events.raining && !seasons.winter() },
+  rest: { t: "Ausruhen", d: "Du bist müde. Geh in die Schlafkammer oder zur Königin und ruh dich aus.", ev: "rest", n: 1, ok: () => true },
+};
+const LIFE_STORY = ["eat", "feedLarva", "queen", "brood", "dig", "clean", "outside", "forage"];
+const LIFE_POOL = [
+  ["feedLarva", "queen", "feedQueen", "brood", "clean", "eat"],
+  ["dig", "clean", "forage", "feedLarva", "feedQueen", "brood"],
+  ["forage", "forage", "clean", "dig", "outside"],
+];
+const life = {
+  on: false, id: -1, goal: null, task: null, queue: [], stats: null, born: 0, pendingDig: null, climb: null, resting: false,
+  actT: 0, last: "", ended: null, wasSurface: false,
+  idx() { return this.on ? ants.indexOfId(this.id) : -1; },
+  // ---- Start: eine Puppe schlüpft, und du bist diese Ameise
+  start() {
+    if (game.demo || game.menu) return;
+    const q = ants.queenIndex();
+    let cell = -1;
+    const pupae = colony.brood.filter(b => b.s === 2 && !b.royal && !b.carried);
+    if (pupae.length) {
+      const b = pupae.sort((a, c) => c.age - a.age)[0];
+      colony.brood.splice(colony.brood.indexOf(b), 1);
+      cell = b.cell;
+    } else {
+      const br = world.rooms.find(r => r.done && r.type === CH_BROOD && r.cells.length);
+      cell = br ? br.cells.find(c => world.cells[c] === TUNNEL) : (q >= 0 ? idx(ants.cx[q], ants.cy[q]) : idx(ENT, G + 2));
+    }
+    const i = ants.spawn(cell % W, Math.floor(cell / W), R_WORKER, { energy: 0.45, fatigue: 0 });
+    if (i < 0) { hud.banner("Im Nest ist gerade kein Platz", 3); return; }
+    colony.born++;
+    ants.maxAge[i] *= 1.6; ants.speed[i] = 1.12;
+    this.on = true; this.id = ants.id[i]; this.goal = null; this.pendingDig = null; this.climb = null; this.resting = false;
+    this.born = events.day + events.time;
+    this.stats = { tasks: 0, fed: 0, dug: 0, food: 0, cleaned: 0, queen: 0, xp: 0, bornDay: events.day };
+    this.queue = LIFE_STORY.slice(); this.task = null; this.ended = null;
+    story(i, `Ist in der Kammer ${ROOM_NAMES[roomType(cell)] || "im Gang"} geschlüpft`);
+    story(i, "Wird von dir gesteuert");
+    sound.play("hatch");
+    game.sel = this.id; game.follow = true; game.tool = null; tools.toggleMenu(false);
+    hud.closeAnt(); hud.closePanel(); hud.hideInfo(); $("hint").hidden = true;
+    view.z = Math.max(view.z, 3.2); game.speed = 1;
+    document.body.classList.add("life");
+    this.nextTask();
+    this.showIntro(i);
+    hud.updateButtons();
+    save();
+  },
+  stop() {
+    if (!this.on) return;
+    const i = this.idx();
+    if (i >= 0) { ants.setState(i, S_IDLE); ants.timer[i] = 0; story(i, "Lebt jetzt wieder selbstständig"); }
+    this.on = false; this.goal = null; this.task = null;
+    document.body.classList.remove("life");
+    $("lifeIntro").hidden = true; $("lifeEnd").hidden = true;
+    game.follow = false;
+    this.saveState();
+  },
+  showIntro(i) {
+    $("lifeIntroName").textContent = antName(this.id);
+    $("lifeIntroText").textContent = `Du schlüpfst in der Kolonie ${colony.name}. Königin ${colony.queenName} ist deine Mutter, ${ants.count - 1} Schwestern leben mit dir. Ein Ameisenleben ist kurz. Mach das Beste daraus.`;
+    $("lifeIntro").hidden = false;
+    this.pauseFor = game.paused; game.paused = true; hud.updateButtons();
+  },
+  closeIntro() { $("lifeIntro").hidden = true; game.paused = this.pauseFor || false; hud.updateButtons(); },
+  // ---- Aufgaben
+  nextTask() {
+    const i = this.idx();
+    const stage = i >= 0 ? ants.stage(i) : 1;
+    let key = null;
+    while (this.queue.length) { const k = this.queue.shift(); if (LIFE_TASKS[k].ok()) { key = k; break; } }
+    if (!key) {
+      const pool = LIFE_POOL[stage].filter(k => LIFE_TASKS[k].ok() && k !== (this.task && this.task.key));
+      key = pool.length ? pool[Math.floor(rand() * pool.length)] : "queen";
+    }
+    this.setTask(key);
+  },
+  setTask(key) {
+    const d = LIFE_TASKS[key];
+    this.task = { key, n: 0, need: d.n, t: 0 };
+    this.renderTask(true);
+  },
+  emit(ev, n = 1) {
+    if (!this.on || !this.task) return;
+    if (LIFE_TASKS[this.task.key].ev !== ev) return;
+    this.task.n += n;
+    if (this.task.n >= this.task.need) this.complete();
+    else this.renderTask();
+  },
+  complete() {
+    const i = this.idx(), d = LIFE_TASKS[this.task.key];
+    this.stats.tasks++; this.stats.xp += 10 * this.task.need;
+    if (i >= 0) story(i, `Aufgabe geschafft: ${d.t}`);
+    hud.banner(`Geschafft: ${d.t}`, 2.5);
+    sound.jingle();
+    const card = $("taskCard");
+    card.classList.remove("done"); void card.offsetWidth; card.classList.add("done");
+    // nach dem Graben gleich die Erde hinausbringen
+    if (this.task.key === "dig" && i >= 0 && ants.carry[i] === C_DIRT) { this.setTask("dirt"); return; }
+    this.nextTask();
+  },
+  skip() { if (this.task) { this.queue = this.queue.filter(k => k !== this.task.key); this.nextTask(); } },
+  // ---- wohin der Pfeil zeigt: eine Zelle im Nest oder eine Stelle an der Oberfläche
+  target(i) {
+    if (!this.task) return null;
+    const x = ants.cx[i], y = ants.cy[i], k = ants.carry[i], key = this.task.key;
+    const src = fid => { if (!hasField(fid)) return null; const c = nearestOf(fieldSources(fid), x, y); return c >= 0 ? { c } : null; };
+    const outside = !inNest(x, y);
+    const home = fid => outside ? { c: idx(ENT, G) } : src(fid);
+    switch (key) {
+      case "eat": case "hunger": return src(F_FOOD);
+      case "feedLarva": return isFoodCarry(k) ? home(F_HUNGRY) || home(F_BROODSPACE) : src(F_FOOD);
+      case "queen": return src(F_QUEEN);
+      case "feedQueen": return isFoodCarry(k) ? home(F_QUEEN) : src(F_FOOD);
+      case "brood": {
+        if (k === C_BROOD) { const b = colony.brood.find(q => q.id === ants.bref[i]); return b ? src(spaceField(broodRoom(b))) : null; }
+        return src(F_LOOSEBROOD);
+      }
+      case "dig": return k === C_DIRT && ants.load[i] >= 3 ? { s: ENT + 4 } : src(F_DIG);
+      case "dirt": return { s: ENT + (this.stats.dug % 2 ? 5 : -5) };
+      case "clean":
+        if (k === C_CORPSE) return outside ? { s: ENT + 8 } : (hasField(F_CEMSPACE) ? src(F_CEMSPACE) : { s: ENT + 8 });
+        if (k === C_TRASH) return outside ? { s: ENT - 8 } : (hasField(F_TRASHSPACE) ? src(F_TRASHSPACE) : { s: ENT - 8 });
+        return src(F_MOLD) || src(F_LOOSECORPSE) || src(F_LOOSETRASH);
+      case "outside": return { s: ENT + 3 };
+      case "forage": {
+        if (isFoodCarry(k) || k === C_LEAF) return home(k === C_LEAF && hasField(F_LEAFSPACE) ? F_LEAFSPACE : (hasField(F_GRANSPACE) ? F_GRANSPACE : F_FOOD));
+        let best = null, bd = 1e9;
+        for (const g of world.groundFood) if (g.n > 0 && g.kind !== "corpse" && Math.abs(g.x - x) < bd) { bd = Math.abs(g.x - x); best = g.x; }
+        for (let si = 0; si < world.sources.length; si++) { const s = world.sources[si]; if (s.kind === 0 && hasFruit(si) && Math.abs(s.trunk - x) < bd) { bd = Math.abs(s.trunk - x); best = s.trunk; } }
+        return best === null ? { s: ENT + 6 } : { s: best };
+      }
+      case "rest": return hasRoom(CH_SLEEP) ? src(F_SLEEP) : src(F_QUEEN);
+    }
+    return null;
+  },
+  // ---- Antippen: dorthin laufen
+  tapTo(wx, wy) {
+    const i = this.idx();
+    if (i < 0) return;
+    const x = clamp(Math.floor(wx / T), 0, W - 1), y = clamp(Math.floor(wy / T), 0, H - 1);
+    this.cancelRest(i);
+    this.climb = null; this.pendingDig = null;
+    const mound = y < G && inGrid(x, y) && world.isMound[idx(x, y)] === 1;
+    if (y >= G || (mound && isTunnel(x, y))) {
+      let c = isTunnel(x, y) ? idx(x, y) : -1;
+      if (c < 0) { const t = nearestTunnel(x, y, 4); if (Math.abs(t[0] - x) <= 4 && Math.abs(t[1] - y) <= 4) c = idx(t[0], t[1]); }
+      if (c < 0) { hud.banner("Dort ist Erde. Grabe an einer Baustelle oder tippe auf einen Gang", 2.5); return; }
+      this.goal = { c };
+    } else this.goal = { s: clamp(x, 1, W - 2) };
+    this.marker = { x: this.goal.c !== undefined ? (this.goal.c % W) * T + 1.5 : this.goal.s * T + 1.5, y: this.goal.c !== undefined ? Math.floor(this.goal.c / W) * T + 1.5 : SURF * T + 1.5, t: 0 };
+    game.follow = true; game.sel = this.id;
+    if (ants.timer[i] > 0.3 && ants.doing[i] !== D_SHARE) ants.timer[i] = 0;
+  },
+  cancelRest(i) {
+    if (!this.resting) return;
+    this.resting = false; ants.setState(i, S_IDLE); ants.timer[i] = 0;
+  },
+  // ---- Steuerung der eigenen Ameise, statt der Ameisen-KI
+  think(i) {
+    const x = ants.cx[i], y = ants.cy[i];
+    if (this.resting) {
+      ants.doing[i] = events.isNight() ? D_SLEEP : D_REST;
+      if (ants.fatigue[i] < 0.08) { this.resting = false; ants.setState(i, S_IDLE); this.emit("rest"); hud.banner("Du bist ausgeruht", 2); }
+      return Ant.wait(i, 1);
+    }
+    ants.state[i] = S_IDLE;
+    if (this.pendingDig) {
+      const [gx, gy] = this.pendingDig;
+      this.pendingDig = null;
+      if (dig(gx, gy)) {
+        ants.dug[i]++; colony.dugTotal++; this.stats.dug++;
+        ants.carry[i] = C_DIRT; ants.load[i]++;
+        if (ants.dug[i] === 1) story(i, "Hat zum ersten Mal gegraben");
+        this.emit("dig");
+      }
+      return Ant.wait(i, 0.15);
+    }
+    if (this.climb) return this.doClimb(i);
+    const g = this.goal;
+    ants.doing[i] = ants.carry[i] === C_DIRT ? D_HAUL : (isFoodCarry(ants.carry[i]) ? D_FETCH : (ants.carry[i] === C_BROOD ? D_MOVEBROOD : D_IDLE));
+    if (!g) return Ant.wait(i, 0.25);
+    if (g.c !== undefined) {
+      const r = Ant.travelF(i, fieldTo(g.c));
+      if (r === 0) return;
+      if (r === 2) hud.banner("Dorthin führt kein Weg", 2);
+      this.goal = null;
+      return Ant.wait(i, 0.2);
+    }
+    // an die Oberfläche und dort entlang
+    if (inNest(x, y)) {
+      const r = Ant.travel(i, F_EXIT);
+      if (r === 1) Ant.go(i, ENT, SURF);
+      else if (r === 2) { this.goal = null; Ant.wait(i, 0.3); }
+      return;
+    }
+    if (y < SURF) return Ant.go(i, x, y + 1);
+    if (x === g.s) { this.goal = null; return Ant.wait(i, 0.2); }
+    Ant.go(i, x + sign(g.s - x), SURF);
+  },
+  // am Stamm hinauf zum Apfel, dann zurück
+  doClimb(i) {
+    const c = this.climb, x = ants.cx[i], y = ants.cy[i];
+    ants.doing[i] = D_SEARCH;
+    if (c.phase === 0) {
+      if (x === c.gx && y === c.gy) {
+        if (takeFruit(x, y)) { ants.carry[i] = C_FOOD; story(i, "Hat einen Apfel vom Baum geholt"); hud.banner("Du hast ein Stück Apfel", 2); }
+        c.phase = 1; return Ant.wait(i, 0.6);
+      }
+      if (y > c.gy && x === c.tk) return Ant.go(i, x, y - 1);
+      if (y === c.gy) return Ant.go(i, x + sign(c.gx - x), y);
+      c.phase = 1;
+    }
+    if (y < SURF) { if (x !== c.tk) return Ant.go(i, x + sign(c.tk - x), y); return Ant.go(i, x, y + 1); }
+    this.climb = null; return Ant.wait(i, 0.2);
+  },
+  // ---- was du hier tun kannst
+  actions(i) {
+    const out = [], x = ants.cx[i], y = ants.cy[i], c = idx(x, y), k = ants.carry[i];
+    const nest = inNest(x, y) && isTunnel(x, y), surface = !inNest(x, y) && y === SURF, rt = nest ? roomType(c) : 0;
+    const q = ants.queenIndex(), nearQ = q >= 0 && Math.abs(ants.cx[q] - x) + Math.abs(ants.cy[q] - y) <= 2;
+    const near = b => !b.carried && Math.abs(b.cell % W - x) + Math.abs(Math.floor(b.cell / W) - y) <= 1;
+    const add = (label, fn, main) => out.push({ label, fn, main });
+    if (this.resting) { add("Aufstehen", () => this.cancelRest(i)); return out; }
+    if (k === C_NONE) {
+      if (nest && world.food[c] > 0) {
+        if (ants.energy[i] < 0.9) add("Essen", () => { const f = colony.takeFood(c); if (!f) return; ants.energy[i] = 1; ants.hp[i] = Math.max(ants.hp[i], 1); ants.doing[i] = D_EAT; Ant.wait(i, 1); this.emit("eat"); }, true);
+        add("Futter nehmen", () => { const f = colony.takeFood(c); if (!f) return; ants.carry[i] = CARRY_OF_FOOD[f]; Ant.wait(i, 0.4); });
+      }
+      if (nest && world.mold[c] > 0.25) add("Schimmel abkratzen", () => {
+        world.mold[c] = 0; world.dirtT[c] = 0; fieldDirty[F_MOLD] = true; colony.moldCleaned = (colony.moldCleaned || 0) + 1; this.stats.cleaned++;
+        ants.carry[i] = C_TRASH; ants.doing[i] = D_MOLD; story(i, "Hat Schimmel aus dem Nest geräumt"); Ant.wait(i, 1.2);
+      }, true);
+      if (nest && world.corpses[c] > 0 && rt !== CH_CEMETERY) add("Tote aufheben", () => { world.corpses[c]--; ants.carry[i] = C_CORPSE; markItems(); Ant.wait(i, 0.5); }, true);
+      if (nest && world.trash[c] > 0 && rt !== CH_TRASH) add("Abfall aufheben", () => { world.trash[c]--; ants.carry[i] = C_TRASH; markItems(); Ant.wait(i, 0.4); });
+      const b = nest ? colony.brood.find(near) : null;
+      if (b) add(`${BROOD_NAMES[b.s]} aufheben`, () => { b.carried = true; ants.bref[i] = b.id; ants.carry[i] = C_BROOD; markItems(); Ant.wait(i, 0.4); });
+      if (nest && (k === C_NONE) && colony.digTargetNear(x, y)) add("Graben", () => this.startDig(i), true);
+      if (nearQ) add("Königin putzen", () => { ants.energy[q] = Math.min(1, ants.energy[q] + 0.05); this.stats.queen++; ants.doing[i] = D_FEEDQUEEN; story(i, "Hat die Königin geputzt"); Ant.wait(i, 1.5); this.emit("groom"); });
+      if (surface) {
+        const gf = groundFoodAt(x);
+        if (gf && gf.n > 0) add(gf.kind === "sugar" ? "Zucker nehmen" : gf.kind === "seeds" ? "Samen nehmen" : gf.kind === "leaves" ? "Blatt nehmen" : gf.kind === "fruit" ? "Apfel nehmen" : "Futter nehmen", () => {
+          gf.n--; ants.carry[i] = gf.kind === "sugar" ? C_SUGAR : gf.kind === "leaves" ? C_LEAF : gf.kind === "seeds" ? C_SEED : (gf.kind === "beetle" || gf.kind === "corpse" ? C_MEAT : C_FOOD); Ant.wait(i, 0.5);
+        }, true);
+        const si = sourceAt(x);
+        if (si >= 0 && hasFruit(si)) add("Auf den Baum klettern", () => { const f = pickFruit(si); if (f) this.climb = { phase: 0, gx: f.x, gy: f.y, tk: x }; this.goal = null; }, true);
+        const wd = toolFx.dropAt(x);
+        if (wd && ants.fatigue[i] > 0.15) add("Trinken", () => { wd.n--; ants.fatigue[i] = Math.max(0, ants.fatigue[i] - 0.6); ants.doing[i] = D_DRINK; Ant.wait(i, 0.9); });
+      }
+      if (ants.energy[i] < 0.7) {
+        const giver = (() => { for (let j = 0; j < ants.count; j++) if (j !== i && Math.abs(ants.cx[j] - x) + Math.abs(ants.cy[j] - y) <= 1 && (isFoodCarry(ants.carry[j]) || (ants.role[j] === R_REPLETE && ants.load[j] > 0))) return true; return false; })();
+        if (giver) add("Futter erbetteln", () => { if (tryShare(i)) this.emit("eat"); });
+      }
+      if (nest && ants.fatigue[i] > 0.25) add("Ausruhen", () => { this.resting = true; ants.setState(i, S_REST); this.goal = null; Ant.wait(i, 2); });
+      return out;
+    }
+    if (isFoodCarry(k)) {
+      const larva = nest ? colony.brood.find(b => near(b) && b.s === 1 && b.fed < 0.9) : null;
+      if (larva) add("Larve füttern", () => { larva.fed = 1; larva.starve = 0; ants.carry[i] = C_NONE; fieldDirty[F_HUNGRY] = true; this.stats.fed++; ants.doing[i] = D_FEEDLARVA; story(i, "Hat eine Larve gefüttert"); Ant.wait(i, 0.8); this.emit("feedLarva"); }, true);
+      if (nearQ) add("Königin füttern", () => { ants.energy[q] = Math.min(1, ants.energy[q] + 0.45); ants.carry[i] = C_NONE; ants.doing[i] = D_FEEDQUEEN; story(i, "Hat die Königin gefüttert"); Ant.wait(i, 0.8); this.emit("feedQueen"); }, true);
+      if (nest && (k === C_SUGAR || k === C_DEW) && repleteAt(c) >= 0) add("Honigtopf füllen", () => this.store(i, c, 2), true);
+      if (nest && rt === CH_GRANARY) add("Einlagern", () => this.store(i, c, 0), true);
+      else if (nest) add("Hier ablegen", () => this.store(i, c, 1));
+      add("Selbst essen", () => { ants.carry[i] = C_NONE; ants.energy[i] = 1; ants.doing[i] = D_EAT; Ant.wait(i, 1); this.emit("eat"); });
+      return out;
+    }
+    if (k === C_DIRT) {
+      if (surface) add("Erde abladen", () => {
+        for (let n = 0; n < Math.max(1, ants.load[i]); n++) addDirt(x + n % 2);
+        ants.load[i] = 0; ants.carry[i] = C_NONE; ants.doing[i] = D_HAUL; Ant.wait(i, 0.4); this.emit("dumpDirt");
+      }, true);
+      if (nest && ants.load[i] < 3 && colony.digTargetNear(x, y)) add("Weitergraben", () => this.startDig(i), true);
+      return out;
+    }
+    if (k === C_CORPSE || k === C_TRASH) {
+      const room = k === C_CORPSE ? CH_CEMETERY : CH_TRASH, arr = k === C_CORPSE ? world.corpses : world.trash;
+      if (nest && rt === room) add(k === C_CORPSE ? "Auf den Friedhof legen" : "In die Müllkammer legen", () => {
+        arr[c] = Math.min(255, arr[c] + 1); ants.carry[i] = C_NONE; markItems(); this.stats.cleaned++; Ant.wait(i, 0.5); this.emit("clean");
+      }, true);
+      if (surface) add("Draußen ablegen", () => {
+        if (k === C_CORPSE) addGroundFood(x, 1, "corpse");
+        ants.carry[i] = C_NONE; this.stats.cleaned++; Ant.wait(i, 0.5); this.emit("clean");
+      }, true);
+    }
+    if (k === C_BROOD) {
+      const b = colony.brood.find(q2 => q2.id === ants.bref[i]);
+      if (nest && b && [CH_BROOD, CH_PUPA, CH_SOLAR, CH_ROYAL, CH_QUEEN].includes(rt)) add(`${BROOD_NAMES[b.s]} hier ablegen`, () => {
+        const right = rt === broodRoom(b);
+        b.carried = false; b.cell = c; ants.bref[i] = -1; ants.carry[i] = C_NONE; markItems(); Ant.wait(i, 0.4);
+        if (right) this.emit("placeBrood"); else hud.banner(`${ROOM_NAMES[broodRoom(b)]} wäre besser`, 2.5);
+      }, true);
+    }
+    if (k === C_LEAF && nest && rt === CH_FUNGUS) add("Ins Pilzbeet legen", () => { world.leaf[c] = Math.min(3, world.leaf[c] + 1); colony.leavesIn++; ants.carry[i] = C_NONE; markItems(); Ant.wait(i, 0.6); this.stats.food++; this.emit("store"); }, true);
+    add("Fallen lassen", () => { ants.dropCarried(i); Ant.wait(i, 0.3); });
+    return out;
+  },
+  startDig(i) {
+    const t = colony.digTargetNear(ants.cx[i], ants.cy[i]);
+    if (!t) return;
+    ants.face[i] = t[0] > ants.cx[i] ? 0 : (t[0] < ants.cx[i] ? 1 : (t[1] < ants.cy[i] ? 2 : 3));
+    ants.doing[i] = D_DIG; this.pendingDig = t; this.goal = null;
+    Ant.wait(i, digTime(t[1]));
+  },
+  // Futter abgeben: 0 in den Vorrat, 1 hier hinlegen, 2 in einen Honigtopf
+  store(i, c, mode) {
+    const k = ants.carry[i], units = k === C_DEW ? 2 : (k === C_SEED ? 2 : (k === C_SUGAR ? Math.round(3 * sp().sugarK) : 3));
+    let left = units;
+    if (mode === 2) { const j = repleteAt(c); if (j >= 0) { const add = Math.min(left, REPLETE_MAX - ants.load[j]); ants.load[j] += add; left -= add; } }
+    for (let n = 0; n < left; n++) colony.addFood(c, mode === 0 ? CH_GRANARY : 0, foodOfCarry(k)) || colony.addFood(c, 0, foodOfCarry(k));
+    ants.carry[i] = C_NONE; ants.fetched[i]++; colony.delivered++; this.stats.food++;
+    ants.doing[i] = D_STORE; Ant.wait(i, 0.6);
+    if (ants.fetched[i] === 1) story(i, "Hat das erste Futter heimgebracht");
+    if (mode !== 1 || this.task && this.task.key === "forage") this.emit("store");
+  },
+  // ---- jede Spielsekunde: Aufgaben prüfen, Bedürfnisse melden
+  tick(dt) {
+    if (!this.on) return;
+    const i = this.idx();
+    if (i < 0) return;
+    if (this.task) this.task.t += dt;
+    const surface = !inNest(ants.cx[i], ants.cy[i]);
+    if (surface && !this.wasSurface) this.emit("surface");
+    this.wasSurface = surface;
+    // dringende Bedürfnisse schieben sich vor
+    if (ants.energy[i] < 0.25 && this.task && LIFE_TASKS[this.task.key].ev !== "eat") { this.queue.unshift(this.task.key); this.setTask("hunger"); hud.banner("Du hast Hunger", 2.5); }
+    else if (ants.fatigue[i] > 1.1 && this.task && this.task.key !== "rest" && LIFE_TASKS[this.task.key].ev !== "eat") { this.queue.unshift(this.task.key); this.setTask("rest"); }
+    // eine Aufgabe, die gerade unmöglich ist, wird nach einer Weile ersetzt
+    if (this.task && this.task.n === 0 && this.task.t > 20 && !LIFE_TASKS[this.task.key].ok()) this.nextTask();
+    if (this.marker) this.marker.t += dt;
+  },
+  // ---- dein Leben endet
+  onDeath(i, cause) {
+    const st = (stories.get(ants.id[i]) || []).map(e => e.t);
+    const days = Math.max(0, events.day + events.time - this.born);
+    this.ended = { name: antName(this.id), cause: cause || "ist gestorben", days, stats: { ...this.stats }, story: st, stage: ants.stage(i) };
+    this.on = false; this.task = null; this.goal = null;
+    document.body.classList.remove("life");
+    game.sel = null; game.follow = false;
+    achievements.store.lifeDone = (achievements.store.lifeDone || 0) + 1; achievements.save();
+    if (this.stats.tasks >= 10) { achievements.store.lifeHero = true; achievements.save(); }
+    setTimeout(() => this.showEnd(), 600);
+    this.saveState();
+  },
+  showEnd() {
+    const e = this.ended;
+    if (!e) return;
+    $("lifeEndTitle").textContent = `Das Leben von ${e.name}`;
+    $("lifeEndCause").textContent = `${e.name} ${e.cause}.`;
+    const rows = [["Gelebt", e.days < 1 ? `${Math.max(1, Math.round(e.days * 24))} Stunden Spielzeit` : `${e.days.toFixed(1).replace(".", ",")} Tage`], ["Aufgaben geschafft", e.stats.tasks],
+      ["Larven gefüttert", e.stats.fed], ["Felder gegraben", e.stats.dug], ["Futter heimgebracht", e.stats.food], ["Aufgeräumt", e.stats.cleaned], ["Erfahrung", e.stats.xp]];
+    hud.rows($("lifeEndRows"), rows);
+    const ol = $("lifeEndStory");
+    ol.replaceChildren();
+    for (const t of e.story.slice(-6)) { const li = document.createElement("li"); li.textContent = t; ol.append(li); }
+    $("lifeEnd").hidden = false;
+    this.pauseFor = game.paused; game.paused = true; hud.updateButtons();
+    sound.play("plop");
+  },
+  closeEnd(again) {
+    $("lifeEnd").hidden = true; this.ended = null;
+    game.paused = false; hud.updateButtons();
+    if (again) this.start();
+  },
+  // ---- Anzeige: Lebenskarte, Aufgabe, Aktionsknöpfe
+  ui(dt) {
+    if (!this.on) return;
+    const i = this.idx();
+    if (i < 0) return;
+    this.actT -= dt;
+    if (this.actT > 0) return;
+    this.actT = 0.2;
+    $("lifeName").textContent = antName(this.id);
+    $("lifeStage").textContent = ["Jungameise", "Arbeiterin", "Seniorin"][ants.stage(i)];
+    $("lifeFood").style.width = Math.round(clamp(ants.energy[i], 0, 1) * 100) + "%";
+    $("lifeFood").classList.toggle("low", ants.energy[i] < 0.3);
+    $("lifeTired").style.width = Math.round(clamp(ants.fatigue[i], 0, 1) * 100) + "%";
+    $("lifeAge").style.width = Math.round(clamp(ants.age[i] / ants.maxAge[i], 0, 1) * 100) + "%";
+    $("lifeXp").textContent = `${this.stats.tasks} Aufgaben · ${this.stats.xp} Erfahrung`;
+    const carry = ants.carry[i];
+    $("lifeCarry").textContent = carry === C_NONE ? "trägt nichts" : carry === C_DIRT ? `trägt Erde (${ants.load[i]} von 3)` : `trägt ${CARRY_NAMES[carry] || "etwas"}`;
+    this.renderTask();
+    // Aktionsknöpfe nur neu bauen, wenn sich etwas ändert
+    const acts = ants.timer[i] > 0.25 && !this.resting ? [] : this.actions(i);
+    this.acts = acts;
+    const key = acts.map(a => a.label).join("|");
+    if (key !== this.last) {
+      this.last = key;
+      const box = $("lifeActions");
+      box.replaceChildren();
+      acts.slice(0, 4).forEach((a, n) => {
+        const b = document.createElement("button");
+        b.type = "button"; b.className = "act" + (a.main ? " main" : ""); b.textContent = a.label;
+        b.addEventListener("click", () => { const now = this.acts && this.acts.find(q => q.label === a.label); if (now) { now.fn(); this.last = ""; this.actT = 0; } });
+        box.append(b);
+      });
+    }
+    // Pfeil zum Ziel
+    const tg = this.target(i), arrow = $("taskArrow");
+    if (tg) {
+      const tx = tg.c !== undefined ? tg.c % W : tg.s, ty = tg.c !== undefined ? Math.floor(tg.c / W) : SURF;
+      const dx = tx - ants.cx[i], dy = ty - ants.cy[i];
+      arrow.hidden = false;
+      if (Math.abs(dx) + Math.abs(dy) <= 1) { arrow.textContent = "●"; arrow.style.transform = ""; }
+      else { arrow.textContent = "➜"; arrow.style.transform = `rotate(${Math.atan2(dy, dx).toFixed(2)}rad)`; }
+      this.tgt = { x: tx * T + 1.5, y: ty * T + 1.5 - (tg.s !== undefined ? surfaceOffset(tx) : 0) };
+    } else { arrow.hidden = true; this.tgt = null; }
+  },
+  renderTask(fresh) {
+    const t = this.task;
+    if (!t) return;
+    const d = LIFE_TASKS[t.key];
+    $("taskTitle").textContent = d.t;
+    $("taskText").textContent = d.d;
+    $("taskProg").textContent = t.need > 1 ? `${t.n} von ${t.need}` : "";
+    if (fresh) { const c = $("taskCard"); c.classList.remove("new"); void c.offsetWidth; c.classList.add("new"); }
+  },
+  // Zielpfeil und Tippmarke in der Welt
+  draw() {
+    if (!this.on) return;
+    if (this.tgt) {
+      const b = Math.abs(Math.sin(blink * 4)) * 2.5, x = this.tgt.x, y = this.tgt.y - 6 - b;
+      P.fill("rgba(0,0,0,0.35)").rect(x - 1.5, y + 0.5, 3.5, 1).rect(x - 0.5, y + 1.5, 1.5, 1);
+      P.fill("#ffd75a").rect(x - 2, y - 1, 4, 1).rect(x - 1.5, y, 3, 1).rect(x - 1, y + 1, 2, 1).rect(x - 0.5, y + 2, 1, 0.5);
+      P.fill("#fff3c0").rect(x - 2, y - 1, 4, 0.5);
+    }
+    if (this.marker && this.marker.t < 0.8) {
+      const m = this.marker, r = 1 + m.t * 5, a = 1 - m.t / 0.8;
+      P.fill(`rgba(255,255,255,${(a * 0.8).toFixed(2)})`);
+      for (let k = 0; k < 12; k++) { const ang = k / 12 * Math.PI * 2; P.dot(m.x + Math.cos(ang) * r, m.y + Math.sin(ang) * r * 0.7); }
+    }
+    // ein kleiner Ring um die eigene Ameise
+    const i = this.idx();
+    if (i >= 0) {
+      const [x, y] = ants.pos(i);
+      P.fill("rgba(255,215,90,0.85)");
+      for (let k = 0; k < 10; k++) { const ang = k / 10 * Math.PI * 2 + blink; P.dot(x + Math.cos(ang) * 4, y + 1.5 + Math.sin(ang) * 1.3); }
+    }
+  },
+  // ---- Speichern
+  serialize() { return this.on ? { id: this.id, task: this.task, queue: this.queue, stats: this.stats, born: this.born } : null; },
+  load(d) {
+    this.on = false; document.body.classList.remove("life");
+    if (!d || ants.indexOfId(d.id) < 0) return;
+    Object.assign(this, { on: true, id: d.id, task: d.task, queue: d.queue || [], stats: d.stats, born: d.born, goal: null, climb: null, pendingDig: null, resting: false });
+    document.body.classList.add("life");
+    game.sel = this.id; game.follow = true;
+    this.last = "";
+    if (!this.task) this.nextTask(); else this.renderTask(true);
+  },
+  saveState() { },
+};
+$("lifeIntroGo").addEventListener("click", () => life.closeIntro());
+$("lifeEndAgain").addEventListener("click", () => life.closeEnd(true));
+$("lifeEndColony").addEventListener("click", () => life.closeEnd(false));
+$("taskSkip").addEventListener("click", () => life.skip());
+$("lifeCenter").addEventListener("click", () => { game.sel = life.id; game.follow = true; });
+
 function onTap(sx, sy) {
   const now = performance.now();
   if (now - lastTap.t < 320 && Math.hypot(sx - lastTap.x, sy - lastTap.y) < TAP_MOVE * 2.5) {
@@ -6457,6 +7026,7 @@ function onTap(sx, sy) {
   }
   lastTap = { t: now, x: sx, y: sy };
   if (document.body.classList.contains("photo")) return;
+  if (life.on) { const [wx, wy] = toWorld(sx, sy); return life.tapTo(wx, wy); }
   if (navigator.vibrate) try { navigator.vibrate(10); } catch (_) { }
   const [wx, wy] = toWorld(sx, sy), x = Math.floor(wx / T), y = Math.floor(wy / T);
   // ein Werkzeug ist gewählt
@@ -6525,6 +7095,7 @@ function newGame(seed) {
   ants.clear(); ants.nextId = 1;
   events.reset(); events.time = 0.3; events.day = 1;
   neighbors.reset();
+  life.on = false; life.task = null; document.body.classList.remove("life");
   colony.found();
   const q = ants.spawn(ENT, 52, R_QUEEN, { energy: 1 });
   ants.home[q] = idx(ENT, 52);
@@ -6563,7 +7134,7 @@ function serialize() {
     ants: a, nextId: ants.nextId, time: events.time, day: events.day, nextFlood: events.nextFlood, nextCent: events.nextCent,
     nextBird: events.nextBird, nextBeetle: events.nextBeetle, view: game.menu ? game.view : [view.x, view.y, view.z], speed: game.speed,
     settings: { ...settings }, name: colony.name, queenName: colony.queenName,
-    neighbors: neighbors.serialize(),
+    neighbors: neighbors.serialize(), life: life.serialize(),
     stories: Object.fromEntries([...stories].filter(([id]) => ants.indexOfId(id) >= 0)),
     mold: b64(Uint8Array.from(world.mold, v => Math.round(v * 255))), colonyX: { shares: colony.shares || 0, moldCleaned: colony.moldCleaned || 0, winters: seasons.wintersSurvived, daughtersFounded: colony.daughtersFounded || 0, rivalsBeaten: colony.rivalsBeaten || 0 },
   };
@@ -6613,6 +7184,7 @@ function deserialize(d) {
   events.roofT = d.roofT || 0;
   stories.clear();
   for (const [id, s] of Object.entries(d.stories || {})) stories.set(+id, s);
+  life.load(d.life);
   const cx2 = d.colonyX || {};
   Object.assign(colony, { shares: cx2.shares || 0, moldCleaned: cx2.moldCleaned || 0, daughtersFounded: cx2.daughtersFounded || 0, rivalsBeaten: cx2.rivalsBeaten || 0 });
   seasons.wintersSurvived = cx2.winters || 0; seasons.last = -1;
@@ -6633,7 +7205,7 @@ document.addEventListener("visibilitychange", () => { if (document.hidden) save(
 window.addEventListener("pagehide", save);
 
 function step(dt) {
-  events.tick(dt); colony.tick(dt); ants.tick(dt); worldTick(dt); phero.tick();
+  events.tick(dt); life.tick(dt); colony.tick(dt); ants.tick(dt); worldTick(dt); phero.tick();
 }
 // Die Szene entsteht als kleines Pixelbild. Für den Bildschirm wird sie erst ganzzahlig
 // mit harten Kanten vergrößert und dann minimal angepasst. So bleiben alle Pixel gleich groß.
@@ -6656,6 +7228,7 @@ function render() {
   events.draw(F);
   P.use(g, F, F);
   ambient.draw();
+  life.draw();
   ambient.drawNestLight(g, F);
   views.draw(g, F);
   ambient.drawRays(g, F);
@@ -6716,12 +7289,12 @@ function frame(now) {
     const i = ants.indexOfId(game.sel);
     if (i >= 0) {
       const [x, y0] = ants.pos(i), k = Math.min(1, dt * 5);
-      const y = y0 + view.cssH * 0.2 / scale();
+      const y = y0 + view.cssH * (life.on ? -0.1 : 0.2) / scale();
       view.x += (x - view.x) * k; view.y += (y - view.y) * k;
       clampView();
     }
   }
-  sky.tick(dt); hud.tick(dt); achievements.tick(dt); sound.tick(dt);
+  sky.tick(dt); hud.tick(dt); achievements.tick(dt); sound.tick(dt); life.ui(dt);
   ambient.tick(game.paused ? 0 : Math.min(dt * Math.max(1, game.speed), 0.25));
   views.update(dt); views.tickCinema(dt);
   if (ants.count === 0) {
