@@ -5398,6 +5398,16 @@ const photo = {
   },
   async share() {
     const name = `ant-pop-${colony.name.replace(/\W+/g, "-")}-tag-${events.day}.png`;
+    // im Artifact-Fenster speichert die Downloads-Fähigkeit, sonst Teilen oder ein Download-Link
+    if (this.blob && window.claude && typeof window.claude.use === "function") {
+      let dl = null;
+      try { dl = await window.claude.use("downloads"); } catch (_) { }
+      if (dl) {
+        try { await dl.save({ filename: name, data: this.blob }); hud.banner("Foto gespeichert", 2); }
+        catch (e) { if (e && e.code !== "declined") hud.banner("Speichern geht hier nicht. Halte das Bild gedrückt", 3); }
+        return;
+      }
+    }
     try {
       if (this.blob && navigator.canShare) {
         const file = new File([this.blob], name, { type: "image/png" });
