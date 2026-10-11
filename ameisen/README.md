@@ -15,7 +15,7 @@ Das Spiel läuft auf iPhone, Android, Tablet und PC. Die Basisauflösung ist 270
 `web/AntPop.html` ist eine eigenständige Browser-Version in JavaScript. Sie läuft auf dem iPhone in Safari ohne Installation und ist weiter ausgebaut als die Godot-Fassung:
 
 - Beim Start zeigt ein Ladebildschirm einen Balken, über den eine Blattschneiderin läuft, dazu wechselnde Tipps. Danach öffnet sich das Hauptmenü über der lebenden Kolonie, die Kamera fährt langsam über das Nest.
-- Im Hauptmenü spielst du weiter, gründest eine neue Kolonie oder liest die Anleitung. Für eine neue Kolonie wählst du den Namen der Kolonie und der Königin, die Schwierigkeit, die Zahl der Gründerinnen, die Länge eines Tages, ob Fluten und der Vogel vorkommen, und eine Weltnummer. Gleiche Weltnummer heißt gleiche Bäume und gleicher Boden. Über das Kolonie-Panel kommst du jederzeit zurück ins Hauptmenü.
+- Im Hauptmenü spielst du weiter, gründest eine neue Kolonie oder liest die Anleitung. Für eine neue Kolonie wählst du den Namen der Kolonie und der Königin, die Schwierigkeit, die Zahl der Gründerinnen, die Länge eines Tages, ob Fluten und der Vogel vorkommen, und eine Weltnummer. Gleiche Weltnummer heißt gleiche Bäume und gleicher Boden. Mit dem Tempo "Natürlich" braucht die Brut zwölfmal länger, Ameisen leben zwölfmal länger, und die Königin gründet auf Wunsch ganz allein, wie in der Natur. Die ersten Töchter zieht sie dann aus ihren eigenen Reserven auf. Über das Kolonie-Panel kommst du jederzeit zurück ins Hauptmenü.
 - Jede Ameise lebt eigenständig. Sie hat einen Namen, eigene Vorlieben für Arbeiten, Hunger, Müdigkeit und ein Alter. Junge Ameisen pflegen lieber die Brut, ältere gehen lieber hinaus. Was eine Ameise oft tut, fällt ihr leichter.
 - Es gibt keinen festen Bauplan. Wenn die Kolonie Platz für Futter, Brut, Tote oder Abfall braucht, wählen die Ameisen einen passenden Ort, graben einen Verbindungsgang und heben die Kammer gemeinsam aus. Danach bringen sie alles an den richtigen Ort: Futter in die Kornkammer, Eier in die Brutkammer, Tote auf den Friedhof, Abfall in die Müllkammer.
 - Die Königin legt nur Eier, wenn sie gefüttert wird und genug Vorrat da ist. Eier werden zu Larven und Puppen. Ammen tragen die Brut in die Brutkammer und füttern die Larven.
@@ -34,6 +34,7 @@ Das Spiel läuft auf iPhone, Android, Tablet und PC. Die Basisauflösung ist 270
 - Wird es eng, laufen die Ameisen in vollen Gängen langsamer. Dann verbreitern sie die meistbenutzten Gänge, graben neue Seitengänge und legen Abkürzungen an.
 - Das Kolonie-Panel zeigt alle Sonderkammern mit ihrem Zustand, die Zahl der Hochzeitsflüge und das Gedränge in den Gängen.
 - Tippe auf eine Ameise, um ihr zu folgen und ihren Steckbrief zu sehen. Das Schild öffnet das Kolonie-Panel mit Aufgabenverteilung, Verlauf und Chronik.
+- Tippst du eine Kammer an, steht unter ihrem Namen, wozu sie da ist. Das gilt auch für Kammern im Bau, für Gänge, Erde, Bäume, Büsche, den Ameisenhaufen und Futter im Gras.
 - Unten links liegt die Werkzeugkiste. Jedes Werkzeug braucht danach eine Pause:
   - Zucker: 8 Portionen ins Gras, sie landen zuerst in den Honigtöpfen.
   - Baum schütteln: Bis zu 3 Äpfel fallen ins Gras.
@@ -52,7 +53,7 @@ Der Spielstand liegt dort im Speicher des Browsers.
 
 Tippe auf eine Kammer, und unten erscheint ihr Name mit Inhalt. Zieh zwei Finger auseinander, um zu zoomen. Schieb zwei Finger, um die Ansicht zu verschieben.
 
-Mit einem Finger verschiebst du die Ansicht. Tippe zweimal schnell, um hineinzuzoomen oder wieder alles zu sehen. Unten rechts pausierst du das Spiel und stellst das Tempo auf 1x, 2x oder 4x.
+Mit einem Finger verschiebst du die Ansicht. Tippe zweimal schnell, um hineinzuzoomen oder wieder alles zu sehen. Unten rechts pausierst du das Spiel und stellst das Tempo auf 1x, 2x, 4x, 8x oder 16x.
 
 Am PC zoomst du mit dem Mausrad. Mit gedrückter rechter Maustaste verschiebst du die Ansicht. Ein Linksklick wählt eine Kammer.
 

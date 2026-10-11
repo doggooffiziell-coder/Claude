@@ -190,6 +190,8 @@
     letter-spacing: 0.03em;
   }
   .sheet dt { color: var(--cream-dim); }
+  .purpose { margin: 8px 0 0; font-size: 19px; line-height: 1.2; color: #ffe39a; letter-spacing: 0.02em; }
+  .purpose + dl { margin-top: 8px; }
   .sheet dd { margin: 0; text-align: right; color: var(--cream); }
   .hint p { margin: 0; font-size: 20px; line-height: 1.3; letter-spacing: 0.03em; color: var(--cream); }
   .hint p + p { margin-top: 4px; }
@@ -500,6 +502,7 @@
   </div>
   <div class="sheet" id="info" hidden>
     <div class="sheet-head"><span class="swatch" id="swatch"></span><h2 id="infoTitle"></h2></div>
+    <p class="purpose" id="infoDesc" hidden></p>
     <dl id="infoRows"></dl>
   </div>
   <div class="sheet antcard" id="antCard" hidden>
@@ -582,9 +585,12 @@
       <div class="field"><span>Schwierigkeit</span>
         <div class="seg" data-key="diff"><button type="button" data-v="0">Leicht</button><button type="button" data-v="1">Normal</button><button type="button" data-v="2">Schwer</button></div>
         <small id="ngDiffText"></small></div>
+      <div class="field"><span>Tempo</span>
+        <div class="seg" data-key="tempo"><button type="button" data-v="0">Schnell</button><button type="button" data-v="1">Natürlich</button></div>
+        <small id="ngTempoText"></small></div>
       <div class="field"><span>Gründerinnen</span>
-        <div class="seg" data-key="founders"><button type="button" data-v="3">3</button><button type="button" data-v="5">5</button><button type="button" data-v="10">10</button></div>
-        <small>So viele Arbeiterinnen helfen der Königin am Anfang.</small></div>
+        <div class="seg" data-key="founders"><button type="button" data-v="0">Allein</button><button type="button" data-v="3">3</button><button type="button" data-v="5">5</button><button type="button" data-v="10">10</button></div>
+        <small id="ngFoundText">So viele Arbeiterinnen helfen der Königin am Anfang.</small></div>
       <div class="field"><span>Länge eines Tages</span>
         <div class="seg" data-key="day"><button type="button" data-v="0">3 Min.</button><button type="button" data-v="1">5 Min.</button><button type="button" data-v="2">8 Min.</button></div></div>
       <div class="field"><span>Gefahren</span>
@@ -683,9 +689,29 @@ const DIFFS = [
   { name: "Schwer", text: "Wenig Vorrat, Obst wächst langsam, Vogel und Regen kommen oft.", fruit: 1.5, bird: 0.65, flood: 0.7, start: 5, hunger: 1.15 },
 ];
 const DAY_LENGTHS = [180, 300, 480];
-const DEFAULT_SETTINGS = { diff: 1, founders: 5, day: 1, floods: true, birds: true };
+const DEFAULT_SETTINGS = { diff: 1, founders: 5, day: 1, floods: true, birds: true, tempo: 0 };
+// Tempo "Natürlich": Brut braucht viel länger, Ameisen leben viel länger
+const TEMPO_K = [1, 12];
+const tempoK = () => TEMPO_K[settings.tempo] || 1;
 const settings = { ...DEFAULT_SETTINGS };
 const diff = () => DIFFS[settings.diff] || DIFFS[1];
+// wozu eine Kammer da ist, steht beim Antippen direkt unter dem Namen
+const ROOM_PURPOSE = ["",
+  "Hier lagern die Ameisen ihr Futter. Wer Hunger hat, holt sich hier etwas.",
+  "Hier liegen Eier und Larven. Ammen füttern die Larven, bis sie sich verpuppen.",
+  "Hier lebt die Königin und legt ihre Eier. Ammen bringen ihr Futter.",
+  "Hierher tragen die Ameisen ihre Toten, weit weg von Brut und Futter. So bleibt das Nest gesund.",
+  "Hier landen Essensreste und Abfall, damit im Nest nichts schimmelt.",
+  "Aus Blättern wächst hier ein Pilz. Seine Knollen sind Futter, auch nachts und bei Regen.",
+  "Honigtöpfe hängen hier an der Decke und speichern Zucker. Wird das Futter knapp, geben sie ab.",
+  "Wurzelläuse saugen hier an einer Baumwurzel. Die Ameisen melken ihren Honigtau als Futter.",
+  "Soldatinnen warten hier nah am Eingang. Kommt der Vogel, vertreiben sie ihn. Nachts verschließt eine den Eingang.",
+  "Nah an der warmen Oberfläche reifen Puppen hier 1,7 mal schneller.",
+  "Müde Ameisen erholen sich hier doppelt so schnell und stehen niemandem im Weg.",
+  "Bei einer Flut versickert hier das Wasser im Kies, bevor es die Kammern erreicht.",
+  "Hier wachsen Prinzessinnen und Männchen mit Flügeln heran, bis zum Hochzeitsflug.",
+  "Die Sonne wärmt den Hügel. Tagsüber reift die Brut hier 1,8 mal schneller.",
+];
 const COLONY_NAMES = ["Krümelburg", "Wurzelstadt", "Sandhausen", "Zuckerhügel", "Tiefental", "Kieselbau", "Blattwerk", "Honigloch", "Erdreich", "Moosgrund"];
 const QUEEN_NAMES = ["Aurelia", "Mathilde", "Henrike", "Ophelia", "Rosalind", "Theodora", "Viktoria", "Amalia", "Klementine", "Isolde"];
 const antName = id => id === 0 ? "Königin " + (colony.queenName || "Aurelia") : NAMES[(id - 1) % NAMES.length] + (id > NAMES.length ? " " + (Math.floor((id - 1) / NAMES.length) + 1) : "");
@@ -1955,34 +1981,38 @@ const colony = {
   },
   tick(dt) {
     // Brut entwickelt sich
+    const K = tempoK(), alone = ants.count === 1 && ants.queenIndex() >= 0;
     for (let k = this.brood.length - 1; k >= 0; k--) {
+      if (alone && this.brood[k].s === 1) this.brood[k].fed = Math.max(this.brood[k].fed, 0.6);
       const b = this.brood[k];
       b.age += dt;
       if (b.carried) continue;
       const sk = roomType(b.cell) === CH_SOLAR ? (sunny() ? 1.8 : 0.7) : 1;
-      if (b.s === 0) { b.t += dt * (toolFx.warmAt(b.cell) ? 1.6 : 1); if (b.t >= EGG_T) { b.s = 1; b.t = 0; b.fed = 0.7; markItems(); } }
+      if (b.s === 0) { b.t += dt * (toolFx.warmAt(b.cell) ? 1.6 : 1); if (b.t >= EGG_T * K) { b.s = 1; b.t = 0; b.fed = 0.7; markItems(); } }
       else if (b.s === 1) {
         // königliche Larven brauchen mehr Futter und wachsen länger
-        b.fed = Math.max(0, b.fed - 0.022 * dt * (b.royal ? 1.5 : 1));
+        b.fed = Math.max(0, b.fed - 0.022 * dt * (b.royal ? 1.5 : 1) / K);
         if (b.fed > 0) b.t += dt * (toolFx.warmAt(b.cell) ? 1.6 : 1) * sk; else { b.t += dt * 0.15; b.starve += dt; }
         if (b.fed < 0.5) fieldDirty[F_HUNGRY] = true;
-        if (b.starve > 60) { this.brood.splice(k, 1); world.corpses[b.cell] = Math.min(9, world.corpses[b.cell] + 1); this.died++; markItems(); continue; }
-        if (b.t >= LARVA_T * (b.royal ? 1.4 : 1)) { b.s = 2; b.t = 0; markItems(); }
+        if (b.starve > 60 * K) { this.brood.splice(k, 1); world.corpses[b.cell] = Math.min(9, world.corpses[b.cell] + 1); this.died++; markItems(); continue; }
+        if (b.t >= LARVA_T * K * (b.royal ? 1.4 : 1)) { b.s = 2; b.t = 0; markItems(); }
       } else {
         // in der warmen Puppenkammer reifen Puppen schneller
         b.t += dt * (roomType(b.cell) === CH_PUPA ? 1.7 : 1) * (toolFx.warmAt(b.cell) ? 1.6 : 1) * sk;
-        if (b.t >= PUPA_T * (b.royal ? 1.3 : 1)) { this.brood.splice(k, 1); this.hatch(b); markItems(); }
+        if (b.t >= PUPA_T * K * (b.royal ? 1.3 : 1)) { this.brood.splice(k, 1); this.hatch(b); markItems(); }
       }
     }
     // Die Königin legt Eier, wenn sie satt ist
     const q = ants.queenIndex();
     if (q >= 0) {
-      const workers = ants.count - 1, cap = 8 + Math.floor(workers * 0.6);
+      const workers = ants.count - 1, cap = K > 1 ? 4 + Math.floor(workers * 0.25) : 8 + Math.floor(workers * 0.6);
       // nur wenn genug Vorrat für die Brut da ist
-      const enough = this.foodTotal + this.honey * 0.5 >= 3 + this.brood.length * 0.5 || (ants.count <= 4 && this.brood.length < 3);
+      // die Gründerin zieht die erste Brut allein aus ihren Körperreserven auf
+      const founding = ants.count === 1 && this.brood.length < 8;
+      const enough = this.foodTotal + this.honey * 0.5 >= 3 + this.brood.length * 0.5 || (ants.count <= 4 && this.brood.length < 3) || founding;
       if (enough && ants.energy[q] > 0.45 && this.brood.length < cap && ants.count + this.brood.length < 300 && ants.cy[q] >= G) {
         this.eggT += dt;
-        if (this.eggT >= 8 - ants.energy[q] * 4) {
+        if (this.eggT >= (8 - ants.energy[q] * 4) * (K > 1 ? 4 : 1)) {
           this.eggT = 0;
           ants.energy[q] -= 0.06;
           const egg = { id: this.nextBrood++, s: 0, t: 0, fed: 0, starve: 0, age: 0, cell: idx(ants.cx[q], ants.cy[q]), carried: false };
@@ -2122,7 +2152,7 @@ const colony = {
       case CH_SOLAR: rows.push(["Sonne", sunny() ? "warm, die Brut reift 1,8 × schneller" : "kühl, die Brut ist unten"], ["Lage", "oben im Ameisenhaufen"]); break;
     }
     rows.push(["Ameisen hier", here]);
-    return [ROOM_NAMES[r.type], rows];
+    return [ROOM_NAMES[r.type], rows, r.type ? (r.done ? "" : "Geplant: ") + ROOM_PURPOSE[r.type] : ""];
   },
 };
 
@@ -2169,7 +2199,7 @@ const ants = {
     this.dug[i] = opts.dug || 0; this.fetched[i] = opts.fetched || 0;
     if (opts.load) this.load[i] = opts.load;
     this.age[i] = opts.age || 0;
-    this.maxAge[i] = opts.maxAge || (r === R_QUEEN ? 1e9 : (r === R_PRINCESS || r === R_MALE ? rf(1600, 2200) : rf(420, 780)));
+    this.maxAge[i] = opts.maxAge || (r === R_QUEEN ? 1e9 : (r === R_PRINCESS || r === R_MALE ? rf(1600, 2200) : rf(420, 780)) * tempoK());
     this.hp[i] = r === R_QUEEN ? 3 : (r === R_SOLDIER ? 1.5 : 1);
     if (r === R_REPLETE) this.state[i] = S_REPLETE;
     else if (r === R_PRINCESS || r === R_MALE) this.state[i] = S_ALATE;
@@ -2245,6 +2275,8 @@ const ants = {
       // Hunger und Müdigkeit
       const resting = this.state[i] === S_REST, queen = this.role[i] === R_QUEEN;
       const inBed = resting && world.chamber[this.cy[i] * W + this.cx[i]] === CH_SLEEP;
+      // eine Königin ohne Arbeiterinnen lebt von ihren Flugmuskeln und Fettreserven
+      if (queen && this.count === 1) { this.energy[i] = Math.max(this.energy[i], 0.6); }
       this.energy[i] -= dt / (queen ? 280 : 210) * (resting ? (inBed ? 0.5 : 0.6) : 1) * hungerK;
       // Honigtöpfe zehren von ihrem eigenen Vorrat
       if (this.role[i] === R_REPLETE && this.energy[i] < 0.4 && this.load[i] > 0) { this.load[i]--; this.energy[i] = 1; }
@@ -3841,13 +3873,14 @@ const hud = {
       dl.append(dt, dd);
     }
   },
-  showInfo(title, rows, ch) {
+  showInfo(title, rows, ch, desc = "") {
     this.closeAnt();
     $("infoTitle").textContent = title;
+    $("infoDesc").textContent = desc; $("infoDesc").hidden = !desc;
     $("swatch").style.background = ch > 0 ? css(CHAMBER_COLORS[ch]) : "#8a6a48";
     this.rows($("infoRows"), rows);
     $("info").hidden = false; $("hint").hidden = true;
-    this.infoT = 6; this.hintT = 0;
+    this.infoT = desc ? 9 : 6; this.hintT = 0;
   },
   hideInfo() { $("info").hidden = true; this.infoT = 0; },
   banner(text, time = 4) { const b = $("banner"); b.textContent = text; b.hidden = false; this.bannerT = time; },
@@ -3998,7 +4031,8 @@ const hud = {
   },
 };
 $("btnPause").addEventListener("click", () => { game.paused = !game.paused; hud.updateButtons(); });
-$("btnSpeed").addEventListener("click", () => { game.speed = game.speed >= 4 ? 1 : game.speed * 2; hud.updateButtons(); });
+// Tempo: 1×, 2×, 4×, 8× und 16×
+$("btnSpeed").addEventListener("click", () => { game.speed = game.speed >= 16 ? 1 : game.speed * 2; hud.updateButtons(); });
 $("info").addEventListener("click", () => hud.hideInfo());
 $("hint").addEventListener("click", () => { $("hint").hidden = true; hud.hintT = 0; });
 $("sign").addEventListener("click", () => hud.panelOpen ? hud.closePanel() : hud.openPanel());
@@ -4406,11 +4440,13 @@ const menu = {
     }
     for (const t of document.querySelectorAll("#menuNew .toggle")) t.setAttribute("aria-pressed", String(!!d[t.dataset.key]));
     $("ngDiffText").textContent = DIFFS[d.diff].text;
+    $("ngTempoText").textContent = d.tempo ? "Wie in der Natur: Die Brut braucht mehrere Spieltage, Ameisen leben viel länger. Nimm dir Zeit oder stell 8× oder 16× ein." : "Schnelles Wachstum: In einer Stunde wird aus der Königin eine große Kolonie.";
+    $("ngFoundText").textContent = d.founders ? "So viele Arbeiterinnen helfen der Königin am Anfang." : "Wie in der Natur: Die Königin zieht die ersten Töchter ganz allein auf, aus ihren eigenen Reserven.";
   },
   found() {
     const d = this.draft;
     const clean = (v, fb) => (v || "").replace(/\s+/g, " ").trim().slice(0, 18) || fb;
-    Object.assign(settings, { diff: d.diff, founders: d.founders, day: d.day, floods: d.floods, birds: d.birds });
+    Object.assign(settings, { diff: d.diff, founders: d.founders, day: d.day, floods: d.floods, birds: d.birds, tempo: d.tempo || 0 });
     colony.name = clean($("ngName").value, "Krümelburg");
     colony.queenName = clean($("ngQueen").value, "Aurelia");
     const seed = clamp(parseInt($("ngSeed").value, 10) || Math.floor(Math.random() * 999999) + 1, 1, 999999);
@@ -4432,6 +4468,7 @@ for (const seg of document.querySelectorAll("#menuNew .seg")) seg.addEventListen
   const b = e.target.closest("button");
   if (!b) return;
   menu.draft[seg.dataset.key] = +b.dataset.v;
+  if (seg.dataset.key === "tempo") menu.draft.founders = +b.dataset.v ? 0 : 5;
   menu.syncNew();
 });
 for (const t of document.querySelectorAll("#menuNew .toggle")) t.addEventListener("click", () => {
@@ -4480,27 +4517,29 @@ function onTap(sx, sy) {
     for (let r = 0; r < 3; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
       if (!inGrid(x + dx, y + dy)) continue;
       const rid = world.roomOf[idx(x + dx, y + dy)];
-      if (rid >= 0 && world.rooms[rid]) { const r2 = world.rooms[rid], info = colony.roomInfo(r2); return hud.showInfo(info[0], info[1], r2.type); }
+      if (rid >= 0 && world.rooms[rid]) { const r2 = world.rooms[rid], info = colony.roomInfo(r2); return hud.showInfo(info[0], info[1], r2.type, info[2]); }
     }
     if (inMound && !isTunnel(x, y)) {
       let top = 0, inside = 0;
       for (let c = 0; c < W; c++) top = Math.max(top, world.mound[c]);
       for (const r of world.rooms) if (r.done && r.type === CH_SOLAR) inside++;
-      return hud.showInfo("Ameisenhaufen", [["Höhe", Math.round(top * 3) + " mm"], ["Kammern im Hügel", inside], ["Wärme", sunny() ? "die Sonne heizt ihn auf" : "kühlt gerade ab"]], 0);
+      return hud.showInfo("Ameisenhaufen", [["Höhe", Math.round(top * 3) + " mm"], ["Kammern im Hügel", inside], ["Wärme", sunny() ? "die Sonne heizt ihn auf" : "kühlt gerade ab"]], 0, "Aus der ausgegrabenen Erde gebaut. Er fängt Sonnenwärme ein, darin liegen Sonnenkammern.");
     }
-    if (isTunnel(x, y)) return hud.showInfo("Gang", [["Ameisen im Nest", ants.count], ["Gegrabene Felder", world.tunnels.length]], 0);
-    return hud.showInfo("Erde", [["Schicht", layerOf(y) + 1], ["Tiefe", (y - G) * 3 + " mm"]], 0);
+    if (isTunnel(x, y)) return hud.showInfo("Gang", [["Ameisen im Nest", ants.count], ["Gegrabene Felder", world.tunnels.length]], 0, "Verbindet die Kammern. Wird es eng, verbreitern die Ameisen viel genutzte Gänge.");
+    return hud.showInfo("Erde", [["Schicht", layerOf(y) + 1], ["Tiefe", (y - G) * 3 + " mm"]], 0, layerOf(y) ? "Tiefer ist der Boden fester. Hier graben die Ameisen langsamer." : "Lockerer Sand, leicht zu graben.");
   }
   const g = world.groundFood.find(q => Math.abs(q.x - x) <= 2 && y >= SURF - 3);
   if (g) {
     const names = { fruit: "Fallobst", sugar: "Zucker", beetle: "Toter Käfer", corpse: "Tote Ameise", leaves: "Blätterhaufen" };
-    return hud.showInfo(names[g.kind], [["Noch übrig", g.n + " Portionen"]], 0);
+    const what = { fruit: "Ein heruntergefallener Apfel. Sammlerinnen tragen ihn Stück für Stück heim.", sugar: "Dein Zucker. Er landet zuerst in den Honigtöpfen.",
+      beetle: "Ein toter Käfer, wertvolles Eiweiß für die Larven.", corpse: "Eine tote Ameise. Andere Ameisen tragen sie fort.", leaves: "Blätter für den Pilzgarten." };
+    return hud.showInfo(names[g.kind], [["Noch übrig", g.n + " Portionen"]], 0, what[g.kind] || "");
   }
   for (const s of world.sources) if (Math.abs(s.trunk - x) <= s.r && y >= s.cy - s.r) {
     let n = 0;
     for (let i = 0; i < ants.count; i++) if (ants.doing[i] === D_SEARCH) n++;
-    if (s.kind === 1) return hud.showInfo("Busch", [["Blätter für den Pilzgarten", hasRoom(CH_FUNGUS) ? "ja" : "noch nicht gebraucht"], ["Ameisen auf Futtersuche", n]], 0);
-    return hud.showInfo("Apfelbaum", [["Reife Äpfel", s.fruits.filter(f => f.alive).length], ["Ameisen auf Futtersuche", n]], 0);
+    if (s.kind === 1) return hud.showInfo("Busch", [["Blätter für den Pilzgarten", hasRoom(CH_FUNGUS) ? "ja" : "noch nicht gebraucht"], ["Ameisen auf Futtersuche", n]], 0, "Seine Blätter schneiden die Ameisen für den Pilzgarten.");
+    return hud.showInfo("Apfelbaum", [["Reife Äpfel", s.fruits.filter(f => f.alive).length], ["Ameisen auf Futtersuche", n]], 0, "Sammlerinnen klettern den Stamm hinauf und holen Äpfel. Abgeerntete Äpfel wachsen nach.");
   }
   hud.hideInfo(); hud.closeAnt();
 }
@@ -4678,8 +4717,9 @@ function frame(now) {
   if (!game.paused) {
     acc += dt * game.speed;
     let n = 0;
-    while (acc >= 1 / 60 && n < 12) { step(1 / 60); acc -= 1 / 60; n++; }
-    if (n === 12) acc = 0;
+    // bei hohem Tempo viele Simulationsschritte, gezeichnet wird trotzdem nur einmal pro Bild
+    while (acc >= 1 / 60 && n < 40) { step(1 / 60); acc -= 1 / 60; n++; }
+    if (n === 40) acc = 0;
   }
   // Kamera folgt der ausgewählten Ameise
   if (game.sel !== null && game.follow && !zoomAnim) {
