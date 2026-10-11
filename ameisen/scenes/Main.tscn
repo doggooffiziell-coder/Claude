@@ -1,0 +1,58 @@
+[gd_scene load_steps=11 format=3]
+
+[ext_resource type="Script" path="res://scripts/Main.gd" id="1_main"]
+[ext_resource type="Script" path="res://scripts/World.gd" id="2_world"]
+[ext_resource type="Script" path="res://scripts/Sky.gd" id="3_sky"]
+[ext_resource type="Script" path="res://scripts/Decor.gd" id="4_decor"]
+[ext_resource type="Script" path="res://scripts/Pheromones.gd" id="5_phero"]
+[ext_resource type="Script" path="res://scripts/Colony.gd" id="6_colony"]
+[ext_resource type="Script" path="res://scripts/AntManager.gd" id="7_ants"]
+[ext_resource type="Script" path="res://scripts/EventManager.gd" id="8_events"]
+[ext_resource type="Script" path="res://scripts/CameraController.gd" id="9_cam"]
+[ext_resource type="PackedScene" path="res://scenes/HUD.tscn" id="10_hud"]
+
+[node name="Main" type="Node2D"]
+script = ExtResource("1_main")
+
+[node name="DayNight" type="CanvasModulate" parent="."]
+
+[node name="World" type="Node2D" parent="."]
+script = ExtResource("2_world")
+
+[node name="Sky" type="Node2D" parent="World"]
+z_index = -10
+script = ExtResource("3_sky")
+
+[node name="Ground" type="TileMapLayer" parent="World"]
+
+[node name="Decor" type="Node2D" parent="World"]
+z_index = 1
+script = ExtResource("4_decor")
+
+[node name="Water" type="Sprite2D" parent="World"]
+z_index = 5
+
+[node name="Frame" type="Node2D" parent="World"]
+z_index = 20
+
+[node name="Pheromones" type="Node2D" parent="."]
+z_index = 2
+script = ExtResource("5_phero")
+
+[node name="Colony" type="Node" parent="."]
+script = ExtResource("6_colony")
+
+[node name="Ants" type="Node2D" parent="."]
+z_index = 3
+script = ExtResource("7_ants")
+
+[node name="MultiMeshInstance2D" type="MultiMeshInstance2D" parent="Ants"]
+
+[node name="EventManager" type="Node2D" parent="."]
+z_index = 6
+script = ExtResource("8_events")
+
+[node name="Camera2D" type="Camera2D" parent="."]
+script = ExtResource("9_cam")
+
+[node name="HUD" parent="." instance=ExtResource("10_hud")]
