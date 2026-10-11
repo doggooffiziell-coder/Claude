@@ -22,6 +22,8 @@ Das Spiel läuft auf iPhone, Android, Tablet und PC. Die Basisauflösung ist 270
 
 Der Spielstand liegt dort im Speicher des Browsers.
 
+`docs/antpop/index.html` ist dieselbe Seite als vollständige HTML-Datei mit App-Symbol, App-Manifest und Vollbild für GitHub Pages. Mit GitHub Pages läuft sie unter https://doggooffiziell-coder.github.io/Claude/antpop/. Fügst du sie in Safari zum Home-Bildschirm hinzu, erscheint das Ant-Pop-Icon und das Spiel startet im Vollbild. Nach jeder Änderung an `web/AntPop.html` baut `web/build-pages.sh` die Datei neu.
+
 ## Bedienung
 
 Tippe auf eine Kammer, und unten erscheint ihr Name mit Inhalt. Zieh zwei Finger auseinander, um zu zoomen. Schieb zwei Finger, um die Ansicht zu verschieben.

@@ -1,0 +1,3031 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Ant Pop">
+<link rel="apple-touch-icon" href="icon-180.png?v=1">
+<link rel="icon" type="image/png" href="icon-192.png?v=1">
+<link rel="manifest" href="manifest.webmanifest">
+</head>
+<body>
+<title>Ant Pop</title>
+<meta name="theme-color" content="#0f2a19">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jersey+10&display=swap">
+<style>
+  /* Ein Formicarium auf dem Display: Spielfeld in der Mitte, Holzschild oben, Bedienung unten mit Daumenabstand. */
+  :root {
+    --frame: #0f2a19;
+    --board: #24502f;
+    --board-deep: #1a3d24;
+    --board-light: #4b845b;
+    --cream: #f4edd3;
+    --cream-dim: #d9cfae;
+    --brass: #d1a94e;
+    --warn: #ff7a5c;
+    --ink: #08140c;
+    --font-display: "Jersey 10", ui-monospace, "Courier New", monospace;
+    --font-body: "Jersey 10", ui-monospace, "Courier New", monospace;
+    --notch: polygon(4px 0, calc(100% - 4px) 0, 100% 4px, 100% calc(100% - 4px), calc(100% - 4px) 100%, 4px 100%, 0 calc(100% - 4px), 0 4px);
+    color-scheme: dark;
+  }
+  html, body {
+    height: 100%;
+    margin: 0;
+    background: var(--frame);
+    color: var(--cream);
+    font-family: var(--font-body);
+    overflow: hidden;
+    overscroll-behavior: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #game {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    touch-action: none;
+    background: var(--frame);
+  }
+  #hud {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    font-variant-numeric: tabular-nums;
+  }
+  #safe {
+    position: fixed;
+    visibility: hidden;
+    pointer-events: none;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Holzschild oben links */
+  .sign {
+    position: absolute;
+    pointer-events: auto;
+    cursor: pointer;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    appearance: none;
+    top: calc(env(safe-area-inset-top, 0px) + 8px);
+    left: 10px;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    column-gap: 10px;
+    padding: 6px 14px 6px 12px;
+    background:
+      repeating-linear-gradient(180deg, transparent 0 15px, rgba(0,0,0,0.16) 15px 16px),
+      linear-gradient(180deg, var(--board) 0%, var(--board-deep) 100%);
+    border: 2px solid var(--board-light);
+    border-radius: 0;
+    clip-path: polygon(14px 0, calc(100% - 4px) 0, 100% 4px, 100% calc(100% - 4px), calc(100% - 4px) 100%, 4px 100%, 0 calc(100% - 4px), 0 14px);
+    box-shadow: 0 3px 0 rgba(0,0,0,0.3);
+    filter: drop-shadow(0 2px 6px rgba(0,0,0,0.35));
+  }
+  .sign::before {
+    content: "";
+    position: absolute;
+    top: 7px;
+    left: 7px;
+    width: 6px;
+    height: 6px;
+    background: var(--brass);
+    box-shadow: inset -2px -2px 0 #6d5420, inset 2px 2px 0 #f8e3a0;
+  }
+  .ant-icon { width: 21px; height: 27px; margin-top: 4px; shape-rendering: crispEdges; image-rendering: pixelated; }
+  .sign-text { display: grid; line-height: 1; }
+  .sign-label {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 16px;
+    letter-spacing: 0.12em;
+    color: var(--cream-dim);
+  }
+  .sign-count {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 38px;
+    color: var(--cream);
+    margin-top: 1px;
+  }
+  .sign-stats {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 10px;
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid rgba(0,0,0,0.25);
+    font-size: 18px;
+    font-weight: 400;
+    letter-spacing: 0.03em;
+    color: var(--cream-dim);
+    white-space: nowrap;
+  }
+  .sign-stats b { color: var(--cream); font-weight: 400; }
+  .sign-stats .warn { color: var(--warn); }
+
+  /* Meldung bei Ereignissen */
+  .banner {
+    position: absolute;
+    top: calc(env(safe-area-inset-top, 0px) + 130px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: max-content;
+    max-width: min(320px, calc(100% - 32px));
+    padding: 7px 14px;
+    border-radius: 0;
+    clip-path: var(--notch);
+    background: rgba(8, 20, 12, 0.92);
+    border: 2px solid var(--brass);
+    color: #ffe39a;
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 19px;
+    letter-spacing: 0.03em;
+    text-align: center;
+    text-wrap: balance;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+    animation: pop 0.25s ease-out;
+  }
+  @keyframes pop { from { transform: translateX(-50%) scale(0.9); opacity: 0; } }
+
+  /* Infokarte unten */
+  .sheet {
+    position: absolute;
+    left: 50%;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 76px);
+    transform: translateX(-50%);
+    width: min(340px, calc(100% - 24px));
+    box-sizing: border-box;
+    padding: 14px 18px 12px;
+    border-radius: 0;
+    clip-path: var(--notch);
+    background: rgba(20, 45, 28, 0.96);
+    border: 2px solid var(--board-light);
+    box-shadow: 0 10px 28px rgba(0,0,0,0.45);
+    pointer-events: auto;
+    animation: rise 0.2s ease-out;
+  }
+  @keyframes rise { from { transform: translate(-50%, 10px); opacity: 0; } }
+  .sheet-head { display: flex; align-items: center; gap: 10px; }
+  .swatch { width: 16px; height: 16px; border-radius: 0; border: 2px solid rgba(255,255,255,0.3); flex: none; }
+  .sheet h2 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 28px;
+    letter-spacing: 0.02em;
+    color: var(--cream);
+  }
+  .sheet dl {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 6px 16px;
+    margin: 10px 0 0;
+    padding-top: 10px;
+    border-top: 2px solid rgba(255,255,255,0.12);
+    font-size: 21px;
+    letter-spacing: 0.03em;
+  }
+  .sheet dt { color: var(--cream-dim); }
+  .sheet dd { margin: 0; text-align: right; color: var(--cream); }
+  .hint p { margin: 0; font-size: 20px; line-height: 1.3; letter-spacing: 0.03em; color: var(--cream); }
+  .hint p + p { margin-top: 4px; }
+  .hint span { color: var(--brass); }
+
+  /* Knöpfe unten rechts */
+  .controls {
+    position: absolute;
+    right: 12px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+    display: flex;
+    gap: 10px;
+  }
+  .controls button {
+    pointer-events: auto;
+    width: 52px;
+    height: 52px;
+    border-radius: 0;
+    clip-path: var(--notch);
+    border: 2px solid var(--board-light);
+    background: linear-gradient(180deg, var(--board) 0%, var(--board-deep) 100%);
+    color: var(--cream);
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 24px;
+    display: grid;
+    place-items: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .controls button:active { transform: scale(0.94); }
+  .controls button:focus-visible { outline: 3px solid var(--brass); outline-offset: 2px; }
+  .controls svg { width: 22px; height: 22px; fill: currentColor; }
+  @media (prefers-reduced-motion: reduce) {
+    .banner, .sheet { animation: none; }
+  }
+
+  .sign:focus-visible { outline: 3px solid var(--brass); outline-offset: 2px; }
+  .sign-more { grid-column: 1 / -1; font-size: 14px; color: var(--brass); letter-spacing: 0.06em; margin-top: 2px; }
+
+  /* gemeinsame Pixel-Kästen */
+  .box {
+    position: absolute;
+    pointer-events: auto;
+    box-sizing: border-box;
+    background: rgba(20, 45, 28, 0.97);
+    border: 2px solid var(--board-light);
+    clip-path: var(--notch);
+    color: var(--cream);
+  }
+  .x {
+    margin-left: auto;
+    width: 36px; height: 36px;
+    border: 2px solid var(--board-light);
+    background: var(--board-deep);
+    color: var(--cream);
+    font: inherit; font-size: 24px; line-height: 1;
+    clip-path: var(--notch);
+    cursor: pointer;
+  }
+  .x:focus-visible, .btn:focus-visible, .tools button:focus-visible { outline: 3px solid var(--brass); outline-offset: 2px; }
+
+  /* Steckbrief einer Ameise */
+  .antcard { padding: 10px 14px 10px; }
+  .antcard .sheet-head { gap: 8px; }
+  .antcard h2 { font-size: 24px; }
+  .antcard .role { font-size: 16px; color: var(--brass); letter-spacing: 0.06em; }
+  .antcard .x { width: 34px; height: 34px; font-size: 22px; }
+  .antcard .x:first-of-type { margin-left: auto; }
+  .antcard .x + .x { margin-left: 0; }
+  .x.follow { display: grid; place-items: center; }
+  .x.follow svg { width: 16px; height: 16px; }
+  .antcard .doing { margin: 4px 0 6px; font-size: 20px; color: #ffe39a; }
+  .bars { display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 4px 8px; align-items: center; font-size: 16px; color: var(--cream-dim); }
+  .sheet dl.mini { grid-template-columns: auto 1fr auto 1fr; gap: 2px 10px; margin-top: 8px; padding-top: 8px; font-size: 16px; }
+  .sheet dl.mini dd { white-space: nowrap; }
+  .bar { height: 12px; background: #0d1f14; border: 2px solid #3a6b4a; position: relative; }
+  .bar > span { position: absolute; inset: 0 auto 0 0; background: #8fcf6a; }
+  .bar > span.tired { background: #6f8fa8; }
+  .bar > span.low { background: var(--warn); }
+  .card-actions { display: flex; gap: 10px; margin-top: 12px; }
+  .btn {
+    flex: 1;
+    min-height: 44px;
+    border: 2px solid var(--board-light);
+    background: var(--board-deep);
+    color: var(--cream);
+    font: inherit; font-size: 20px; letter-spacing: 0.03em;
+    clip-path: var(--notch);
+    cursor: pointer;
+  }
+  .btn.danger { border-color: #b0563f; color: #ffc9b8; }
+
+  /* Kolonie-Panel */
+  .panel {
+    top: calc(env(safe-area-inset-top, 0px) + 8px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 76px);
+    left: 10px; right: 10px;
+    max-width: 420px;
+    margin: 0 auto;
+    padding: 14px 16px 18px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    animation: rise 0.2s ease-out;
+  }
+  .panel-head { display: flex; align-items: center; gap: 10px; }
+  .panel h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 30px; }
+  .panel h3 { margin: 18px 0 8px; font-weight: 400; font-size: 20px; color: var(--brass); letter-spacing: 0.08em; text-transform: uppercase; }
+  .tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+  .tile { background: #0f2417; border: 2px solid #2f5c3d; padding: 8px 10px; clip-path: var(--notch); min-width: 0; }
+  .tile b { display: block; font-weight: 400; font-size: 30px; line-height: 1; color: var(--cream); }
+  .tile span { font-size: 16px; color: var(--cream-dim); }
+  .tile small { display: block; font-size: 14px; color: #a99f80; margin-top: 2px; }
+  .task { display: grid; grid-template-columns: 7.5em 1fr 2.2em; gap: 8px; align-items: center; font-size: 18px; margin: 4px 0; }
+  .task .track { height: 12px; background: #0d1f14; border: 2px solid #2f5c3d; position: relative; }
+  .task .fill { position: absolute; inset: 0 auto 0 0; }
+  .task .tnum { text-align: right; color: var(--cream); }
+  #chart { width: 100%; height: auto; image-rendering: pixelated; border: 2px solid #2f5c3d; display: block; }
+  .legend { display: flex; gap: 16px; font-size: 16px; color: var(--cream-dim); margin-top: 6px; }
+  .legend i { display: inline-block; width: 12px; height: 12px; margin-right: 6px; vertical-align: -1px; }
+  #chron { list-style: none; margin: 0; padding: 0; font-size: 18px; line-height: 1.25; }
+  #chron li { padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.08); }
+  #chron .day { color: var(--brass); margin-right: 8px; }
+  .confirm { margin-top: 10px; font-size: 18px; }
+
+  /* Werkzeug unten links */
+  .tools {
+    position: absolute;
+    left: 12px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+  }
+  .tools button {
+    pointer-events: auto;
+    position: relative;
+    width: 52px; height: 52px;
+    border: 2px solid var(--board-light);
+    background: linear-gradient(180deg, var(--board) 0%, var(--board-deep) 100%);
+    color: var(--cream);
+    clip-path: var(--notch);
+    display: grid; place-items: center;
+    cursor: pointer;
+    touch-action: manipulation;
+    overflow: hidden;
+  }
+  .tools button.on { background: #6d5420; border-color: var(--brass); }
+  .tools svg { width: 26px; height: 26px; }
+  .tools .cd { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: rgba(0,0,0,0.45); }
+  .tools .label { position: absolute; left: 60px; bottom: 14px; font-size: 18px; color: var(--cream); white-space: nowrap; text-shadow: 0 2px 0 rgba(0,0,0,0.6); pointer-events: none; }
+</style>
+
+<canvas id="game" aria-label="Ameisenkolonie im Querschnitt durch den Boden"></canvas>
+<div id="hud">
+  <button class="sign" id="sign" type="button" aria-label="Kolonie ansehen">
+    <svg class="ant-icon" viewBox="0 0 7 9" aria-hidden="true" fill="#f4edd3" shape-rendering="crispEdges"><rect x="1" y="0" width="1" height="1"/><rect x="5" y="0" width="1" height="1"/><rect x="2" y="1" width="1" height="1"/><rect x="4" y="1" width="1" height="1"/><rect x="3" y="2" width="1" height="1"/><rect x="0" y="3" width="1" height="1"/><rect x="2" y="3" width="1" height="1"/><rect x="3" y="3" width="1" height="1"/><rect x="4" y="3" width="1" height="1"/><rect x="6" y="3" width="1" height="1"/><rect x="1" y="4" width="1" height="1"/><rect x="3" y="4" width="1" height="1"/><rect x="5" y="4" width="1" height="1"/><rect x="2" y="5" width="1" height="1"/><rect x="3" y="5" width="1" height="1"/><rect x="4" y="5" width="1" height="1"/><rect x="0" y="6" width="1" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="3" y="6" width="1" height="1"/><rect x="4" y="6" width="1" height="1"/><rect x="6" y="6" width="1" height="1"/><rect x="2" y="7" width="1" height="1"/><rect x="3" y="7" width="1" height="1"/><rect x="4" y="7" width="1" height="1"/><rect x="3" y="8" width="1" height="1"/></svg>
+    <div class="sign-text"><span class="sign-label">ANT POP.</span><span class="sign-count" id="pop">6</span></div>
+    <div class="sign-stats"><span>Futter <b id="food">20</b></span><span>Tag <b id="day">1</b></span><span class="warn" id="hunger" hidden>Hunger!</span></div>
+    <span class="sign-more">Kolonie ansehen ›</span>
+  </button>
+  <div class="banner" id="banner" hidden></div>
+  <div class="sheet hint" id="hint">
+    <p>Deine Ameisen leben selbstständig.</p>
+    <p>Tippe auf eine <span>Ameise</span> oder <span>Kammer</span>.</p>
+  </div>
+  <div class="sheet" id="info" hidden>
+    <div class="sheet-head"><span class="swatch" id="swatch"></span><h2 id="infoTitle"></h2></div>
+    <dl id="infoRows"></dl>
+  </div>
+  <div class="sheet antcard" id="antCard" hidden>
+    <div class="sheet-head"><h2 id="antName"></h2><span class="role" id="antRole"></span>
+      <button class="x follow" id="antFollow" type="button" aria-label="Folgen"><svg viewBox="0 0 9 9" aria-hidden="true" shape-rendering="crispEdges" fill="currentColor"><rect x="4" y="0" width="1" height="3"/><rect x="4" y="6" width="1" height="3"/><rect x="0" y="4" width="3" height="1"/><rect x="6" y="4" width="3" height="1"/><rect x="3" y="3" width="3" height="3"/></svg></button>
+      <button class="x" id="antClose" type="button" aria-label="Schließen">×</button></div>
+    <div class="doing" id="antDoing"></div>
+    <div class="bars">
+      <span>Satt</span><span class="bar"><span id="barFood"></span></span>
+      <span>Müde</span><span class="bar"><span id="barTired" class="tired"></span></span>
+    </div>
+    <dl class="mini" id="antRows"></dl>
+  </div>
+  <div class="box panel" id="panel" hidden role="dialog" aria-labelledby="panelTitle">
+    <div class="panel-head"><h2 id="panelTitle">Die Kolonie</h2><button class="x" id="panelClose" type="button" aria-label="Schließen">×</button></div>
+    <div class="tiles">
+      <div class="tile"><b id="tPop">0</b><span>Ameisen</span><small><span id="tSoldiers">0</span> davon Soldatinnen</small></div>
+      <div class="tile"><b id="tBrood">0</b><span>Brut</span><small id="tBroodSub"></small></div>
+      <div class="tile"><b id="tFood">0</b><span>Futter im Nest</span></div>
+      <div class="tile"><b id="tRooms">0</b><span>Kammern</span><small><span id="tTunnels">0</span> Felder gegraben</small></div>
+      <div class="tile"><b id="tBorn">0</b><span>Geschlüpft</span></div>
+      <div class="tile"><b id="tDied">0</b><span>Gestorben</span></div>
+    </div>
+    <h3>Was die Ameisen gerade tun</h3>
+    <div id="taskBars"></div>
+    <h3>Verlauf</h3>
+    <canvas id="chart" width="300" height="84"></canvas>
+    <div class="legend"><span><i style="background:#f4edd3"></i>Ameisen</span><span><i style="background:#e0a43a"></i>Futter</span></div>
+    <h3>Chronik</h3>
+    <ol id="chron"></ol>
+    <h3>Neu anfangen</h3>
+    <button class="btn danger" id="btnNew" type="button">Neue Kolonie gründen</button>
+    <div class="confirm" id="confirmNew" hidden>
+      <p>Die jetzige Kolonie geht dabei verloren.</p>
+      <div class="card-actions"><button class="btn danger" id="btnNewYes" type="button">Ja, neu gründen</button><button class="btn" id="btnNewNo" type="button">Abbrechen</button></div>
+    </div>
+  </div>
+  <div class="tools">
+    <button id="btnFeed" type="button" aria-label="Zucker streuen" aria-pressed="false">
+      <svg viewBox="0 0 13 13" aria-hidden="true" shape-rendering="crispEdges"><rect x="2" y="5" width="9" height="7" fill="#e6e9ef"/><rect x="2" y="5" width="9" height="1" fill="#ffffff"/><rect x="10" y="6" width="1" height="6" fill="#b9bfca"/><rect x="5" y="1" width="3" height="3" fill="#ffffff"/><rect x="7" y="3" width="1" height="1" fill="#b9bfca"/></svg>
+      <span class="cd" id="feedCd"></span>
+    </button>
+  </div>
+  <div class="controls">
+    <button id="btnPause" type="button" aria-label="Pause"></button>
+    <button id="btnSpeed" type="button" aria-label="Tempo ändern">1×</button>
+  </div>
+</div>
+<div id="safe"></div>
+
+
+<script>
+"use strict";
+// =====================================================================
+// Ant Pop: Ameisenkolonie im Formicarium.
+// Jede Ameise lebt eigenständig: eigene Vorlieben, Hunger, Müdigkeit und Alter.
+// Es gibt keinen Bauplan und keine zentrale Aufgabenverteilung. Gänge und Kammern
+// entstehen aus den Entscheidungen der Ameisen, Kammern bekommen ihre Art durch
+// das, was die Ameisen dort ablegen.
+// =====================================================================
+
+const T = 3, W = 86, H = 156, G = 40, SURF = 39, ENT = 43, FRAME = 6;
+const WPX = W * T, HPX = H * T;                    // 258 x 468
+const FULL_W = WPX + 2 * FRAME, FULL_H = HPX + 2 * FRAME;  // 270 x 480
+const INF = 1 << 28;
+const AIR = 0, SOIL = 1, TUNNEL = 2;
+const CH_GRANARY = 1, CH_BROOD = 2, CH_QUEEN = 3, CH_CEMETERY = 4, CH_TRASH = 5;
+const ROOM_NAMES = ["Leere Kammer", "Kornkammer", "Brutkammer", "Königinnenkammer", "Friedhof", "Müllkammer"];
+const ROOM_NEW = ["", "eine neue Kornkammer", "eine neue Brutkammer", "", "einen neuen Friedhof", "eine neue Müllkammer"];
+const ROOM_DONE = ["", "Die Kornkammer ist fertig", "Die Brutkammer ist fertig", "", "Der Friedhof ist fertig", "Die Müllkammer ist fertig"];
+const ARRIVED = -1, NO_PATH = -2;
+const LAYER_ROWS = [40, 79, 118];
+const SAVE_KEY = "antpop-save-v3";
+
+const R_WORKER = 0, R_SOLDIER = 1, R_QUEEN = 2;
+const C_NONE = 0, C_FOOD = 1, C_DIRT = 2, C_CORPSE = 3, C_TRASH = 4, C_BROOD = 5;
+// Zustände der Zustandsmaschine
+const S_IDLE = 0, S_REST = 1, S_EAT = 2, S_DIG = 3, S_FORAGE = 4, S_CARRY = 5, S_NURSE = 6, S_CLEAN = 7, S_SOLDIER = 8, S_QUEEN = 9, S_FLEE = 10;
+// Aufgaben mit eigenen Schwellenwerten pro Ameise
+const TK_DIG = 0, TK_FORAGE = 1, TK_NURSE = 2, TK_CLEAN = 3;
+const TASK_NAMES = ["Graben", "Futtersuche", "Brutpflege", "Aufräumen"];
+const TASK_STATE = [S_DIG, S_FORAGE, S_NURSE, S_CLEAN];
+// Was eine Ameise gerade tut, für die Anzeige
+const D_IDLE = 0, D_REST = 1, D_SLEEP = 2, D_EAT = 3, D_DIG = 4, D_HAUL = 5, D_SEARCH = 6, D_FETCH = 7, D_FEEDLARVA = 8,
+  D_FEEDQUEEN = 9, D_MOVEBROOD = 10, D_CORPSE = 11, D_TRASH = 12, D_PATROL = 13, D_DEFEND = 14, D_FLEE = 15, D_LAY = 16, D_HOME = 17, D_STORE = 18;
+const DOING = ["Schaut sich um", "Ruht sich aus", "Schläft", "Isst", "Gräbt", "Trägt Erde hinaus", "Sucht Futter", "Trägt Futter heim",
+  "Füttert Larven", "Füttert die Königin", "Trägt Brut", "Trägt Tote weg", "Räumt Abfall weg", "Bewacht das Nest", "Verteidigt das Nest",
+  "Flieht", "Legt Eier", "Geht nach Hause", "Lagert Futter ein"];
+const NAMES = ["Anni", "Berta", "Clara", "Dora", "Emma", "Frieda", "Greta", "Hanna", "Ida", "Jule", "Karla", "Lotte", "Mia", "Nele",
+  "Olga", "Paula", "Resi", "Sina", "Thea", "Uschi", "Vera", "Wilma", "Xenia", "Yva", "Zoe", "Alma", "Bea", "Cleo", "Edda", "Fine",
+  "Gesa", "Hedi", "Ilse", "Juna", "Kira", "Lina", "Maja", "Nora", "Ottilie", "Pia", "Rieke", "Selma", "Tilda", "Ulla", "Wanda"];
+const antName = id => id === 0 ? "Königin Aurelia" : NAMES[(id - 1) % NAMES.length] + (id > NAMES.length ? " " + (Math.floor((id - 1) / NAMES.length) + 1) : "");
+
+// ---------------------------------------------------------------- Hilfen
+const rand = Math.random;
+const ri = (a, b) => a + Math.floor(rand() * (b - a + 1));
+const rf = (a, b) => a + rand() * (b - a);
+const clamp = (v, a, b) => v < a ? a : (v > b ? b : v);
+const sign = v => v > 0 ? 1 : (v < 0 ? -1 : 0);
+function mulberry(seed) {
+  let a = seed >>> 0;
+  const f = () => {
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  f.ri = (x, y) => x + Math.floor(f() * (y - x + 1));
+  f.rf = (x, y) => x + f() * (y - x);
+  return f;
+}
+function hash2(x, y) {
+  let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) & 0x7fffffff;
+}
+const lighten = (c, a) => [c[0] + (1 - c[0]) * a, c[1] + (1 - c[1]) * a, c[2] + (1 - c[2]) * a];
+const darken = (c, a) => [c[0] * (1 - a), c[1] * (1 - a), c[2] * (1 - a)];
+const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+const css = (c, a = 1) => `rgba(${Math.round(clamp(c[0], 0, 1) * 255)},${Math.round(clamp(c[1], 0, 1) * 255)},${Math.round(clamp(c[2], 0, 1) * 255)},${a})`;
+const idx = (x, y) => y * W + x;
+const inGrid = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
+const layerOf = y => y < LAYER_ROWS[1] ? 0 : (y < LAYER_ROWS[2] ? 1 : 2);
+function canvas(w, h) {
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  const g = c.getContext("2d");
+  g.imageSmoothingEnabled = false;
+  return [c, g];
+}
+// Pixel-Linie und Pixel-Kreis für scharfe Pixel-Art
+function pline(g, x0, y0, x1, y1) {
+  x0 = Math.round(x0); y0 = Math.round(y0); x1 = Math.round(x1); y1 = Math.round(y1);
+  const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+  let e = dx + dy;
+  for (let n = 0; n < 64; n++) {
+    g.fillRect(x0, y0, 1, 1);
+    if (x0 === x1 && y0 === y1) break;
+    const e2 = 2 * e;
+    if (e2 >= dy) { e += dy; x0 += sx; }
+    if (e2 <= dx) { e += dx; y0 += sy; }
+  }
+}
+function pcircle(g, cx, cy, r) {
+  const ri2 = Math.ceil(r);
+  for (let dy = -ri2; dy <= ri2; dy++) {
+    const hw = Math.floor(Math.sqrt(Math.max(r * r - dy * dy, 0)));
+    if (hw > 0) g.fillRect(Math.floor(cx) - hw, Math.floor(cy) + dy, hw * 2, 1);
+  }
+}
+
+// =====================================================================
+
+// =====================================================================
+// WELT: Grid, Tiles, Tunnel, Wegfelder, Wasser, Sandhügel, Früchte
+// =====================================================================
+const SOIL_COLORS = [[0.87, 0.76, 0.53], [0.82, 0.70, 0.48], [0.73, 0.62, 0.43]];
+const TUNNEL_COLOR = [0.36, 0.24, 0.14], RIM_COLOR = [0.52, 0.38, 0.23];
+const CHAMBER_COLORS = [[0, 0, 0], [0.72, 0.62, 0.24], [0.52, 0.38, 0.55], [0.30, 0.28, 0.30], [0.45, 0.51, 0.40], [0.68, 0.56, 0.40]];
+
+const world = {
+  seed: 1, cells: new Uint8Array(W * H), chamber: new Uint8Array(W * H), chamberCells: [],
+  fields: [], dirty: [], has: [], water: new Float32Array(W * H), wet: false, waterShown: false,
+  mound: new Float32Array(W), sources: [], byTrunk: new Map(), frame: 0,
+};
+// ---- Pixel-Werkzeuge: alles rastet auf das Kunstpixel-Raster ein. Eingaben in Weltpixeln.
+const PIX = 2;   // Kunstpixel pro Weltpixel: doppelt so fein wie die erste Version
+const P = {
+  g: null, ox: 0, oy: 0,
+  use(g, ox = 0, oy = 0) { this.g = g; this.ox = ox; this.oy = oy; return this; },
+  fill(c) { this.g.fillStyle = c; return this; },
+  rect(x, y, w, h) {
+    const x0 = Math.round(x * PIX) + this.ox, y0 = Math.round(y * PIX) + this.oy;
+    this.g.fillRect(x0, y0, Math.max(1, Math.round((x + w) * PIX) + this.ox - x0), Math.max(1, Math.round((y + h) * PIX) + this.oy - y0));
+    return this;
+  },
+  dot(x, y) { this.g.fillRect(Math.floor(x * PIX) + this.ox, Math.floor(y * PIX) + this.oy, 1, 1); return this; },
+  ellipse(x, y, rx, ry) {
+    const cx = x * PIX + this.ox, cy = y * PIX + this.oy, RX = rx * PIX, RY = ry * PIX;
+    const top = Math.round(cy - RY), bot = Math.round(cy + RY);
+    for (let py = top; py < bot; py++) {
+      const t = (py + 0.5 - cy) / RY;
+      if (t <= -1 || t >= 1) continue;
+      const hw = RX * Math.sqrt(1 - t * t), x0 = Math.round(cx - hw), x1 = Math.round(cx + hw);
+      if (x1 > x0) this.g.fillRect(x0, py, x1 - x0, 1);
+    }
+    return this;
+  },
+  disc(x, y, r) { return this.ellipse(x, y, r, r); },
+  line(x0, y0, x1, y1) {
+    let ax = Math.round(x0 * PIX) + this.ox, ay = Math.round(y0 * PIX) + this.oy;
+    const bx = Math.round(x1 * PIX) + this.ox, by = Math.round(y1 * PIX) + this.oy;
+    const dx = Math.abs(bx - ax), dy = -Math.abs(by - ay), sx = ax < bx ? 1 : -1, sy = ay < by ? 1 : -1;
+    let e = dx + dy;
+    for (let n = 0; n < 400; n++) {
+      this.g.fillRect(ax, ay, 1, 1);
+      if (ax === bx && ay === by) break;
+      const e2 = 2 * e;
+      if (e2 >= dy) { e += dy; ax += sx; }
+      if (e2 <= dx) { e += dx; ay += sy; }
+    }
+  },
+  curve(x0, y0, cx, cy, x1, y1, steps = 6) {
+    let px = x0, py = y0;
+    for (let k = 1; k <= steps; k++) {
+      const t = k / steps, u = 1 - t;
+      const nx = u * u * x0 + 2 * u * t * cx + t * t * x1, ny = u * u * y0 + 2 * u * t * cy + t * t * y1;
+      this.line(px, py, nx, ny); px = nx; py = ny;
+    }
+  },
+};
+
+// ---- Boden als Pixelbild: Erdschichten mit Körnern und Steinen, runde Pixel-Tunnel mit Rand
+const RIM_DARK = mix(TUNNEL_COLOR, [0.2, 0.12, 0.07], 0.5);
+const [soilC, soilG] = canvas(WPX * PIX, HPX * PIX);
+const [groundC, groundG] = canvas(WPX * PIX, HPX * PIX);
+let soilSeed = -1;
+const groundDirty = new Set();
+
+function solid(x, y) {
+  if (y < G) return false;
+  if (x < 0 || x >= W || y >= H) return true;
+  return world.cells[idx(x, y)] === SOIL;
+}
+function buildSoil() {
+  soilSeed = world.seed;
+  const g = soilG, r = mulberry(world.seed + 7), top = G * T;
+  P.use(g);
+  g.clearRect(0, 0, soilC.width, soilC.height);
+  const ys = [top, LAYER_ROWS[1] * T, LAYER_ROWS[2] * T, HPX];
+  for (let l = 0; l < 3; l++) {
+    // Farbbänder statt Verlauf, wie bei Pixel-Art
+    const h = ys[l + 1] - ys[l], bands = 4;
+    for (let b = 0; b < bands; b++) {
+      P.fill(css(mix(lighten(SOIL_COLORS[l], 0.04), darken(SOIL_COLORS[l], 0.04), b / (bands - 1))));
+      P.rect(0, ys[l] + h * b / bands, WPX, h / bands + 0.5);
+    }
+  }
+  // Sandkörner
+  for (let k = 0; k < 9000; k++) {
+    const x = r() * WPX, y = top + r() * (HPX - top), base = SOIL_COLORS[layerOf(Math.floor(y / T))];
+    g.fillStyle = css(r() < 0.55 ? darken(base, r.rf(0.08, 0.22)) : lighten(base, r.rf(0.12, 0.3)));
+    P.dot(x, y);
+  }
+  // kleine Steine mit Glanzlicht
+  for (let k = 0; k < 230; k++) {
+    const x = r() * WPX, y = top + 2 + r() * (HPX - top - 3), base = SOIL_COLORS[layerOf(Math.floor(y / T))];
+    const rx = r.rf(0.6, 1.5), ry = rx * r.rf(0.6, 0.85), stone = mix([0.56, 0.53, 0.49], base, r.rf(0.1, 0.35));
+    P.fill(css(darken(stone, 0.3))).ellipse(x, y + 0.5, rx, ry);
+    P.fill(css(stone)).ellipse(x, y, rx, ry);
+    P.fill(css(lighten(stone, 0.35))).dot(x - rx * 0.4, y - ry * 0.4);
+  }
+  // gestrichelte Linien zwischen den Schichten
+  for (const row of [LAYER_ROWS[1], LAYER_ROWS[2]]) {
+    P.fill(css(darken(SOIL_COLORS[layerOf(row)], 0.4)));
+    for (let x = 0; x < WPX; x += 3.5) {
+      const h = hash2(Math.floor(x), row);
+      if (h % 4 === 0) continue;
+      const y = row * T + Math.round(Math.sin(x * 0.11 + row) * 1.2) / PIX;
+      P.rect(x, y, h % 3 === 0 ? 1.5 : 2.5, 0.5);
+    }
+  }
+  P.fill(css(darken(SOIL_COLORS[0], 0.2))).rect(0, top, WPX, 0.5);
+}
+function drawGroundRegion(x0, y0, x1, y1) {
+  const g = groundG;
+  x0 = Math.max(0, x0); x1 = Math.min(W - 1, x1); y0 = Math.max(G, y0); y1 = Math.min(H - 1, y1);
+  if (x1 < x0 || y1 < y0) return;
+  const px = x0 * T * PIX, py = y0 * T * PIX, pw = (x1 - x0 + 1) * T * PIX, ph = (y1 - y0 + 1) * T * PIX;
+  g.save();
+  g.beginPath(); g.rect(px, py, pw, ph); g.clip();
+  g.clearRect(px, py, pw, ph);
+  g.drawImage(soilC, px, py, pw, ph, px, py, pw, ph);
+  P.use(g);
+  const m = 2;
+  for (let pass = 0; pass < 3; pass++) {
+    for (let y = Math.max(G, y0 - m); y <= Math.min(H - 1, y1 + m); y++) for (let x = Math.max(0, x0 - m); x <= Math.min(W - 1, x1 + m); x++) {
+      const i = idx(x, y);
+      if (world.cells[i] !== TUNNEL) continue;
+      const ch = world.chamber[i], h = hash2(x, y), cx = x * T + 1.5, cy = y * T + 1.5;
+      if (pass === 0) {
+        // krümeliger Rand
+        if (ch) P.fill(css(darken(CHAMBER_COLORS[ch], 0.38))).rect(x * T - 0.5, y * T - 0.5, T + 1, T + 1);
+        else P.fill(css(RIM_DARK)).disc(cx + ((h >> 3) % 3 - 1) * 0.3, cy + ((h >> 5) % 3 - 1) * 0.3, 2.7 + (h % 4) * 0.12);
+      } else if (pass === 1) {
+        if (ch) P.fill(css(CHAMBER_COLORS[ch])).rect(x * T, y * T, T, T);
+        else P.fill(css(TUNNEL_COLOR)).disc(cx, cy, 2.2);
+      } else {
+        // Schatten am Boden des Gangs und ein paar Krümel
+        if (solid(x, y + 1)) P.fill(css(ch ? darken(CHAMBER_COLORS[ch], 0.15) : darken(TUNNEL_COLOR, 0.18))).rect(cx - 1.5, cy + 1, 3, 0.5);
+        if (h % 4 === 0) P.fill(css(ch ? darken(CHAMBER_COLORS[ch], 0.25) : lighten(TUNNEL_COLOR, 0.18))).dot(cx + ((h >> 4) % 3) - 1, cy + ((h >> 6) % 2) - 0.5);
+      }
+    }
+  }
+  g.restore();
+}
+function updateTile(x, y) { if (inGrid(x, y) && y >= G) groundDirty.add(idx(x, y)); }
+function rebuildTiles() {
+  if (soilSeed !== world.seed) buildSoil();
+  groundDirty.clear();
+  groundG.clearRect(0, 0, groundC.width, groundC.height);
+  drawGroundRegion(0, G, W - 1, H - 1);
+}
+function flushGround() {
+  if (!groundDirty.size) return;
+  for (const i of groundDirty) { const x = i % W, y = Math.floor(i / W); drawGroundRegion(x - 1, y - 1, x + 1, y + 1); }
+  groundDirty.clear();
+}
+
+
+// ---- Gegenstände im Nest, Grabfront, Duftmarken fürs Graben und Alarm
+Object.assign(world, {
+  food: new Uint8Array(W * H), corpses: new Uint8Array(W * H), trash: new Uint8Array(W * H),
+  digPh: new Float32Array(W * H), alarm: new Float32Array(W * H), roomOf: new Int16Array(W * H).fill(-1),
+  rooms: [], tunnels: [], topo: 0, groundFood: [], simTime: 0,
+});
+const digPhActive = new Set(), alarmActive = new Set();
+
+// Grabfront: alle Erdzellen direkt neben einem Gang. Liste mit Positionsindex für schnelles Ziehen.
+const frontier = {
+  list: [], pos: new Int32Array(W * H).fill(-1),
+  add(i) { if (this.pos[i] >= 0) return; this.pos[i] = this.list.length; this.list.push(i); },
+  remove(i) {
+    const p = this.pos[i];
+    if (p < 0) return;
+    const last = this.list.pop();
+    if (last !== i) { this.list[p] = last; this.pos[last] = p; }
+    this.pos[i] = -1;
+  },
+  clear() { for (const i of this.list) this.pos[i] = -1; this.list.length = 0; },
+};
+const diggable = (x, y) => x >= 1 && x <= W - 2 && y >= G + 1 && y <= H - 2 && world.cells[idx(x, y)] === SOIL;
+function addFrontierAround(x, y) {
+  for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) if (diggable(x + dx, y + dy)) frontier.add(idx(x + dx, y + dy));
+}
+function rebuildRuntime() {
+  world.tunnels = [];
+  frontier.clear();
+  for (let i = 0; i < W * H; i++) if (world.cells[i] === TUNNEL) { world.tunnels.push(i); addFrontierAround(i % W, Math.floor(i / W)); }
+  world.digPh.fill(0); world.alarm.fill(0); digPhActive.clear(); alarmActive.clear();
+  world.water.fill(0); world.wet = false; world.waterShown = true;
+  world.topo++;
+  fieldCache.clear();
+  markFields();
+}
+
+function newWorld(seed) {
+  world.seed = seed;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) world.cells[idx(x, y)] = y < G ? AIR : SOIL;
+  world.chamber.fill(0); world.mound.fill(0);
+  world.food.fill(0); world.corpses.fill(0); world.trash.fill(0); world.roomOf.fill(-1);
+  world.groundFood = []; world.rooms = [];
+  generateSources();
+}
+function generateSources() {
+  const r = mulberry(world.seed);
+  world.sources = []; world.byTrunk.clear();
+  for (const tx of [7, 22, 63, 78]) {
+    const cy = r.ri(13, 18), rad = r.ri(7, 9);
+    const s = { kind: 0, trunk: tx, cx: tx + r.ri(-1, 1), cy, r: rad, fruits: [], blobs: [] };
+    for (let b = 0; b < 9; b++) {
+      const a = r() * Math.PI * 2, d = r() * rad * 0.7;
+      s.blobs.push([Math.cos(a) * d, Math.sin(a) * d * 0.75, r.rf(rad * 0.45, rad * 0.7), r.ri(0, 2)]);
+    }
+    // Äpfel hängen nur im Laub: ein zufälliges Blattbüschel, darin ein Punkt nahe der Mitte
+    for (let f = 0; f < 8; f++) {
+      const bl = s.blobs[r.ri(0, s.blobs.length - 1)], a = r() * Math.PI * 2, d = r() * bl[2] * 0.55;
+      s.fruits.push({ x: clamp(Math.round(s.cx + bl[0] + Math.cos(a) * d), 1, W - 2), y: clamp(Math.round(cy + bl[1] + Math.sin(a) * d * 0.8), 4, SURF - 6), alive: true, t: 0 });
+    }
+    world.sources.push(s);
+  }
+  for (const bx of [15, 33, 70]) {
+    const s = { kind: 1, trunk: bx, cx: bx, cy: SURF - 3, r: 4, fruits: [], blobs: [] };
+    for (let b = 0; b < 5; b++) s.blobs.push([r.rf(-3, 3), r.rf(-1.5, 1), r.rf(2, 3.2), r.ri(0, 2)]);
+    for (let f = 0; f < 4; f++) {
+      const bl = s.blobs[r.ri(0, s.blobs.length - 1)];
+      s.fruits.push({ x: clamp(Math.round(bx + bl[0] * 0.8), 1, W - 2), y: clamp(Math.round(SURF - 2 + bl[1] - r() * 1.2), SURF - 5, SURF - 2), alive: true, t: 0 });
+    }
+    world.sources.push(s);
+  }
+  world.sources.forEach((s, i) => world.byTrunk.set(s.trunk, i));
+}
+
+const isTunnel = (x, y) => inGrid(x, y) && world.cells[idx(x, y)] === TUNNEL;
+const cellAt = (x, y) => inGrid(x, y) ? world.cells[idx(x, y)] : SOIL;
+const chamberAt = (x, y) => inGrid(x, y) ? world.chamber[idx(x, y)] : 0;
+const digTime = y => 0.5 + 0.22 * layerOf(y);
+
+function dig(x, y) {
+  if (!diggable(x, y)) return false;
+  const i = idx(x, y);
+  world.cells[i] = TUNNEL;
+  world.tunnels.push(i);
+  frontier.remove(i);
+  addFrontierAround(x, y);
+  // Duftmarke: hier wird gegraben, das lockt andere Gräberinnen an
+  for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+    if (!inGrid(x + dx, y + dy)) continue;
+    const j = idx(x + dx, y + dy);
+    world.digPh[j] = Math.min(1.5, world.digPh[j] + 0.5 / (1 + Math.abs(dx) + Math.abs(dy)));
+    digPhActive.add(j);
+  }
+  updateTile(x, y); updateTile(x - 1, y); updateTile(x + 1, y); updateTile(x, y - 1); updateTile(x, y + 1);
+  world.topo++;
+  markFields();
+  colony.onDug(i);
+  return true;
+}
+// Wo Dinge abgelegt werden, entsteht eine Duftmarke: dort wird eher eine Kammer gegraben
+function pileMark(i) {
+  const x0 = i % W, y0 = Math.floor(i / W);
+  for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+    if (!inGrid(x0 + dx, y0 + dy)) continue;
+    const j = idx(x0 + dx, y0 + dy);
+    if (world.cells[j] !== SOIL) continue;
+    world.digPh[j] = Math.min(1.5, world.digPh[j] + 0.25);
+    digPhActive.add(j);
+  }
+}
+function addAlarm(x, y, a) {
+  if (!inGrid(x, y)) return;
+  const i = idx(x, y);
+  world.alarm[i] = Math.min(1, world.alarm[i] + a);
+  alarmActive.add(i);
+}
+
+// ---- Wegfelder: Breitensuche durch die Gänge zu dem, was eine Ameise gerade sucht
+const F_EXIT = 0, F_FOOD = 1, F_QUEEN = 2, F_HUNGRY = 3, F_DIG = 4, F_GRANSPACE = 5, F_BROODSPACE = 6, F_LOOSEBROOD = 7,
+  F_LOOSECORPSE = 8, F_CEMSPACE = 9, F_LOOSETRASH = 10, F_TRASHSPACE = 11, F_LOOSEFOOD = 12, F_COUNT = 13;
+const fields = [], fieldDirty = [], fieldTime = [], fieldHas = [], fieldTopo = [];
+for (let f = 0; f < F_COUNT; f++) { fields.push(new Int32Array(W * H).fill(INF)); fieldDirty.push(true); fieldTime.push(-99); fieldHas.push(false); fieldTopo.push(-1); }
+function markFields() { for (let f = 0; f < F_COUNT; f++) fieldDirty[f] = true; }
+function markItems() { for (let f = 1; f < F_COUNT; f++) if (f !== F_DIG) fieldDirty[f] = true; }
+const qDist = i => fields[F_QUEEN][i];
+// zu welcher fertigen Kammer gehört eine Zelle?
+const roomType = i => { const r = world.roomOf[i]; return r >= 0 && world.cells[i] === TUNNEL ? world.rooms[r].type : 0; };
+function broodCount() {
+  const m = new Map();
+  for (const b of colony.brood) if (!b.carried) m.set(b.cell, (m.get(b.cell) || 0) + 1);
+  return m;
+}
+function fieldSources(fid) {
+  const out = [], t = world.tunnels;
+  switch (fid) {
+    case F_EXIT: { const e = idx(ENT, G); if (world.cells[e] === TUNNEL) out.push(e); break; }
+    case F_FOOD: for (const i of t) if (world.food[i] > 0) out.push(i); break;
+    case F_QUEEN: { const q = ants.queenIndex(); if (q >= 0 && ants.cy[q] >= G) out.push(idx(ants.cx[q], ants.cy[q])); break; }
+    case F_HUNGRY: for (const b of colony.brood) if (b.s === 1 && !b.carried && b.fed < 0.5) out.push(b.cell); break;
+    case F_DIG: return colony.digSources();
+    case F_GRANSPACE: for (const i of t) if (roomType(i) === CH_GRANARY && world.food[i] < 4) out.push(i); break;
+    case F_BROODSPACE: { const m = broodCount(); for (const i of t) if (roomType(i) === CH_BROOD && (m.get(i) || 0) < 3) out.push(i); break; }
+    case F_LOOSEBROOD: for (const b of colony.brood) if (!b.carried && roomType(b.cell) !== CH_BROOD && b.age > 3) out.push(b.cell); break;
+    case F_LOOSECORPSE: for (const i of t) if (world.corpses[i] > 0 && roomType(i) !== CH_CEMETERY) out.push(i); break;
+    case F_CEMSPACE: for (const i of t) if (roomType(i) === CH_CEMETERY && world.corpses[i] < 4) out.push(i); break;
+    case F_LOOSETRASH: for (const i of t) if (world.trash[i] > 0 && roomType(i) !== CH_TRASH) out.push(i); break;
+    case F_TRASHSPACE: for (const i of t) if (roomType(i) === CH_TRASH && world.trash[i] < 5) out.push(i); break;
+    case F_LOOSEFOOD: for (const i of t) if (world.food[i] > 0 && roomType(i) !== CH_GRANARY) out.push(i); break;
+  }
+  return out;
+}
+const bfsQueue = new Int32Array(W * H);
+function bfs(f, sources) {
+  const cells = world.cells;
+  f.fill(INF);
+  let tail = 0;
+  for (const s of sources) if (cells[s] === TUNNEL && f[s] !== 0) { f[s] = 0; bfsQueue[tail++] = s; }
+  let head = 0;
+  while (head < tail) {
+    const i = bfsQueue[head++], d = f[i] + 1, x = i % W;
+    let n = i - W;
+    if (n >= 0 && cells[n] === TUNNEL && f[n] > d) { f[n] = d; bfsQueue[tail++] = n; }
+    n = i + W;
+    if (n < W * H && cells[n] === TUNNEL && f[n] > d) { f[n] = d; bfsQueue[tail++] = n; }
+    if (x > 0) { n = i - 1; if (cells[n] === TUNNEL && f[n] > d) { f[n] = d; bfsQueue[tail++] = n; } }
+    if (x < W - 1) { n = i + 1; if (cells[n] === TUNNEL && f[n] > d) { f[n] = d; bfsQueue[tail++] = n; } }
+  }
+  return tail;
+}
+// Felder werden höchstens alle 0,4 s neu berechnet, nach einer Grabung sofort
+function getField(fid) {
+  if (fieldDirty[fid] && (world.simTime - fieldTime[fid] > 0.4 || fieldTopo[fid] !== world.topo)) {
+    const n = bfs(fields[fid], fieldSources(fid));
+    fieldHas[fid] = n > 0;
+    fieldDirty[fid] = false; fieldTime[fid] = world.simTime; fieldTopo[fid] = world.topo;
+  }
+  return fields[fid];
+}
+const hasField = fid => (getField(fid), fieldHas[fid]);
+function fieldValue(fid, x, y) { return inGrid(x, y) ? getField(fid)[idx(x, y)] : INF; }
+// Feld zu einer einzelnen Zelle, etwa zur gemerkten Grabstelle. Zwischengespeichert, bis sich die Gänge ändern.
+const fieldCache = new Map();
+function fieldTo(target) {
+  let e = fieldCache.get(target);
+  if (e && e.topo === world.topo) return e.f;
+  const src = [];
+  if (world.cells[target] === TUNNEL) src.push(target);
+  else { const x = target % W, y = Math.floor(target / W); for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) if (isTunnel(x + dx, y + dy)) src.push(idx(x + dx, y + dy)); }
+  if (fieldCache.size > 40) fieldCache.delete(fieldCache.keys().next().value);
+  const f = e ? e.f : new Int32Array(W * H);
+  bfs(f, src);
+  fieldCache.set(target, { topo: world.topo, f });
+  return f;
+}
+function stepOn(f, x, y) {
+  if (!inGrid(x, y)) return NO_PATH;
+  const cur = f[idx(x, y)];
+  if (cur === 0) return ARRIVED;
+  if (cur >= INF) return NO_PATH;
+  const opts = [];
+  if (y > 0 && f[idx(x, y - 1)] < cur) opts.push(idx(x, y - 1));
+  if (y < H - 1 && f[idx(x, y + 1)] < cur) opts.push(idx(x, y + 1));
+  if (x > 0 && f[idx(x - 1, y)] < cur) opts.push(idx(x - 1, y));
+  if (x < W - 1 && f[idx(x + 1, y)] < cur) opts.push(idx(x + 1, y));
+  return opts.length ? opts[Math.floor(rand() * opts.length)] : NO_PATH;
+}
+// Weg weg von etwas: zum Nachbarn mit größerem Abstand, bis es nicht weiter geht
+function stepAway(f, x, y, avoid) {
+  const cur = f[idx(x, y)];
+  let best = [], bv = cur;
+  for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+    const nx = x + dx, ny = y + dy;
+    if (!isTunnel(nx, ny) || ny < G) continue;
+    const n = idx(nx, ny), v = f[n];
+    if (v >= INF || v <= cur || (avoid && avoid(n))) continue;
+    if (v > bv) { bv = v; best = [n]; } else if (v === bv) best.push(n);
+  }
+  return best.length ? best[Math.floor(rand() * best.length)] : ARRIVED;
+}
+function randomNeighbor(x, y) {
+  const opts = [];
+  for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) if (isTunnel(x + dx, y + dy)) opts.push(idx(x + dx, y + dy));
+  return opts.length ? opts[Math.floor(rand() * opts.length)] : idx(x, y);
+}
+function nearestTunnel(x, y, radius = 14) {
+  for (let r = 1; r <= radius; r++)
+    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+      if (isTunnel(x + dx, y + dy)) return [x + dx, y + dy];
+    }
+  return [ENT, G];
+}
+// freie Ablagezelle in der Nähe suchen (für Futter, Tote, Abfall)
+function dropCell(i, arr, max, avoid) {
+  if (world.cells[i] === TUNNEL && arr[i] < max && !(avoid && avoid(i))) return i;
+  const x0 = i % W, y0 = Math.floor(i / W);
+  for (let r = 1; r <= 3; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+    if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+    const x = x0 + dx, y = y0 + dy;
+    if (!isTunnel(x, y) || y <= G) continue;
+    const j = idx(x, y);
+    if (arr[j] < max && !(avoid && avoid(j))) return j;
+  }
+  return -1;
+}
+
+// ---- Kammern: Wenn die Kolonie Platz braucht, wählen die Ameisen einen Ort und heben die Kammer gemeinsam aus
+const ROOM_SIZE = { [CH_GRANARY]: [5.5, 2.3], [CH_BROOD]: [5, 2.3], [CH_QUEEN]: [5, 2.2], [CH_CEMETERY]: [4.5, 2], [CH_TRASH]: [4, 2] };
+const ROOM_CAP = { [CH_GRANARY]: 3, [CH_BROOD]: 1, [CH_CEMETERY]: 4, [CH_TRASH]: 5, [CH_QUEEN]: 0 };
+const rooms = {
+  t: 0,
+  tick(dt) { this.t -= dt; if (this.t <= 0) { this.t = 3; colony.planRooms(); } },
+};
+function ellipseCells(cx, cy, rx, ry, margin = 0) {
+  const out = [];
+  for (let y = Math.floor(cy - ry - margin); y <= Math.ceil(cy + ry + margin); y++)
+    for (let x = Math.floor(cx - rx - margin); x <= Math.ceil(cx + rx + margin); x++) {
+      const e = ((x - cx) / (rx + margin)) ** 2 + ((y - cy) / (ry + margin)) ** 2;
+      if (e <= 1) out.push([x, y]);
+    }
+  return out;
+}
+// Verbindungsgang von einer Gangzelle zur Kammer, leicht geschwungen
+function corridorCells(from, to) {
+  const out = [];
+  let x = from % W, y = Math.floor(from / W);
+  const tx = to % W, ty = Math.floor(to / W);
+  for (let guard = 0; (x !== tx || y !== ty) && guard < 200; guard++) {
+    const dx = tx - x, dy = ty - y;
+    if (Math.abs(dx) > Math.abs(dy) * (guard % 5 === 4 ? 0.3 : 1)) x += sign(dx); else y += sign(dy);
+    const i = idx(x, y);
+    if (world.cells[i] === SOIL && !out.includes(i)) out.push(i);
+  }
+  return out;
+}
+function makeRoom(type, cx, cy, from, predug = false) {
+  const [rx, ry] = ROOM_SIZE[type];
+  const cells = [];
+  for (const [x, y] of ellipseCells(cx, cy, rx, ry)) if (inGrid(x, y) && y > G) cells.push(idx(x, y));
+  // Eingang: die Kammerzelle, die dem Startgang am nächsten liegt
+  let path = [];
+  if (from >= 0) {
+    let best = cells[0], bd = 1e9;
+    for (const c of cells) { const d = Math.hypot(c % W - from % W, Math.floor(c / W) - Math.floor(from / W)); if (d < bd) { bd = d; best = c; } }
+    path = corridorCells(from, best).filter(c => !cells.includes(c));
+  }
+  const room = { id: world.rooms.length, type, cells, path, cx, cy, size: cells.length, done: predug };
+  for (const i of cells) { world.roomOf[i] = room.id; world.chamber[i] = type; if (predug) world.cells[i] = TUNNEL; }
+  if (predug) for (const i of path) world.cells[i] = TUNNEL;
+  world.rooms.push(room);
+  colony.jobsDirty = true;
+  return room;
+}
+function roomProgress(r) {
+  const all = r.cells.length + r.path.length;
+  let dug = 0;
+  for (const i of r.cells) if (world.cells[i] === TUNNEL) dug++;
+  for (const i of r.path) if (world.cells[i] === TUNNEL) dug++;
+  return dug / all;
+}
+
+// ---- Futter an der Oberfläche: Fallobst, tote Käfer, Zucker
+function groundFoodAt(x) {
+  for (const g of world.groundFood) if (g.n > 0 && Math.abs(g.x - x) <= 1) return g;
+  return null;
+}
+function addGroundFood(x, n, kind) {
+  x = clamp(Math.round(x), 2, W - 3);
+  const g = world.groundFood.find(q => q.kind === kind && Math.abs(q.x - x) <= 1);
+  if (g) { g.n += n; g.t = 0; return g; }
+  const item = { x, n, kind, t: 0, max: n };
+  world.groundFood.push(item);
+  return item;
+}
+
+
+// ---- Früchte
+const sourceAt = x => world.byTrunk.has(x) ? world.byTrunk.get(x) : -1;
+const hasFruit = si => world.sources[si].fruits.some(f => f.alive);
+function pickFruit(si) {
+  const alive = world.sources[si].fruits.filter(f => f.alive);
+  return alive.length ? alive[Math.floor(rand() * alive.length)] : null;
+}
+function takeFruit(x, y) {
+  for (const s of world.sources) for (const f of s.fruits)
+    if (f.alive && f.x === x && f.y === y) { f.alive = false; f.t = 0; sky.dirty = true; return true; }
+  return false;
+}
+
+// ---- Sandhügel
+function addDirt(x) {
+  x = clamp(x, 2, W - 3);
+  if (Math.abs(x - ENT) <= 1) x = ENT + (x >= ENT ? 2 : -2);
+  const m = world.mound;
+  m[x] += 0.8;
+  for (let it = 0; it < 4; it++) for (let c = 2; c < W - 2; c++) {
+    if (Math.abs(c - ENT) <= 1) { m[c] = 0; continue; }
+    for (const n of [c - 1, c + 1]) {
+      if (Math.abs(n - ENT) <= 1) continue;
+      const diff = m[c] - m[n];
+      if (diff > 1.4) { const mv = (diff - 1) * 0.5; m[c] -= mv; m[n] += mv; }
+    }
+  }
+  for (let c = 0; c < W; c++) m[c] = Math.min(m[c], 28);
+  sky.dirty = true;
+}
+const surfaceOffset = x => (x < 0 || x >= W) ? 0 : world.mound[x];
+
+// ---- Wasser als zellulärer Automat
+function addRain(amount) {
+  const w = world.water;
+  for (let k = 0; k < 8; k++) { const i = idx(ri(1, W - 2), SURF); w[i] = Math.min(1, w[i] + amount); }
+  const e = idx(ENT, SURF);
+  w[e] = Math.min(1, w[e] + amount * 1.5);
+  world.wet = true;
+}
+const waterAt = (x, y) => inGrid(x, y) ? world.water[idx(x, y)] : 0;
+function waterStep() {
+  const w = world.water, cells = world.cells, flip = (world.frame & 1) === 0;
+  let any = false;
+  for (let y = H - 1; y >= SURF; y--) {
+    const row = y * W;
+    for (let k = 0; k < W; k++) {
+      const x = flip ? k : W - 1 - k, i = row + x;
+      let v = w[i];
+      if (v < 0.003) { if (v > 0) w[i] = 0; continue; }
+      any = true;
+      v -= y >= G ? 0.0012 : 0.006;
+      if (v <= 0) { w[i] = 0; continue; }
+      if (y + 1 < H && cells[i + W] !== SOIL) {
+        const b = w[i + W], fl = Math.min(v, 1 - b);
+        if (fl > 0) { w[i + W] = b + fl; v -= fl; }
+      }
+      if (v > 0.01) {
+        if (x > 0 && cells[i - 1] !== SOIL) { const l = w[i - 1]; if (l < v) { const d = (v - l) * 0.3; w[i - 1] = l + d; v -= d; } }
+        if (x < W - 1 && cells[i + 1] !== SOIL) { const r2 = w[i + 1]; if (r2 < v) { const d = (v - r2) * 0.3; w[i + 1] = r2 + d; v -= d; } }
+      }
+      w[i] = v;
+    }
+  }
+  world.wet = any;
+}
+const [waterC, waterG] = canvas(W, H);
+const waterImg = waterG.createImageData(W, H);
+function waterRender() {
+  const d = waterImg.data;
+  d.fill(0);
+  if (world.wet) for (let i = SURF * W; i < W * H; i++) {
+    const v = world.water[i];
+    if (v < 0.02) continue;
+    const o = i * 4;
+    d[o] = 60; d[o + 1] = 120 + v * 30; d[o + 2] = 215; d[o + 3] = clamp(90 + v * 140, 0, 230);
+  }
+  waterG.putImageData(waterImg, 0, 0);
+  world.waterShown = world.wet;
+}
+
+
+// =====================================================================
+// DUFTSPUREN: 2D-Array grid[y][x], verblassen alle 6 Frames
+// =====================================================================
+const phero = {
+  rows: G, grid: [], active: new Uint8Array(G), frame: 0,
+  clear() { this.grid = []; for (let y = 0; y < this.rows; y++) this.grid.push(new Float32Array(W)); this.active.fill(0); },
+  deposit(x, y, a) {
+    if (y < 0 || y >= this.rows || x < 0 || x >= W) return;
+    const row = this.grid[y];
+    row[x] = Math.min(1, Math.max(row[x], a));   // nahe am Futter bleibt der Duft am stärksten
+    this.active[y] = 1;
+  },
+  sense(x, y, reach) {
+    if (y < 0 || y >= this.rows) return [0, 0];
+    const row = this.grid[y];
+    let l = 0, r = 0;
+    for (let k = 1; k <= reach; k++) { if (x - k >= 0) l += row[x - k]; if (x + k < W) r += row[x + k]; }
+    return [l, r];
+  },
+  tick() {
+    if (++this.frame % 6) return;
+    const d = pheroImg.data;
+    d.fill(0);
+    for (let y = 0; y < this.rows; y++) {
+      if (!this.active[y]) continue;
+      const row = this.grid[y];
+      let any = false;
+      for (let x = 0; x < W; x++) {
+        let v = row[x];
+        if (v <= 0) continue;
+        v *= 0.993;
+        if (v < 0.02) v = 0;
+        else { any = true; const o = (y * W + x) * 4; d[o] = 250; d[o + 1] = 235; d[o + 2] = 140; d[o + 3] = v * 110; }
+        row[x] = v;
+      }
+      if (!any) this.active[y] = 0;
+    }
+    pheroG.putImageData(pheroImg, 0, 0);
+  },
+};
+const [pheroC, pheroG] = canvas(W, G);
+const pheroImg = pheroG.createImageData(W, G);
+
+
+// =====================================================================
+// KOLONIE: Brut, Vorräte, Reize für die Ameisen, Chronik und Verlauf
+// =====================================================================
+const EGG_T = 14, LARVA_T = 22, PUPA_T = 12;
+const colony = {
+  brood: [], nextBrood: 1, foodTotal: 0, born: 0, died: 0, eggsLaid: 0, delivered: 0, dugTotal: 0,
+  stim: [0, 0, 0, 0], need: { room: 0.3 }, counts: {}, stimT: 0, eggT: 0, histT: 0, history: [], entries: [],
+  milestones: new Set(), queenAlive: true, starving: false,
+
+  reset() {
+    Object.assign(this, { brood: [], nextBrood: 1, foodTotal: 0, born: 0, died: 0, eggsLaid: 0, delivered: 0, dugTotal: 0,
+      stim: [0, 0, 0, 0], history: [], entries: [], milestones: new Set(), queenAlive: true, starving: false, eggT: 0, histT: 0 });
+    this.jobsDirty = true; this.jobCells = new Set(); this.frontier = [];
+  },
+  // Gründung: ein kurzer Schacht und die Königinnenkammer. Alles andere planen und bauen die Ameisen selbst.
+  found() {
+    for (let y = G; y <= 50; y++) world.cells[idx(ENT, y)] = TUNNEL;
+    makeRoom(CH_QUEEN, ENT, 53, -1, true);
+    rebuildRuntime();
+    rebuildTiles();
+    // Vorrat der Königin aus dem Hochzeitsflug
+    for (let k = 0; k < 9; k++) this.addFood(idx(ENT + 3, 53));
+  },
+  // ---- Kammerbau: Bedarf erkennen, Ort wählen, gemeinsam ausheben
+  jobsDirty: true, jobCells: new Set(), frontier: [], planT: 0,
+  capacity(type) {
+    let c = 0;
+    for (const r of world.rooms) if (r.type === type) c += r.size * ROOM_CAP[type];
+    return c;
+  },
+  planRooms() {
+    const active = world.rooms.filter(r => !r.done);
+    if (active.length >= 2 || ants.count < 3) return;
+    const has = t => world.rooms.some(r => r.type === t);
+    const building = t => active.some(r => r.type === t);
+    let corpses = 0, trash = 0;
+    for (const i of world.tunnels) { corpses += world.corpses[i]; trash += world.trash[i]; }
+    const wants = [];
+    if (!has(CH_BROOD) && this.brood.length > 0) wants.push(CH_BROOD);
+    if (!has(CH_GRANARY)) wants.push(CH_GRANARY);
+    if (this.foodTotal + 12 > this.capacity(CH_GRANARY)) wants.push(CH_GRANARY);
+    if (this.brood.length + 6 > this.capacity(CH_BROOD)) wants.push(CH_BROOD);
+    if (corpses > 0 && corpses + 6 > this.capacity(CH_CEMETERY)) wants.push(CH_CEMETERY);
+    if (trash > 1 && trash + 8 > this.capacity(CH_TRASH)) wants.push(CH_TRASH);
+    for (const t of wants) {
+      if (building(t)) continue;
+      const site = this.findSite(t);
+      if (!site) continue;
+      const r = makeRoom(t, site[0], site[1], site[2]);
+      this.log(`Die Ameisen beginnen ${ROOM_NEW[t]}`, !has(t) || world.rooms.filter(q => q.type === t).length === 1);
+      return r;
+    }
+  },
+  findSite(type) {
+    const [rx, ry] = ROOM_SIZE[type];
+    const qr = world.rooms.find(r => r.type === CH_QUEEN);
+    const qx = qr ? qr.cx : ENT, qy = qr ? qr.cy : 53;
+    let best = null, bs = -1e9;
+    for (let k = 0; k < 70; k++) {
+      const cx = ri(Math.ceil(rx) + 3, W - Math.ceil(rx) - 4), cy = ri(G + 8, H - 8);
+      // Platz mit Rand aus Erde ringsum
+      let ok = true;
+      for (const [x, y] of ellipseCells(cx, cy, rx, ry, 2)) if (!inGrid(x, y) || world.cells[idx(x, y)] !== SOIL || y <= G + 2) { ok = false; break; }
+      if (!ok) continue;
+      // nächster Gang für den Verbindungsgang
+      let from = -1, fd = 1e9;
+      for (const i of world.tunnels) {
+        const y = Math.floor(i / W);
+        if (y <= G + 1) continue;
+        const d = Math.hypot(i % W - cx, (y - cy) * 1.3);
+        if (d < fd) { fd = d; from = i; }
+      }
+      if (from < 0 || fd > 28) continue;
+      const dq = Math.hypot(cx - qx, cy - qy), depth = cy - G;
+      let s = -fd * 0.35 + rand() * 2;
+      if (type === CH_BROOD) s += -Math.abs(dq - 13) * 0.6 - Math.abs(cy - qy) * 0.2;
+      if (type === CH_GRANARY) s += -Math.abs(dq - 15) * 0.4 - depth * 0.05;
+      if (type === CH_CEMETERY) s += Math.min(dq, 40) * 0.35 + depth * 0.05;
+      if (type === CH_TRASH) {
+        s += Math.min(dq, 35) * 0.3 - depth * 0.1;
+        for (const r of world.rooms) if (r.type === CH_CEMETERY && Math.hypot(r.cx - cx, r.cy - cy) < 18) s -= 4;
+      }
+      if (s > bs) { bs = s; best = [cx, cy, from]; }
+    }
+    return best;
+  },
+  refreshJobs() {
+    this.jobsDirty = false;
+    this.jobCells = new Set();
+    for (const r of world.rooms) {
+      if (r.done) continue;
+      for (const i of r.path) if (world.cells[i] === SOIL) this.jobCells.add(i);
+      for (const i of r.cells) if (world.cells[i] === SOIL) this.jobCells.add(i);
+    }
+    const fr = new Set();
+    for (const i of this.jobCells) for (const n of [i - W, i + W, i - 1, i + 1]) if (n >= 0 && n < W * H && world.cells[n] === TUNNEL) fr.add(n);
+    this.frontier = [...fr];
+    fieldDirty[F_DIG] = true;
+  },
+  digSources() { if (this.jobsDirty) this.refreshJobs(); return this.frontier; },
+  hasDigWork() { if (this.jobsDirty) this.refreshJobs(); return this.frontier.length > 0; },
+  digTargetNear(x, y) {
+    if (this.jobsDirty) this.refreshJobs();
+    const opts = [];
+    for (const [dx, dy] of [[0, 1], [-1, 0], [1, 0], [0, -1]]) {
+      const nx = x + dx, ny = y + dy;
+      if (inGrid(nx, ny) && this.jobCells.has(idx(nx, ny)) && world.cells[idx(nx, ny)] === SOIL) opts.push([nx, ny]);
+    }
+    return opts.length ? opts[Math.floor(rand() * opts.length)] : null;
+  },
+  onDug(i) {
+    this.jobsDirty = true;
+    const r = world.roomOf[i] >= 0 ? world.rooms[world.roomOf[i]] : null;
+    for (const room of world.rooms) {
+      if (room.done || !(room === r || room.path.includes(i))) continue;
+      if (roomProgress(room) >= 1) {
+        room.done = true;
+        this.log(ROOM_DONE[room.type], true);
+        markItems();
+      }
+    }
+  },
+  addFood(i, type = 0) {
+    const c = dropCell(i, world.food, 4, type ? (n => roomType(n) !== type) : null);
+    if (c < 0) return false;
+    world.food[c]++; this.foodTotal++; markItems();
+    return true;
+  },
+  takeFood(i) {
+    if (world.food[i] <= 0) return false;
+    world.food[i]--; this.foodTotal--; markItems();
+    return true;
+  },
+  log(text, banner = false) {
+    this.entries.unshift({ day: events.day, text });
+    if (this.entries.length > 40) this.entries.pop();
+    if (banner) hud.banner(text, 4);
+  },
+  hatch(b) {
+    const x = b.cell % W, y = Math.floor(b.cell / W);
+    const i = ants.spawn(x, y, rand() < 0.12 ? R_SOLDIER : R_WORKER);
+    this.born++;
+    if (i >= 0 && this.born === 1) this.log(`${antName(ants.id[i])} ist als erste Tochter geschlüpft`, true);
+  },
+  tick(dt) {
+    // Brut entwickelt sich
+    for (let k = this.brood.length - 1; k >= 0; k--) {
+      const b = this.brood[k];
+      b.age += dt;
+      if (b.carried) continue;
+      if (b.s === 0) { b.t += dt; if (b.t >= EGG_T) { b.s = 1; b.t = 0; b.fed = 0.7; markItems(); } }
+      else if (b.s === 1) {
+        b.fed = Math.max(0, b.fed - 0.022 * dt);
+        if (b.fed > 0) b.t += dt; else { b.t += dt * 0.15; b.starve += dt; }
+        if (b.fed < 0.5) fieldDirty[F_HUNGRY] = true;
+        if (b.starve > 60) { this.brood.splice(k, 1); world.corpses[b.cell] = Math.min(9, world.corpses[b.cell] + 1); this.died++; markItems(); continue; }
+        if (b.t >= LARVA_T) { b.s = 2; b.t = 0; markItems(); }
+      } else {
+        b.t += dt;
+        if (b.t >= PUPA_T) { this.brood.splice(k, 1); this.hatch(b); markItems(); }
+      }
+    }
+    // Die Königin legt Eier, wenn sie satt ist
+    const q = ants.queenIndex();
+    if (q >= 0) {
+      const workers = ants.count - 1, cap = 8 + Math.floor(workers * 0.6);
+      // nur wenn genug Vorrat für die Brut da ist
+      const enough = this.foodTotal >= 3 + this.brood.length * 0.5 || (ants.count <= 4 && this.brood.length < 3);
+      if (enough && ants.energy[q] > 0.45 && this.brood.length < cap && ants.count + this.brood.length < 300 && ants.cy[q] >= G) {
+        this.eggT += dt;
+        if (this.eggT >= 8 - ants.energy[q] * 4) {
+          this.eggT = 0;
+          ants.energy[q] -= 0.06;
+          this.brood.push({ id: this.nextBrood++, s: 0, t: 0, fed: 0, starve: 0, age: 0, cell: idx(ants.cx[q], ants.cy[q]), carried: false });
+          this.eggsLaid++;
+          ants.doing[q] = D_LAY;
+          markItems();
+          if (this.eggsLaid === 100 || this.eggsLaid === 500) this.log(`Die Königin hat ihr ${this.eggsLaid}. Ei gelegt`);
+        }
+      }
+    }
+    this.stimT -= dt;
+    if (this.stimT <= 0) { this.stimT = 1; this.updateStimuli(); }
+    this.histT -= dt;
+    if (this.histT <= 0) {
+      this.histT = 10;
+      this.history.push([ants.count, this.foodTotal]);
+      if (this.history.length > 90) this.history.shift();
+    }
+    for (const m of [10, 25, 50, 100, 150, 200, 250, 300]) if (ants.count >= m && !this.milestones.has(m)) {
+      this.milestones.add(m);
+      this.log(`Die Kolonie hat ${m} Ameisen`, m >= 25);
+    }
+  },
+  // Reize: wie dringend ist jede Aufgabe, gemessen an dem, was gerade fehlt und wer schon dabei ist
+  updateStimuli() {
+    const c = { workers: 0, soldiers: 0, byState: new Array(11).fill(0), hungryLarvae: 0, looseBrood: 0, eggs: 0, larvae: 0, pupae: 0 };
+    for (let i = 0; i < ants.count; i++) {
+      c.byState[ants.state[i]]++;
+      if (ants.role[i] === R_WORKER) c.workers++; else if (ants.role[i] === R_SOLDIER) c.soldiers++;
+    }
+    for (const b of this.brood) {
+      if (b.s === 0) c.eggs++; else if (b.s === 1) c.larvae++; else c.pupae++;
+      if (b.s === 1 && b.fed < 0.5) c.hungryLarvae++;
+    }
+    let looseCorpses = 0, looseTrash = 0, looseFood = 0;
+    for (const i of world.tunnels) {
+      if (world.corpses[i] && roomType(i) !== CH_CEMETERY) looseCorpses += world.corpses[i];
+      if (world.trash[i] && roomType(i) !== CH_TRASH) looseTrash += world.trash[i];
+      if (world.food[i] && roomType(i) !== CH_GRANARY) looseFood += world.food[i];
+    }
+    c.looseCorpses = looseCorpses; c.looseTrash = looseTrash; c.looseFood = looseFood;
+    for (const b of this.brood) if (!b.carried && roomType(b.cell) !== CH_BROOD) c.looseBrood++;
+    this.counts = c;
+    const pop = ants.count, q = ants.queenIndex();
+    const queenHungry = q >= 0 && ants.energy[q] < 0.55;
+    const foodPerAnt = this.foodTotal / Math.max(1, pop);
+    const out = !events.isNight() && !events.raining;
+    const digJobs = this.hasDigWork() ? this.jobCells.size : 0;
+    const demand = [
+      digJobs ? clamp(digJobs / 5, 2, Math.max(2, c.workers * 0.35)) : 0,
+      out ? c.workers * clamp(0.75 - foodPerAnt / 8, 0.12, 0.7) : 0,
+      c.hungryLarvae * 0.6 + (hasField(F_BROODSPACE) ? c.looseBrood * 0.5 : 0) + (queenHungry ? 1.5 : 0) + Math.min(3, this.brood.length * 0.15),
+      (hasField(F_CEMSPACE) ? looseCorpses : 0) + (hasField(F_TRASHSPACE) ? looseTrash * 0.6 : 0) + (hasField(F_GRANSPACE) ? looseFood * 0.3 : 0),
+    ];
+    const doing = [c.byState[S_DIG], c.byState[S_FORAGE] + c.byState[S_CARRY], c.byState[S_NURSE], c.byState[S_CLEAN]];
+    for (let k = 0; k < 4; k++) this.stim[k] = clamp((demand[k] - doing[k]) / (demand[k] + 1) * 1.3, 0, 1);
+    this.starving = this.foodTotal === 0 && pop > 1;
+  },
+  roomInfo(r) {
+    const eggs = [0, 0, 0];
+    const set = new Set(r.cells);
+    for (const b of this.brood) if (!b.carried && set.has(b.cell)) eggs[b.s]++;
+    let here = 0;
+    for (let i = 0; i < ants.count; i++) if (set.has(idx(ants.cx[i], ants.cy[i]))) here++;
+    const rows = [];
+    if (!r.done) rows.push(["Wird gerade gebaut", Math.round(roomProgress(r) * 100) + " %"]);
+    rows.push(["Größe", r.size + " Felder"]);
+    if (r.food) rows.push(["Futter", r.food]);
+    if (eggs[0] + eggs[1] + eggs[2]) rows.push(["Eier / Larven / Puppen", `${eggs[0]} / ${eggs[1]} / ${eggs[2]}`]);
+    if (r.corpses) rows.push(["Tote", r.corpses]);
+    if (r.trash) rows.push(["Abfall", r.trash]);
+    rows.push(["Ameisen hier", here]);
+    return [ROOM_NAMES[r.type], rows];
+  },
+};
+
+// =====================================================================
+// AMEISEN: Daten zentral in Arrays, gezeichnet in einem Durchgang
+// =====================================================================
+const MAX_ANTS = 320;
+const SPEED = [10, 11, 3];
+const ants = {
+  count: 0, nextId: 1, assignT: 0, kills: new Map(),
+  px: new Float32Array(MAX_ANTS), py: new Float32Array(MAX_ANTS),
+  cx: new Int16Array(MAX_ANTS), cy: new Int16Array(MAX_ANTS), tx: new Int16Array(MAX_ANTS), ty: new Int16Array(MAX_ANTS),
+  state: new Uint8Array(MAX_ANTS), phase: new Uint8Array(MAX_ANTS), sub: new Uint8Array(MAX_ANTS), role: new Uint8Array(MAX_ANTS),
+  carry: new Uint8Array(MAX_ANTS), face: new Uint8Array(MAX_ANTS), dir: new Int8Array(MAX_ANTS), doing: new Uint8Array(MAX_ANTS),
+  gx: new Int16Array(MAX_ANTS), gy: new Int16Array(MAX_ANTS), tk: new Int16Array(MAX_ANTS), load: new Uint8Array(MAX_ANTS),
+  id: new Int32Array(MAX_ANTS), digSpot: new Int32Array(MAX_ANTS), bref: new Int32Array(MAX_ANTS), home: new Int32Array(MAX_ANTS),
+  dug: new Uint16Array(MAX_ANTS), fetched: new Uint16Array(MAX_ANTS),
+  age: new Float32Array(MAX_ANTS), maxAge: new Float32Array(MAX_ANTS), hp: new Float32Array(MAX_ANTS), timer: new Float32Array(MAX_ANTS),
+  wt: new Float32Array(MAX_ANTS), trail: new Float32Array(MAX_ANTS), anim: new Float32Array(MAX_ANTS),
+  energy: new Float32Array(MAX_ANTS), fatigue: new Float32Array(MAX_ANTS), speed: new Float32Array(MAX_ANTS),
+  th: new Float32Array(MAX_ANTS * 4),
+  KEYS: ["px", "py", "cx", "cy", "tx", "ty", "state", "phase", "sub", "role", "carry", "face", "dir", "doing", "gx", "gy", "tk", "load",
+    "id", "digSpot", "bref", "home", "dug", "fetched", "age", "maxAge", "hp", "timer", "wt", "trail", "anim", "energy", "fatigue", "speed"],
+  _queen: -1,
+
+  clear() { this.count = 0; this.kills.clear(); this._queen = -1; },
+  queenIndex() {
+    if (this._queen >= 0 && this._queen < this.count && this.role[this._queen] === R_QUEEN) return this._queen;
+    for (let i = 0; i < this.count; i++) if (this.role[i] === R_QUEEN) return (this._queen = i);
+    return (this._queen = -1);
+  },
+  indexOfId(id) { for (let i = 0; i < this.count; i++) if (this.id[i] === id) return i; return -1; },
+  spawn(x, y, r, opts = {}) {
+    if (this.count >= MAX_ANTS) return -1;
+    const i = this.count++;
+    this.px[i] = x * T + 1.5; this.py[i] = y * T + 1.5;
+    this.cx[i] = this.tx[i] = this.gx[i] = this.tk[i] = x;
+    this.cy[i] = this.ty[i] = this.gy[i] = y;
+    this.role[i] = r;
+    this.state[i] = r === R_QUEEN ? S_QUEEN : S_IDLE;
+    this.phase[i] = 0; this.sub[i] = 0; this.carry[i] = 0; this.face[i] = 0; this.dir[i] = 1; this.doing[i] = D_IDLE; this.load[i] = 0;
+    this.id[i] = opts.id ?? (r === R_QUEEN ? 0 : this.nextId++);
+    this.digSpot[i] = -1; this.bref[i] = -1; this.home[i] = idx(x, y);
+    this.dug[i] = opts.dug || 0; this.fetched[i] = opts.fetched || 0;
+    this.age[i] = opts.age || 0;
+    this.maxAge[i] = opts.maxAge || (r === R_QUEEN ? 1e9 : rf(420, 780));
+    this.hp[i] = r === R_QUEEN ? 3 : (r === R_SOLDIER ? 1.5 : 1);
+    this.timer[i] = rf(0, 0.6); this.wt[i] = 0; this.trail[i] = 0; this.anim[i] = rand() * 4;
+    this.energy[i] = opts.energy ?? rf(0.7, 1); this.fatigue[i] = opts.fatigue ?? rf(0, 0.3);
+    this.speed[i] = opts.speed || rf(0.85, 1.15);
+    // eigene Vorlieben: niedrige Schwelle heißt, diese Arbeit reizt sie schnell
+    for (let k = 0; k < 4; k++) this.th[i * 4 + k] = opts.th ? opts.th[k] : rf(0.15, 0.85);
+    if (r === R_QUEEN) this._queen = i;
+    return i;
+  },
+  requestKill(i, corpse, cause) { if (i >= 0 && i < this.count && !this.kills.has(i)) this.kills.set(i, [corpse, cause]); },
+  processKills() {
+    if (!this.kills.size) return;
+    const list = [...this.kills.keys()].sort((a, b) => b - a);
+    for (const i of list) {
+      if (i >= this.count) continue;
+      const [corpse, cause] = this.kills.get(i);
+      this.dropCarried(i);
+      if (corpse && this.cy[i] > G && isTunnel(this.cx[i], this.cy[i])) { world.corpses[idx(this.cx[i], this.cy[i])]++; markItems(); }
+      else if (corpse && this.cy[i] <= SURF) addGroundFood(this.cx[i], 1, "corpse");
+      colony.died++;
+      if (this.role[i] === R_QUEEN) { colony.queenAlive = false; colony.log("Die Königin ist gestorben", true); }
+      else if (cause && game.sel === this.id[i]) colony.log(`${antName(this.id[i])} ${cause}`, true);
+      else if (cause === "wurde von einem Vogel geschnappt") colony.log(`${antName(this.id[i])} ${cause}`);
+      const j = this.count - 1;
+      if (i !== j) {
+        for (const k of this.KEYS) this[k][i] = this[k][j];
+        for (let t = 0; t < 4; t++) this.th[i * 4 + t] = this.th[j * 4 + t];
+      }
+      this.count--;
+      this._queen = -1;
+    }
+    this.kills.clear();
+  },
+  // was eine sterbende Ameise trägt, fällt zu Boden
+  dropCarried(i) {
+    const cell = idx(this.cx[i], this.cy[i]), under = this.cy[i] > G && isTunnel(this.cx[i], this.cy[i]);
+    if (this.carry[i] === C_FOOD) { if (under) colony.addFood(cell); else addGroundFood(this.cx[i], 1, "fruit"); }
+    else if (this.carry[i] === C_CORPSE && under) world.corpses[cell]++;
+    else if (this.carry[i] === C_TRASH && under) world.trash[cell]++;
+    else if (this.carry[i] === C_BROOD) {
+      const b = colony.brood.find(q => q.id === this.bref[i]);
+      if (b) { b.carried = false; b.cell = under ? cell : idx(ENT, G + 1); }
+    }
+    this.carry[i] = C_NONE; this.bref[i] = -1;
+    markItems();
+  },
+  setState(i, s) { this.state[i] = s; this.phase[i] = 0; this.sub[i] = 0; this.wt[i] = 0; },
+  countRole(r) { let n = 0; for (let i = 0; i < this.count; i++) if (this.role[i] === r) n++; return n; },
+  favorite(i) { let k = 0; for (let t = 1; t < 4; t++) if (this.th[i * 4 + t] < this.th[i * 4 + k]) k = t; return k; },
+
+  tick(dt) {
+    const wet = world.wet;
+    for (let i = 0; i < this.count; i++) {
+      this.age[i] += dt; this.wt[i] += dt;
+      if (this.age[i] > this.maxAge[i]) { this.requestKill(i, true, "ist an Altersschwäche gestorben"); continue; }
+      // Hunger und Müdigkeit
+      const resting = this.state[i] === S_REST, queen = this.role[i] === R_QUEEN;
+      this.energy[i] -= dt / (queen ? 280 : 210) * (resting ? 0.6 : 1);
+      if (!queen) this.fatigue[i] = clamp(this.fatigue[i] + (resting ? -dt / 22 : dt / 140), 0, 1.5);
+      if (this.energy[i] <= 0) {
+        this.energy[i] = 0;
+        this.hp[i] -= dt * 0.025;
+        if (this.hp[i] <= 0) { this.requestKill(i, true, "ist verhungert"); continue; }
+      }
+      // Wasser in tiefen Gängen ertränkt Ameisen
+      if (wet && waterAt(this.cx[i], this.cy[i]) > 0.55) {
+        this.hp[i] -= dt * (queen ? 0.05 : 0.7);
+        if (this.hp[i] <= 0) { this.requestKill(i, true, "ist in der Flut ertrunken"); continue; }
+      }
+      // Alarm: Arbeiterinnen fliehen, Soldatinnen eilen herbei
+      if (this.role[i] === R_WORKER && this.state[i] !== S_FLEE && this.cy[i] > G && world.alarm[idx(this.cx[i], this.cy[i])] > 0.3) {
+        this.dropCarried(i); this.setState(i, S_FLEE); this.timer[i] = 0;
+      }
+      if (this.timer[i] > 0) { this.timer[i] -= dt; this.anim[i] += dt * 0.5; continue; }
+      const gx = this.tx[i] * T + 1.5, gy = this.ty[i] * T + 1.5;
+      const dx = gx - this.px[i], dy = gy - this.py[i], dist = Math.sqrt(dx * dx + dy * dy);
+      let sp = SPEED[this.role[i]] * this.speed[i];
+      if (this.carry[i]) sp *= 0.8;
+      if (this.energy[i] < 0.15) sp *= 0.7;
+      const step = sp * dt;
+      if (dist <= step) {
+        this.px[i] = gx; this.py[i] = gy; this.cx[i] = this.tx[i]; this.cy[i] = this.ty[i];
+        Ant.think(i);
+      } else {
+        this.px[i] += dx / dist * step; this.py[i] += dy / dist * step;
+        this.anim[i] += dt * sp * 0.35;
+      }
+    }
+    this.processKills();
+  },
+  killRandom() { for (let t = 0; t < 10; t++) { const i = Math.floor(rand() * this.count); if (this.role[i] !== R_QUEEN) return this.requestKill(i, true); } },
+  draw(g, F) {
+    buildAntAtlas();
+    const half = ACELL >> 1;
+    for (let i = 0; i < this.count; i++) {
+      const dxs = this.tx[i] - this.cx[i], dys = this.ty[i] - this.cy[i];
+      let f = this.face[i];
+      if (dxs > 0) f = 0; else if (dxs < 0) f = 1; else if (dys < 0) f = 2; else if (dys > 0) f = 3;
+      this.face[i] = f;
+      let x = this.px[i], y = this.py[i];
+      if (y < G * T && y > SURF * T - 1) y -= surfaceOffset(Math.floor(x / T));
+      y -= 0.4;
+      let fr = 0;
+      if (this.role[i] === R_SOLDIER) fr = 2;
+      else if (this.role[i] === R_QUEEN) fr = 4;
+      else if (this.carry[i]) fr = 4 + this.carry[i] * 2;
+      fr += Math.floor(this.anim[i] * 2) & 1;
+      g.drawImage(antAtlas, fr * ACELL, f * ACELL, ACELL, ACELL, F + Math.round(x * PIX) - half, F + Math.round(y * PIX) - half, ACELL, ACELL);
+    }
+  },
+  pos(i) {
+    let y = this.py[i];
+    if (y < G * T && y > SURF * T - 1) y -= surfaceOffset(Math.floor(this.px[i] / T));
+    return [this.px[i], y];
+  },
+};
+
+function worldTick(dt) {
+  world.simTime += dt;
+  for (const s of world.sources) for (const f of s.fruits)
+    if (!f.alive) { f.t += dt; if (f.t > 24) { f.alive = true; sky.dirty = true; } }
+  world.frame++;
+  if (world.wet && world.frame % 3 === 0) waterStep();
+  if ((world.wet || world.waterShown) && world.frame % 6 === 0) waterRender();
+  // Duftmarken verblassen
+  if (world.frame % 30 === 0) for (const i of digPhActive) {
+    world.digPh[i] *= 0.92;
+    if (world.digPh[i] < 0.02) { world.digPh[i] = 0; digPhActive.delete(i); }
+  }
+  for (const i of alarmActive) {
+    world.alarm[i] *= 0.985;
+    if (world.alarm[i] < 0.01) { world.alarm[i] = 0; alarmActive.delete(i); }
+  }
+  rooms.tick(dt);
+}
+
+// Ameisen als fein gezeichnete Sprites in der Seitenansicht, Blick nach rechts
+const AFW = 12, AFH = 9, A_FRAMES = 16;   // Rahmen in Weltpixeln
+let AS = 0;                               // Atlas-Pixel pro Weltpixel, passend zum Zoom
+const [antAtlas, antAtlasG] = canvas(1, 1);
+function drawAntShape(g, kind, phase, item) {
+  const queen = kind === 2, soldier = kind === 1;
+  const body = "#2a140e", mid = "#46241a", legC = "#1f0f0a";
+  g.lineCap = "round"; g.lineJoin = "round";
+  // Beine: hintere Seite heller, vordere Seite dunkel
+  for (const side of [0, 1]) {
+    g.strokeStyle = side ? legC : "rgba(60,32,22,0.75)";
+    g.lineWidth = 0.32;
+    for (let k = 0; k < 3; k++) {
+      const ax = -0.5 + k * 0.55 + side * 0.15, swing = ((k + side + phase) % 2 ? 1 : -1) * 0.45;
+      const kneeX = ax + (k - 1) * 0.9 + swing * 0.4, footX = ax + (k - 1) * 1.5 + swing;
+      g.beginPath(); g.moveTo(ax, 0.35); g.lineTo(kneeX, -0.4 + side * 0.2); g.lineTo(footX, 2.2); g.stroke();
+    }
+  }
+  // Hinterleib
+  const ar = queen ? [2.5, 1.55] : [1.75, 1.2];
+  const ax = queen ? -2.9 : -2.35;
+  let gr = g.createRadialGradient(ax + 0.4, -0.6, 0.2, ax, 0, ar[0]);
+  gr.addColorStop(0, "#6a3826"); gr.addColorStop(1, body);
+  g.fillStyle = gr;
+  g.beginPath(); g.ellipse(ax, 0.05, ar[0], ar[1], -0.12, 0, Math.PI * 2); g.fill();
+  if (queen) {
+    g.strokeStyle = "rgba(255,210,170,0.18)"; g.lineWidth = 0.22;
+    for (const o of [-0.7, 0.2, 1.1]) { g.beginPath(); g.ellipse(ax + o, 0.05, 0.25, ar[1] * 0.9, 0, -1.2, 1.2); g.stroke(); }
+  }
+  // Stielchen und Brust
+  g.fillStyle = mid;
+  g.beginPath(); g.ellipse(-0.55, 0.1, 0.38, 0.32, 0, 0, Math.PI * 2); g.fill();
+  gr = g.createRadialGradient(0.35, -0.35, 0.1, 0.4, 0, 1.1);
+  gr.addColorStop(0, "#5c3021"); gr.addColorStop(1, body);
+  g.fillStyle = gr;
+  g.beginPath(); g.ellipse(0.4, -0.05, queen ? 1.1 : 0.95, 0.6, -0.2, 0, Math.PI * 2); g.fill();
+  // Kopf
+  const hr = soldier ? 1.2 : 0.85, hx = soldier ? 2.35 : 2.05;
+  gr = g.createRadialGradient(hx - 0.2, -0.45, 0.1, hx, -0.1, hr);
+  gr.addColorStop(0, "#64341f"); gr.addColorStop(1, body);
+  g.fillStyle = gr;
+  g.beginPath(); g.ellipse(hx, -0.15, hr, hr * 0.85, 0, 0, Math.PI * 2); g.fill();
+  g.fillStyle = "rgba(255,235,210,0.55)";
+  g.beginPath(); g.arc(hx + hr * 0.35, -0.35, 0.14, 0, Math.PI * 2); g.fill();
+  // Mandibeln
+  g.strokeStyle = body; g.lineWidth = soldier ? 0.42 : 0.28;
+  g.beginPath(); g.moveTo(hx + hr * 0.8, 0.15); g.quadraticCurveTo(hx + hr + 0.8, 0.35, hx + hr + 0.6, 0.85); g.stroke();
+  // Fühler
+  g.strokeStyle = legC; g.lineWidth = 0.26;
+  const sw = phase ? 0.25 : -0.1;
+  g.beginPath(); g.moveTo(hx + 0.2, -0.85); g.quadraticCurveTo(hx + 0.6, -2.5 + sw, hx + 1.9, -2.0 + sw); g.stroke();
+  if (queen) {
+    // kleine goldene Krone
+    g.fillStyle = "#f2c94c"; g.strokeStyle = "#8a6a14"; g.lineWidth = 0.15;
+    const cx = hx - 0.1, cy = -1.25;
+    g.beginPath();
+    g.moveTo(cx - 0.95, cy); g.lineTo(cx - 1.0, cy - 1.1); g.lineTo(cx - 0.45, cy - 0.55); g.lineTo(cx, cy - 1.35);
+    g.lineTo(cx + 0.45, cy - 0.55); g.lineTo(cx + 1.0, cy - 1.1); g.lineTo(cx + 0.95, cy); g.closePath();
+    g.fill(); g.stroke();
+    g.fillStyle = "#e0453a"; g.beginPath(); g.arc(cx, cy - 0.45, 0.17, 0, Math.PI * 2); g.fill();
+  }
+  if (item) {
+    const ix = hx + hr + 0.9, iy = -0.9;
+    if (item === C_FOOD) {
+      g.fillStyle = "#d8352a"; g.beginPath(); g.arc(ix, iy, 1.05, 0, Math.PI * 2); g.fill();
+      g.fillStyle = "rgba(255,200,190,0.8)"; g.beginPath(); g.arc(ix - 0.35, iy - 0.35, 0.3, 0, Math.PI * 2); g.fill();
+    } else if (item === C_DIRT) {
+      g.fillStyle = "#c9a76c";
+      for (const [dx, dy, r] of [[-0.3, 0.1, 0.65], [0.35, -0.2, 0.6], [0.1, 0.4, 0.5]]) { g.beginPath(); g.arc(ix + dx, iy + dy, r, 0, Math.PI * 2); g.fill(); }
+      g.fillStyle = "#9c7b45"; g.fillRect(ix - 0.2, iy + 0.1, 0.3, 0.3);
+    } else if (item === C_CORPSE) {
+      g.fillStyle = "#4a3a32";
+      g.beginPath(); g.ellipse(ix + 0.1, iy, 1.2, 0.55, 0.3, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = "#4a3a32"; g.lineWidth = 0.2;
+      for (const o of [-0.4, 0.2, 0.7]) { g.beginPath(); g.moveTo(ix + o, iy + 0.3); g.lineTo(ix + o + 0.2, iy + 1.0); g.stroke(); }
+    } else if (item === C_BROOD) {
+      g.fillStyle = "#fbf6e8"; g.beginPath(); g.ellipse(ix, iy, 1.2, 0.75, 0.4, 0, Math.PI * 2); g.fill();
+      g.fillStyle = "#d9cfb0"; g.fillRect(ix - 0.2, iy - 0.6, 0.35, 1.2);
+    } else {
+      g.fillStyle = "#8f7048"; g.beginPath(); g.ellipse(ix, iy, 0.9, 0.6, 0.6, 0, Math.PI * 2); g.fill();
+    }
+  }
+}
+// Pixel-Sprites: der Atlas wird in Kunstpixel-Größe gezeichnet und danach hart begrenzt,
+// in allen vier Blickrichtungen. Beim Zeichnen wird nur noch kopiert.
+const FACES = [[1, 0, 0, 1], [-1, 0, 0, 1], [0, -1, 1, 0], [0, 1, -1, 0]];
+let ACELL = 0;
+function buildAntAtlas() {
+  if (AS) return;
+  AS = PIX;
+  ACELL = Math.ceil(AFW * AS * 1.15);
+  const SS = 4;   // erst größer zeichnen, dann auf Kunstpixel verkleinern
+  const [big, bg] = canvas(ACELL * A_FRAMES * SS, ACELL * 4 * SS);
+  bg.imageSmoothingEnabled = true;
+  const frames = [];
+  for (let a = 0; a < 2; a++) {
+    frames[a] = [0, a, 0]; frames[2 + a] = [1, a, 0]; frames[4 + a] = [2, a, 0];
+    for (let c = 1; c < 6; c++) frames[4 + c * 2 + a] = [0, a, c];
+  }
+  FACES.forEach(([a, b, c, d], o) => frames.forEach(([kind, phase, item], f) => {
+    const k = AS * SS * (kind === 2 ? 1.15 : (kind === 1 ? 1.05 : 0.92));
+    bg.setTransform(a * k, b * k, c * k, d * k, (f * ACELL + ACELL / 2) * SS, (o * ACELL + ACELL / 2) * SS);
+    drawAntShape(bg, kind, phase, item);
+  }));
+  antAtlas.width = ACELL * A_FRAMES; antAtlas.height = ACELL * 4;
+  const g = antAtlasG;
+  g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
+  g.drawImage(big, 0, 0, antAtlas.width, antAtlas.height);
+  // harte Kanten: jedes Pixel ganz sichtbar oder ganz durchsichtig
+  const img = g.getImageData(0, 0, antAtlas.width, antAtlas.height), d = img.data;
+  for (let i = 3; i < d.length; i += 4) {
+    if (d[i] < 90) d[i] = 0;
+    else d[i] = 255;
+  }
+  g.putImageData(img, 0, 0);
+}
+
+
+// ---------------------------------------------------------------- Das Leben einer Ameise
+// Jede Ameise entscheidet selbst. Sie spürt Hunger und Müdigkeit, nimmt Reize aus dem Nest wahr
+// und vergleicht sie mit ihren eigenen Schwellen. Was sie oft tut, fällt ihr leichter.
+const Ant = {
+  think(i) {
+    switch (ants.state[i]) {
+      case S_IDLE: return this.idle(i);
+      case S_REST: return this.rest(i);
+      case S_EAT: return this.eat(i);
+      case S_DIG: return this.dig(i);
+      case S_FORAGE: return this.forage(i);
+      case S_CARRY: return this.carryFood(i);
+      case S_NURSE: return this.nurse(i);
+      case S_CLEAN: return this.clean(i);
+      case S_SOLDIER: return this.soldier(i);
+      case S_QUEEN: return this.queen(i);
+      case S_FLEE: return this.flee(i);
+    }
+  },
+  go(i, x, y) { ants.tx[i] = x; ants.ty[i] = y; },
+  goIdx(i, c) { ants.tx[i] = c % W; ants.ty[i] = Math.floor(c / W); },
+  wait(i, t) { ants.tx[i] = ants.cx[i]; ants.ty[i] = ants.cy[i]; ants.timer[i] = t; },
+  cell(i) { return idx(ants.cx[i], ants.cy[i]); },
+  done(i, t = 0.3) { ants.setState(i, S_IDLE); this.wait(i, t); },
+  wander(i) {
+    const n = randomNeighbor(ants.cx[i], ants.cy[i]);
+    if (n === this.cell(i)) this.wait(i, 0.5); else this.goIdx(i, n);
+  },
+  learn(i, k) {
+    for (let t = 0; t < 4; t++) {
+      const j = i * 4 + t;
+      ants.th[j] = t === k ? Math.max(0.05, ants.th[j] - 0.025) : Math.min(1, ants.th[j] + 0.005);
+    }
+  },
+  effTh(i, k) {
+    // junge Ameisen pflegen lieber die Brut, ältere gehen lieber hinaus
+    const a = ants.age[i] / ants.maxAge[i];
+    let t = ants.th[i * 4 + k];
+    if (k === TK_NURSE) t += a * 0.5 - 0.15;
+    if (k === TK_FORAGE) t += 0.12 - a * 0.4;
+    return clamp(t, 0.03, 1.2);
+  },
+  // oberirdisch zurück zum Eingang und hinab; true, solange die Ameise oben ist
+  headHome(i) {
+    const x = ants.cx[i], y = ants.cy[i];
+    if (y >= G) return false;
+    if (y < SURF) { if (x !== ants.tk[i]) this.go(i, x + sign(ants.tk[i] - x), y); else this.go(i, x, y + 1); return true; }
+    if (x !== ENT) this.go(i, x + sign(ENT - x), y); else this.go(i, x, G);
+    return true;
+  },
+  // einem Feld folgen: 0 unterwegs, 1 angekommen, 2 kein Weg
+  travelF(i, f) {
+    if (this.headHome(i)) return 0;
+    const x = ants.cx[i], y = ants.cy[i];
+    if (!isTunnel(x, y)) {
+      const t = nearestTunnel(x, y);
+      if (t[0] !== x) this.go(i, x + sign(t[0] - x), y); else this.go(i, x, y + sign(t[1] - y));
+      return 0;
+    }
+    const s = stepOn(f, x, y);
+    if (s === ARRIVED) return 1;
+    if (s === NO_PATH) return 2;
+    this.goIdx(i, s);
+    return 0;
+  },
+  travel(i, fid) { return hasField(fid) ? this.travelF(i, fields[fid]) : (this.headHome(i) ? 0 : 2); },
+  goSurface(i) {
+    if (ants.cy[i] < G) return true;
+    const r = this.travel(i, F_EXIT);
+    if (r === 1) this.go(i, ENT, SURF); else if (r === 2) this.wander(i);
+    return false;
+  },
+
+  // ---- frei: Bedürfnisse zuerst, dann eine Aufgabe nach eigenem Geschmack
+  idle(i) {
+    ants.doing[i] = D_IDLE;
+    if (this.headHome(i)) { ants.doing[i] = D_HOME; return; }
+    if (!isTunnel(ants.cx[i], ants.cy[i])) { this.travel(i, F_EXIT); return; }
+    if (ants.energy[i] < 0.35 && colony.foodTotal > 0) { ants.setState(i, S_EAT); return this.eat(i); }
+    const night = events.isNight();
+    if (ants.fatigue[i] > 1 || (night && ants.fatigue[i] > 0.15 && rand() < 0.5)) { ants.setState(i, S_REST); return this.rest(i); }
+    if (ants.role[i] === R_SOLDIER) { ants.setState(i, S_SOLDIER); return this.soldier(i); }
+    const order = [0, 1, 2, 3].sort(() => rand() - 0.5);
+    for (const k of order) {
+      const s = colony.stim[k], th = this.effTh(i, k);
+      if (s > 0 && rand() < (s * s) / (s * s + th * th)) { ants.setState(i, TASK_STATE[k]); return this.think(i); }
+    }
+    // nichts reizt sie gerade: zum Herz des Nests schlendern oder kurz verweilen
+    if (hasField(F_QUEEN) && qDist(this.cell(i)) > 12 && rand() < 0.5 && this.travel(i, F_QUEEN) === 0) return;
+    if (rand() < 0.5) this.wait(i, rf(0.6, 2)); else this.wander(i);
+  },
+  rest(i) {
+    const night = events.isNight();
+    ants.doing[i] = night ? D_SLEEP : D_REST;
+    if (this.headHome(i)) return;
+    if (ants.phase[i] === 0) {
+      if (hasField(F_QUEEN) && qDist(this.cell(i)) > 10 && this.travel(i, F_QUEEN) === 0) return;
+      ants.phase[i] = 1;
+      return this.wait(i, rf(4, 9));
+    }
+    if (ants.fatigue[i] < 0.15 && !(night && rand() < 0.7)) return this.done(i, 0.2);
+    this.wait(i, rf(3, 7));
+  },
+  eat(i) {
+    ants.doing[i] = D_EAT;
+    const r = this.travel(i, F_FOOD);
+    if (r === 0) return;
+    if (r === 1 && colony.takeFood(this.cell(i))) {
+      ants.energy[i] = 1; ants.hp[i] = Math.max(ants.hp[i], ants.role[i] === R_SOLDIER ? 1.5 : 1);
+      if (rand() < 0.12) { world.trash[this.cell(i)] = Math.min(9, world.trash[this.cell(i)] + 1); markItems(); }
+      return this.done(i, 1.2);
+    }
+    this.done(i, r === 2 ? 1 : 0.2);
+  },
+
+  // ---- Graben: alle Gräberinnen arbeiten gemeinsam an der Front der geplanten Kammer
+  dig(i) {
+    switch (ants.phase[i]) {
+      case 0: {
+        ants.doing[i] = D_DIG;
+        if (ants.carry[i] === C_DIRT && ants.load[i] >= 3) { ants.phase[i] = 3; return this.dig(i); }
+        const r = this.travel(i, F_DIG);
+        if (r === 0) return;
+        if (r === 2) {
+          if (ants.carry[i] === C_DIRT) { ants.phase[i] = 3; return this.dig(i); }
+          return this.done(i);
+        }
+        const t = colony.digTargetNear(ants.cx[i], ants.cy[i]);
+        if (!t) { fieldDirty[F_DIG] = true; return this.wait(i, 0.3); }
+        ants.gx[i] = t[0]; ants.gy[i] = t[1];
+        ants.face[i] = t[0] > ants.cx[i] ? 0 : (t[0] < ants.cx[i] ? 1 : (t[1] < ants.cy[i] ? 2 : 3));
+        ants.phase[i] = 2;
+        return this.wait(i, digTime(t[1]) / ants.speed[i]);
+      }
+      case 2:
+        if (dig(ants.gx[i], ants.gy[i])) { ants.dug[i]++; colony.dugTotal++; ants.carry[i] = C_DIRT; ants.load[i]++; }
+        ants.phase[i] = ants.load[i] >= 3 ? 3 : 0;
+        return this.wait(i, 0.1);
+      case 3:
+        ants.doing[i] = D_HAUL;
+        if (this.goSurface(i)) {
+          ants.phase[i] = 4;
+          ants.gx[i] = clamp(ENT + (rand() < 0.5 ? -1 : 1) * ri(2, 11), 2, W - 3);
+          return this.dig(i);
+        }
+        return;
+      case 4: {
+        ants.doing[i] = D_HAUL;
+        const x = ants.cx[i];
+        if (x !== ants.gx[i]) return this.go(i, x + sign(ants.gx[i] - x), SURF);
+        for (let k = 0; k < Math.max(1, ants.load[i]); k++) addDirt(x + k % 2);
+        ants.load[i] = 0; ants.carry[i] = C_NONE; ants.phase[i] = 5;
+        return this.wait(i, 0.3);
+      }
+      case 5:
+        ants.doing[i] = D_HOME;
+        if (this.headHome(i)) return;
+        this.learn(i, TK_DIG);
+        if (!colony.hasDigWork() || colony.stim[TK_DIG] < 0.05 || rand() < 0.2 || ants.energy[i] < 0.35 || ants.fatigue[i] > 1) return this.done(i, 0.2);
+        ants.phase[i] = 0;
+        return this.dig(i);
+    }
+  },
+
+  // ---- Futtersuche: oben herumlaufen, Duftspuren folgen, sich an gute Stellen erinnern
+  forage(i) {
+    if (ants.phase[i] <= 1 && (events.isNight() || events.raining)) { ants.setState(i, S_IDLE); return this.idle(i); }
+    ants.doing[i] = D_SEARCH;
+    switch (ants.phase[i]) {
+      case 0:
+        if (this.goSurface(i)) {
+          ants.phase[i] = 1; ants.wt[i] = 0; ants.dir[i] = rand() < 0.5 ? -1 : 1;
+          const mem = ants.tk[i], src = sourceAt(mem);
+          if (mem !== ants.cx[i] && ((src >= 0 && hasFruit(src)) || groundFoodAt(mem)) && rand() < 0.75) {
+            ants.dir[i] = sign(mem - ants.cx[i]);
+            ants.trail[i] = -Math.abs(mem - ants.cx[i]);
+          }
+          this.forage(i);
+        }
+        return;
+      case 1: {
+        if (ants.wt[i] > 60 || ants.energy[i] < 0.25) { ants.setState(i, S_IDLE); return this.idle(i); }
+        const x = ants.cx[i];
+        const g = groundFoodAt(x);
+        if (g) {
+          g.n--;
+          ants.tk[i] = x; ants.carry[i] = C_FOOD; ants.setState(i, S_CARRY); ants.trail[i] = 1;
+          return this.carryFood(i);
+        }
+        const si = sourceAt(x);
+        if (si >= 0) {
+          if (hasFruit(si) && rand() < 0.85) {
+            const f = pickFruit(si);
+            ants.tk[i] = x; ants.gx[i] = f.x; ants.gy[i] = f.y; ants.phase[i] = 2;
+            return this.forage(i);
+          }
+          if (!hasFruit(si)) ants.trail[i] = -10;
+        }
+        if (ants.trail[i] < 0) ants.trail[i] += 1;
+        else {
+          const far = phero.sense(x, SURF, 6);
+          if (far[0] + far[1] > 0.08) {
+            const near = phero.sense(x, SURF, 2);
+            if (near[0] > near[1] * 1.02) ants.dir[i] = -1; else if (near[1] > near[0] * 1.02) ants.dir[i] = 1;
+            if (rand() < 0.01) ants.dir[i] = -ants.dir[i];
+          } else if (rand() < 0.05) ants.dir[i] = -ants.dir[i];
+        }
+        let nx = x + ants.dir[i];
+        if (nx < 1 || nx > W - 2) { ants.dir[i] = -ants.dir[i]; nx = x + ants.dir[i]; }
+        return this.go(i, nx, SURF);
+      }
+      case 2: {
+        const x = ants.cx[i], y = ants.cy[i];
+        if (x === ants.gx[i] && y === ants.gy[i]) {
+          if (takeFruit(x, y)) { ants.carry[i] = C_FOOD; ants.setState(i, S_CARRY); ants.trail[i] = 1; return this.carryFood(i); }
+          ants.phase[i] = 3; return this.forage(i);
+        }
+        if (y > ants.gy[i] && x === ants.tk[i]) this.go(i, x, y - 1);
+        else if (y === ants.gy[i]) this.go(i, x + sign(ants.gx[i] - x), y);
+        else { ants.phase[i] = 3; this.forage(i); }
+        return;
+      }
+      case 3: {
+        const x = ants.cx[i], y = ants.cy[i];
+        if (y < SURF) { if (x !== ants.tk[i]) this.go(i, x + sign(ants.tk[i] - x), y); else this.go(i, x, y + 1); }
+        else { ants.phase[i] = 1; this.forage(i); }
+      }
+    }
+  },
+  // ---- Futter heimtragen: oben eine Spur legen, unten in die Kornkammer
+  carryFood(i) {
+    ants.doing[i] = D_FETCH;
+    if (ants.phase[i] === 0) {
+      if (ants.cy[i] < G) {
+        phero.deposit(ants.cx[i], ants.cy[i], ants.trail[i]);
+        ants.trail[i] = Math.max(0.25, ants.trail[i] * 0.975);
+        this.headHome(i);
+        return;
+      }
+      ants.phase[i] = 1;
+    }
+    ants.doing[i] = D_STORE;
+    // in die Kornkammer, sonst vorerst zur Königin
+    const target = hasField(F_GRANSPACE) ? F_GRANSPACE : F_QUEEN;
+    const r = this.travel(i, target);
+    if (r === 0 && !(target === F_QUEEN && qDist(this.cell(i)) <= 3)) return;
+    const c = this.cell(i), type = target === F_GRANSPACE ? CH_GRANARY : 0;
+    let stored = 0;
+    for (let k = 0; k < 3; k++) if (colony.addFood(c, type) || colony.addFood(c)) stored++;
+    if (!stored) return this.wander(i);
+    ants.carry[i] = C_NONE; ants.fetched[i]++; colony.delivered++;
+    this.learn(i, TK_FORAGE);
+    this.done(i, 0.5);
+  },
+
+  // ---- Brutpflege: Königin füttern, Larven füttern, Eier in die Brutkammer tragen
+  nurse(i) {
+    const q = ants.queenIndex(), c = this.cell(i);
+    switch (ants.phase[i]) {
+      case 0:
+        if (q >= 0 && ants.energy[q] < 0.55 && colony.foodTotal > 0) { ants.sub[i] = 1; ants.phase[i] = 1; }
+        else if (colony.counts.hungryLarvae > 0 && colony.foodTotal > 0 && hasField(F_HUNGRY)) { ants.sub[i] = 2; ants.phase[i] = 1; }
+        else if (hasField(F_LOOSEBROOD) && hasField(F_BROODSPACE)) { ants.sub[i] = 3; ants.phase[i] = 3; }
+        else { ants.sub[i] = 4; ants.phase[i] = 5; ants.wt[i] = 0; }
+        return this.nurse(i);
+      case 1: {
+        ants.doing[i] = ants.sub[i] === 1 ? D_FEEDQUEEN : D_FEEDLARVA;
+        const r = this.travel(i, F_FOOD);
+        if (r === 0) return;
+        if (r === 1 && colony.takeFood(c)) { ants.carry[i] = C_FOOD; ants.phase[i] = 2; return this.wait(i, 0.4); }
+        return this.done(i);
+      }
+      case 2: {
+        ants.doing[i] = ants.sub[i] === 1 ? D_FEEDQUEEN : D_FEEDLARVA;
+        const r = this.travel(i, ants.sub[i] === 1 ? F_QUEEN : F_HUNGRY);
+        if (r === 0) return;
+        let fed = false;
+        if (r === 1 && ants.sub[i] === 1 && q >= 0) { ants.energy[q] = Math.min(1, ants.energy[q] + 0.45); fed = true; }
+        if (r === 1 && ants.sub[i] === 2) {
+          let best = null;
+          for (const b of colony.brood) if (b.cell === c && b.s === 1 && !b.carried && (!best || b.fed < best.fed)) best = b;
+          if (best) { best.fed = 1; best.starve = 0; fed = true; fieldDirty[F_HUNGRY] = true; }
+        }
+        if (!fed) colony.addFood(c);
+        ants.carry[i] = C_NONE;
+        if (fed) this.learn(i, TK_NURSE);
+        return this.done(i, 0.6);
+      }
+      case 3: {
+        ants.doing[i] = D_MOVEBROOD;
+        const r = this.travel(i, F_LOOSEBROOD);
+        if (r === 0) return;
+        const b = r === 1 ? colony.brood.find(q2 => q2.cell === c && !q2.carried && roomType(c) !== CH_BROOD) : null;
+        if (!b) return this.done(i);
+        b.carried = true; ants.bref[i] = b.id; ants.carry[i] = C_BROOD; ants.phase[i] = 4; markItems();
+        return this.wait(i, 0.4);
+      }
+      case 4: {
+        ants.doing[i] = D_MOVEBROOD;
+        const r = this.travel(i, F_BROODSPACE);
+        if (r === 0) return;
+        const b = colony.brood.find(q2 => q2.id === ants.bref[i]);
+        if (b) { b.carried = false; b.cell = this.cell(i); }
+        ants.bref[i] = -1; ants.carry[i] = C_NONE; markItems();
+        if (r === 1) this.learn(i, TK_NURSE);
+        return this.done(i, 0.5);
+      }
+      case 5: {
+        ants.doing[i] = D_FEEDLARVA;
+        if (ants.wt[i] > 6) return this.done(i);
+        const fid = hasField(F_BROODSPACE) ? F_BROODSPACE : F_QUEEN;
+        if (getField(fid)[c] > 2 && this.travel(i, fid) === 0) return;
+        if (rand() < 0.5) this.wait(i, rf(0.5, 1.5)); else this.wander(i);
+      }
+    }
+  },
+
+  // ---- Aufräumen: Tote auf den Friedhof, Abfall in die Müllkammer, verstreutes Futter in die Kornkammer
+  clean(i) {
+    const c = this.cell(i);
+    const jobs = [
+      [F_LOOSECORPSE, F_CEMSPACE, world.corpses, C_CORPSE, D_CORPSE, CH_CEMETERY, 4],
+      [F_LOOSETRASH, F_TRASHSPACE, world.trash, C_TRASH, D_TRASH, CH_TRASH, 5],
+      [F_LOOSEFOOD, F_GRANSPACE, world.food, C_FOOD, D_STORE, CH_GRANARY, 4],
+    ];
+    switch (ants.phase[i]) {
+      case 0: {
+        const k = jobs.findIndex(j => hasField(j[1]) && hasField(j[0]));
+        if (k < 0) return this.done(i);
+        ants.sub[i] = k; ants.phase[i] = 1;
+        return this.clean(i);
+      }
+      case 1: {
+        const j = jobs[ants.sub[i]];
+        ants.doing[i] = j[4];
+        const r = this.travel(i, j[0]);
+        if (r === 0) return;
+        if (r !== 1 || j[2][c] === 0 || roomType(c) === j[5]) return this.done(i);
+        j[2][c]--;
+        if (j[2] === world.food) colony.foodTotal--;
+        markItems();
+        ants.carry[i] = j[3]; ants.phase[i] = 2;
+        return this.wait(i, 0.4);
+      }
+      case 2: {
+        const j = jobs[ants.sub[i]];
+        ants.doing[i] = j[4];
+        const r = this.travel(i, j[1]);
+        if (r === 0) return;
+        const d = dropCell(this.cell(i), j[2], j[6], n => roomType(n) !== j[5]);
+        const at = d >= 0 ? d : this.cell(i);
+        j[2][at] = Math.min(255, j[2][at] + 1);
+        if (j[2] === world.food) colony.foodTotal++;
+        ants.carry[i] = C_NONE; markItems();
+        if (r === 1) this.learn(i, TK_CLEAN);
+        return this.done(i, 0.5);
+      }
+    }
+  },
+
+  // ---- Soldatinnen: wachen nahe der Königin, folgen dem Alarmduft
+  soldier(i) {
+    ants.doing[i] = D_PATROL;
+    if (events.centActive && !events.centFleeing) {
+      const d = Math.hypot(ants.px[i] - events.centX, ants.py[i] - events.centY);
+      if (d < 40 && events.centY > G * T) {
+        ants.doing[i] = D_DEFEND;
+        const hx = Math.floor(events.centX / T), hy = Math.floor(events.centY / T), x = ants.cx[i], y = ants.cy[i];
+        if (Math.abs(hx - x) <= 1 && Math.abs(hy - y) <= 1) return this.wait(i, 0.25);
+        if (Math.abs(hx - x) > Math.abs(hy - y)) return this.go(i, x + sign(hx - x), y);
+        return this.go(i, x, Math.max(G + 1, y + sign(hy - y)));
+      }
+    }
+    if (this.headHome(i)) return;
+    const x = ants.cx[i], y = ants.cy[i];
+    if (!isTunnel(x, y)) { this.travel(i, F_EXIT); return; }
+    let best = -1, bv = 0.04;
+    for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) if (isTunnel(x + dx, y + dy)) {
+      const v = world.alarm[idx(x + dx, y + dy)];
+      if (v > bv) { bv = v; best = idx(x + dx, y + dy); }
+    }
+    if (best >= 0) { ants.doing[i] = D_DEFEND; return this.goIdx(i, best); }
+    if (ants.energy[i] < 0.35 && colony.foodTotal > 0) { ants.setState(i, S_EAT); return this.eat(i); }
+    if (ants.fatigue[i] > 1) { ants.setState(i, S_REST); return this.rest(i); }
+    if (hasField(F_QUEEN) && qDist(this.cell(i)) > 14 && this.travel(i, F_QUEEN) === 0) return;
+    if (rand() < 0.5) this.wait(i, rf(0.5, 2.5)); else this.wander(i);
+  },
+  flee(i) {
+    ants.doing[i] = D_FLEE;
+    const x = ants.cx[i], y = ants.cy[i], here = world.alarm[this.cell(i)];
+    if (here < 0.05 && ants.wt[i] > 2) return this.done(i, 0.5);
+    let best = -1, bv = here;
+    for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) if (isTunnel(x + dx, y + dy) && y + dy > G) {
+      const v = world.alarm[idx(x + dx, y + dy)];
+      if (v < bv) { bv = v; best = idx(x + dx, y + dy); }
+    }
+    if (best >= 0) this.goIdx(i, best); else this.wander(i);
+  },
+  queen(i) {
+    if (ants.doing[i] !== D_LAY || rand() < 0.3) ants.doing[i] = D_REST;
+    const f = fieldTo(ants.home[i]), c = this.cell(i);
+    if (f[c] > 3 && f[c] < INF) { const s = stepOn(f, ants.cx[i], ants.cy[i]); if (s >= 0) return this.goIdx(i, s); }
+    if (rand() < 0.6) return this.wait(i, rf(1, 3));
+    const n = randomNeighbor(ants.cx[i], ants.cy[i]);
+    if (f[n] <= 3) this.goIdx(i, n); else this.wait(i, 1);
+  },
+};
+
+// =====================================================================
+// EREIGNISSE: Tag und Nacht, Flut, Tausendfüßler, Vögel, Käfer und Fallobst
+// =====================================================================
+const DAY_LENGTH = 300, SEGS = 12, SPACING = 3;
+const events = {
+  time: 0.3, day: 1, raining: false, rainT: 0, nextFlood: 0, drops: [],
+  centActive: false, centFleeing: false, centX: 0, centY: 0, centHp: 0, angle: 0, life: 0, segs: [], nextCent: 0, eatCd: 0,
+  targetX: 0, targetY: 0, targetT: 0, walk: 0,
+  bird: null, nextBird: 0, nextBeetle: 0, fruitT: 0,
+  reset() {
+    this.raining = false; this.centActive = false; this.drops = [];
+    this.nextFlood = rf(300, 450); this.nextCent = rf(200, 320); this.bird = null; this.nextBird = rf(160, 260); this.nextBeetle = rf(90, 180);
+  },
+  daylight() { return clamp(0.5 - 0.5 * Math.cos(this.time * Math.PI * 2), 0, 1); },
+  isNight() { return this.daylight() < 0.2; },
+  light() {
+    const t = clamp(this.daylight() / 0.6, 0, 1), l = t * t * (3 - 2 * t);
+    let c = mix([0.36, 0.40, 0.62], [1, 1, 1], l);
+    c = mix(c, [1, 0.78, 0.6], (1 - Math.abs(l - 0.5) * 2) * 0.22);
+    if (this.raining) c = darken(c, 0.12);
+    return c;
+  },
+  tick(dt) {
+    this.time += dt / DAY_LENGTH;
+    if (this.time >= 1) { this.time -= 1; this.day++; }
+    this.tickFlood(dt);
+    this.tickCentipede(dt);
+    this.tickBird(dt);
+    this.tickSurface(dt);
+  },
+  tickFlood(dt) {
+    if (!this.raining) {
+      this.nextFlood -= dt;
+      if (this.nextFlood <= 0 && world.tunnels.length > 220) this.startFlood();
+      return;
+    }
+    this.rainT -= dt;
+    addRain(0.015);
+    while (this.drops.length < 70) this.drops.push([rf(0, WPX), rf(-G * T, 0)]);
+    for (const d of this.drops) {
+      d[1] += 170 * dt; d[0] -= 20 * dt;
+      if (d[1] > G * T - 2) { d[0] = rf(0, WPX + 20); d[1] = rf(-20, 0); }
+    }
+    if (this.rainT <= 0) { this.raining = false; this.drops = []; this.nextFlood = rf(220, 420); }
+  },
+  startFlood() { this.raining = true; this.rainT = 20; colony.log("Flut! Der Regen läuft ins Nest", true); },
+  startCentipede() {
+    this.centActive = true; this.centFleeing = false; this.centHp = 24; this.life = 0; this.eatCd = 1;
+    const left = rand() < 0.5;
+    this.centX = left ? -12 : WPX + 12; this.centY = rf((G + 12) * T, (H - 10) * T);
+    this.angle = left ? 0 : Math.PI;
+    this.segs = [];
+    for (let k = 0; k < SEGS; k++) this.segs.push([this.centX - Math.cos(this.angle) * SPACING * k, this.centY]);
+    this.targetX = ENT * T; this.targetY = (G + 20) * T;
+    colony.log("Ein Tausendfüßler greift an", true);
+  },
+  tickCentipede(dt) {
+    if (!this.centActive) {
+      this.nextCent -= dt;
+      // der Tausendfüßler ist vorerst abgeschaltet
+      return;
+    }
+    this.life += dt; this.walk += dt;
+    if (!this.centFleeing && (this.centHp <= 0 || this.life > 40)) {
+      this.centFleeing = true;
+      if (this.centHp <= 0) colony.log("Die Soldatinnen haben den Tausendfüßler verjagt", true);
+    }
+    // Ziel: nächste Ameise unter der Erde
+    this.targetT -= dt;
+    if (this.centFleeing) { this.targetX = this.centX < WPX / 2 ? -40 : WPX + 40; this.targetY = this.centY; }
+    else if (this.targetT <= 0) {
+      this.targetT = 0.6;
+      let best = 1e9;
+      for (let i = 0; i < ants.count; i++) {
+        if (ants.role[i] === R_QUEEN || ants.cy[i] < G) continue;
+        const d = (ants.px[i] - this.centX) ** 2 + (ants.py[i] - this.centY) ** 2;
+        if (d < best) { best = d; this.targetX = ants.px[i]; this.targetY = ants.py[i]; }
+      }
+    }
+    const want = Math.atan2(this.targetY - this.centY, this.targetX - this.centX);
+    let diff = want - this.angle;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    this.angle += clamp(diff, -2.2 * dt, 2.2 * dt) + Math.sin(this.walk * 3) * 0.6 * dt;
+    const sp = this.centFleeing ? 24 : 13;
+    this.centX += Math.cos(this.angle) * sp * dt; this.centY += Math.sin(this.angle) * sp * dt;
+    if (this.centY < G * T + 4) { this.centY = G * T + 4; this.angle = Math.abs(this.angle); }
+    if (this.centY > H * T - 4) { this.centY = H * T - 4; this.angle = -Math.abs(this.angle); }
+    // Segmente folgen dem Kopf
+    this.segs[0] = [this.centX, this.centY];
+    for (let k = 1; k < SEGS; k++) {
+      const a = this.segs[k - 1], b = this.segs[k], d = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (d > SPACING) this.segs[k] = [a[0] + (b[0] - a[0]) / d * SPACING, a[1] + (b[1] - a[1]) / d * SPACING];
+    }
+    // fressen und kämpfen
+    this.eatCd -= dt;
+    // Alarmduft: wer den Tausendfüßler sieht, warnt die anderen
+    if (!this.centFleeing) addAlarm(Math.floor(this.centX / T), Math.floor(this.centY / T), dt * 3);
+    if (!this.centFleeing) for (let i = 0; i < ants.count; i++) {
+      const d = Math.hypot(ants.px[i] - this.centX, ants.py[i] - this.centY);
+      if (d < 18 && ants.cy[i] > G) addAlarm(ants.cx[i], ants.cy[i], dt * 2);
+      if (d > 7) continue;
+      if (ants.role[i] === R_SOLDIER) this.centHp -= 2.6 * dt;
+      else if (d < 4.5) {
+        this.centHp -= 0.35 * dt;
+        if (this.eatCd <= 0 && ants.role[i] !== R_QUEEN) { ants.requestKill(i, false, "wurde vom Tausendfüßler gefressen"); this.eatCd = 3; }
+      }
+    }
+    if (this.centFleeing && (this.centX < -30 || this.centX > WPX + 30)) { this.centActive = false; this.nextCent = rf(150, 300); }
+  },
+  // Ein Vogel jagt tagsüber Ameisen an der Oberfläche
+  tickBird(dt) {
+    const b = this.bird;
+    if (!b) {
+      this.nextBird -= dt;
+      if (this.nextBird > 0 || this.isNight() || this.raining) return;
+      let on = 0;
+      for (let i = 0; i < ants.count; i++) if (ants.cy[i] <= SURF) on++;
+      if (on < 2) return;
+      const left = rand() < 0.5;
+      this.bird = { x: left ? -12 : WPX + 12, y: rf(14, 26), vx: left ? 38 : -38, mode: 0, target: -1, flap: 0, tx: 0, ty: 0 };
+      return;
+    }
+    b.flap += dt * 10;
+    if (b.mode === 0) {
+      b.x += b.vx * dt; b.y += Math.sin(b.flap * 0.3) * dt * 3;
+      // Beute suchen: eine Ameise auf dem Boden unter dem Vogel
+      for (let i = 0; i < ants.count; i++) {
+        if (ants.cy[i] > SURF || ants.role[i] === R_QUEEN) continue;
+        if (Math.abs(ants.px[i] - b.x - b.vx * 0.4) < 6 && rand() < 0.5) { b.mode = 1; b.target = ants.id[i]; break; }
+      }
+      if (b.x < -20 || b.x > WPX + 20) { this.bird = null; this.nextBird = rf(140, 260); }
+    } else if (b.mode === 1) {
+      const i = ants.indexOfId(b.target);
+      if (i < 0 || ants.cy[i] > SURF) { b.mode = 2; return; }
+      const dx = ants.px[i] - b.x, dy = ants.py[i] - 2 - b.y, d = Math.hypot(dx, dy);
+      if (d < 2.5) { ants.requestKill(i, false, "wurde von einem Vogel geschnappt"); b.mode = 2; b.prey = true; return; }
+      b.x += dx / d * 55 * dt; b.y += dy / d * 55 * dt;
+    } else {
+      b.y -= 30 * dt; b.x += b.vx * dt;
+      if (b.y < -15 || b.x < -20 || b.x > WPX + 20) { this.bird = null; this.nextBird = rf(140, 260); }
+    }
+  },
+  // Fallobst, tote Käfer und Verderben an der Oberfläche
+  tickSurface(dt) {
+    this.fruitT -= dt;
+    if (this.fruitT <= 0) {
+      this.fruitT = 1;
+      for (const s of world.sources) for (const f of s.fruits) if (f.alive && s.kind === 0 && rand() < 0.0015) {
+        f.alive = false; f.t = 0; sky.dirty = true;
+        addGroundFood(f.x + ri(-1, 1), 2, "fruit");
+      }
+    }
+    this.nextBeetle -= dt;
+    if (this.nextBeetle <= 0) {
+      this.nextBeetle = rf(200, 380);
+      let x = ri(4, W - 5);
+      if (Math.abs(x - ENT) < 6) x = clamp(x + 12, 4, W - 5);
+      addGroundFood(x, 12, "beetle");
+      colony.log("Ein toter Käfer liegt im Gras", true);
+    }
+    for (let k = world.groundFood.length - 1; k >= 0; k--) {
+      const g = world.groundFood[k];
+      g.t += dt;
+      const life = g.kind === "beetle" ? 420 : (g.kind === "sugar" ? 360 : (g.kind === "corpse" ? 60 : 200));
+      if (g.n <= 0 || g.t > life) world.groundFood.splice(k, 1);
+    }
+  },
+  drawBird(F) {
+    const b = this.bird;
+    if (!b) return;
+    const up = Math.sin(b.flap) > 0, dir = b.vx > 0 ? 1 : -1;
+    P.fill("#3b3f4a").ellipse(b.x, b.y, 2.6, 1.3);
+    P.fill("#2a2d36").disc(b.x + dir * 2.4, b.y - 0.6, 1.1);
+    P.fill("#f2b33a").rect(b.x + dir * 3.3 - (dir < 0 ? 1 : 0), b.y - 0.6, 1, 0.5);
+    P.fill("#4c5260");
+    if (up) { P.line(b.x - dir * 0.5, b.y - 0.5, b.x - dir * 2, b.y - 3.5); P.line(b.x + dir * 0.2, b.y - 0.5, b.x - dir * 0.6, b.y - 3.5); }
+    else { P.line(b.x - dir * 0.5, b.y + 0.3, b.x - dir * 2.5, b.y + 2.6); P.line(b.x + dir * 0.2, b.y + 0.3, b.x - dir * 0.8, b.y + 2.6); }
+    P.fill("#2a2d36").line(b.x - dir * 2.4, b.y, b.x - dir * 4, b.y + 0.6);
+    if (b.prey) P.fill("#2a140e").rect(b.x + dir * 2.6, b.y + 1, 1.5, 0.5);
+  },
+  draw(F) {
+    this.drawBird(F);
+    if (this.drops.length) {
+      P.fill("rgba(190,215,250,0.7)");
+      for (const d of this.drops) P.line(d[0], d[1], d[0] - 0.5, d[1] + 3);
+    }
+    if (!this.centActive) return;
+    for (let k = SEGS - 1; k >= 0; k--) {
+      const p = this.segs[k], n = this.segs[Math.max(k - 1, 0)];
+      let fx = Math.cos(this.angle), fy = Math.sin(this.angle);
+      if (k > 0) { const d = Math.hypot(n[0] - p[0], n[1] - p[1]) || 1; fx = (n[0] - p[0]) / d; fy = (n[1] - p[1]) / d; }
+      const sx = -fy, sy = fx, sw = Math.sin(this.walk * 14 + k * 1.3) * 1.1;
+      P.fill("#5a2414");
+      P.line(p[0] + sx * 1.2, p[1] + sy * 1.2, p[0] + sx * 3.4 + fx * sw, p[1] + sy * 3.4 + fy * sw);
+      P.line(p[0] - sx * 1.2, p[1] - sy * 1.2, p[0] - sx * 3.4 - fx * sw, p[1] - sy * 3.4 - fy * sw);
+      if (k === 0) {
+        P.fill("#3a160c");
+        P.curve(p[0] + fx * 1.5 + sx * 0.6, p[1] + fy * 1.5 + sy * 0.6, p[0] + fx * 4 + sx * 1.5, p[1] + fy * 4 + sy * 1.5, p[0] + fx * 5.5 + sx * 3.2, p[1] + fy * 5.5 + sy * 3.2, 4);
+        P.curve(p[0] + fx * 1.5 - sx * 0.6, p[1] + fy * 1.5 - sy * 0.6, p[0] + fx * 4 - sx * 1.5, p[1] + fy * 4 - sy * 1.5, p[0] + fx * 5.5 - sx * 3.2, p[1] + fy * 5.5 - sy * 3.2, 4);
+        P.fill("#3d150b").disc(p[0], p[1], 1.9);
+        P.fill("#f0c04a").dot(p[0] + fx * 0.9 + sx * 0.7, p[1] + fy * 0.9 + sy * 0.7);
+        P.dot(p[0] + fx * 0.9 - sx * 0.7, p[1] + fy * 0.9 - sy * 0.7);
+      } else {
+        P.fill(k % 2 ? "#7a2c18" : "#9a3a1e").disc(p[0], p[1], 1.6);
+        P.fill("rgba(255,190,140,0.35)").rect(p[0] - sx * 0.5 - 0.5, p[1] - sy * 0.5 - 0.5, 1, 0.5);
+      }
+    }
+  },
+};
+
+
+// =====================================================================
+// HIMMEL: Sonne, Mond, Wolken, Bäume, Büsche, Gras, Blumen, Sandhügel
+// Als Pixelbild im Zwischenspeicher, neu gezeichnet viermal pro Sekunde.
+// =====================================================================
+const SKY_TOP = [0.56, 0.76, 0.92], SKY_LOW = [0.86, 0.93, 0.95];
+const TRUNK = [0.45, 0.30, 0.19], TRUNK_DARK = [0.31, 0.20, 0.12];
+const LEAF = [[0.33, 0.56, 0.29], [0.45, 0.67, 0.35], [0.26, 0.46, 0.24]], LEAF_LIGHT = [0.62, 0.8, 0.47];
+const SAND = [0.89, 0.78, 0.56], SAND_DARK = [0.76, 0.64, 0.44];
+const TAU = Math.PI * 2;
+const [skyC, skyG] = canvas(WPX * PIX, G * T * PIX);
+const sky = {
+  dirty: true, t: 0, clock: 0, seed: -1, stalks: [], tufts: [], stars: [], clouds: [],
+  generate() {
+    this.seed = world.seed;
+    const r = mulberry(world.seed + 99);
+    this.stalks = []; this.tufts = []; this.stars = []; this.clouds = [];
+    for (let k = 0; k < 70; k++) {
+      const x = r.rf(1, WPX - 2);
+      if (Math.abs(x - ENT * T) < 30 && r() < 0.7) continue;
+      const q = r();
+      this.stalks.push([x, r.ri(7, 30), r.rf(-0.12, 0.12), q < 0.35 ? 1 : (q < 0.55 ? 2 : 0), r.ri(0, 2)]);
+    }
+    for (let k = 0; k < 200; k++) this.tufts.push([r.rf(0, WPX), r.rf(1.5, 4.5), r.rf(-0.8, 0.8), r.ri(0, 2)]);
+    for (let k = 0; k < 50; k++) this.stars.push([r.rf(2, WPX - 3), r.rf(2, 90)]);
+    for (let k = 0; k < 5; k++) this.clouds.push([r.rf(0, WPX), r.rf(8, 42), r.rf(12, 24), r.rf(1, 2.5)]);
+  },
+  tick(dt) {
+    this.clock += dt; this.t -= dt;
+    if (this.dirty || this.t <= 0) { this.t = 0.25; this.dirty = false; this.draw(); }
+  },
+  draw() {
+    if (this.seed !== world.seed) this.generate();
+    const g = skyG, gy = G * T, light = events.daylight();
+    P.use(g);
+    g.clearRect(0, 0, skyC.width, skyC.height);
+    let top = SKY_TOP, low = SKY_LOW;
+    if (events.raining) { top = mix(top, [0.5, 0.55, 0.6], 0.6); low = mix(low, [0.62, 0.66, 0.7], 0.6); }
+    const bands = 12;
+    for (let b = 0; b < bands; b++) P.fill(css(mix(top, low, b / (bands - 1)))).rect(0, gy * b / bands, WPX, gy / bands + 0.5);
+    if (light < 0.45) {
+      const a = clamp((0.45 - light) * 3, 0, 1);
+      for (const s of this.stars) P.fill(`rgba(255,251,230,${a * (0.55 + 0.45 * Math.sin(this.clock * 2 + s[0]))})`).dot(s[0], s[1]);
+    }
+    // Sonne mit Strahlenkranz
+    const dayT = (events.time - 0.22) / 0.56;
+    if (dayT > 0 && dayT < 1) {
+      const px = 18 + (WPX - 36) * dayT, py = 32 - Math.sin(dayT * Math.PI) * 20;
+      P.fill("rgba(255,240,170,0.18)").disc(px, py, 12);
+      P.fill("rgba(255,240,170,0.25)").disc(px, py, 8.5);
+      P.fill("#ffe98c").disc(px, py, 5.5);
+      P.fill("#fff6cc").disc(px - 1, py - 1, 3);
+    }
+    const nT = (((events.time + 0.5) % 1) - 0.22) / 0.56;
+    if (nT > 0 && nT < 1) {
+      const mx = 18 + (WPX - 36) * nT, my = 28 - Math.sin(nT * Math.PI) * 16;
+      P.fill("#f3f0dc").disc(mx, my, 4.5);
+      P.fill(css(mix(top, [0.1, 0.12, 0.25], 0.5))).disc(mx + 2, my - 1, 3.8);
+    }
+    for (const c of this.clouds) {
+      const x = ((c[0] + this.clock * c[3]) % (WPX + 60)) - 30, y = c[1], w = c[2];
+      const col = events.raining ? [0.58, 0.61, 0.66] : [0.98, 0.99, 1];
+      P.fill(css(darken(col, 0.1)));
+      P.disc(x + w * 0.25, y + 1, w * 0.2); P.disc(x + w * 0.55, y + 1.2, w * 0.24); P.disc(x + w * 0.8, y + 1, w * 0.17);
+      P.fill(css(col));
+      P.disc(x + w * 0.25, y, w * 0.2); P.disc(x + w * 0.52, y - w * 0.12, w * 0.25); P.disc(x + w * 0.8, y, w * 0.17);
+    }
+    for (const s of world.sources) if (s.kind === 0) this.tree(s);
+    for (const st of this.stalks) this.stalk(st, gy);
+    for (const s of world.sources) if (s.kind === 1) this.bush(s);
+    this.mound(gy);
+    for (const t of this.tufts) {
+      const sway = Math.sin(this.clock * 1.2 + t[0] * 0.2) * 0.4;
+      P.fill(css(LEAF[t[3]])).line(t[0], gy - 0.5, t[0] + t[2] + sway, gy - t[1]);
+    }
+  },
+  tree(s) {
+    const tx = s.trunk * T + 1.5, top = s.cy * T, gy = G * T;
+    // Stamm, unten breiter
+    for (let y = top; y < gy; y += 0.5) {
+      const w = 1.9 + Math.max(0, (y - (gy - 6)) / 6) * 1.6;
+      P.fill(css(TRUNK)).rect(tx - w / 2, y, w, 0.5);
+      P.fill(css(TRUNK_DARK)).rect(tx + w / 2 - 0.5, y, 0.5, 0.5);
+    }
+    P.fill(css(TRUNK)); P.line(tx, top + 4, tx - 5, top - 2); P.line(tx, top + 6, tx + 6, top);
+    const cx = s.cx * T + 1.5, cy = s.cy * T;
+    for (const pass of [0, 1, 2]) for (const b of s.blobs) {
+      const bx = cx + b[0] * T, by = cy + b[1] * T, br = b[2] * T;
+      if (pass === 0) P.fill(css(darken(LEAF[b[3]], 0.22))).disc(bx + 0.5, by + 1, br);
+      else if (pass === 1) P.fill(css(LEAF[b[3]])).disc(bx, by, br * 0.92);
+      else P.fill(css(LEAF_LIGHT)).disc(bx - br * 0.35, by - br * 0.38, br * 0.3);
+    }
+    // Blattstruktur
+    P.fill(css(darken(LEAF[0], 0.3)));
+    for (let k = 0; k < 26; k++) { const h = hash2(s.trunk, k); P.dot(cx + (h % 100) / 100 * s.r * T * 1.4 - s.r * T * 0.7, cy + ((h >> 8) % 100) / 100 * s.r * T * 1.0 - s.r * T * 0.5); }
+    this.fruits(s);
+  },
+  bush(s) {
+    const cx = s.cx * T + 1.5, cy = (SURF - 2) * T;
+    for (const pass of [0, 1, 2]) for (const b of s.blobs) {
+      const bx = cx + b[0] * T, by = cy + b[1] * T, br = b[2] * T;
+      if (pass === 0) P.fill(css(darken(LEAF[b[3]], 0.22))).disc(bx + 0.5, by + 0.8, br);
+      else if (pass === 1) P.fill(css(LEAF[b[3]])).disc(bx, by, br * 0.92);
+      else P.fill(css(LEAF_LIGHT)).disc(bx - br * 0.32, by - br * 0.36, br * 0.3);
+    }
+    this.fruits(s);
+  },
+  fruits(s) {
+    for (const f of s.fruits) {
+      if (!f.alive) continue;
+      const x = f.x * T + 1.5, y = f.y * T + 1.5;
+      P.fill(css(TRUNK_DARK)).line(x, y - 1.2, x + 0.5, y - 2.2);
+      P.fill("#9e1f18").disc(x + 0.2, y + 0.2, 1.45);
+      P.fill("#d4352a").disc(x, y, 1.35);
+      P.fill("#ffc2b4").dot(x - 0.6, y - 0.6);
+    }
+  },
+  stalk(st, gy) {
+    const x = st[0], h = st[1], lean = st[2] + Math.sin(this.clock * 0.8 + x * 0.3) * 0.04;
+    const tx = x + lean * h, ty = gy - h;
+    P.fill(css(LEAF[st[4]])).curve(x, gy, x + lean * h * 0.3, gy - h * 0.5, tx, ty, 6);
+    if (h > 10) P.ellipse(x + lean * h * 0.4 - 1.2, gy - h * 0.45, 1.4, 0.5);
+    if (st[3] === 1) {
+      P.fill("#e9b93a").ellipse(tx, ty - 1.4, 0.9, 1.9);
+      P.fill("#fbe08a").dot(tx - 0.5, ty - 2.2);
+    } else if (st[3] === 2) {
+      P.fill("#fbd85a");
+      for (let k = 0; k < 6; k++) { const a = k / 6 * TAU + x; P.disc(tx + Math.cos(a) * 1.3, ty + Math.sin(a) * 1.3, 0.85); }
+      P.fill("#d98a24").disc(tx, ty, 0.7);
+    }
+  },
+  mound(gy) {
+    // Sandhügel aus dem Aushub, Spalte für Spalte
+    const m = world.mound;
+    for (let ax = 0; ax < WPX * PIX; ax++) {
+      const wx = ax / PIX, cxf = wx / T - 0.5, c0 = clamp(Math.floor(cxf), 0, W - 1), c1 = clamp(c0 + 1, 0, W - 1), t = clamp(cxf - c0, 0, 1);
+      const h = m[c0] * (1 - t) + m[c1] * t;
+      if (h < 0.3) continue;
+      P.fill(css(SAND)).rect(wx, gy - h, 1 / PIX, h);
+      P.fill(css(lighten(SAND, 0.18))).rect(wx, gy - h, 1 / PIX, 0.5);
+      if (hash2(ax, 7) % 9 === 0) P.fill(css(SAND_DARK)).dot(wx, gy - h + 1 + (hash2(ax, 3) % 100) / 100 * Math.max(0, h - 1.5));
+    }
+  },
+};
+
+// =====================================================================
+
+// =====================================================================
+// GEGENSTÄNDE: Futter, Brut, Tote, Abfall im Nest und Futter an der Oberfläche
+// =====================================================================
+const decor = {
+  slots: [[0.7, 2.1], [2.3, 2.1], [1.5, 1.0], [0.6, 0.9], [2.4, 0.9]],
+  deadAnt(x, y) {
+    P.fill("#3b2a22").ellipse(x - 0.6, y, 1.1, 0.6).disc(x + 0.9, y - 0.1, 0.55);
+    P.line(x - 0.4, y + 0.2, x, y - 0.9); P.line(x + 0.4, y + 0.2, x + 0.8, y - 0.9);
+  },
+  draw() {
+    const foodCols = ["#d8352a", "#f08c2a", "#f2c84b"];
+    for (const i of world.tunnels) {
+      const f = world.food[i], c = world.corpses[i], t = world.trash[i];
+      if (!f && !c && !t) continue;
+      const x = (i % W) * T, y = Math.floor(i / W) * T;
+      for (let k = 0; k < f; k++) P.fill(foodCols[hash2(i, k) % 3]).disc(x + this.slots[k][0], y + this.slots[k][1], 0.8);
+      for (let k = 0; k < Math.min(t, 5); k++) P.fill(hash2(i, k + 9) % 2 ? "#8b806b" : "#6e5236").ellipse(x + this.slots[k][0], y + this.slots[k][1] + 0.3, 0.7, 0.45);
+      for (let k = 0; k < Math.min(c, 3); k++) this.deadAnt(x + 1.5 + (k % 2 ? 0.6 : -0.3), y + 2.2 - k * 0.9);
+    }
+    for (const b of colony.brood) {
+      if (b.carried) continue;
+      const h = hash2(b.id, 3), x = (b.cell % W) * T + 0.6 + (h % 4) * 0.55, y = Math.floor(b.cell / W) * T + 1.4 + ((h >> 4) % 3) * 0.45;
+      if (b.s === 0) P.fill("#fbf6e8").ellipse(x, y, 0.5, 0.8);
+      else if (b.s === 1) {
+        P.fill(b.fed > 0.3 ? "#f6e3b0" : "#d2c8b0").ellipse(x, y, 1.1, 0.75);
+        P.fill("rgba(120,90,50,0.5)").rect(x - 0.3, y - 0.5, 0.5, 1);
+      } else {
+        P.fill("#c9a46a").ellipse(x, y, 1.3, 0.8);
+        P.fill("#a9844d").rect(x - 0.6, y - 0.5, 0.5, 1);
+      }
+    }
+    // Futter an der Oberfläche
+    for (const g of world.groundFood) {
+      const x = g.x * T + 1.5, y = SURF * T + 2.4 - surfaceOffset(g.x);
+      if (g.kind === "fruit") {
+        for (let k = 0; k < Math.min(g.n, 3); k++) {
+          P.fill("#9e1f18").disc(x + k * 1.6 - 1, y - 0.2, 1.3);
+          P.fill("#d4352a").disc(x + k * 1.6 - 1.1, y - 0.4, 1.2);
+          P.fill("#ffc2b4").dot(x + k * 1.6 - 1.6, y - 0.9);
+        }
+      } else if (g.kind === "sugar") {
+        for (let k = 0; k < Math.min(g.n, 8); k++) {
+          const h = hash2(k, g.x);
+          P.fill(k % 3 ? "#ffffff" : "#e6e9ef").rect(x - 2 + (h % 5), y - 0.5 - ((h >> 3) % 3) * 0.7, 1, 1);
+        }
+      } else if (g.kind === "beetle") {
+        const s = 0.55 + 0.45 * g.n / g.max;
+        P.fill("#1d2a24");
+        for (const o of [-1.6, 0, 1.6]) { P.line(x + o * s, y, x + o * s - 0.8, y + 1.2); P.line(x + o * s, y, x + o * s + 0.8, y + 1.2); }
+        P.fill("#2c4a3a").ellipse(x, y - 0.6, 3.6 * s, 1.9 * s);
+        P.fill("#1d2a24").disc(x + 3.6 * s, y - 0.4, 1.0 * s);
+        P.fill("#5f8f74").rect(x - 1.5 * s, y - 1.9 * s, 2 * s, 0.5);
+      } else this.deadAnt(x, y);
+    }
+  },
+};
+
+// =====================================================================
+// RAHMEN: dunkelgrünes Formicarium mit Glas, als Pixelbild
+// =====================================================================
+const [frameC, frameG] = canvas(FULL_W * PIX, FULL_H * PIX);
+function buildFrame() {
+  const f = FRAME, w = WPX, h = HPX;
+  P.use(frameG, f * PIX, f * PIX);
+  P.fill("#17402a");
+  P.rect(-f, -f, w + 2 * f, f); P.rect(-f, h, w + 2 * f, f); P.rect(-f, 0, f, h); P.rect(w, 0, f, h);
+  P.fill("#3f7a52"); P.rect(-f, -f, w + 2 * f, 0.5); P.rect(-f, -f, 0.5, h + 2 * f); P.rect(-1, h, w + 2, 0.5); P.rect(w, -1, 0.5, h + 2);
+  P.fill("#0a1f12"); P.rect(-1, -1, w + 2, 0.5); P.rect(-1, -1, 0.5, h + 2); P.rect(-f, h + f - 0.5, w + 2 * f, 0.5); P.rect(w + f - 0.5, -f, 0.5, h + 2 * f);
+  P.fill("#24563a"); P.rect(-f + 1.5, -f + 1.5, w + 2 * f - 3, 0.5); P.rect(-f + 1.5, -f + 1.5, 0.5, h + 2 * f - 3);
+  for (const [px, py] of [[-3, -3], [w + 3, -3], [-3, h + 3], [w + 3, h + 3]]) {
+    P.fill("#7d8a72").disc(px, py, 1.5);
+    P.fill("#e8ecd8").dot(px - 0.6, py - 0.6);
+    P.fill("#4a5644").line(px - 0.9, py + 0.4, px + 0.9, py - 0.4);
+  }
+  // Glas: zarte Spiegelung in Pixelstreifen
+  P.fill("rgba(255,255,255,0.06)");
+  for (const [x0, bw] of [[20, 12], [40, 4]]) for (let s = 0; s < 360; s += 0.5) {
+    const y = h - s, x = x0 + s * 200 / 360;
+    if (y < 0) break;
+    P.rect(x, y, bw, 0.5);
+  }
+}
+
+// =====================================================================
+
+// =====================================================================
+// ANZEIGE: Schild, Kammer-Infos, Ameisen-Steckbrief, Kolonie-Panel, Werkzeuge
+// =====================================================================
+const $ = id => document.getElementById(id);
+const ICON_PAUSE = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>';
+const ICON_PLAY = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5h2v2h2v2h2v2h2v2h-2v2h-2v2h-2v2H8z"/></svg>';
+const TASK_GROUPS = [
+  ["Graben", "#b07a4a", [D_DIG, D_HAUL]],
+  ["Futter holen", "#e0a43a", [D_SEARCH, D_FETCH, D_STORE]],
+  ["Brutpflege", "#a07cb0", [D_FEEDLARVA, D_FEEDQUEEN, D_MOVEBROOD]],
+  ["Aufräumen", "#8e9a7e", [D_CORPSE, D_TRASH]],
+  ["Wache", "#c95a42", [D_PATROL, D_DEFEND]],
+  ["Ruhe und Essen", "#6f8fa8", [D_REST, D_SLEEP, D_EAT, D_IDLE, D_HOME, D_FLEE, D_LAY]],
+];
+const hud = {
+  infoT: 0, bannerT: 0, hintT: 12, t: 0, last: {}, panelOpen: false,
+  set(id, v) { if (this.last[id] !== v) { this.last[id] = v; $(id).textContent = v; } },
+  rows(dl, rows) {
+    dl.replaceChildren();
+    for (const [k, v] of rows) {
+      const dt = document.createElement("dt"), dd = document.createElement("dd");
+      dt.textContent = k; dd.textContent = v;
+      dl.append(dt, dd);
+    }
+  },
+  showInfo(title, rows, ch) {
+    this.closeAnt();
+    $("infoTitle").textContent = title;
+    $("swatch").style.background = ch > 0 ? css(CHAMBER_COLORS[ch]) : "#8a6a48";
+    this.rows($("infoRows"), rows);
+    $("info").hidden = false; $("hint").hidden = true;
+    this.infoT = 6; this.hintT = 0;
+  },
+  hideInfo() { $("info").hidden = true; this.infoT = 0; },
+  banner(text, time = 4) { const b = $("banner"); b.textContent = text; b.hidden = false; this.bannerT = time; },
+  updateButtons() {
+    $("btnPause").innerHTML = game.paused ? ICON_PLAY : ICON_PAUSE;
+    $("btnPause").setAttribute("aria-label", game.paused ? "Weiter" : "Pause");
+    $("btnSpeed").textContent = game.speed + "×";
+    $("btnFeed").classList.toggle("on", game.feedMode);
+    $("btnFeed").setAttribute("aria-pressed", game.feedMode ? "true" : "false");
+  },
+  // ---- Steckbrief einer Ameise
+  openAnt(i) {
+    this.hideInfo(); this.closePanel();
+    game.sel = ants.id[i]; game.follow = true;
+    $("antCard").hidden = false; $("hint").hidden = true; this.hintT = 0;
+    this.updateAnt();
+  },
+  closeAnt() { game.sel = null; game.follow = false; $("antCard").hidden = true; },
+  updateAnt() {
+    if (game.sel === null) return;
+    const i = ants.indexOfId(game.sel);
+    if (i < 0) { this.closeAnt(); return; }
+    const role = ants.role[i];
+    this.set("antName", antName(ants.id[i]));
+    this.set("antRole", role === R_QUEEN ? "Königin" : (role === R_SOLDIER ? "Soldatin" : "Arbeiterin"));
+    this.set("antDoing", DOING[ants.doing[i]]);
+    $("barFood").style.width = Math.round(clamp(ants.energy[i], 0, 1) * 100) + "%";
+    $("barTired").style.width = Math.round(clamp(ants.fatigue[i], 0, 1) * 100) + "%";
+    $("barFood").classList.toggle("low", ants.energy[i] < 0.3);
+    const ageMin = Math.floor(ants.age[i] / 60);
+    const rows = [["Alter", role === R_QUEEN ? `${events.day} Tage` : (ageMin < 1 ? "frisch geschlüpft" : ageMin + " Min.")]];
+    if (role === R_WORKER) rows.push(["Liebste Arbeit", TASK_NAMES[ants.favorite(i)]]);
+    if (role === R_QUEEN) rows.push(["Eier gelegt", colony.eggsLaid]);
+    else rows.push(["Felder gegraben", ants.dug[i]], ["Futter geholt", ants.fetched[i]]);
+    const key = rows.map(r => r.join(":")).join("|");
+    if (this.last.antRows !== key) { this.last.antRows = key; this.rows($("antRows"), rows); }
+  },
+  // ---- Kolonie-Panel
+  openPanel() { this.closeAnt(); this.hideInfo(); this.panelOpen = true; $("panel").hidden = false; $("confirmNew").hidden = true; this.updatePanel(); },
+  closePanel() { this.panelOpen = false; $("panel").hidden = true; },
+  updatePanel() {
+    const c = colony.counts || {};
+    const eggs = c.eggs || 0, larvae = c.larvae || 0, pupae = c.pupae || 0;
+    this.set("tPop", String(ants.count));
+    this.set("tSoldiers", String(ants.countRole(R_SOLDIER)));
+    this.set("tBrood", `${eggs + larvae + pupae}`);
+    this.set("tBroodSub", `${eggs} Eier · ${larvae} Larven · ${pupae} Puppen`);
+    this.set("tFood", String(colony.foodTotal));
+    this.set("tRooms", String(world.rooms.filter(r => r.done).length));
+    this.set("tTunnels", String(world.tunnels.length));
+    this.set("tBorn", String(colony.born));
+    this.set("tDied", String(colony.died));
+    // Aufgabenverteilung
+    const cnt = TASK_GROUPS.map(() => 0);
+    for (let i = 0; i < ants.count; i++) TASK_GROUPS.forEach((g, k) => { if (g[2].includes(ants.doing[i])) cnt[k]++; });
+    const total = Math.max(1, ants.count);
+    const bars = $("taskBars");
+    if (!bars.children.length) for (const g of TASK_GROUPS) {
+      const row = document.createElement("div");
+      row.className = "task";
+      row.innerHTML = `<span class="tname"></span><span class="track"><span class="fill" style="background:${g[1]}"></span></span><span class="tnum"></span>`;
+      row.querySelector(".tname").textContent = g[0];
+      bars.append(row);
+    }
+    [...bars.children].forEach((row, k) => {
+      row.querySelector(".fill").style.width = Math.round(cnt[k] / total * 100) + "%";
+      row.querySelector(".tnum").textContent = cnt[k];
+    });
+    this.drawChart();
+    const ol = $("chron"), key = colony.entries.length + ":" + (colony.entries[0] ? colony.entries[0].text : "");
+    if (this.last.chron !== key) {
+      this.last.chron = key;
+      ol.replaceChildren();
+      for (const e of colony.entries.slice(0, 14)) {
+        const li = document.createElement("li");
+        const d = document.createElement("span"); d.className = "day"; d.textContent = "Tag " + e.day;
+        li.append(d, document.createTextNode(e.text));
+        ol.append(li);
+      }
+      if (!colony.entries.length) { const li = document.createElement("li"); li.textContent = "Noch ist nichts Besonderes passiert."; ol.append(li); }
+    }
+  },
+  drawChart() {
+    const cvs = $("chart"), g = cvs.getContext("2d"), w = cvs.width, h = cvs.height, hist = colony.history.concat([[ants.count, colony.foodTotal]]);
+    g.fillStyle = "#132a1b"; g.fillRect(0, 0, w, h);
+    g.fillStyle = "#24442e";
+    for (let y = 0; y < h; y += 20) g.fillRect(0, y, w, 1);
+    const maxV = Math.max(10, ...hist.map(p => Math.max(p[0], p[1])));
+    const n = hist.length;
+    const plot = (k, col) => {
+      g.fillStyle = col;
+      let py = null;
+      for (let s = 0; s < n; s++) {
+        const x = Math.round(n === 1 ? w - 3 : s / (n - 1) * (w - 3)), y = Math.round(h - 3 - hist[s][k] / maxV * (h - 8));
+        if (py !== null) { const a = Math.min(py, y), b = Math.max(py, y); g.fillRect(x, a, 3, b - a + 3); }
+        g.fillRect(x, y, 3, 3);
+        py = y;
+      }
+    };
+    plot(1, "#e0a43a");
+    plot(0, "#f4edd3");
+  },
+  tick(dt) {
+    if (this.infoT > 0 && (this.infoT -= dt) <= 0) this.hideInfo();
+    if (this.bannerT > 0 && (this.bannerT -= dt) <= 0) $("banner").hidden = true;
+    if (this.hintT > 0 && (this.hintT -= dt) <= 0) $("hint").hidden = true;
+    if (game.feedCd > 0) {
+      game.feedCd = Math.max(0, game.feedCd - dt);
+      $("feedCd").style.height = Math.round(game.feedCd / 20 * 100) + "%";
+    }
+    this.t -= dt;
+    if (this.t > 0) return;
+    this.t = 0.25;
+    this.set("pop", String(ants.count));
+    this.set("food", String(colony.foodTotal));
+    this.set("day", String(events.day));
+    const hungry = colony.starving;
+    if (this.last.hunger !== hungry) { this.last.hunger = hungry; $("hunger").hidden = !hungry; }
+    this.updateAnt();
+    if (this.panelOpen) this.updatePanel();
+  },
+};
+$("btnPause").addEventListener("click", () => { game.paused = !game.paused; hud.updateButtons(); });
+$("btnSpeed").addEventListener("click", () => { game.speed = game.speed >= 4 ? 1 : game.speed * 2; hud.updateButtons(); });
+$("btnFeed").addEventListener("click", () => {
+  if (game.feedCd > 0 && !game.feedMode) return hud.banner("Der Zucker ist gleich wieder bereit", 2);
+  game.feedMode = !game.feedMode; hud.updateButtons();
+  if (game.feedMode) hud.banner("Tippe auf das Gras, um Zucker zu streuen", 3);
+});
+$("info").addEventListener("click", () => hud.hideInfo());
+$("hint").addEventListener("click", () => { $("hint").hidden = true; hud.hintT = 0; });
+$("sign").addEventListener("click", () => hud.panelOpen ? hud.closePanel() : hud.openPanel());
+$("panelClose").addEventListener("click", () => hud.closePanel());
+$("antClose").addEventListener("click", () => hud.closeAnt());
+$("antFollow").addEventListener("click", () => { game.follow = true; if (view.z < 2.5) animateZoom(3, view.cssW / 2, view.cssH / 2); });
+$("btnNew").addEventListener("click", () => { $("confirmNew").hidden = false; });
+$("btnNewNo").addEventListener("click", () => { $("confirmNew").hidden = true; });
+$("btnNewYes").addEventListener("click", () => { try { localStorage.removeItem(SAVE_KEY); } catch (_) { } hud.closePanel(); newGame(); });
+
+// =====================================================================
+// KAMERA UND EINGABE: zwei Finger zoomen, ein Finger schiebt, Doppeltippen zoomt
+// =====================================================================
+const MAX_ZOOM = 6;
+const view = { x: WPX / 2, y: HPX / 2, z: 1, cssW: 1, cssH: 1, dpr: 1, top: 0, bottom: 0 };
+const cv = $("game");
+const ctx = cv.getContext("2d", { alpha: false });
+// Platz oben für das Schild, unten für die Knöpfe: das Feld passt dazwischen
+const padTop = () => view.top + 4;
+const padBottom = () => view.bottom + 4;
+const fitScale = () => Math.min(view.cssW / FULL_W, (view.cssH - padTop() - padBottom()) / FULL_H);
+const scale = () => fitScale() * view.z;
+function clampView() {
+  view.z = clamp(view.z, 1, MAX_ZOOM);
+  const s = scale(), vw = view.cssW / s, vh = view.cssH / s;
+  view.x = vw >= FULL_W ? WPX / 2 : clamp(view.x, -FRAME + vw / 2, WPX + FRAME - vw / 2);
+  if (vh >= FULL_H + (padTop() + padBottom()) / s) {
+    const regionCenter = (padTop() + view.cssH - padBottom()) / 2;
+    view.y = HPX / 2 - (regionCenter - view.cssH / 2) / s;
+  } else view.y = clamp(view.y, -FRAME + vh / 2 - padTop() / s, HPX + FRAME - vh / 2 + padBottom() / s);
+}
+const toWorld = (sx, sy) => [view.x + (sx - view.cssW / 2) / scale(), view.y + (sy - view.cssH / 2) / scale()];
+function zoomAt(z, sx, sy) {
+  const [wx, wy] = toWorld(sx, sy);
+  view.z = clamp(z, 1, MAX_ZOOM);
+  view.x = wx - (sx - view.cssW / 2) / scale(); view.y = wy - (sy - view.cssH / 2) / scale();
+  clampView();
+}
+let zoomAnim = null;
+function animateZoom(target, sx, sy) { zoomAnim = { from: view.z, to: target, sx, sy, t: 0 }; }
+function resize() {
+  view.cssW = window.innerWidth; view.cssH = window.innerHeight;
+  view.dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+  cv.width = Math.round(view.cssW * view.dpr); cv.height = Math.round(view.cssH * view.dpr);
+  const st = getComputedStyle($("safe"));
+  view.top = parseFloat(st.paddingTop) || 0;
+  view.bottom = parseFloat(st.paddingBottom) || 0;
+  clampView();
+}
+window.addEventListener("resize", resize);
+
+const pointers = new Map();
+let tapStart = null, pinch = null, lastTap = { t: -1000, x: 0, y: 0 }, rightDrag = false;
+const TAP_MOVE = 10;
+const pos = e => [e.clientX, e.clientY];
+function startPinch() {
+  const p = [...pointers.values()];
+  pinch = { d: Math.max(1, Math.hypot(p[0][0] - p[1][0], p[0][1] - p[1][1])), mx: (p[0][0] + p[1][0]) / 2, my: (p[0][1] + p[1][1]) / 2 };
+}
+cv.addEventListener("pointerdown", e => {
+  cv.setPointerCapture(e.pointerId);
+  requestWakeLock();
+  const p = pos(e);
+  if (e.pointerType === "mouse" && e.button !== 0) { rightDrag = true; return; }
+  pointers.set(e.pointerId, p);
+  if (pointers.size === 1) tapStart = { x: p[0], y: p[1], t: performance.now(), moved: false };
+  else { tapStart = null; startPinch(); }
+});
+cv.addEventListener("pointermove", e => {
+  const p = pos(e);
+  if (rightDrag) { game.follow = false; view.x -= e.movementX / scale(); view.y -= e.movementY / scale(); clampView(); return; }
+  if (!pointers.has(e.pointerId)) return;
+  const old = pointers.get(e.pointerId);
+  pointers.set(e.pointerId, p);
+  if (pointers.size >= 2 && pinch) {
+    const q = [...pointers.values()];
+    const d = Math.max(1, Math.hypot(q[0][0] - q[1][0], q[0][1] - q[1][1])), mx = (q[0][0] + q[1][0]) / 2, my = (q[0][1] + q[1][1]) / 2;
+    const [ax, ay] = toWorld(pinch.mx, pinch.my);
+    view.z = clamp(view.z * d / pinch.d, 1, MAX_ZOOM);
+    view.x = ax - (mx - view.cssW / 2) / scale(); view.y = ay - (my - view.cssH / 2) / scale();
+    clampView();
+    pinch = { d, mx, my };
+    return;
+  }
+  if (tapStart && !tapStart.moved && Math.hypot(p[0] - tapStart.x, p[1] - tapStart.y) > TAP_MOVE) tapStart.moved = true;
+  if (!tapStart || tapStart.moved) {
+    // ein Finger verschiebt die Ansicht
+    game.follow = false;
+    view.x -= (p[0] - old[0]) / scale(); view.y -= (p[1] - old[1]) / scale();
+    clampView();
+  }
+});
+function endPointer(e) {
+  if (rightDrag && e.pointerType === "mouse") { rightDrag = false; return; }
+  if (!pointers.has(e.pointerId)) return;
+  pointers.delete(e.pointerId);
+  if (e.type === "pointerup" && tapStart && !tapStart.moved && pointers.size === 0 && performance.now() - tapStart.t < 450) onTap(tapStart.x, tapStart.y);
+  if (pointers.size >= 2) startPinch(); else pinch = null;
+  if (pointers.size === 0) tapStart = null;
+}
+cv.addEventListener("pointerup", endPointer);
+cv.addEventListener("pointercancel", endPointer);
+cv.addEventListener("contextmenu", e => e.preventDefault());
+cv.addEventListener("wheel", e => {
+  e.preventDefault();
+  zoomAt(view.z * (e.deltaY < 0 ? 1.15 : 1 / 1.15), e.clientX, e.clientY);
+}, { passive: false });
+document.addEventListener("gesturestart", e => e.preventDefault());
+
+
+function onTap(sx, sy) {
+  const now = performance.now();
+  if (now - lastTap.t < 320 && Math.hypot(sx - lastTap.x, sy - lastTap.y) < TAP_MOVE * 2.5) {
+    lastTap.t = -1000;
+    animateZoom(view.z < 2.4 ? 3 : 1, sx, sy);
+    return;
+  }
+  lastTap = { t: now, x: sx, y: sy };
+  if (navigator.vibrate) try { navigator.vibrate(10); } catch (_) { }
+  const [wx, wy] = toWorld(sx, sy), x = Math.floor(wx / T), y = Math.floor(wy / T);
+  // Zucker streuen
+  if (game.feedMode) {
+    if (y >= 2 && y <= G && x >= 1 && x < W - 1) {
+      addGroundFood(x, 8, "sugar");
+      game.feedMode = false; game.feedCd = 20;
+      hud.updateButtons();
+      hud.banner("Zucker liegt im Gras. Mal sehen, wer ihn findet", 3);
+    } else hud.banner("Tippe auf das Gras über der Erde", 2);
+    return;
+  }
+  // Ameise antippen
+  const reach = Math.max(3.5, 16 / scale());
+  let best = -1, bd = reach;
+  for (let i = 0; i < ants.count; i++) {
+    const [ax, ay] = ants.pos(i), d = Math.hypot(ax - wx, ay - wy);
+    if (d < bd) { bd = d; best = i; }
+  }
+  if (best >= 0) return hud.openAnt(best);
+  if (!inGrid(x, y)) { hud.hideInfo(); hud.closeAnt(); return; }
+  if (y > G) {
+    for (let r = 0; r < 3; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      if (!inGrid(x + dx, y + dy)) continue;
+      const rid = world.roomOf[idx(x + dx, y + dy)];
+      if (rid >= 0 && world.rooms[rid]) { const r2 = world.rooms[rid], info = colony.roomInfo(r2); return hud.showInfo(info[0], info[1], r2.type); }
+    }
+    if (isTunnel(x, y)) return hud.showInfo("Gang", [["Ameisen im Nest", ants.count], ["Gegrabene Felder", world.tunnels.length]], 0);
+    return hud.showInfo("Erde", [["Schicht", layerOf(y) + 1], ["Tiefe", (y - G) * 3 + " mm"]], 0);
+  }
+  const g = world.groundFood.find(q => Math.abs(q.x - x) <= 2 && y >= SURF - 3);
+  if (g) {
+    const names = { fruit: "Fallobst", sugar: "Zucker", beetle: "Toter Käfer", corpse: "Tote Ameise" };
+    return hud.showInfo(names[g.kind], [["Noch übrig", g.n + " Portionen"]], 0);
+  }
+  for (const s of world.sources) if (Math.abs(s.trunk - x) <= s.r && y >= s.cy - s.r) {
+    let n = 0;
+    for (let i = 0; i < ants.count; i++) if (ants.doing[i] === D_SEARCH) n++;
+    return hud.showInfo(s.kind === 0 ? "Apfelbaum" : "Beerenbusch", [["Reife Früchte", s.fruits.filter(f => f.alive).length], ["Ameisen auf Futtersuche", n]], 0);
+  }
+  hud.hideInfo(); hud.closeAnt();
+}
+
+let wakeLock = null;
+async function requestWakeLock() {
+  if (wakeLock || !navigator.wakeLock) return;
+  try { wakeLock = await navigator.wakeLock.request("screen"); wakeLock.addEventListener("release", () => { wakeLock = null; }); } catch (_) { }
+}
+
+// =====================================================================
+// SPIEL: Takt, Zeichnen, Speichern
+// =====================================================================
+const game = { paused: false, speed: 1, deadT: -1, saveT: 0, sel: null, follow: false, feedMode: false, feedCd: 0 };
+
+function newGame() {
+  newWorld(Math.floor(rand() * 1e6) + 1);
+  phero.clear();
+  colony.reset();
+  ants.clear(); ants.nextId = 1;
+  events.reset(); events.time = 0.3; events.day = 1;
+  colony.found();
+  const q = ants.spawn(ENT, 52, R_QUEEN, { energy: 1 });
+  ants.home[q] = idx(ENT, 52);
+  for (let k = 0; k < 5; k++) ants.spawn(ENT - 2 + k, 52 + (k % 2), R_WORKER, { age: rf(0, 80) });
+  game.deadT = -1; game.sel = null; game.follow = false;
+  hud.closeAnt(); hud.closePanel();
+  colony.log("Eine junge Königin gründet eine neue Kolonie", true);
+}
+
+function b64(u8) { let s = ""; for (let i = 0; i < u8.length; i += 4096) s += String.fromCharCode.apply(null, u8.subarray(i, i + 4096)); return btoa(s); }
+function unb64(s) { const b = atob(s), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; }
+function serialize() {
+  const a = [];
+  for (let i = 0; i < ants.count; i++) a.push([ants.id[i], ants.cx[i], ants.cy[i], ants.role[i], Math.round(ants.age[i]), Math.round(ants.maxAge[i]),
+    +ants.energy[i].toFixed(2), +ants.fatigue[i].toFixed(2), +ants.speed[i].toFixed(2), Array.from(ants.th.subarray(i * 4, i * 4 + 4), v => +v.toFixed(2)),
+    ants.dug[i], ants.fetched[i], ants.home[i]]);
+  return {
+    v: 3, seed: world.seed, cells: b64(world.cells), food: b64(world.food), corpses: b64(world.corpses), trash: b64(world.trash),
+    mound: Array.from(world.mound, v => +v.toFixed(2)),
+    fruits: world.sources.flatMap(s => s.fruits.map(f => [f.alive ? 1 : 0, +f.t.toFixed(1)])),
+    ground: world.groundFood,
+    colony: { brood: colony.brood.map(b => ({ ...b, carried: false })), nextBrood: colony.nextBrood, born: colony.born, died: colony.died,
+      eggsLaid: colony.eggsLaid, delivered: colony.delivered, dugTotal: colony.dugTotal, history: colony.history, entries: colony.entries,
+      milestones: [...colony.milestones], queenAlive: colony.queenAlive },
+    rooms: world.rooms.map(r => ({ type: r.type, cells: r.cells, path: r.path, cx: r.cx, cy: r.cy, done: r.done })),
+    ants: a, nextId: ants.nextId, time: events.time, day: events.day, nextFlood: events.nextFlood, nextCent: events.nextCent,
+    nextBird: events.nextBird, nextBeetle: events.nextBeetle, view: [view.x, view.y, view.z], speed: game.speed,
+  };
+}
+function deserialize(d) {
+  if (!d || d.v !== 3) return false;
+  const c = unb64(d.cells);
+  if (c.length !== W * H) return false;
+  newWorld(d.seed);
+  world.cells.set(c); world.food.set(unb64(d.food)); world.corpses.set(unb64(d.corpses)); world.trash.set(unb64(d.trash));
+  (d.mound || []).forEach((v, x) => { if (x < W) world.mound[x] = v; });
+  let k = 0;
+  for (const s of world.sources) for (const f of s.fruits) { const q = d.fruits[k++]; if (q) { f.alive = q[0] === 1; f.t = q[1]; } }
+  world.groundFood = d.ground || [];
+  world.rooms = (d.rooms || []).map((r, id) => ({ ...r, id, size: r.cells.length }));
+  for (const r of world.rooms) for (const i of r.cells) { world.roomOf[i] = r.id; world.chamber[i] = r.type; }
+  phero.clear();
+  colony.reset();
+  const cd = d.colony;
+  Object.assign(colony, { brood: cd.brood, nextBrood: cd.nextBrood, born: cd.born, died: cd.died, eggsLaid: cd.eggsLaid, delivered: cd.delivered,
+    dugTotal: cd.dugTotal, history: cd.history || [], entries: cd.entries || [], milestones: new Set(cd.milestones || []), queenAlive: cd.queenAlive });
+  colony.foodTotal = world.food.reduce((s, v) => s + v, 0);
+  rebuildRuntime(); rebuildTiles();
+  ants.clear(); ants.nextId = d.nextId || 1;
+  for (const q of d.ants) {
+    const i = ants.spawn(q[1], q[2], q[3], { id: q[0], age: q[4], maxAge: q[5], energy: q[6], fatigue: q[7], speed: q[8], th: q[9], dug: q[10], fetched: q[11] });
+    if (i >= 0) ants.home[i] = q[12];
+  }
+  events.reset();
+  Object.assign(events, { time: d.time, day: d.day, nextFlood: d.nextFlood, nextCent: d.nextCent, nextBird: d.nextBird ?? 200, nextBeetle: d.nextBeetle ?? 200 });
+  if (d.view) { view.x = d.view[0]; view.y = d.view[1]; view.z = d.view[2]; }
+  game.speed = d.speed || 1;
+  clampView();
+  return ants.count > 0;
+}
+function save() {
+  if (!ants.count) return;
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(serialize())); } catch (_) { }
+}
+function loadLocal() {
+  try { const s = localStorage.getItem(SAVE_KEY); return s ? deserialize(JSON.parse(s)) : false; } catch (_) { return false; }
+}
+document.addEventListener("visibilitychange", () => { if (document.hidden) save(); });
+window.addEventListener("pagehide", save);
+
+function step(dt) {
+  events.tick(dt); colony.tick(dt); ants.tick(dt); worldTick(dt); phero.tick();
+}
+// Die Szene entsteht als kleines Pixelbild. Für den Bildschirm wird sie erst ganzzahlig
+// mit harten Kanten vergrößert und dann minimal angepasst. So bleiben alle Pixel gleich groß.
+const [sceneC, sceneG] = canvas(FULL_W * PIX, FULL_H * PIX);
+const [upC, upG] = canvas(1, 1);
+let blink = 0;
+function render() {
+  flushGround();
+  const F = FRAME * PIX, g = sceneG;
+  g.globalCompositeOperation = "source-over";
+  g.clearRect(0, 0, sceneC.width, sceneC.height);
+  g.drawImage(skyC, F, F);
+  g.drawImage(groundC, F, F);
+  P.use(g, F, F);
+  decor.draw();
+  g.drawImage(pheroC, 0, 0, W, G, F, F, WPX * PIX, G * T * PIX);
+  ants.draw(g, F);
+  if (world.waterShown || world.wet) g.drawImage(waterC, 0, 0, W, H, F, F, WPX * PIX, HPX * PIX);
+  P.use(g, F, F);
+  events.draw(F);
+  // Markierung über der ausgewählten Ameise
+  if (game.sel !== null) {
+    const i = ants.indexOfId(game.sel);
+    if (i >= 0 && Math.floor(blink * 3) % 2 === 0) {
+      const [x, y] = ants.pos(i);
+      P.fill("#ffe14d").rect(x - 1.5, y - 7, 3, 0.5).rect(x - 1, y - 6.5, 2, 0.5).rect(x - 0.5, y - 6, 1, 0.5);
+    }
+  }
+  g.drawImage(frameC, 0, 0);
+  const c = events.light();
+  if (c[0] < 0.999 || c[1] < 0.999 || c[2] < 0.999) {
+    g.globalCompositeOperation = "multiply";
+    g.fillStyle = css(c); g.fillRect(0, 0, sceneC.width, sceneC.height);
+    g.globalCompositeOperation = "source-over";
+  }
+  const cw = cv.width, ch = cv.height, s = scale() * view.dpr / PIX;
+  const ox = cw / 2 - (view.x + FRAME) * PIX * s, oy = ch / 2 - (view.y + FRAME) * PIX * s;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = "#0f2a19"; ctx.fillRect(0, 0, cw, ch);
+  const ax0 = Math.max(0, Math.floor(-ox / s)), ay0 = Math.max(0, Math.floor(-oy / s));
+  const ax1 = Math.min(sceneC.width, Math.ceil((cw - ox) / s)), ay1 = Math.min(sceneC.height, Math.ceil((ch - oy) / s));
+  const aw = ax1 - ax0, ah = ay1 - ay0;
+  if (aw <= 0 || ah <= 0) return;
+  const k = Math.max(1, Math.min(Math.ceil(s - 0.01), Math.floor(4096 / Math.max(aw, ah))));
+  if (upC.width < aw * k || upC.height < ah * k) { upC.width = Math.max(upC.width, aw * k); upC.height = Math.max(upC.height, ah * k); }
+  upG.imageSmoothingEnabled = false;
+  upG.drawImage(sceneC, ax0, ay0, aw, ah, 0, 0, aw * k, ah * k);
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "medium";
+  ctx.drawImage(upC, 0, 0, aw * k, ah * k, ox + ax0 * s, oy + ay0 * s, aw * s, ah * s);
+}
+
+let last = performance.now(), acc = 0;
+function frame(now) {
+  const dt = Math.min((now - last) / 1000, 0.1);
+  last = now;
+  blink += dt;
+  if (zoomAnim) {
+    zoomAnim.t = Math.min(1, zoomAnim.t + dt / 0.25);
+    const e = 1 - (1 - zoomAnim.t) ** 2;
+    zoomAt(zoomAnim.from + (zoomAnim.to - zoomAnim.from) * e, zoomAnim.sx, zoomAnim.sy);
+    if (zoomAnim.t >= 1) zoomAnim = null;
+  }
+  if (!game.paused) {
+    acc += dt * game.speed;
+    let n = 0;
+    while (acc >= 1 / 60 && n < 12) { step(1 / 60); acc -= 1 / 60; n++; }
+    if (n === 12) acc = 0;
+  }
+  // Kamera folgt der ausgewählten Ameise
+  if (game.sel !== null && game.follow && !zoomAnim) {
+    const i = ants.indexOfId(game.sel);
+    if (i >= 0) {
+      const [x, y0] = ants.pos(i), k = Math.min(1, dt * 5);
+      const y = y0 + view.cssH * 0.2 / scale();
+      view.x += (x - view.x) * k; view.y += (y - view.y) * k;
+      clampView();
+    }
+  }
+  sky.tick(dt); hud.tick(dt);
+  if (ants.count === 0) {
+    if (game.deadT < 0) { game.deadT = 0; hud.banner("Die Kolonie ist ausgestorben", 6); }
+    game.deadT += dt;
+    if (game.deadT > 6) { try { localStorage.removeItem(SAVE_KEY); } catch (_) { } newGame(); }
+  }
+  game.saveT += dt;
+  if (game.saveT > 30) { game.saveT = 0; save(); }
+  render();
+  requestAnimationFrame(frame);
+}
+
+function start(data) {
+  buildFrame(); resize();
+  if (!(data && data.save && deserialize(data.save)) && !loadLocal()) newGame();
+  hud.updateButtons();
+  window.claude?.hot?.snapshot?.(() => ({ save: serialize() }));
+  last = performance.now();
+  requestAnimationFrame(frame);
+}
+window.claude?.hot?.ready ? window.claude.hot.ready(start) : start(window.claude?.hot?.data ?? {});
+</script>
+
+</body>
+</html>
