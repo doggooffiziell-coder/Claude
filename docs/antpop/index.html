@@ -536,7 +536,32 @@
   .story ol { list-style: none; margin: 6px 0 0; padding: 0; max-height: 128px; overflow-y: auto; }
   .story li { padding: 2px 0; color: var(--cream); line-height: 1.15; }
   .story li span { color: var(--brass); margin-right: 8px; }
-  body.photo #hud { display: none; }
+  body.photo #hud, body.cinema #hud { display: none; }
+  .viewmenu {
+    position: absolute; right: 12px; bottom: calc(env(safe-area-inset-bottom, 0px) + 74px);
+    display: grid; gap: 6px; padding: 8px; pointer-events: auto;
+    background: rgba(20, 45, 28, 0.97); border: 2px solid var(--board-light); clip-path: var(--notch);
+    box-shadow: 0 10px 28px rgba(0,0,0,0.45); animation: rise2 0.18s ease-out;
+  }
+  .viewmenu[hidden] { display: none; }
+  .viewmenu button { min-height: 44px; min-width: 160px; padding: 0 14px; text-align: left; border: 2px solid var(--board-light); background: #0f2417; color: var(--cream); font: inherit; font-size: 20px; clip-path: var(--notch); cursor: pointer; }
+  .viewmenu button[aria-pressed="true"] { background: #4a3a18; border-color: var(--brass); }
+  .cine-ui { position: fixed; inset: 0; z-index: 14; pointer-events: none; }
+  .cine-ui[hidden] { display: none; }
+  .cine-cap {
+    position: absolute; left: 16px; right: 16px; bottom: calc(env(safe-area-inset-bottom, 0px) + 74px);
+    display: grid; gap: 4px; padding: 12px 16px; background: linear-gradient(180deg, rgba(8,20,12,0) 0%, rgba(8,20,12,0.82) 30%);
+    text-shadow: 0 2px 0 rgba(0,0,0,0.6);
+  }
+  .cine-cap.show { animation: rise2 0.6s ease-out; }
+  .cine-cap b { font-weight: 400; font-size: 30px; color: var(--cream); letter-spacing: 0.03em; }
+  .cine-cap span { font-size: 19px; color: #ffe39a; line-height: 1.2; }
+  #cineStop { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 14px); pointer-events: auto; min-width: 220px; flex: none; }
+  body.cinema::before, body.cinema::after { content: ""; position: fixed; left: 0; right: 0; height: 7vh; background: #000; z-index: 13; pointer-events: none; }
+  body.cinema::before { top: 0; } body.cinema::after { bottom: 0; }
+  .confetti { position: fixed; inset: 0; pointer-events: none; z-index: 30; overflow: hidden; }
+  .confetti i { position: absolute; top: -10px; width: 6px; height: 6px; animation: fall 1.6s ease-in forwards; }
+  @keyframes fall { 0% { transform: translate(0, 0) rotate(0); opacity: 1; } 80% { opacity: 1; } 100% { transform: translate(var(--dx, 0px), 105vh) rotate(var(--r, 540deg)); opacity: 0; } }
   .photo-ui { position: fixed; inset: 0; z-index: 15; pointer-events: none; }
   .photo-ui[hidden] { display: none; }
   .photo-bar {
@@ -616,13 +641,25 @@
     <div class="toolmenu" id="toolMenu" hidden role="menu" aria-label="Werkzeuge"></div>
     <button id="btnTools" type="button" aria-label="Werkzeuge" aria-expanded="false"><span class="ticon" id="toolIcon"></span><span class="cd" id="toolCd"></span></button>
   </div>
+  <div class="viewmenu" id="viewMenu" hidden role="menu" aria-label="Ansicht">
+    <button type="button" data-view="normal" aria-pressed="true">Normal</button>
+    <button type="button" data-view="heat" aria-pressed="false">Wärmebild</button>
+    <button type="button" data-view="traffic" aria-pressed="false">Verkehr</button>
+    <button type="button" data-view="cinema" aria-pressed="false">Kinomodus</button>
+  </div>
   <div class="controls">
+    <button id="btnView" type="button" aria-label="Ansicht wählen"><svg viewBox="0 0 13 13" aria-hidden="true" shape-rendering="crispEdges"><rect x="3" y="4" width="7" height="1" fill="currentColor"/><rect x="1" y="5" width="2" height="1" fill="currentColor"/><rect x="10" y="5" width="2" height="1" fill="currentColor"/><rect x="0" y="6" width="1" height="1" fill="currentColor"/><rect x="12" y="6" width="1" height="1" fill="currentColor"/><rect x="1" y="7" width="2" height="1" fill="currentColor"/><rect x="10" y="7" width="2" height="1" fill="currentColor"/><rect x="3" y="8" width="7" height="1" fill="currentColor"/><rect x="5" y="5" width="3" height="3" fill="currentColor"/></svg></button>
     <button id="btnPhoto" type="button" aria-label="Fotomodus"><svg viewBox="0 0 13 13" aria-hidden="true" shape-rendering="crispEdges"><rect x="1" y="4" width="11" height="7" fill="currentColor"/><rect x="4" y="2" width="5" height="2" fill="currentColor"/><rect x="4" y="5" width="5" height="5" fill="#1a3d24"/><rect x="5" y="6" width="3" height="3" fill="currentColor"/><rect x="10" y="5" width="1" height="1" fill="#1a3d24"/></svg></button>
     <button id="btnPause" type="button" aria-label="Pause"></button>
     <button id="btnSpeed" type="button" aria-label="Tempo ändern">1×</button>
   </div>
 </div>
 
+<div class="cine-ui" id="cineUi" hidden>
+  <div class="cine-cap" id="cineCap"><b id="cineTitle"></b><span id="cineText"></span></div>
+  <button class="btn" id="cineStop" type="button">Kinomodus beenden</button>
+</div>
+<div class="confetti" id="confetti" aria-hidden="true"></div>
 <div class="photo-ui" id="photoUi" hidden>
   <div class="photo-bar">
     <span class="photo-hint">Wähle den Ausschnitt mit zwei Fingern</span>
@@ -1109,7 +1146,7 @@ Object.assign(world, {
   // Blätter im Pilzgarten, Wachstum des Pilzes, Verkehr in den Gängen
   owner: new Uint8Array(W * H), claim: new Uint8Array(W * H),
   mold: new Float32Array(W * H), dirtT: new Float32Array(W * H), moldCells: new Set(),
-  leaf: new Uint8Array(W * H), fk: new Uint8Array(W * H * 4), fgrow: new Float32Array(W * H), traffic: new Float32Array(W * H),
+  leaf: new Uint8Array(W * H), fk: new Uint8Array(W * H * 4), fgrow: new Float32Array(W * H), traffic: new Float32Array(W * H), wear: new Float32Array(W * H),
   roots: [], rootTips: [], doneTypes: new Uint16Array(CH_COUNT),
   // Zellen im Ameisenhaufen, die zu echtem Boden geworden sind
   isMound: new Uint8Array(W * H), moundFloor: new Float32Array(W), moundOn: false,
@@ -1196,7 +1233,7 @@ function newWorld(seed) {
   world.chamber.fill(0); world.mound.fill(0);
   world.food.fill(0); world.corpses.fill(0); world.trash.fill(0); world.roomOf.fill(-1);
   world.mold.fill(0); world.dirtT.fill(0); world.moldCells.clear(); world.owner.fill(0); world.claim.fill(0);
-  world.leaf.fill(0); world.fk.fill(0); world.fgrow.fill(0); world.isMound.fill(0); world.moundFloor.fill(0); world.moundOn = false; world.traffic.fill(0); world.doneTypes.fill(0);
+  world.leaf.fill(0); world.fk.fill(0); world.fgrow.fill(0); world.isMound.fill(0); world.moundFloor.fill(0); world.moundOn = false; world.traffic.fill(0); world.wear.fill(0); world.doneTypes.fill(0);
   world.groundFood = []; world.rooms = []; world.pinwheels = []; world.falling = []; world.waterDrops = []; world.dishes = []; world.sticks = [];
   generateSources();
 }
@@ -1269,7 +1306,7 @@ function dig(x, y) {
   world.topo++;
   markFields();
   colony.onDug(i);
-  if (!game.menu) sound.play("dig");
+  if (!game.menu) { sound.play("dig"); ambient.digCrumbs(x, y); }
   return true;
 }
 // Wo Dinge abgelegt werden, entsteht eine Duftmarke: dort wird eher eine Kammer gegraben
@@ -1951,7 +1988,7 @@ const colony = {
     r.cells = r.cells.filter(keep); r.path = r.path.filter(keep); r.size = r.cells.length;
     if (r.type && r.size < 6) { for (const i of r.cells) { world.roomOf[i] = -1; world.chamber[i] = 0; updateTile(i % W, Math.floor(i / W)); } r.cells = []; r.size = 0; r.type = 0; r.kind = "abandoned"; }
     for (const i of r.cells) updateTile(i % W, Math.floor(i / W));
-    r.done = true;
+    r.done = true; r.flashAt = world.simTime;
     refreshRoomTypes(); this.jobsDirty = true; markFields();
     if (r.type) this.log(ROOM_DONE[r.type], true);
   },
@@ -2107,7 +2144,7 @@ const colony = {
     for (const room of world.rooms) {
       if (room.done || !(room === r || room.path.includes(i))) continue;
       if (roomProgress(room) >= 1) {
-        room.done = true;
+        room.done = true; room.flashAt = world.simTime;
         refreshRoomTypes();
         this.log(room.type ? ROOM_DONE[room.type] : room.label, room.type > 0 || this.expandN <= 2);
         markItems();
@@ -2449,7 +2486,7 @@ const ants = {
       let jam = 0;
       for (let i = 0; i < this.count; i++) { const c = this.cy[i] * W + this.cx[i]; if (occ[c] >= 3 && world.roomOf[c] < 0 && this.cy[i] > G) jam++; }
       colony.jam = colony.jam * 0.85 + jam * 0.15;
-      for (const i of world.tunnels) if (world.traffic[i] > 0) world.traffic[i] *= 0.9;
+      for (const i of world.tunnels) { if (world.traffic[i] > 0) world.traffic[i] *= 0.9; if (world.wear[i] > 0) world.wear[i] *= 0.996; }
     }
     for (let i = 0; i < this.count; i++) {
       this.age[i] += dt; this.wt[i] += dt;
@@ -2498,7 +2535,7 @@ const ants = {
         const oc = this.cy[i] * W + this.cx[i];
         this.px[i] = gx; this.py[i] = gy; this.cx[i] = this.tx[i]; this.cy[i] = this.ty[i];
         const nc = this.cy[i] * W + this.cx[i];
-        if (nc !== oc) { occ[oc]--; occ[nc]++; world.traffic[nc] += 1; }
+        if (nc !== oc) { occ[oc]--; occ[nc]++; world.traffic[nc] += 1; if (world.wear[nc] < 1) world.wear[nc] = Math.min(1, world.wear[nc] + 0.01); }
         Ant.think(i);
       } else {
         this.px[i] += dx / dist * step; this.py[i] += dy / dist * step;
@@ -3459,7 +3496,9 @@ const events = {
   isNight() { return this.daylight() < 0.2; },
   light() {
     const t = clamp(this.daylight() / 0.6, 0, 1), l = t * t * (3 - 2 * t);
-    let c = mix([0.36, 0.40, 0.62], [1, 1, 1], l);
+    // bei Vollmond sind die Nächte heller und silbriger
+    const full = 1 - Math.abs(moonPhase() - 0.5) * 2, night = mix([0.34, 0.37, 0.58], [0.5, 0.55, 0.74], full * full * (this.raining ? 0.3 : 1));
+    let c = mix(night, [1, 1, 1], l);
     c = mix(c, [1, 0.78, 0.6], (1 - Math.abs(l - 0.5) * 2) * 0.22);
     if (this.raining) c = darken(c, 0.12);
     return c;
@@ -4184,6 +4223,8 @@ const GRASS_GREEN = LEAF.map(c => c.slice());
 const SAND = [0.89, 0.78, 0.56], SAND_DARK = [0.76, 0.64, 0.44];
 const TAU = Math.PI * 2;
 const [skyC, skyG] = canvas(WPX * PIX, G * T * PIX);
+// 0 Neumond, 0.5 Vollmond
+function moonPhase() { return ((events.day - 1) % 8 + events.time) / 8 % 1; }
 const sky = {
   dirty: true, t: 0, clock: 0, seed: -1, stalks: [], tufts: [], stars: [], clouds: [],
   generate() {
@@ -4215,12 +4256,30 @@ const sky = {
     [LEAF, LEAF_LIGHT] = LEAF_SEASON[si];
     this.grass = si === 3 || si === 2 ? GRASS_GREEN.map(c => mix(c, [0.62, 0.52, 0.32], si === 3 ? 0.7 : 0.4)) : GRASS_GREEN;
     if (si === 3) { top = mix(top, [0.72, 0.78, 0.85], 0.5); low = mix(low, [0.9, 0.92, 0.95], 0.5); }
+    // Morgenrot und Abendrot: warme Farben am Horizont, der Himmel oben wird violett
+    const tm = events.time, dusk = tm > 0.17 && tm < 0.33 ? 1 - Math.abs(tm - 0.24) / 0.09 : (tm > 0.68 && tm < 0.83 ? 1 - Math.abs(tm - 0.755) / 0.075 : 0);
+    if (dusk > 0 && !events.raining) {
+      const ev = tm > 0.5;
+      top = mix(top, ev ? [0.42, 0.36, 0.62] : [0.55, 0.6, 0.82], dusk * 0.7);
+      low = mix(low, ev ? [0.98, 0.56, 0.32] : [0.99, 0.78, 0.6], dusk * 0.85);
+    }
+    // vor dem Regen zieht sich der Himmel zu
+    const storm = ambient.storm();
+    if (storm > 0 && !events.raining) { top = mix(top, [0.55, 0.6, 0.66], storm * 0.45); low = mix(low, [0.68, 0.72, 0.75], storm * 0.4); }
     if (events.raining) { top = mix(top, [0.5, 0.55, 0.6], 0.6); low = mix(low, [0.62, 0.66, 0.7], 0.6); }
     const bands = 12;
     for (let b = 0; b < bands; b++) P.fill(css(mix(top, low, b / (bands - 1)))).rect(0, gy * b / bands, WPX, gy / bands + 0.5);
     if (light < 0.45) {
       const a = clamp((0.45 - light) * 3, 0, 1);
       for (const s of this.stars) P.fill(`rgba(255,251,230,${a * (0.55 + 0.45 * Math.sin(this.clock * 2 + s[0]))})`).dot(s[0], s[1]);
+      // der Große Wagen: sieben helle Sterne, schwach verbunden
+      const ox = WPX * 0.62, oy = 14, wagon = [[0, 8], [7, 9], [8, 15], [1, 15], [-7, 6], [-13, 4], [-20, 6]];
+      P.fill(`rgba(200,210,255,${(a * 0.18).toFixed(2)})`);
+      for (const [i, j] of [[0, 1], [1, 2], [2, 3], [3, 0], [0, 4], [4, 5], [5, 6]]) P.line(ox + wagon[i][0], oy + wagon[i][1], ox + wagon[j][0], oy + wagon[j][1]);
+      for (const [wx, wy] of wagon) {
+        P.fill(`rgba(255,250,225,${a.toFixed(2)})`).rect(ox + wx - 0.5, oy + wy - 0.5, 1, 1);
+        P.fill(`rgba(255,250,225,${(a * 0.4).toFixed(2)})`).dot(ox + wx - 1, oy + wy).dot(ox + wx + 0.5, oy + wy).dot(ox + wx, oy + wy - 1).dot(ox + wx, oy + wy + 0.5);
+      }
     }
     // Sonne mit Strahlenkranz
     const dayT = (events.time - 0.22) / 0.56;
@@ -4234,12 +4293,20 @@ const sky = {
     const nT = (((events.time + 0.5) % 1) - 0.22) / 0.56;
     if (nT > 0 && nT < 1) {
       const mx = 18 + (WPX - 36) * nT, my = 28 - Math.sin(nT * Math.PI) * 16;
-      P.fill("#f3f0dc").disc(mx, my, 4.5);
-      P.fill(css(mix(top, [0.1, 0.12, 0.25], 0.5))).disc(mx + 2, my - 1, 3.8);
+      // Mondphase: acht Tage von Neumond über Vollmond zurück
+      const ph = moonPhase(), full = 1 - Math.abs(ph - 0.5) * 2;
+      if (full > 0.95) P.fill("rgba(240,240,220,0.12)").disc(mx, my, 9).fill("rgba(240,240,220,0.15)").disc(mx, my, 6.5);
+      if (ph > 0.06 && ph < 0.94) {
+        P.fill("#f3f0dc").disc(mx, my, 4.5);
+        P.fill("#d9d4bc").disc(mx - 1.5, my - 1, 0.9).disc(mx + 1, my + 1.5, 0.7).dot(mx + 1.8, my - 1.6);
+        // Schatten schiebt sich über die Scheibe
+        if (full < 0.95) P.fill(css(mix(top, [0.1, 0.12, 0.25], 0.5))).disc(mx + (ph < 0.5 ? -1 : 1) * (1 + full * 8), my, 4.4);
+      } else P.fill("rgba(243,240,220,0.25)").disc(mx, my, 4.5);
     }
     for (const c of this.clouds) {
-      const x = ((c[0] + this.clock * c[3]) % (WPX + 60)) - 30, y = c[1], w = c[2];
-      const col = events.raining ? [0.58, 0.61, 0.66] : [0.98, 0.99, 1];
+      c[4] = (c[4] || 0) + 0.25 * c[3] * ambient.wind() * 1.4;
+      const x = ((c[0] + c[4]) % (WPX + 60)) - 30, y = c[1], w = c[2] * (1 + storm * 0.35);
+      const col = events.raining ? [0.58, 0.61, 0.66] : mix([0.98, 0.99, 1], [0.66, 0.69, 0.74], storm);
       P.fill(css(darken(col, 0.1)));
       P.disc(x + w * 0.25, y + 1, w * 0.2); P.disc(x + w * 0.55, y + 1.2, w * 0.24); P.disc(x + w * 0.8, y + 1, w * 0.17);
       P.fill(css(col));
@@ -4260,7 +4327,7 @@ const sky = {
     for (const t of this.tufts) {
       // auf dem Hügel wächst kein Gras
       if (world.mound[clamp(Math.floor(t[0] / T), 0, W - 1)] > 1.5 || Math.abs(t[0] / T - ENT - 0.5) < 2) continue;
-      const sway = Math.sin(this.clock * 1.2 + t[0] * 0.2) * 0.4;
+      const sway = Math.sin(this.clock * 1.2 * ambient.wind() + t[0] * 0.2) * 0.4 * ambient.wind() + storm * 0.8;
       P.fill(css(this.grass[t[3]])).line(t[0], gy - 0.5, t[0] + t[2] + sway, gy - t[1]);
     }
   },
@@ -4279,7 +4346,7 @@ const sky = {
     }
     P.fill(css(TRUNK));
     for (let o = -1; o <= 1; o += 0.5) { P.line(tx + o + sh, top + 5, tx - 7 + o + sh, top - 2); P.line(tx + o + sh, top + 7, tx + 8 + o + sh, top); }
-    const cx = s.cx * T + 1.5 + sh, cy = s.cy * T;
+    const cx = s.cx * T + 1.5 + sh + Math.sin(this.clock * 0.9 * ambient.wind() + s.trunk) * 0.35 * (ambient.wind() - 1), cy = s.cy * T;
     if (seasons.winter()) return this.bareCrown(s, tx + sh, top, cx, cy);
     for (const pass of [0, 1, 2]) for (const b of s.blobs) {
       const bx = cx + b[0] * T, by = cy + b[1] * T, br = b[2] * T;
@@ -4352,7 +4419,7 @@ const sky = {
   stalk(st, gy) {
     // im Winter liegen die Halme braun und ohne Blüten
     if (seasons.winter()) { const x = st[0], h = st[1] * 0.4; P.fill(css(this.grass[st[4]])).line(x, gy, x + h * 0.6, gy - h * 0.5); return; }
-    const x = st[0], h = st[1], lean = st[2] + Math.sin(this.clock * 0.8 + x * 0.3) * 0.04;
+    const x = st[0], h = st[1], lean = st[2] + Math.sin(this.clock * 0.8 * ambient.wind() + x * 0.3) * 0.04 * ambient.wind() + ambient.storm() * 0.06;
     const tx = x + lean * h, ty = gy - h;
     P.fill(css(this.grass[st[4]])).curve(x, gy, x + lean * h * 0.3, gy - h * 0.5, tx, ty, 6);
     if (h > 10) P.ellipse(x + lean * h * 0.4 - 1.2, gy - h * 0.45, 1.4, 0.5);
@@ -4402,6 +4469,206 @@ const sky = {
 };
 
 // =====================================================================
+
+// =====================================================================
+// UMGEBUNG: Licht im Nest, Wetter, kleine Tiere, Glühwürmchen, Pfützen, Tau, Krümel
+// =====================================================================
+const ROOM_GLOW = { [CH_FUNGUS]: [120, 220, 130], [CH_HONEY]: [255, 190, 80], [CH_SOLAR]: [255, 205, 120], [CH_PUPA]: [255, 190, 150],
+  [CH_QUEEN]: [225, 185, 255], [CH_ROYAL]: [255, 150, 220], [CH_BROOD]: [235, 175, 235], [CH_GRANARY]: [255, 220, 120], [CH_SLEEP]: [150, 150, 255] };
+const ambient = {
+  butterflies: [], bee: null, bug: null, worm: null, flies: [], puddles: [], crumbs: [], drips: [], t: 0, wasRaining: false,
+  // Wind: stärker, wenn Regen naht, am stärksten im Regen
+  storm() {
+    if (events.raining) return 1;
+    if (seasons.winter() || !settings.floods) return 0;
+    return clamp((45 - events.nextFlood) / 45, 0, 1);
+  },
+  wind() { return 1 + this.storm() * 2.5; },
+  surfaceY(x) { return G * T - surfaceOffset(clamp(Math.floor(x / T), 0, W - 1)); },
+  flowerTops() {
+    const gy = G * T, out = [];
+    for (const st of sky.stalks) if (st[3] === 2) out.push([st[0] + st[2] * st[1], gy - st[1]]);
+    return out;
+  },
+  tick(dt) {
+    const day = events.daylight() > 0.45, warm = !seasons.winter() && seasons.idx() !== 2 || !seasons.on(), dry = !events.raining;
+    this.t += dt;
+    // Schmetterlinge über den Blumen
+    const nB = day && warm && dry ? 3 : 0;
+    while (this.butterflies.length < nB) this.butterflies.push({ x: rf(10, WPX - 10), y: G * T - rf(15, 45), vx: rf(-8, 8), vy: 0, c: ri(0, 2), ph: rand() * 6, t: 0 });
+    if (this.butterflies.length > nB) this.butterflies.length = nB;
+    for (const b of this.butterflies) {
+      b.t += dt; b.ph += dt * 14;
+      if (rand() < dt * 0.8) { b.vx = rf(-10, 10); b.vy = rf(-5, 5); }
+      b.x = clamp(b.x + b.vx * dt, 4, WPX - 4); b.y = clamp(b.y + b.vy * dt + Math.sin(b.t * 3) * 6 * dt, G * T - 60, this.surfaceY(b.x) - 5);
+    }
+    // eine Biene besucht die Blüten
+    const tops = this.flowerTops();
+    if (day && warm && dry && tops.length) {
+      if (!this.bee) this.bee = { x: tops[0][0], y: tops[0][1] - 10, to: 0, wait: 0, ph: 0 };
+      const be = this.bee, tg = tops[be.to % tops.length];
+      be.ph += dt * 30;
+      if (be.wait > 0) be.wait -= dt;
+      else {
+        const dx = tg[0] - be.x, dy = tg[1] - 2.5 - be.y, d = Math.hypot(dx, dy);
+        if (d < 1) { be.wait = rf(1.2, 3); be.to = ri(0, tops.length - 1); }
+        else { const sp = 16 * dt; be.x += dx / d * Math.min(sp, d); be.y += dy / d * Math.min(sp, d) + Math.sin(this.t * 9) * 0.15; }
+      }
+    } else this.bee = null;
+    // ein Marienkäfer krabbelt einen Halm hinauf und wieder hinunter
+    if (warm && day && sky.stalks.length) {
+      if (!this.bug) { const st = sky.stalks[ri(0, sky.stalks.length - 1)]; this.bug = { st, f: 0, dir: 1 }; }
+      const b = this.bug;
+      b.f += dt * 0.06 * b.dir;
+      if (b.f > 0.85) b.dir = -1;
+      if (b.f < 0) this.bug = null;
+    } else this.bug = null;
+    // nach dem Regen: Pfützen und ein Regenwurm
+    if (this.wasRaining && !events.raining && !events.snowOnly) {
+      for (let k = 0; k < 4; k++) { const x = rf(8, WPX - 8); if (surfaceOffset(Math.floor(x / T)) < 1) this.puddles.push({ x, w: rf(5, 10), t: rf(60, 110), max: 110 }); }
+      if (!seasons.winter()) this.worm = { x: rf(20, WPX - 20), t: 0 };
+    }
+    if (events.raining && !events.snowOnly && rand() < dt * 0.3 && this.puddles.length < 6) {
+      const x = rf(8, WPX - 8); if (surfaceOffset(Math.floor(x / T)) < 1) this.puddles.push({ x, w: rf(3, 6), t: 120, max: 120 });
+    }
+    this.wasRaining = events.raining;
+    for (let k = this.puddles.length - 1; k >= 0; k--) { const p = this.puddles[k]; p.t -= dt * (seasons.summer() ? 1.6 : 1); if (p.t <= 0) this.puddles.splice(k, 1); }
+    if (this.worm) { this.worm.t += dt; if (this.worm.t > 22) this.worm = null; }
+    // Glühwürmchen in warmen Nächten
+    const nF = events.isNight() && warm && dry ? 14 : 0;
+    while (this.flies.length < nF) this.flies.push({ x: rf(4, WPX - 4), y: G * T - rf(4, 40), vx: rf(-3, 3), vy: rf(-2, 2), ph: rand() * 10 });
+    if (this.flies.length > nF) this.flies.length = nF;
+    for (const f of this.flies) {
+      if (rand() < dt) { f.vx = rf(-4, 4); f.vy = rf(-2.5, 2.5); }
+      f.x = clamp(f.x + f.vx * dt, 2, WPX - 2); f.y = clamp(f.y + f.vy * dt, G * T - 55, this.surfaceY(f.x) - 2); f.ph += dt;
+    }
+    // Krümel beim Graben und Tropfen von feuchten Decken
+    for (const list of [this.crumbs, this.drips]) for (let k = list.length - 1; k >= 0; k--) {
+      const c = list[k];
+      c.vy += 60 * dt; c.x += c.vx * dt; c.y += c.vy * dt; c.t += dt;
+      if (c.t > c.life) list.splice(k, 1);
+    }
+    if (rand() < dt * 0.4 && world.rooms.length) {
+      const r = world.rooms[ri(0, world.rooms.length - 1)];
+      if (r.done && r.cy > LAYER_ROWS[1] && r.cells.length) {
+        const i = r.cells[ri(0, r.cells.length - 1)];
+        if (world.cells[i] === TUNNEL && world.cells[i - W] === SOIL) this.drips.push({ x: (i % W) * T + 1.5, y: Math.floor(i / W) * T + 0.3, vx: 0, vy: 0, t: 0, life: 0.18 });
+      }
+    }
+  },
+  digCrumbs(x, y) {
+    if (this.crumbs.length > 80) return;
+    for (let k = 0; k < 4; k++) this.crumbs.push({ x: x * T + 1.5 + rf(-1, 1), y: y * T + 1 + rf(-0.5, 0.5), vx: rf(-6, 6), vy: rf(-14, -4), t: 0, life: rf(0.3, 0.6), c: ri(0, 2) });
+  },
+  // im Weltmaßstab gezeichnet, vor dem Tageslicht
+  draw() {
+    const gyAt = x => this.surfaceY(x);
+    // Pfützen mit Spiegelung, im Regen mit Ringen
+    for (const p of this.puddles) {
+      const k = clamp(p.t / p.max, 0.2, 1), y = gyAt(p.x) - 0.3, w = p.w * k;
+      P.fill("rgba(70,110,170,0.55)").ellipse(p.x, y, w, 0.9 * k + 0.3);
+      P.fill("rgba(190,220,250,0.6)").rect(p.x - w * 0.5, y - 0.4, w * 0.4, 0.5);
+      if (events.raining) { const r = (this.t * 4 + p.x) % 3; P.fill("rgba(220,240,255,0.5)").ellipse(p.x + Math.sin(p.x) * w * 0.4, y, r, r * 0.3); }
+    }
+    // Tau am Morgen auf den Grashalmen
+    if (events.time > 0.2 && events.time < 0.34 && !seasons.winter() && !events.raining) {
+      const a = 1 - Math.abs(events.time - 0.27) / 0.07;
+      for (let k = 0; k < sky.tufts.length; k += 3) {
+        const tf = sky.tufts[k], x = tf[0] + tf[2], y = gyAt(tf[0]) - tf[1];
+        if (surfaceOffset(Math.floor(tf[0] / T)) > 1.5) continue;
+        P.fill(`rgba(220,240,255,${(0.8 * a).toFixed(2)})`).dot(x, y);
+        if ((Math.floor(this.t * 2) + k) % 9 === 0) P.fill(`rgba(255,255,255,${a.toFixed(2)})`).dot(x - 0.5, y - 0.5);
+      }
+    }
+    // Regenwurm schaut nach dem Regen kurz heraus
+    if (this.worm) {
+      const w = this.worm, out = Math.min(1, w.t / 3, (22 - w.t) / 3), y = gyAt(w.x);
+      for (let s = 0; s < 7 * out; s++) {
+        const sx = w.x + Math.sin(w.t * 3 + s * 0.8) * 1.2 * (s / 7), sy = y - s * 0.9;
+        P.fill(s % 2 ? "#d98a8a" : "#c97878").disc(sx, sy, 0.8);
+      }
+      if (out > 0.5) P.fill("#b86868").disc(w.x + Math.sin(w.t * 3 + 5.6) * 1.2, y - 6 * out, 0.9);
+    }
+    // Marienkäfer am Halm
+    if (this.bug) {
+      const st = this.bug.st, gy = G * T, h = st[1] * this.bug.f, x = st[0] + st[2] * h + 0.6, y = gy - h;
+      P.fill("#c8281e").disc(x, y, 0.9); P.fill("#1a1010").dot(x - 0.4, y - 0.2).dot(x + 0.3, y + 0.2).rect(x - 0.25, y - 1, 0.5, 0.5);
+    }
+    // Biene: gelb-schwarz gestreift, Flügel flirren
+    if (this.bee) {
+      const b = this.bee, up = Math.floor(b.ph) % 2;
+      P.fill("rgba(235,245,255,0.85)").ellipse(b.x - 0.3, b.y - (up ? 1.4 : 0.9), 1.1, up ? 0.7 : 0.5);
+      P.fill("#f2c230").ellipse(b.x, b.y, 1.4, 0.9);
+      P.fill("#2a1e10").rect(b.x - 0.5, b.y - 0.8, 0.5, 1.6).rect(b.x + 0.5, b.y - 0.8, 0.5, 1.6).disc(b.x + 1.5, b.y, 0.6);
+    }
+    // Schmetterlinge: zwei Flügelpaare, die sich öffnen und schließen
+    const cols = [["#f4f4ec", "#c8c8b8"], ["#f0a040", "#c06a20"], ["#7ab8f0", "#3a78c0"]];
+    for (const b of this.butterflies) {
+      const open = (Math.sin(b.ph) + 1) / 2, c = cols[b.c];
+      P.fill(c[0]).ellipse(b.x - 1.2 * open - 0.3, b.y - 0.6, 1.3 * open + 0.3, 1.1);
+      P.fill(c[0]).ellipse(b.x + 1.2 * open + 0.3, b.y - 0.6, 1.3 * open + 0.3, 1.1);
+      P.fill(c[1]).ellipse(b.x - 0.9 * open - 0.2, b.y + 0.6, 0.9 * open + 0.2, 0.7).ellipse(b.x + 0.9 * open + 0.2, b.y + 0.6, 0.9 * open + 0.2, 0.7);
+      P.fill("#2a1e14").rect(b.x - 0.25, b.y - 1, 0.5, 2);
+    }
+    // Krümel und Tropfen
+    for (const c of this.crumbs) P.fill(["#b8935a", "#9a7646", "#d4b07a"][c.c]).dot(c.x, c.y);
+    for (const d of this.drips) P.fill("rgba(190,225,255,0.9)").dot(d.x, d.y);
+  },
+  // nach dem Tageslicht: was selbst leuchtet
+  drawGlow(g, F) {
+    if (!this.flies.length) return;
+    g.globalCompositeOperation = "lighter";
+    for (const f of this.flies) {
+      const b = (Math.sin(f.ph * 2.3) + 1) / 2;
+      if (b < 0.25) continue;
+      const x = F + f.x * PIX, y = F + f.y * PIX;
+      g.fillStyle = `rgba(180,255,120,${(0.18 * b).toFixed(3)})`; g.fillRect(x - 3, y - 3, 7, 7);
+      g.fillStyle = `rgba(230,255,150,${(0.9 * b).toFixed(3)})`; g.fillRect(x, y, 2, 2);
+    }
+    g.globalCompositeOperation = "source-over";
+  },
+  // Sonnenstrahlen am Morgen und Abend, schräg durch die Luft
+  drawRays(g, F) {
+    const t = events.time;
+    const k = t > 0.23 && t < 0.37 ? 1 - Math.abs(t - 0.3) / 0.07 : (t > 0.64 && t < 0.77 ? 1 - Math.abs(t - 0.705) / 0.065 : 0);
+    if (k <= 0 || events.raining) return;
+    const evening = t > 0.5;
+    g.save();
+    g.beginPath(); g.rect(F, F, WPX * PIX, G * T * PIX); g.clip();
+    g.globalCompositeOperation = "lighter";
+    const col = evening ? "255,170,110" : "255,240,190";
+    for (let n = 0; n < 5; n++) {
+      const x0 = F + (evening ? WPX * PIX * (0.75 - n * 0.16) : WPX * PIX * (0.08 + n * 0.17)), w = (10 + n * 4) * PIX, dx = (evening ? -1 : 1) * G * T * PIX * 0.55;
+      g.fillStyle = `rgba(${col},${(0.05 * k * (n % 2 ? 0.7 : 1)).toFixed(3)})`;
+      g.beginPath(); g.moveTo(x0, F); g.lineTo(x0 + w, F); g.lineTo(x0 + w + dx, F + G * T * PIX); g.lineTo(x0 + dx, F + G * T * PIX); g.closePath(); g.fill();
+    }
+    g.restore();
+  },
+  // Licht im Nest: tiefer wird es dunkler, Kammern leuchten in ihrer Farbe
+  drawNestLight(g, F) {
+    const y0 = F + G * T * PIX, y1 = F + HPX * PIX;
+    const gr = g.createLinearGradient(0, y0, 0, y1);
+    gr.addColorStop(0, "rgb(255,255,255)"); gr.addColorStop(0.35, "rgb(225,220,230)"); gr.addColorStop(1, "rgb(170,160,185)");
+    g.globalCompositeOperation = "multiply";
+    g.fillStyle = gr; g.fillRect(F, y0, WPX * PIX, y1 - y0);
+    g.globalCompositeOperation = "lighter";
+    const pulse = 0.85 + Math.sin(blink * 1.3) * 0.15;
+    for (const r of world.rooms) {
+      if (!r.done || !ROOM_GLOW[r.type] || !r.cells.length) continue;
+      if (r.type === CH_SOLAR && !sunny()) continue;
+      const [rx, ry] = ROOM_SIZE[r.type] || [4, 2], c = ROOM_GLOW[r.type];
+      const cx = F + (r.cx * T + 1.5) * PIX, cy = F + (r.cy * T + 1.5) * PIX, R = rx * T * PIX * 1.5;
+      const rg = g.createRadialGradient(cx, cy, 0, cx, cy, R);
+      const a = (r.type === CH_SOLAR ? 0.2 : 0.12) * pulse;
+      rg.addColorStop(0, `rgba(${c[0]},${c[1]},${c[2]},${a.toFixed(3)})`); rg.addColorStop(1, "rgba(0,0,0,0)");
+      g.fillStyle = rg;
+      g.save(); g.translate(cx, cy); g.scale(1, ry / rx * 1.4); g.translate(-cx, -cy);
+      g.fillRect(cx - R, cy - R, R * 2, R * 2);
+      g.restore();
+    }
+    g.globalCompositeOperation = "source-over";
+  },
+};
 
 // =====================================================================
 // GEGENSTÄNDE: Futter, Brut, Tote, Abfall im Nest und Futter an der Oberfläche
@@ -4466,6 +4733,7 @@ const decor = {
     P.line(x - 0.4, y + 0.2, x, y - 0.9); P.line(x + 0.4, y + 0.2, x + 0.8, y - 0.9);
   },
   draw() {
+    this.trails();
     this.rooms();
     for (const i of world.tunnels) {
       const f = world.food[i], c = world.corpses[i], t = world.trash[i], lf = world.leaf[i];
@@ -4491,10 +4759,16 @@ const decor = {
       if (b.carried) continue;
       const h = hash2(b.id, 3), x = (b.cell % W) * T + 0.6 + (h % 4) * 0.55, y = Math.floor(b.cell / W) * T + 1.4 + ((h >> 4) % 3) * 0.45;
       const k = b.royal ? 1.35 : 1;   // königliche Brut ist deutlich größer
-      if (b.s === 0) P.fill("#fbf6e8").ellipse(x, y, 0.5 * k, 0.8 * k);
-      else if (b.s === 1) {
+      if (b.s === 0) {
+        P.fill("#fbf6e8").ellipse(x, y, 0.5 * k, 0.8 * k);
+        if (h % 3 === 0) P.fill("#ffffff").dot(x - 0.3, y - 0.4);
+      } else if (b.s === 1) {
+        // Larven krümmen sich und heben hungrig den Kopf
+        const w = Math.sin(blink * (b.fed > 0.3 ? 2.2 : 4.5) + h) * (b.fed > 0.3 ? 0.25 : 0.45);
         P.fill(b.fed > 0.3 ? "#f6e3b0" : "#d2c8b0").ellipse(x, y, 1.1 * k, 0.75 * k);
-        P.fill("rgba(120,90,50,0.5)").rect(x - 0.3, y - 0.5, 0.5, 1);
+        P.fill(b.fed > 0.3 ? "#fbefc8" : "#e2d9c2").disc(x + 0.9 * k, y - 0.3 - Math.max(0, w), 0.5 * k);
+        P.fill("rgba(120,90,50,0.35)").rect(x - 0.6 + w, y - 0.5, 0.5, 1).rect(x + 0.3 + w * 0.5, y - 0.5, 0.5, 1);
+        P.fill("rgba(80,60,40,0.8)").dot(x + 1.1 * k, y - 0.4 - Math.max(0, w));
       } else {
         // Puppe im Kokon, in der Puppenkammer leicht glänzend vor Wärme
         P.fill("#a9844d").ellipse(x + 0.15, y + 0.15, 1.3 * k, 0.8 * k);
@@ -4540,8 +4814,46 @@ const decor = {
       } else this.deadAnt(x, y);
     }
   },
+  // Ameisenstraßen: viel begangene Gänge haben einen hellen, festgetretenen Boden
+  trails() {
+    for (const i of world.tunnels) {
+      const w = world.wear[i];
+      if (w < 0.12 || world.roomOf[i] >= 0) continue;
+      const x = (i % W) * T, y = Math.floor(i / W) * T, a = Math.min(0.42, (w - 0.12) * 0.6);
+      const floor = world.cells[i + W] === SOIL;
+      P.fill(`rgba(222,190,140,${a.toFixed(3)})`);
+      if (floor) P.rect(x, y + 2.5, T, 0.5);
+      else P.rect(x + 1, y + 1, 1, 1);
+      if (w > 0.5 && hash2(i, 5) % 3 === 0) P.fill(`rgba(250,225,180,${(a * 0.8).toFixed(3)})`).dot(x + (hash2(i, 6) % 6) * 0.5, y + (floor ? 2.5 : 1.5));
+    }
+  },
   // Einrichtung der Sonderkammern: Wurzeln mit Läusen, Kies, Schlafmulden, Honigflecken
   rooms() {
+    // Wände der Kammern: Steine im Lehm, tiefe Kammern mit feuchten Tropfen an der Decke, frisch fertige Kammern leuchten kurz auf
+    for (const r of world.rooms) {
+      if (!r.done || !r.cells.length) continue;
+      const fl = world.simTime - (r.flashAt ?? -99);
+      if (fl >= 0 && fl < 2.5) {
+        const a = (1 - fl / 2.5) * (0.35 + 0.15 * Math.sin(fl * 12));
+        P.fill(`rgba(255,240,170,${a.toFixed(3)})`);
+        for (const i of r.cells) if (world.cells[i] === TUNNEL) P.rect((i % W) * T, Math.floor(i / W) * T, T, T);
+        if (fl < 1.2) { P.fill(`rgba(255,250,210,${(1 - fl / 1.2).toFixed(2)})`); for (let k = 0; k < 8; k++) { const ang = k / 8 * Math.PI * 2, d = 4 + fl * 14; P.dot(r.cx * T + 1.5 + Math.cos(ang) * d, r.cy * T + 1.5 + Math.sin(ang) * d * 0.6); } }
+      }
+      const deep = r.cy > LAYER_ROWS[0], wet = r.cy > LAYER_ROWS[0] + 15;
+      for (const i of r.cells) {
+        if (world.cells[i] !== TUNNEL) continue;
+        const h = hash2(i, 131), x = (i % W) * T, y = Math.floor(i / W) * T;
+        if (world.cells[i - W] === SOIL) {
+          if (h % 7 === 0) { P.fill(deep ? "#7d756b" : "#8a7158").ellipse(x + 1.5, y - 0.1, 1.4, 0.8); P.fill(deep ? "#a39a8e" : "#a88d70").dot(x + 1, y - 0.5); }
+          if (wet && h % 5 === 1) {
+            const t = (blink * 0.35 + (h >> 4) % 100 / 100) % 1;
+            P.fill("rgba(170,205,235,0.55)").dot(x + (h >> 3) % 3 + 0.5, y);
+            if (t < 0.3) P.fill(`rgba(220,240,255,${(0.9 - t * 3).toFixed(2)})`).dot(x + (h >> 3) % 3 + 0.5, y + t * 2);
+          }
+        }
+        if (world.cells[i + W] === SOIL && h % 13 === 2) P.fill(deep ? "#6e675f" : "#7a634c").ellipse(x + 1.5, y + 3, 0.9, 0.5);
+      }
+    }
     // gewärmte Kammern glühen leicht und flimmern
     for (const r of world.rooms) if (r.warmT > 0 && r.done) {
       const a = Math.min(1, r.warmT / 10) * (0.13 + Math.sin(blink * 3) * 0.04);
@@ -4634,32 +4946,82 @@ const decor = {
 };
 
 // =====================================================================
-// RAHMEN: dunkelgrünes Formicarium mit Glas, als Pixelbild
+// RAHMEN: Holzrahmen mit Maserung und Messingschrauben, davor Glas mit Spuren
 // =====================================================================
 const [frameC, frameG] = canvas(FULL_W * PIX, FULL_H * PIX);
+const [glassC, glassG] = canvas(FULL_W * PIX, FULL_H * PIX);
 function buildFrame() {
-  const f = FRAME, w = WPX, h = HPX;
+  const f = FRAME, w = WPX, h = HPX, r = mulberry(4242);
   P.use(frameG, f * PIX, f * PIX);
-  P.fill("#17402a");
-  P.rect(-f, -f, w + 2 * f, f); P.rect(-f, h, w + 2 * f, f); P.rect(-f, 0, f, h); P.rect(w, 0, f, h);
-  P.fill("#3f7a52"); P.rect(-f, -f, w + 2 * f, 0.5); P.rect(-f, -f, 0.5, h + 2 * f); P.rect(-1, h, w + 2, 0.5); P.rect(w, -1, 0.5, h + 2);
-  P.fill("#0a1f12"); P.rect(-1, -1, w + 2, 0.5); P.rect(-1, -1, 0.5, h + 2); P.rect(-f, h + f - 0.5, w + 2 * f, 0.5); P.rect(w + f - 0.5, -f, 0.5, h + 2 * f);
-  P.fill("#24563a"); P.rect(-f + 1.5, -f + 1.5, w + 2 * f - 3, 0.5); P.rect(-f + 1.5, -f + 1.5, 0.5, h + 2 * f - 3);
-  for (const [px, py] of [[-3, -3], [w + 3, -3], [-3, h + 3], [w + 3, h + 3]]) {
-    P.fill("#7d8a72").disc(px, py, 1.5);
-    P.fill("#e8ecd8").dot(px - 0.6, py - 0.6);
-    P.fill("#4a5644").line(px - 0.9, py + 0.4, px + 0.9, py - 0.4);
+  frameG.clearRect(0, 0, frameC.width, frameC.height);
+  // vier Leisten, jede mit eigener Maserung
+  const WOOD = [0.47, 0.30, 0.17], WOOD_D = [0.33, 0.20, 0.11], WOOD_L = [0.60, 0.40, 0.24];
+  const bars = [[-f, -f, w + 2 * f, f, true], [-f, h, w + 2 * f, f, true], [-f, 0, f, h, false], [w, 0, f, h, false]];
+  for (const [x, y, bw, bh, horiz] of bars) {
+    P.fill(css(WOOD)).rect(x, y, bw, bh);
+    // Maserung: wellige dunkle und helle Linien entlang der Leiste
+    for (let k = 0; k < 7; k++) {
+      const off = r.rf(0.6, (horiz ? bh : bw) - 0.6), ph = r.rf(0, 6), amp = r.rf(0.2, 0.6), col = k % 3 ? WOOD_D : WOOD_L;
+      P.fill(css(col, 0.55));
+      const len = horiz ? bw : bh;
+      for (let s = 0; s < len; s += 0.5) {
+        const o = off + Math.sin(s * 0.08 + ph) * amp;
+        if (horiz) P.rect(x + s, y + o, 0.5, 0.5); else P.rect(x + o, y + s, 0.5, 0.5);
+      }
+    }
+    // ein paar Astlöcher
+    for (let k = 0; k < 2; k++) {
+      const ax = horiz ? x + r.rf(10, bw - 10) : x + bw / 2, ay = horiz ? y + bh / 2 : y + r.rf(10, bh - 10);
+      P.fill(css(WOOD_D)).ellipse(ax, ay, horiz ? 1.6 : 0.9, horiz ? 0.9 : 1.6);
+      P.fill(css(darken(WOOD_D, 0.3))).dot(ax, ay);
+    }
   }
-  // Glas: zarte Spiegelung in Pixelstreifen
+  // Kanten: helle Oberkante, dunkle Fuge zum Glas
+  P.fill(css(WOOD_L)); P.rect(-f, -f, w + 2 * f, 0.5); P.rect(-f, -f, 0.5, h + 2 * f);
+  P.fill(css(darken(WOOD_D, 0.4))); P.rect(-f, h + f - 0.5, w + 2 * f, 0.5); P.rect(w + f - 0.5, -f, 0.5, h + 2 * f);
+  P.fill("#1e120a"); P.rect(-1, -1, w + 2, 1); P.rect(-1, -1, 1, h + 2); P.rect(-1, h, w + 2, 1); P.rect(w, -1, 1, h + 2);
+  P.fill("rgba(255,230,200,0.25)"); P.rect(0, h + 1, w, 0.5); P.rect(w + 1, 0, 0.5, h);
+  // Messingschrauben mit Schlitz in den Ecken und in der Mitte der langen Seiten
+  for (const [px, py] of [[-3, -3], [w + 3, -3], [-3, h + 3], [w + 3, h + 3], [-3, h / 2], [w + 3, h / 2]]) {
+    P.fill("#6d5420").disc(px + 0.3, py + 0.3, 1.6);
+    P.fill("#c9a24a").disc(px, py, 1.5);
+    P.fill("#f2d88a").dot(px - 0.6, py - 0.6);
+    P.fill("#5a4416").line(px - 0.9, py + 0.4, px + 0.9, py - 0.4);
+  }
+  buildGlass();
+}
+// Glas: Spiegelung in Pixelstreifen, zwei Fingerabdrücke, feine Kratzer
+function buildGlass() {
+  const w = WPX, h = HPX, r = mulberry(777);
+  P.use(glassG, FRAME * PIX, FRAME * PIX);
+  glassG.clearRect(0, 0, glassC.width, glassC.height);
   P.fill("rgba(255,255,255,0.06)");
   for (const [x0, bw] of [[20, 12], [40, 4]]) for (let s = 0; s < 360; s += 0.5) {
     const y = h - s, x = x0 + s * 200 / 360;
     if (y < 0) break;
     P.rect(x, y, bw, 0.5);
   }
+  for (const [fx, fy] of [[r.rf(30, w - 30), r.rf(140, 260)], [r.rf(30, w - 30), r.rf(300, h - 40)]]) {
+    for (let k = 1; k <= 6; k++) {
+      P.fill(`rgba(255,255,255,${(0.05 - k * 0.004).toFixed(3)})`);
+      for (let a = 0; a < Math.PI * 2; a += 0.12) if ((a * 7 + k) % 2 < 1.5) P.dot(fx + Math.cos(a) * k * 1.3, fy + Math.sin(a) * k * 1.7);
+    }
+  }
+  P.fill("rgba(255,255,255,0.09)");
+  for (let k = 0; k < 7; k++) { const x = r.rf(5, w - 5), y = r.rf(5, h - 5), a = r.rf(0, Math.PI), l = r.rf(3, 12); P.line(x, y, x + Math.cos(a) * l, y + Math.sin(a) * l); }
 }
-
-// =====================================================================
+// beschlagenes Glas, wenn es kalt ist: dichter in den Ecken
+function drawFog(g) {
+  const k = seasons.snow() * 0.9 + (events.raining && !seasons.summer() ? 0.15 : 0);
+  if (k <= 0.02) return;
+  const F = FRAME * PIX, w = WPX * PIX, h = HPX * PIX;
+  g.fillStyle = `rgba(235,242,250,${(0.1 * k).toFixed(3)})`; g.fillRect(F, F, w, h);
+  for (const [cx, cy] of [[F, F], [F + w, F], [F, F + h], [F + w, F + h]]) {
+    const gr = g.createRadialGradient(cx, cy, 0, cx, cy, w * 0.55);
+    gr.addColorStop(0, `rgba(240,246,252,${(0.55 * k).toFixed(3)})`); gr.addColorStop(1, "rgba(240,246,252,0)");
+    g.fillStyle = gr; g.fillRect(F, F, w, h);
+  }
+}
 
 // =====================================================================
 // ANZEIGE: Schild, Kammer-Infos, Ameisen-Steckbrief, Kolonie-Panel, Werkzeuge
@@ -4856,6 +5218,8 @@ const hud = {
     if (this.panelOpen) this.updatePanel();
   },
 };
+// beim Tippen ins Feld schließt sich das Ansichtsmenü
+$("game").addEventListener("pointerdown", () => { $("viewMenu").hidden = true; if (typeof views !== "undefined" && views.cine) views.stopCinema(); });
 $("btnPause").addEventListener("click", () => { game.paused = !game.paused; hud.updateButtons(); });
 // Tempo: 1×, 2×, 4×, 8× und 16×
 $("btnSpeed").addEventListener("click", () => { game.speed = game.speed >= 16 ? 1 : game.speed * 2; hud.updateButtons(); });
@@ -5410,6 +5774,26 @@ const achievements = {
     t.hidden = false; t.classList.remove("show"); void t.offsetWidth; t.classList.add("show");
     clearTimeout(this.toastT); this.toastT = setTimeout(() => { t.hidden = true; }, 4200);
     if (typeof sound !== "undefined") sound.jingle();
+    this.confetti();
+  },
+  // bunte Pixel fallen von oben über den Bildschirm
+  confetti() {
+    const box = $("confetti");
+    if (!box || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    box.replaceChildren();
+    const cols = ["#ffd75a", "#e8553f", "#6fc4ff", "#7fd46a", "#f29ae0", "#fff4d6"];
+    for (let k = 0; k < 70; k++) {
+      const el = document.createElement("i");
+      el.style.left = (Math.random() * 100).toFixed(1) + "%";
+      el.style.background = cols[k % cols.length];
+      el.style.animationDelay = (Math.random() * 0.6).toFixed(2) + "s";
+      el.style.animationDuration = (1.3 + Math.random() * 1.2).toFixed(2) + "s";
+      el.style.setProperty("--dx", ((Math.random() - 0.5) * 160).toFixed(0) + "px");
+      el.style.setProperty("--r", (Math.random() * 720 - 360).toFixed(0) + "deg");
+      if (k % 3 === 0) { el.style.width = "4px"; el.style.height = "9px"; }
+      box.appendChild(el);
+    }
+    clearTimeout(this.confT); this.confT = setTimeout(() => box.replaceChildren(), 3200);
   },
   tick(dt) { this.t -= dt; if (this.t <= 0) { this.t = 2; this.check(); } },
   count() { return BADGES.filter(b => this.store.got[b.id]).length; },
@@ -5438,6 +5822,7 @@ const photo = {
     game.sel = null; game.follow = false; game.tool = null; tools.toggleMenu(false);
     hud.closeAnt(); hud.closePanel(); hud.hideInfo();
     document.body.classList.add("photo");
+    $("viewMenu").hidden = true; views.stopCinema();
     $("photoUi").hidden = false; $("photoShot").hidden = true;
   },
   close() { document.body.classList.remove("photo"); $("photoUi").hidden = true; $("photoShot").hidden = true; },
@@ -5498,6 +5883,122 @@ $("photoDone").addEventListener("click", () => photo.close());
 $("photoSave").addEventListener("click", () => photo.share());
 $("photoClose").addEventListener("click", () => photo.close());
 $("photoAgain").addEventListener("click", () => { $("photoShot").hidden = true; });
+
+// =====================================================================
+// ANSICHTEN: Wärmebild, Verkehr und ein Kinomodus, der durch das Nest fährt
+// =====================================================================
+const TOP_ROW = G - MOUND_ROWS;
+const [overC, overG] = canvas(W, H - TOP_ROW);
+const overImg = overG.createImageData(W, H - TOP_ROW);
+const views = {
+  mode: "normal", t: 0, cine: null,
+  // Temperatur einer Zelle, 0 kalt bis 1 heiß
+  temp(x, y) {
+    const i = idx(x, y), si = seasons.idx();
+    const surf = (seasons.on() ? [0.55, 0.78, 0.45, 0.12][si] : 0.6) + (events.daylight() - 0.5) * (si === 3 ? 0.1 : 0.3);
+    let t = y < G ? surf + 0.05 : surf + (0.45 - surf) * clamp((y - G) / 40, 0, 1);
+    const rt = roomType(i);
+    if (rt === CH_SOLAR) t += sunny() ? 0.3 : -0.05;
+    if (world.isMound[i] && sunny()) t += 0.08;
+    if (rt === CH_PUPA) t += 0.12;
+    if (toolFx.warmAt(i)) t += 0.3;
+    if (rt === CH_QUEEN || rt === CH_BROOD) t += 0.05;
+    t += Math.min(0.1, (ants.occ[i] || 0) * 0.03);
+    return clamp(t, 0, 1);
+  },
+  heatColor(t) {
+    const stops = [[0, [40, 80, 220]], [0.35, [60, 190, 220]], [0.55, [120, 210, 90]], [0.75, [250, 210, 60]], [1, [235, 70, 40]]];
+    for (let k = 1; k < stops.length; k++) if (t <= stops[k][0]) {
+      const [a, ca] = stops[k - 1], [b, cb] = stops[k], f = (t - a) / (b - a);
+      return [ca[0] + (cb[0] - ca[0]) * f, ca[1] + (cb[1] - ca[1]) * f, ca[2] + (cb[2] - ca[2]) * f];
+    }
+    return stops[stops.length - 1][1];
+  },
+  update(dt) {
+    this.t -= dt;
+    if ((this.mode !== "heat" && this.mode !== "traffic") || this.t > 0) return;
+    this.t = 0.4;
+    const d = overImg.data;
+    d.fill(0);
+    for (let y = TOP_ROW; y < H; y++) for (let x = 0; x < W; x++) {
+      const i = idx(x, y), o = ((y - TOP_ROW) * W + x) * 4, tun = world.cells[i] === TUNNEL;
+      if (world.cells[i] === AIR || world.owner[i]) continue;
+      if (this.mode === "heat") {
+        const c = this.heatColor(this.temp(x, y));
+        d[o] = c[0]; d[o + 1] = c[1]; d[o + 2] = c[2]; d[o + 3] = tun ? 190 : 70;
+      } else if (tun) {
+        const v = Math.min(1, world.wear[i] * 1.6 + (world.traffic[i] > 1 ? 0.2 : 0));
+        if (v < 0.04) { d[o] = 60; d[o + 1] = 50; d[o + 2] = 40; d[o + 3] = 120; continue; }
+        d[o] = 255; d[o + 1] = 120 + v * 120; d[o + 2] = 40 + v * 60; d[o + 3] = 90 + v * 165;
+      }
+    }
+    overG.putImageData(overImg, 0, 0);
+  },
+  draw(g, F) {
+    if (this.mode !== "heat" && this.mode !== "traffic") return;
+    if (this.mode === "traffic") { g.fillStyle = "rgba(10,14,20,0.55)"; g.fillRect(F, F + TOP_ROW * T * PIX, WPX * PIX, (H - TOP_ROW) * T * PIX); }
+    g.imageSmoothingEnabled = false;
+    g.drawImage(overC, 0, 0, W, H - TOP_ROW, F, F + TOP_ROW * T * PIX, WPX * PIX, (H - TOP_ROW) * T * PIX);
+  },
+  set(mode) {
+    this.mode = mode; this.t = 0;
+    $("viewMenu").hidden = true;
+    for (const b of $("viewMenu").children) b.setAttribute("aria-pressed", String(b.dataset.view === mode));
+    if (mode === "heat") hud.banner("Wärmebild: rot ist warm, blau ist kalt", 3);
+    if (mode === "traffic") hud.banner("Verkehr: je heller der Gang, desto mehr Ameisen laufen dort", 3);
+    if (mode === "cinema") return this.startCinema();
+  },
+  // ---- Kinomodus: die Kamera fährt von Ort zu Ort und erzählt, was dort passiert
+  stops() {
+    const out = [];
+    const q = world.rooms.find(r => r.type === CH_QUEEN);
+    if (q) out.push([q.cx * T, q.cy * T, 3.4, "Königinnenkammer", ROOM_PURPOSE[CH_QUEEN]]);
+    out.push([ENT * T, (G - 4) * T, 2.6, "Der Eingang", world.moundOn ? "Über dem Eingang wächst der Ameisenhaufen aus ausgegrabener Erde." : "Hier gehen Sammlerinnen hinaus und tragen Futter heim."]);
+    const tree = world.sources.find(s => s.kind === 0 && hasFruit(world.sources.indexOf(s)));
+    if (tree) out.push([tree.cx * T, (tree.cy + 4) * T, 2.4, "Ein Apfelbaum", "Sammlerinnen klettern den Stamm hinauf und holen Äpfel."]);
+    for (const r of world.rooms) if (r.done && r.type !== CH_QUEEN && r.type > 0) out.push([r.cx * T, r.cy * T, 3.2, ROOM_NAMES[r.type], ROOM_PURPOSE[r.type]]);
+    for (const n of neighbors.list) out.push([n.x * T, (G + 6) * T, 3, n.kind === "rival" ? `Fremde Kolonie ${n.name}` : `Tochterkolonie ${n.name}`, neighbors.info(n)[2]]);
+    out.push([WPX / 2, HPX / 2, 1, colony.name, `Tag ${events.day}${seasons.on() ? ", " + seasons.name() : ""}. ${ants.count} Ameisen leben hier.`]);
+    return out;
+  },
+  startCinema() {
+    game.sel = null; game.follow = false; game.tool = null; tools.toggleMenu(false);
+    hud.closeAnt(); hud.closePanel(); hud.hideInfo();
+    this.cine = { list: this.stops(), k: -1, t: 0, from: [view.x, view.y, view.z] };
+    document.body.classList.add("cinema");
+    $("cineUi").hidden = false;
+    this.nextStop();
+  },
+  nextStop() {
+    const c = this.cine;
+    c.k = (c.k + 1) % c.list.length;
+    if (c.k === 0) c.list = this.stops();
+    c.t = 0; c.from = [view.x, view.y, view.z];
+    const s = c.list[c.k];
+    $("cineTitle").textContent = s[3]; $("cineText").textContent = s[4] || "";
+    $("cineCap").classList.remove("show"); void $("cineCap").offsetWidth; $("cineCap").classList.add("show");
+  },
+  stopCinema() {
+    if (!this.cine) return;
+    this.cine = null; this.mode = "normal";
+    document.body.classList.remove("cinema");
+    $("cineUi").hidden = true;
+    for (const b of $("viewMenu").children) b.setAttribute("aria-pressed", String(b.dataset.view === "normal"));
+  },
+  tickCinema(dt) {
+    const c = this.cine;
+    if (!c) return;
+    c.t += dt;
+    const s = c.list[c.k], e = Math.min(1, c.t / 2.2), k = e * e * (3 - 2 * e);
+    view.z = c.from[2] + (s[2] - c.from[2]) * k;
+    view.x = c.from[0] + (s[0] - c.from[0]) * k; view.y = c.from[1] + (s[1] - c.from[1]) * k;
+    clampView();
+    if (c.t > 7.5) this.nextStop();
+  },
+};
+$("btnView").addEventListener("click", () => { const m = $("viewMenu"); m.hidden = !m.hidden; });
+for (const b of document.querySelectorAll("#viewMenu button")) b.addEventListener("click", () => views.set(b.dataset.view));
+$("cineStop").addEventListener("click", () => views.stopCinema());
 
 // =====================================================================
 // LADEBILDSCHIRM UND HAUPTMENÜ
@@ -5563,6 +6064,7 @@ const menu = {
     if (!game.menu) { game.view = [view.x, view.y, view.z]; game.menuSpeed = game.speed; }
     game.menu = true; game.paused = false; game.speed = 1;
     document.body.classList.add("in-menu");
+    $("viewMenu").hidden = true; if (typeof views !== "undefined") { views.stopCinema(); views.mode = "normal"; }
     $("menu").hidden = false;
     this.show("menuMain");
     const cont = $("mContinue");
@@ -5888,6 +6390,11 @@ function render() {
   if (world.waterShown || world.wet) g.drawImage(waterC, 0, 0, W, H, F, F, WPX * PIX, HPX * PIX);
   P.use(g, F, F);
   events.draw(F);
+  P.use(g, F, F);
+  ambient.draw();
+  ambient.drawNestLight(g, F);
+  views.draw(g, F);
+  ambient.drawRays(g, F);
   // Markierung über der ausgewählten Ameise
   if (game.sel !== null) {
     const i = ants.indexOfId(game.sel);
@@ -5896,6 +6403,8 @@ function render() {
       P.fill("#ffe14d").rect(x - 1.5, y - 7, 3, 0.5).rect(x - 1, y - 6.5, 2, 0.5).rect(x - 0.5, y - 6, 1, 0.5);
     }
   }
+  g.drawImage(glassC, 0, 0);
+  drawFog(g);
   g.drawImage(frameC, 0, 0);
   const c = events.light();
   if (c[0] < 0.999 || c[1] < 0.999 || c[2] < 0.999) {
@@ -5903,6 +6412,7 @@ function render() {
     g.fillStyle = css(c); g.fillRect(0, 0, sceneC.width, sceneC.height);
     g.globalCompositeOperation = "source-over";
   }
+  ambient.drawGlow(g, F);
   const cw = cv.width, ch = cv.height, s = scale() * view.dpr / PIX;
   const ox = cw / 2 - (view.x + FRAME) * PIX * s, oy = ch / 2 - (view.y + FRAME) * PIX * s;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -5948,6 +6458,8 @@ function frame(now) {
     }
   }
   sky.tick(dt); hud.tick(dt); achievements.tick(dt); sound.tick(dt);
+  ambient.tick(game.paused ? 0 : Math.min(dt * Math.max(1, game.speed), 0.25));
+  views.update(dt); views.tickCinema(dt);
   if (ants.count === 0) {
     if (game.deadT < 0) { game.deadT = 0; if (!game.menu) hud.banner("Die Kolonie ist ausgestorben", 6); }
     game.deadT += dt;
