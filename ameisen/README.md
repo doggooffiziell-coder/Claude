@@ -29,6 +29,7 @@ Das Spiel läuft auf iPhone, Android, Tablet und PC. Die Basisauflösung ist 270
   - Blattlaus-Stall: Er liegt an einer Baumwurzel. Wurzelläuse geben Honigtau, die Ameisen melken sie auch nachts und bei Regen. Gepflegte Läuse vermehren sich.
   - Drainage-Schacht: Er liegt unter dem tiefsten Gang. Bei einer Flut versickert das Wasser dort im Kies.
   - Prinzessinnenkammer: Ab 60 Ameisen zieht die Königin Prinzessinnen und Männchen mit Flügeln auf. An einem warmen, trockenen Tag klettern alle auf Grashalme und starten zum Hochzeitsflug.
+- Der Ameisenhaufen: Aus dem Aushub wächst über dem Eingang ein Hügel mit Krater, Nadeln und Ästchen. Ist er hoch genug, wird er zu festem Boden, in den die Ameisen graben. Dort entstehen Sonnenkammern. Wie bei der Roten Waldameise tragen die Ammen tagsüber Larven und Puppen hinauf ins Warme, wo sie 1,8 mal schneller reifen. Abends und bei Regen tragen sie die Brut wieder hinunter.
 - Wird es eng, laufen die Ameisen in vollen Gängen langsamer. Dann verbreitern sie die meistbenutzten Gänge, graben neue Seitengänge und legen Abkürzungen an.
 - Das Kolonie-Panel zeigt alle Sonderkammern mit ihrem Zustand, die Zahl der Hochzeitsflüge und das Gedränge in den Gängen.
 - Tippe auf eine Ameise, um ihr zu folgen und ihren Steckbrief zu sehen. Das Schild öffnet das Kolonie-Panel mit Aufgabenverteilung, Verlauf und Chronik.

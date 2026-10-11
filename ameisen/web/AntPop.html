@@ -629,16 +629,19 @@ const FULL_W = WPX + 2 * FRAME, FULL_H = HPX + 2 * FRAME;  // 270 x 480
 const INF = 1 << 28;
 const AIR = 0, SOIL = 1, TUNNEL = 2;
 const CH_GRANARY = 1, CH_BROOD = 2, CH_QUEEN = 3, CH_CEMETERY = 4, CH_TRASH = 5,
-  CH_FUNGUS = 6, CH_HONEY = 7, CH_APHID = 8, CH_GUARD = 9, CH_PUPA = 10, CH_SLEEP = 11, CH_DRAIN = 12, CH_ROYAL = 13, CH_COUNT = 14;
+  CH_FUNGUS = 6, CH_HONEY = 7, CH_APHID = 8, CH_GUARD = 9, CH_PUPA = 10, CH_SLEEP = 11, CH_DRAIN = 12, CH_ROYAL = 13, CH_SOLAR = 14, CH_COUNT = 15;
+// der Ameisenhaufen: so viele Reihen ragt er höchstens über den Boden
+const MOUND_ROWS = 10;
 const ROOM_NAMES = ["Leere Kammer", "Kornkammer", "Brutkammer", "Königinnenkammer", "Friedhof", "Müllkammer",
-  "Pilzgarten", "Honigtopf-Kammer", "Blattlaus-Stall", "Wachkammer", "Puppenkammer", "Schlafkammer", "Drainage-Schacht", "Prinzessinnenkammer"];
+  "Pilzgarten", "Honigtopf-Kammer", "Blattlaus-Stall", "Wachkammer", "Puppenkammer", "Schlafkammer", "Drainage-Schacht", "Prinzessinnenkammer", "Sonnenkammer"];
 const ROOM_NEW = ["", "eine neue Kornkammer", "eine neue Brutkammer", "", "einen neuen Friedhof", "eine neue Müllkammer",
   "einen Pilzgarten", "eine Honigtopf-Kammer", "einen Blattlaus-Stall an einer Baumwurzel", "eine Wachkammer am Eingang",
-  "eine warme Puppenkammer nah an der Oberfläche", "eine Schlafkammer", "einen Drainage-Schacht ganz unten", "eine Prinzessinnenkammer"];
+  "eine warme Puppenkammer nah an der Oberfläche", "eine Schlafkammer", "einen Drainage-Schacht ganz unten", "eine Prinzessinnenkammer",
+  "eine Sonnenkammer oben im Ameisenhaufen"];
 const ROOM_DONE = ["", "Die Kornkammer ist fertig", "Die Brutkammer ist fertig", "", "Der Friedhof ist fertig", "Die Müllkammer ist fertig",
   "Der Pilzgarten ist fertig. Jetzt brauchen die Ameisen Blätter", "Die Honigtopf-Kammer ist fertig", "Der Blattlaus-Stall ist fertig",
   "Die Wachkammer ist fertig", "Die Puppenkammer ist fertig", "Die Schlafkammer ist fertig", "Der Drainage-Schacht ist fertig",
-  "Die Prinzessinnenkammer ist fertig"];
+  "Die Prinzessinnenkammer ist fertig", "Die Sonnenkammer im Hügel ist fertig. Tagsüber wärmt sich dort die Brut"];
 const ARRIVED = -1, NO_PATH = -2;
 const LAYER_ROWS = [40, 79, 118];
 const SAVE_KEY = "antpop-save-v3";
@@ -753,7 +756,7 @@ function pcircle(g, cx, cy, r) {
 const SOIL_COLORS = [[0.87, 0.76, 0.53], [0.82, 0.70, 0.48], [0.73, 0.62, 0.43]];
 const TUNNEL_COLOR = [0.36, 0.24, 0.14], RIM_COLOR = [0.52, 0.38, 0.23];
 const CHAMBER_COLORS = [[0, 0, 0], [0.72, 0.62, 0.24], [0.52, 0.38, 0.55], [0.30, 0.28, 0.30], [0.45, 0.51, 0.40], [0.68, 0.56, 0.40],
-  [0.34, 0.47, 0.29], [0.78, 0.50, 0.20], [0.56, 0.64, 0.31], [0.60, 0.30, 0.24], [0.74, 0.54, 0.50], [0.37, 0.35, 0.58], [0.36, 0.47, 0.52], [0.66, 0.30, 0.50]];
+  [0.34, 0.47, 0.29], [0.78, 0.50, 0.20], [0.56, 0.64, 0.31], [0.60, 0.30, 0.24], [0.74, 0.54, 0.50], [0.37, 0.35, 0.58], [0.36, 0.47, 0.52], [0.66, 0.30, 0.50], [0.93, 0.70, 0.40]];
 
 const world = {
   seed: 1, cells: new Uint8Array(W * H), chamber: new Uint8Array(W * H), chamberCells: [],
@@ -815,7 +818,7 @@ let soilSeed = -1;
 const groundDirty = new Set();
 
 function solid(x, y) {
-  if (y < G) return false;
+  if (y < G) return inGrid(x, y) && world.isMound[idx(x, y)] === 1 && world.cells[idx(x, y)] === SOIL;
   if (x < 0 || x >= W || y >= H) return true;
   return world.cells[idx(x, y)] === SOIL;
 }
@@ -894,7 +897,7 @@ function buildSoil() {
 }
 function drawGroundRegion(x0, y0, x1, y1) {
   const g = groundG;
-  x0 = Math.max(0, x0); x1 = Math.min(W - 1, x1); y0 = Math.max(G, y0); y1 = Math.min(H - 1, y1);
+  x0 = Math.max(0, x0); x1 = Math.min(W - 1, x1); y0 = Math.max(G - MOUND_ROWS, y0); y1 = Math.min(H - 1, y1);
   if (x1 < x0 || y1 < y0) return;
   const px = x0 * T * PIX, py = y0 * T * PIX, pw = (x1 - x0 + 1) * T * PIX, ph = (y1 - y0 + 1) * T * PIX;
   g.save();
@@ -904,7 +907,7 @@ function drawGroundRegion(x0, y0, x1, y1) {
   P.use(g);
   const m = 2;
   for (let pass = 0; pass < 3; pass++) {
-    for (let y = Math.max(G, y0 - m); y <= Math.min(H - 1, y1 + m); y++) for (let x = Math.max(0, x0 - m); x <= Math.min(W - 1, x1 + m); x++) {
+    for (let y = Math.max(G - MOUND_ROWS, y0 - m); y <= Math.min(H - 1, y1 + m); y++) for (let x = Math.max(0, x0 - m); x <= Math.min(W - 1, x1 + m); x++) {
       const i = idx(x, y);
       if (world.cells[i] !== TUNNEL) continue;
       const ch = world.chamber[i], h = hash2(x, y), cx = x * T + 1.5, cy = y * T + 1.5;
@@ -924,12 +927,12 @@ function drawGroundRegion(x0, y0, x1, y1) {
   }
   g.restore();
 }
-function updateTile(x, y) { if (inGrid(x, y) && y >= G) groundDirty.add(idx(x, y)); }
+function updateTile(x, y) { if (inGrid(x, y) && y >= G - MOUND_ROWS) groundDirty.add(idx(x, y)); }
 function rebuildTiles() {
   if (soilSeed !== world.seed) buildSoil();
   groundDirty.clear();
   groundG.clearRect(0, 0, groundC.width, groundC.height);
-  drawGroundRegion(0, G, W - 1, H - 1);
+  drawGroundRegion(0, G - MOUND_ROWS, W - 1, H - 1);
 }
 function flushGround() {
   if (!groundDirty.size) return;
@@ -946,6 +949,8 @@ Object.assign(world, {
   // Blätter im Pilzgarten, Wachstum des Pilzes, Verkehr in den Gängen
   leaf: new Uint8Array(W * H), fk: new Uint8Array(W * H * 4), fgrow: new Float32Array(W * H), traffic: new Float32Array(W * H),
   roots: [], rootTips: [], doneTypes: new Uint16Array(CH_COUNT),
+  // Zellen im Ameisenhaufen, die zu echtem Boden geworden sind
+  isMound: new Uint8Array(W * H), moundFloor: new Float32Array(W), moundOn: false,
 });
 // Futter auf eine Zelle legen oder von dort nehmen, mit Sorte. Bis zu 4 Stück liegen sichtbar übereinander.
 function pushFood(c, kind) {
@@ -985,7 +990,30 @@ const frontier = {
   },
   clear() { for (const i of this.list) this.pos[i] = -1; this.list.length = 0; },
 };
-const diggable = (x, y) => x >= 1 && x <= W - 2 && y >= G + 1 && y <= H - 2 && world.cells[idx(x, y)] === SOIL;
+const diggable = (x, y) => x >= 1 && x <= W - 2 && y <= H - 2 && inGrid(x, y) && world.cells[idx(x, y)] === SOIL &&
+  (y >= G + 1 || world.isMound[idx(x, y)] === 1 || (y === G && world.isMound[idx(x, y - 1)] === 1));
+// im Nest heißt: unter der Erde oder in einem Gang im Hügel
+const inNest = (x, y) => y >= G || (inGrid(x, y) && world.cells[idx(x, y)] === TUNNEL);
+// Der Hügel wird zu Boden, sobald er hoch genug ist. Zellen, die er ganz bedeckt, kann man dann ausgraben.
+function settleMound() {
+  if (!world.moundOn) {
+    let top = 0;
+    for (let x = 0; x < W; x++) top = Math.max(top, world.mound[x]);
+    if (top < 14) return;
+    world.moundOn = true;
+    colony.log("Der Ameisenhaufen ist groß genug. Die Ameisen können darin Kammern bauen", true);
+  }
+  for (let x = 2; x < W - 2; x++) {
+    if (Math.abs(x - ENT) <= 1) continue;
+    const rows = Math.min(MOUND_ROWS, Math.floor((world.mound[x] - 1) / T));
+    for (let r = 1; r <= rows; r++) {
+      const i = idx(x, G - r);
+      if (world.cells[i] !== AIR) continue;
+      world.cells[i] = SOIL; world.isMound[i] = 1; updateTile(x, G - r);
+      world.moundFloor[x] = Math.max(world.moundFloor[x], r * T + 1);
+    }
+  }
+}
 function addFrontierAround(x, y) {
   for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) if (diggable(x + dx, y + dy)) frontier.add(idx(x + dx, y + dy));
 }
@@ -1005,7 +1033,7 @@ function newWorld(seed) {
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) world.cells[idx(x, y)] = y < G ? AIR : SOIL;
   world.chamber.fill(0); world.mound.fill(0);
   world.food.fill(0); world.corpses.fill(0); world.trash.fill(0); world.roomOf.fill(-1);
-  world.leaf.fill(0); world.fk.fill(0); world.fgrow.fill(0); world.traffic.fill(0); world.doneTypes.fill(0);
+  world.leaf.fill(0); world.fk.fill(0); world.fgrow.fill(0); world.isMound.fill(0); world.moundFloor.fill(0); world.moundOn = false; world.traffic.fill(0); world.doneTypes.fill(0);
   world.groundFood = []; world.rooms = []; world.pinwheels = []; world.falling = [];
   generateSources();
 }
@@ -1102,7 +1130,7 @@ function addAlarm(x, y, a) {
 const F_EXIT = 0, F_FOOD = 1, F_QUEEN = 2, F_HUNGRY = 3, F_DIG = 4, F_GRANSPACE = 5, F_BROODSPACE = 6, F_LOOSEBROOD = 7,
   F_LOOSECORPSE = 8, F_CEMSPACE = 9, F_LOOSETRASH = 10, F_TRASHSPACE = 11, F_LOOSEFOOD = 12,
   F_LEAFSPACE = 13, F_POTSPACE = 14, F_DEW = 15, F_PUPASPACE = 16, F_SLEEP = 17, F_GUARD = 18, F_ROYALSPACE = 19, F_ROYALROOM = 20,
-  F_COUNT = 21;
+  F_SOLARSPACE = 21, F_COUNT = 22;
 const fields = [], fieldDirty = [], fieldTime = [], fieldHas = [], fieldTopo = [];
 for (let f = 0; f < F_COUNT; f++) { fields.push(new Int32Array(W * H).fill(INF)); fieldDirty.push(true); fieldTime.push(-99); fieldHas.push(false); fieldTopo.push(-1); }
 function markFields() { for (let f = 0; f < F_COUNT; f++) fieldDirty[f] = true; }
@@ -1116,12 +1144,15 @@ function broodCount() {
   return m;
 }
 // Wohin gehört ein Stück Brut? Puppen ins Warme, königliche Brut zu den Prinzessinnen.
+const sunny = () => events.daylight() > 0.55 && !events.raining;
 function broodRoom(b) {
   if (b.royal && hasRoom(CH_ROYAL)) return CH_ROYAL;
+  // Larven und Puppen sonnen sich tagsüber oben im Hügel, nachts geht es zurück nach unten
+  if (b.s >= 1 && !b.royal && hasRoom(CH_SOLAR) && sunny()) return CH_SOLAR;
   if (b.s === 2 && !b.royal && hasRoom(CH_PUPA)) return CH_PUPA;
   return CH_BROOD;
 }
-const spaceField = t => t === CH_ROYAL ? F_ROYALSPACE : (t === CH_PUPA ? F_PUPASPACE : F_BROODSPACE);
+const spaceField = t => t === CH_ROYAL ? F_ROYALSPACE : (t === CH_PUPA ? F_PUPASPACE : (t === CH_SOLAR ? F_SOLARSPACE : F_BROODSPACE));
 function repleteAt(c) {
   for (let i = 0; i < ants.count; i++) if (ants.role[i] === R_REPLETE && ants.home[i] === c && idx(ants.cx[i], ants.cy[i]) === c) return i;
   return -1;
@@ -1156,6 +1187,7 @@ function fieldSources(fid) {
     case F_GUARD: for (const i of t) if (roomType(i) === CH_GUARD) out.push(i); break;
     case F_ROYALSPACE: { const m = broodCount(); for (const i of t) if (roomType(i) === CH_ROYAL && (m.get(i) || 0) < 2) out.push(i); break; }
     case F_ROYALROOM: for (const i of t) if (roomType(i) === CH_ROYAL) out.push(i); break;
+    case F_SOLARSPACE: { const m = broodCount(); for (const i of t) if (roomType(i) === CH_SOLAR && (m.get(i) || 0) < 2) out.push(i); break; }
   }
   return out;
 }
@@ -1220,7 +1252,7 @@ function stepAway(f, x, y, avoid) {
   let best = [], bv = cur;
   for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
     const nx = x + dx, ny = y + dy;
-    if (!isTunnel(nx, ny) || ny < G) continue;
+    if (!isTunnel(nx, ny)) continue;
     const n = idx(nx, ny), v = f[n];
     if (v >= INF || v <= cur || (avoid && avoid(n))) continue;
     if (v > bv) { bv = v; best = [n]; } else if (v === bv) best.push(n);
@@ -1247,7 +1279,7 @@ function dropCell(i, arr, max, avoid) {
   for (let r = 1; r <= 3; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
     if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
     const x = x0 + dx, y = y0 + dy;
-    if (!isTunnel(x, y) || y <= G) continue;
+    if (!isTunnel(x, y) || (y <= G && !world.isMound[idx(x, y)])) continue;
     const j = idx(x, y);
     if (arr[j] < max && !(avoid && avoid(j))) return j;
   }
@@ -1257,7 +1289,7 @@ function dropCell(i, arr, max, avoid) {
 // ---- Kammern: Wenn die Kolonie Platz braucht, wählen die Ameisen einen Ort und heben die Kammer gemeinsam aus
 const ROOM_SIZE = { [CH_GRANARY]: [5.5, 2.3], [CH_BROOD]: [5, 2.3], [CH_QUEEN]: [5, 2.2], [CH_CEMETERY]: [4.5, 2], [CH_TRASH]: [4, 2],
   [CH_FUNGUS]: [5.5, 2.4], [CH_HONEY]: [4.5, 2.2], [CH_APHID]: [4, 2.2], [CH_GUARD]: [3.5, 1.8], [CH_PUPA]: [4, 2],
-  [CH_SLEEP]: [5, 2.2], [CH_DRAIN]: [3.2, 2.8], [CH_ROYAL]: [5, 2.3] };
+  [CH_SLEEP]: [5, 2.2], [CH_DRAIN]: [3.2, 2.8], [CH_ROYAL]: [5, 2.3], [CH_SOLAR]: [2.7, 1.3] };
 const ROOM_CAP = { [CH_GRANARY]: 3, [CH_BROOD]: 1, [CH_CEMETERY]: 4, [CH_TRASH]: 5, [CH_QUEEN]: 0, [CH_SLEEP]: 1.2, [CH_PUPA]: 2 };
 const REPLETE_MAX = 8;
 const rooms = {
@@ -1292,7 +1324,7 @@ function corridorCells(from, to) {
 function makeRoom(type, cx, cy, from, predug = false) {
   const [rx, ry] = ROOM_SIZE[type];
   const cells = [];
-  for (const [x, y] of ellipseCells(cx, cy, rx, ry)) if (inGrid(x, y) && y > G) cells.push(idx(x, y));
+  for (const [x, y] of ellipseCells(cx, cy, rx, ry)) if (inGrid(x, y) && (y > G || world.isMound[idx(x, y)])) cells.push(idx(x, y));
   // Eingang: die Kammerzelle, die dem Startgang am nächsten liegt
   let path = [];
   if (from >= 0) {
@@ -1365,15 +1397,17 @@ function addDirt(x) {
       if (diff > 1.4) { const mv = (diff - 1) * 0.5; m[c] -= mv; m[n] += mv; }
     }
   }
-  for (let c = 0; c < W; c++) m[c] = Math.min(m[c], 28);
+  for (let c = 0; c < W; c++) m[c] = Math.max(Math.min(m[c], 28), world.moundFloor[c]);
   sky.dirty = true;
+  settleMound();
 }
 const surfaceOffset = x => (x < 0 || x >= W) ? 0 : world.mound[x];
 
 // ---- Wasser als zellulärer Automat
 function addRain(amount) {
   const w = world.water;
-  for (let k = 0; k < 8; k++) { const i = idx(ri(1, W - 2), SURF); w[i] = Math.min(1, w[i] + amount); }
+  // auf den Hügel fällt der Regen, aber er läuft nicht in seine Gänge
+  for (let k = 0; k < 8; k++) { const i = idx(ri(1, W - 2), SURF); if (!world.isMound[i]) w[i] = Math.min(1, w[i] + amount); }
   const e = idx(ENT, SURF);
   if (!(events.roofT > 0)) w[e] = Math.min(1, w[e] + amount * 1.5);
   world.wet = true;
@@ -1529,10 +1563,21 @@ const colony = {
     if (pop >= 34 && !has(CH_APHID) && world.rootTips.length) wants.push(CH_APHID);
     if (pop >= 20 && (this.floods > 0 || world.tunnels.length > 200) && !has(CH_DRAIN)) wants.push(CH_DRAIN);
     if (pop >= 60 && !has(CH_ROYAL)) wants.push(CH_ROYAL);
+    if (world.moundOn && pop >= 15 && !has(CH_SOLAR)) wants.unshift(CH_SOLAR);
+    if (world.moundOn && pop >= 80 && world.rooms.filter(r => r.type === CH_SOLAR).length < 2) wants.push(CH_SOLAR);
     if (has(CH_SLEEP) && pop > this.capacity(CH_SLEEP) * 2.5) wants.push(CH_SLEEP);
     if (pop >= 100 && world.rooms.filter(r => r.type === CH_FUNGUS).length < 2 && this.leavesIn > 60) wants.push(CH_FUNGUS);
     for (const t of wants) {
       if (building(t)) continue;
+      if (t === CH_SOLAR) {
+        const site = this.findMoundSite();
+        if (!site) continue;
+        const r = makeRoom(t, site[0], site[1], -1);
+        r.path = site[2].filter(i => world.cells[i] === SOIL && !r.cells.includes(i));
+        colony.jobsDirty = true;
+        this.log(`Die Ameisen beginnen ${ROOM_NEW[t]}`, true);
+        return r;
+      }
       const site = this.findSite(t);
       if (!site) continue;
       const r = makeRoom(t, site[0], site[1], site[2]);
@@ -1602,6 +1647,38 @@ const colony = {
       if (type === CH_DRAIN) s += depth * 0.6 + fd * 0.25 - Math.abs(cx - ENT) * 0.2;
       if (type === CH_ROYAL) s += -Math.abs(dq - 12) * 0.5;
       if (s > bs) { bs = s; best = [cx, cy, from, cand[2]]; }
+    }
+    return best;
+  },
+  // Platz für eine Kammer im Hügel: ganz von Hügelsand umgeben, über der Bodenlinie, möglichst weit oben
+  findMoundSite() {
+    const [rx, ry] = ROOM_SIZE[CH_SOLAR];
+    const shaft = idx(ENT, G + 1);
+    if (world.cells[shaft] !== TUNNEL) return null;
+    let best = null, bs = -1e9;
+    for (const side of [-1, 1]) for (let dx = 4; dx <= 11; dx++) for (let cy = G - 3; cy >= G - MOUND_ROWS + 2; cy--) {
+      const cx = ENT + side * dx;
+      const cells = ellipseCells(cx, cy, rx, ry);
+      if (cells.some(([x, y]) => !inGrid(x, y) || y > G - 2 || !world.isMound[idx(x, y)] || world.cells[idx(x, y)] !== SOIL)) continue;
+      let ok = true;
+      for (const [x, y] of ellipseCells(cx, cy, rx, ry, 1)) {
+        if (!inGrid(x, y)) { ok = false; break; }
+        const i = idx(x, y);
+        if (world.cells[i] === AIR || (y < G && !world.isMound[i])) { ok = false; break; }
+      }
+      if (!ok) continue;
+      if (world.rooms.some(r => r.type === CH_SOLAR && Math.abs(r.cx - cx) < 7)) continue;
+      // höher ist wärmer, näher am Schacht ist kürzer
+      const s = (G - cy) * 2 - dx * 0.4 + rand();
+      if (s > bs) {
+        bs = s;
+        // Verbindung: vom Schacht waagrecht unter dem Hügel, dann senkrecht hinauf in die Kammer
+        const bottom = cells.filter(([x]) => x === cx).reduce((a, c) => Math.max(a, c[1]), -1);
+        const path = [];
+        for (let x = ENT + side; x !== cx + side; x += side) path.push(idx(x, G + 1));
+        for (let y = G; y > bottom; y--) path.push(idx(cx, y));
+        best = [cx, cy, path];
+      }
     }
     return best;
   },
@@ -1866,17 +1943,18 @@ const colony = {
       const b = this.brood[k];
       b.age += dt;
       if (b.carried) continue;
+      const sk = roomType(b.cell) === CH_SOLAR ? (sunny() ? 1.8 : 0.7) : 1;
       if (b.s === 0) { b.t += dt * (toolFx.warmAt(b.cell) ? 1.6 : 1); if (b.t >= EGG_T) { b.s = 1; b.t = 0; b.fed = 0.7; markItems(); } }
       else if (b.s === 1) {
         // königliche Larven brauchen mehr Futter und wachsen länger
         b.fed = Math.max(0, b.fed - 0.022 * dt * (b.royal ? 1.5 : 1));
-        if (b.fed > 0) b.t += dt * (toolFx.warmAt(b.cell) ? 1.6 : 1); else { b.t += dt * 0.15; b.starve += dt; }
+        if (b.fed > 0) b.t += dt * (toolFx.warmAt(b.cell) ? 1.6 : 1) * sk; else { b.t += dt * 0.15; b.starve += dt; }
         if (b.fed < 0.5) fieldDirty[F_HUNGRY] = true;
         if (b.starve > 60) { this.brood.splice(k, 1); world.corpses[b.cell] = Math.min(9, world.corpses[b.cell] + 1); this.died++; markItems(); continue; }
         if (b.t >= LARVA_T * (b.royal ? 1.4 : 1)) { b.s = 2; b.t = 0; markItems(); }
       } else {
         // in der warmen Puppenkammer reifen Puppen schneller
-        b.t += dt * (roomType(b.cell) === CH_PUPA ? 1.7 : 1) * (toolFx.warmAt(b.cell) ? 1.6 : 1);
+        b.t += dt * (roomType(b.cell) === CH_PUPA ? 1.7 : 1) * (toolFx.warmAt(b.cell) ? 1.6 : 1) * sk;
         if (b.t >= PUPA_T * (b.royal ? 1.3 : 1)) { this.brood.splice(k, 1); this.hatch(b); markItems(); }
       }
     }
@@ -1957,7 +2035,7 @@ const colony = {
     const demand = [
       digJobs ? clamp(digJobs / 5, 2, Math.max(2, c.workers * 0.35)) : 0,
       (out ? c.workers * clamp(0.75 - foodPerAnt / 8, 0.12, 0.7) + (this.wantLeaves ? 2 + c.workers * 0.06 : 0) : 0) + Math.min(4, dew * 0.7),
-      c.hungryLarvae * 0.6 + (hasField(F_BROODSPACE) ? c.looseBrood * 0.5 : 0) + (queenHungry ? 1.5 : 0) + Math.min(3, this.brood.length * 0.15),
+      c.hungryLarvae * 0.6 + (hasField(F_BROODSPACE) ? c.looseBrood * 0.8 : 0) + (queenHungry ? 1.5 : 0) + Math.min(3, this.brood.length * 0.15),
       (hasField(F_CEMSPACE) ? looseCorpses : 0) + (hasField(F_TRASHSPACE) ? looseTrash * 0.6 : 0) + (hasField(F_GRANSPACE) ? looseFood * 0.3 : 0),
     ];
     const doing = [c.byState[S_DIG], c.byState[S_FORAGE] + c.byState[S_CARRY], c.byState[S_NURSE], c.byState[S_CLEAN]];
@@ -2022,6 +2100,7 @@ const colony = {
       case CH_SLEEP: rows.push(["Schlafende Ameisen", sleeping], ["Erholung", "doppelt so schnell"]); break;
       case CH_DRAIN: rows.push(["Wasser gerade", water > 0.5 ? "versickert" : "trocken"], ["Fluten bisher", this.floods]); break;
       case CH_ROYAL: rows.push(["Prinzessinnen", alP], ["Männchen", alM], ["Hochzeitsflüge", this.flights]); break;
+      case CH_SOLAR: rows.push(["Sonne", sunny() ? "warm, die Brut reift 1,8 × schneller" : "kühl, die Brut ist unten"], ["Lage", "oben im Ameisenhaufen"]); break;
     }
     rows.push(["Ameisen hier", here]);
     return [ROOM_NAMES[r.type], rows];
@@ -2092,10 +2171,10 @@ const ants = {
       const [corpse, cause] = this.kills.get(i);
       this.dropCarried(i);
       const flown = cause === "flight";
-      if (corpse && this.cy[i] > G && isTunnel(this.cx[i], this.cy[i])) { world.corpses[idx(this.cx[i], this.cy[i])]++; markItems(); }
+      if (corpse && isTunnel(this.cx[i], this.cy[i]) && (this.cy[i] > G || world.isMound[idx(this.cx[i], this.cy[i])])) { world.corpses[idx(this.cx[i], this.cy[i])]++; markItems(); }
       else if (corpse && this.cy[i] <= SURF) addGroundFood(this.cx[i], 1, "corpse");
       // ein toter Honigtopf platzt, sein Zucker bleibt liegen
-      if (corpse && this.role[i] === R_REPLETE && this.load[i] && this.cy[i] > G) for (let k = 0; k < this.load[i]; k++) colony.addFood(idx(this.cx[i], this.cy[i]), 0, FK_DEW);
+      if (corpse && this.role[i] === R_REPLETE && this.load[i] && inNest(this.cx[i], this.cy[i])) for (let k = 0; k < this.load[i]; k++) colony.addFood(idx(this.cx[i], this.cy[i]), 0, FK_DEW);
       if (!flown) colony.died++;
       if (this.role[i] === R_QUEEN) { colony.queenAlive = false; colony.log("Die Königin ist gestorben", true); }
       else if (flown) { }
@@ -2113,7 +2192,7 @@ const ants = {
   },
   // was eine sterbende Ameise trägt, fällt zu Boden
   dropCarried(i) {
-    const cell = idx(this.cx[i], this.cy[i]), under = this.cy[i] > G && isTunnel(this.cx[i], this.cy[i]);
+    const cell = idx(this.cx[i], this.cy[i]), under = isTunnel(this.cx[i], this.cy[i]) && (this.cy[i] > G || world.isMound[cell] === 1);
     if (isFoodCarry(this.carry[i])) { if (under) colony.addFood(cell, 0, foodOfCarry(this.carry[i])); else addGroundFood(this.cx[i], 1, this.carry[i] === C_SUGAR ? "sugar" : (this.carry[i] === C_MEAT ? "beetle" : "fruit")); }
     else if (this.carry[i] === C_LEAF && under) world.trash[cell]++;
     else if (this.carry[i] === C_CORPSE && under) world.corpses[cell]++;
@@ -2163,7 +2242,7 @@ const ants = {
         if (this.hp[i] <= 0) { this.requestKill(i, true, "ist in der Flut ertrunken"); continue; }
       }
       // Alarm: Arbeiterinnen fliehen, Soldatinnen eilen herbei
-      if (this.role[i] === R_WORKER && this.state[i] !== S_FLEE && this.cy[i] > G && world.alarm[idx(this.cx[i], this.cy[i])] > 0.3) {
+      if (this.role[i] === R_WORKER && this.state[i] !== S_FLEE && inNest(this.cx[i], this.cy[i]) && world.alarm[idx(this.cx[i], this.cy[i])] > 0.3) {
         this.dropCarried(i); this.setState(i, S_FLEE); this.timer[i] = 0;
       }
       if (this.timer[i] > 0) { this.timer[i] -= dt; this.anim[i] += dt * 0.5; continue; }
@@ -2201,7 +2280,7 @@ const ants = {
       if (dxs > 0) f = 0; else if (dxs < 0) f = 1; else if (dys < 0) f = 2; else if (dys > 0) f = 3;
       this.face[i] = f;
       let x = this.px[i], y = this.py[i];
-      if (y < G * T && y > SURF * T - 1) y -= surfaceOffset(Math.floor(x / T));
+      if (y < G * T && y > SURF * T - 1 && world.cells[this.cy[i] * W + this.cx[i]] !== TUNNEL) y -= surfaceOffset(Math.floor(x / T));
       y -= 0.4;
       let fr = 0;
       const role = this.role[i];
@@ -2230,7 +2309,7 @@ const ants = {
   },
   pos(i) {
     let y = this.py[i];
-    if (y < G * T && y > SURF * T - 1) y -= surfaceOffset(Math.floor(this.px[i] / T));
+    if (y < G * T && y > SURF * T - 1 && world.cells[this.cy[i] * W + this.cx[i]] !== TUNNEL) y -= surfaceOffset(Math.floor(this.px[i] / T));
     return [this.px[i], y];
   },
 };
@@ -2480,7 +2559,7 @@ const Ant = {
   // oberirdisch zurück zum Eingang und hinab; true, solange die Ameise oben ist
   headHome(i) {
     const x = ants.cx[i], y = ants.cy[i];
-    if (y >= G) return false;
+    if (inNest(x, y)) return false;
     if (y < SURF) { if (x !== ants.tk[i]) this.go(i, x + sign(ants.tk[i] - x), y); else this.go(i, x, y + 1); return true; }
     if (x !== ENT) this.go(i, x + sign(ENT - x), y); else this.go(i, x, G);
     return true;
@@ -2502,7 +2581,7 @@ const Ant = {
   },
   travel(i, fid) { return hasField(fid) ? this.travelF(i, fields[fid]) : (this.headHome(i) ? 0 : 2); },
   goSurface(i) {
-    if (ants.cy[i] < G) return true;
+    if (!inNest(ants.cx[i], ants.cy[i])) return true;
     const r = this.travel(i, F_EXIT);
     if (r === 1) this.go(i, ENT, SURF); else if (r === 2) this.wander(i);
     return false;
@@ -2609,7 +2688,7 @@ const Ant = {
   // ---- Futtersuche: oben herumlaufen, Duftspuren folgen, sich an gute Stellen erinnern
   forage(i) {
     // Blattläuse melken geht auch nachts und bei Regen, denn der Stall liegt unter der Erde
-    if (ants.phase[i] === 0 && ants.cy[i] >= G && hasField(F_DEW) && (events.isNight() || events.raining || rand() < 0.4)) ants.phase[i] = 10;
+    if (ants.phase[i] === 0 && inNest(ants.cx[i], ants.cy[i]) && hasField(F_DEW) && (events.isNight() || events.raining || rand() < 0.4)) ants.phase[i] = 10;
     if (ants.phase[i] === 10) {
       ants.doing[i] = D_MILK;
       const r = this.travel(i, F_DEW);
@@ -2709,7 +2788,7 @@ const Ant = {
     const surf = k === C_LEAF ? D_LEAFHOME : (k === C_SUGAR ? D_SUGARHOME : (k === C_DEW ? D_DEWHOME : D_FETCH));
     ants.doing[i] = surf;
     if (ants.phase[i] === 0) {
-      if (ants.cy[i] < G) {
+      if (!inNest(ants.cx[i], ants.cy[i])) {
         phero.deposit(ants.cx[i], ants.cy[i], ants.trail[i]);
         ants.trail[i] = Math.max(0.25, ants.trail[i] * 0.975);
         this.headHome(i);
@@ -2881,7 +2960,7 @@ const Ant = {
     ants.doing[i] = D_PATROL;
     const b = events.bird;
     if (colony.birdAlarm && b && hasRoom(CH_GUARD)) {
-      if (ants.cy[i] >= G) {
+      if (inNest(ants.cx[i], ants.cy[i])) {
         if (getField(F_EXIT)[this.cell(i)] < 45) { ants.doing[i] = D_DEFEND; this.goSurface(i); return; }
       } else {
         ants.doing[i] = D_DEFEND;
@@ -3155,7 +3234,7 @@ const events = {
       this.nextBird -= dt;
       if (this.nextBird > 0 || this.isNight() || this.raining || !settings.birds) return;
       let on = 0;
-      for (let i = 0; i < ants.count; i++) if (ants.cy[i] <= SURF) on++;
+      for (let i = 0; i < ants.count; i++) if (!inNest(ants.cx[i], ants.cy[i])) on++;
       if (on < 2) return;
       const left = rand() < 0.5;
       this.bird = { x: left ? -12 : WPX + 12, y: rf(14, 26), vx: left ? 38 : -38, mode: 0, target: -1, flap: 0, tx: 0, ty: 0 };
@@ -3175,19 +3254,19 @@ const events = {
       }
       // Beute suchen: eine Ameise auf dem Boden unter dem Vogel
       for (let i = 0; i < ants.count; i++) {
-        if (ants.cy[i] > SURF || ants.role[i] === R_QUEEN || toolFx.guarded(ants.px[i])) continue;
+        if (inNest(ants.cx[i], ants.cy[i]) || ants.role[i] === R_QUEEN || toolFx.guarded(ants.px[i])) continue;
         if (Math.abs(ants.px[i] - b.x - b.vx * 0.4) < 6 && rand() < 0.5) { b.mode = 1; b.target = ants.id[i]; break; }
       }
       if (b.x < -20 || b.x > WPX + 20) { this.bird = null; this.nextBird = rf(140, 260) * diff().bird; }
     } else if (b.mode === 1) {
       const i = ants.indexOfId(b.target);
-      if (i < 0 || ants.cy[i] > SURF) { b.mode = 2; return; }
+      if (i < 0 || inNest(ants.cx[i], ants.cy[i])) { b.mode = 2; return; }
       // das Windrad blitzt, und der Vogel dreht ab
       if (toolFx.guarded(ants.px[i])) { b.mode = 2; b.prey = false; return; }
       const dx = ants.px[i] - b.x, dy = ants.py[i] - 2 - b.y, d = Math.hypot(dx, dy);
       // eine Wächterin in der Nähe beißt zu, und der Vogel lässt ab
       for (let j = 0; j < ants.count; j++) {
-        if (ants.role[j] !== R_SOLDIER || ants.cy[j] > SURF || Math.abs(ants.px[j] - ants.px[i]) > 3 * T || d > 10) continue;
+        if (ants.role[j] !== R_SOLDIER || inNest(ants.cx[j], ants.cy[j]) || Math.abs(ants.px[j] - ants.px[i]) > 3 * T || d > 10) continue;
         b.mode = 2; b.prey = false; b.bitten = 1;
         colony.birdsRepelled++;
         colony.log(`${antName(ants.id[j])} beißt den Vogel. Er fliegt ohne Beute davon`, true);
@@ -3360,6 +3439,8 @@ const sky = {
     for (const s of world.sources) if (s.kind === 1) this.bush(s);
     this.mound(gy);
     for (const t of this.tufts) {
+      // auf dem Hügel wächst kein Gras
+      if (world.mound[clamp(Math.floor(t[0] / T), 0, W - 1)] > 1.5 || Math.abs(t[0] / T - ENT - 0.5) < 2) continue;
       const sway = Math.sin(this.clock * 1.2 + t[0] * 0.2) * 0.4;
       P.fill(css(LEAF[t[3]])).line(t[0], gy - 0.5, t[0] + t[2] + sway, gy - t[1]);
     }
@@ -3437,8 +3518,10 @@ const sky = {
     }
   },
   mound(gy) {
-    // Sandhügel aus dem Aushub, Spalte für Spalte
-    const m = world.mound;
+    // Sandhügel aus dem Aushub, Spalte für Spalte. Über dem Eingang schließt sich der Hügel zu einem Krater.
+    const m = Float32Array.from(world.mound);
+    const hb = Math.min(m[ENT - 2], m[ENT + 2]) * 0.85;
+    for (let c = ENT - 1; c <= ENT + 1; c++) m[c] = hb;
     for (let ax = 0; ax < WPX * PIX; ax++) {
       const wx = ax / PIX, cxf = wx / T - 0.5, c0 = clamp(Math.floor(cxf), 0, W - 1), c1 = clamp(c0 + 1, 0, W - 1), t = clamp(cxf - c0, 0, 1);
       const h = m[c0] * (1 - t) + m[c1] * t;
@@ -3446,6 +3529,26 @@ const sky = {
       P.fill(css(SAND)).rect(wx, gy - h, 1 / PIX, h);
       P.fill(css(lighten(SAND, 0.18))).rect(wx, gy - h, 1 / PIX, 0.5);
       if (hash2(ax, 7) % 9 === 0) P.fill(css(SAND_DARK)).dot(wx, gy - h + 1 + (hash2(ax, 3) % 100) / 100 * Math.max(0, h - 1.5));
+    }
+    // der Eingangsschacht als dunkle Röhre mit hellem Kraterrand
+    if (hb > 2) {
+      const x0 = (ENT - 1) * T + 0.5, x1 = (ENT + 2) * T - 0.5, top = gy - hb + 1.5;
+      P.fill(css(darken(TUNNEL_COLOR, 0.25))).rect(x0, top, x1 - x0, gy - top);
+      P.fill(css(TUNNEL_COLOR)).rect(x0 + 1, top + 0.5, x1 - x0 - 2, gy - top - 0.5);
+      P.fill(css(lighten(SAND, 0.18))).rect(x0 - 1, top - 0.5, 1.5, 1).rect(x1 - 0.5, top - 0.5, 1.5, 1);
+      P.fill(css(SAND_DARK)).rect(x0 - 0.5, top + 0.5, 0.5, gy - top - 0.5).rect(x1, top + 0.5, 0.5, gy - top - 0.5);
+    }
+    if (!world.moundOn) return;
+    // ein echter Ameisenhaufen: Nadeln, Ästchen und Krümel auf der Kuppe
+    for (let k = 0; k < 90; k++) {
+      const hh = hash2(k, 911), c = 2 + (hh % (W - 4));
+      const h = m[c];
+      if (h < 4) continue;
+      const x = c * T + (hh >> 7) % 3, y = gy - h + 0.5 + ((hh >> 9) % 100) / 100 * Math.min(h - 1, 7);
+      const col = [[0.42, 0.28, 0.17], [0.55, 0.38, 0.22], [0.66, 0.52, 0.30], [0.36, 0.42, 0.22]][(hh >> 3) % 4];
+      P.fill(css(col));
+      if ((hh >> 5) % 3 === 0) P.dot(x, y);
+      else P.line(x, y, x + ((hh >> 11) % 2 ? 1.5 : -1.5), y + ((hh >> 12) % 2 ? 0.5 : -0.5));
     }
   },
 };
@@ -3619,6 +3722,10 @@ const decor = {
         } else if (r.type === CH_GUARD && floor && h % 2 === 0) {
           P.fill("#8b7d6a").ellipse(x + 1.5, y + 2.4, 0.9, 0.5);
           P.fill("#b3a68f").dot(x + 1, y + 2);
+        } else if (r.type === CH_SOLAR && sunny()) {
+          // die Sonne heizt den Hügel: warmes Licht von oben, flimmernde Luft
+          P.fill("rgba(255,214,120,0.16)").rect(x, y, T, T);
+          if (h % 5 === 0 && Math.floor(blink * 2 + h) % 3 === 0) P.fill("rgba(255,240,190,0.8)").dot(x + 1.5, y + 0.5);
         } else if (r.type === CH_ROYAL && h % 7 === 0 && Math.floor(blink * 1.5 + h) % 5 === 0) {
           P.fill("#ffe58a").dot(x + 1.5, y + 1);
         }
@@ -3824,6 +3931,7 @@ const hud = {
     state(CH_APHID, `${c.aphids || 0} Läuse, ${c.dew || 0} Tropfen`, "ab 34 Ameisen");
     state(CH_DRAIN, `${colony.floods} Fluten bisher`, "nach der ersten Flut");
     state(CH_ROYAL, `${alP} Prinzessinnen, ${alM} Männchen`, "ab 60 Ameisen");
+    state(CH_SOLAR, sunny() ? "die Brut sonnt sich" : "nachts leer", world.moundOn ? "ab 15 Ameisen" : "sobald der Hügel hoch ist");
     rows.push(["Hochzeitsflüge", String(colony.flights)]);
     rows.push(["Gedränge in den Gängen", colony.crowd > 0.3 || colony.jam > 2.5 ? "eng" : (colony.crowd > 0.2 ? "mittel" : "locker")]);
     const key = rows.map(r => r.join(":")).join("|");
@@ -4034,7 +4142,7 @@ const TOOLS = [
     hint: "Tippe auf eine Kammer, die warm werden soll",
     icon: svgI('<rect x="6" y="0" width="1" height="2" fill="#ffd36a"/><rect x="6" y="11" width="1" height="2" fill="#ffd36a"/><rect x="0" y="6" width="2" height="1" fill="#ffd36a"/><rect x="11" y="6" width="2" height="1" fill="#ffd36a"/><rect x="2" y="2" width="1" height="1" fill="#ffd36a"/><rect x="10" y="2" width="1" height="1" fill="#ffd36a"/><rect x="2" y="10" width="1" height="1" fill="#ffd36a"/><rect x="10" y="10" width="1" height="1" fill="#ffd36a"/><rect x="4" y="3" width="5" height="7" fill="#f29a3a"/><rect x="3" y="4" width="7" height="5" fill="#f29a3a"/><rect x="5" y="4" width="3" height="5" fill="#ffd36a"/><rect x="4" y="5" width="5" height="3" fill="#ffd36a"/>'),
     use(x, y) {
-      if (y <= G) return "Tippe auf eine Kammer unter der Erde";
+      if (y <= G && !(inGrid(x, y) && world.isMound[idx(x, y)])) return "Tippe auf eine Kammer unter der Erde";
       let room = null;
       for (let r = 0; r < 3 && !room; r++) for (let dy = -r; dy <= r && !room; dy++) for (let dx = -r; dx <= r; dx++) {
         if (!inGrid(x + dx, y + dy)) continue;
@@ -4344,11 +4452,18 @@ function onTap(sx, sy) {
   }
   if (best >= 0) return hud.openAnt(best);
   if (!inGrid(x, y)) { hud.hideInfo(); hud.closeAnt(); return; }
-  if (y > G) {
+  const inMound = inGrid(x, y) && y < G && world.isMound[idx(x, y)] === 1;
+  if (y > G || inMound) {
     for (let r = 0; r < 3; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
       if (!inGrid(x + dx, y + dy)) continue;
       const rid = world.roomOf[idx(x + dx, y + dy)];
       if (rid >= 0 && world.rooms[rid]) { const r2 = world.rooms[rid], info = colony.roomInfo(r2); return hud.showInfo(info[0], info[1], r2.type); }
+    }
+    if (inMound && !isTunnel(x, y)) {
+      let top = 0, inside = 0;
+      for (let c = 0; c < W; c++) top = Math.max(top, world.mound[c]);
+      for (const r of world.rooms) if (r.done && r.type === CH_SOLAR) inside++;
+      return hud.showInfo("Ameisenhaufen", [["Höhe", Math.round(top * 3) + " mm"], ["Kammern im Hügel", inside], ["Wärme", sunny() ? "die Sonne heizt ihn auf" : "kühlt gerade ab"]], 0);
     }
     if (isTunnel(x, y)) return hud.showInfo("Gang", [["Ameisen im Nest", ants.count], ["Gegrabene Felder", world.tunnels.length]], 0);
     return hud.showInfo("Erde", [["Schicht", layerOf(y) + 1], ["Tiefe", (y - G) * 3 + " mm"]], 0);
@@ -4402,7 +4517,7 @@ function serialize() {
     +ants.energy[i].toFixed(2), +ants.fatigue[i].toFixed(2), +ants.speed[i].toFixed(2), Array.from(ants.th.subarray(i * 4, i * 4 + 4), v => +v.toFixed(2)),
     ants.dug[i], ants.fetched[i], ants.home[i], ants.role[i] === R_REPLETE ? ants.load[i] : 0]);
   return {
-    v: 3, seed: world.seed, cells: b64(world.cells), food: b64(world.food), fk: b64(world.fk), corpses: b64(world.corpses), trash: b64(world.trash), leaf: b64(world.leaf),
+    v: 3, seed: world.seed, cells: b64(world.cells), food: b64(world.food), fk: b64(world.fk), mound2: b64(world.isMound), moundOn: world.moundOn, moundFloor: Array.from(world.moundFloor), corpses: b64(world.corpses), trash: b64(world.trash), leaf: b64(world.leaf),
     mound: Array.from(world.mound, v => +v.toFixed(2)),
     fruits: world.sources.flatMap(s => s.fruits.map(f => [f.alive ? 1 : 0, +f.t.toFixed(1)])),
     ground: world.groundFood, pinwheels: world.pinwheels, roofT: events.roofT,
@@ -4429,6 +4544,9 @@ function deserialize(d) {
   world.cells.set(c); world.food.set(unb64(d.food)); world.corpses.set(unb64(d.corpses)); world.trash.set(unb64(d.trash));
   if (d.leaf) world.leaf.set(unb64(d.leaf));
   if (d.fk) world.fk.set(unb64(d.fk));
+  if (d.mound2) world.isMound.set(unb64(d.mound2));
+  world.moundOn = !!d.moundOn;
+  (d.moundFloor || []).forEach((v, x) => { if (x < W) world.moundFloor[x] = v; });
   (d.mound || []).forEach((v, x) => { if (x < W) world.mound[x] = v; });
   let k = 0;
   for (const s of world.sources) for (const f of s.fruits) { const q = d.fruits[k++]; if (q) { f.alive = q[0] === 1; f.t = q[1]; } }
