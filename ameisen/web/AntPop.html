@@ -3,7 +3,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jersey+10&display=swap">
 <style>
   /* Ein Formicarium auf dem Display: Spielfeld in der Mitte, Holzschild oben, Bedienung unten mit Daumenabstand. */
   :root {
@@ -16,8 +16,9 @@
     --brass: #d1a94e;
     --warn: #ff7a5c;
     --ink: #08140c;
-    --font-display: "Fredoka", ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
-    --font-body: "Nunito", ui-rounded, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-display: "Jersey 10", ui-monospace, "Courier New", monospace;
+    --font-body: "Jersey 10", ui-monospace, "Courier New", monospace;
+    --notch: polygon(4px 0, calc(100% - 4px) 0, 100% 4px, 100% calc(100% - 4px), calc(100% - 4px) 100%, 4px 100%, 0 calc(100% - 4px), 0 4px);
     color-scheme: dark;
   }
   html, body {
@@ -70,8 +71,8 @@
       repeating-linear-gradient(180deg, transparent 0 15px, rgba(0,0,0,0.16) 15px 16px),
       linear-gradient(180deg, var(--board) 0%, var(--board-deep) 100%);
     border: 2px solid var(--board-light);
-    border-radius: 6px;
-    clip-path: polygon(14px 0, 100% 0, 100% 100%, 0 100%, 0 14px);
+    border-radius: 0;
+    clip-path: polygon(14px 0, calc(100% - 4px) 0, 100% 4px, 100% calc(100% - 4px), calc(100% - 4px) 100%, 4px 100%, 0 calc(100% - 4px), 0 14px);
     box-shadow: 0 3px 0 rgba(0,0,0,0.3);
     filter: drop-shadow(0 2px 6px rgba(0,0,0,0.35));
   }
@@ -80,24 +81,24 @@
     position: absolute;
     top: 7px;
     left: 7px;
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: radial-gradient(circle at 35% 35%, #f8e3a0, var(--brass) 55%, #6d5420);
+    width: 6px;
+    height: 6px;
+    background: var(--brass);
+    box-shadow: inset -2px -2px 0 #6d5420, inset 2px 2px 0 #f8e3a0;
   }
-  .ant-icon { width: 24px; height: 28px; margin-top: 4px; }
+  .ant-icon { width: 21px; height: 27px; margin-top: 4px; shape-rendering: crispEdges; image-rendering: pixelated; }
   .sign-text { display: grid; line-height: 1; }
   .sign-label {
     font-family: var(--font-display);
-    font-weight: 600;
-    font-size: 12px;
-    letter-spacing: 0.14em;
+    font-weight: 400;
+    font-size: 16px;
+    letter-spacing: 0.12em;
     color: var(--cream-dim);
   }
   .sign-count {
     font-family: var(--font-display);
-    font-weight: 700;
-    font-size: 28px;
+    font-weight: 400;
+    font-size: 38px;
     color: var(--cream);
     margin-top: 1px;
   }
@@ -108,29 +109,32 @@
     margin-top: 4px;
     padding-top: 4px;
     border-top: 1px solid rgba(0,0,0,0.25);
-    font-size: 13px;
-    font-weight: 700;
+    font-size: 18px;
+    font-weight: 400;
+    letter-spacing: 0.03em;
     color: var(--cream-dim);
     white-space: nowrap;
   }
-  .sign-stats b { color: var(--cream); font-weight: 800; }
+  .sign-stats b { color: var(--cream); font-weight: 400; }
   .sign-stats .warn { color: var(--warn); }
 
   /* Meldung bei Ereignissen */
   .banner {
     position: absolute;
-    top: calc(env(safe-area-inset-top, 0px) + 96px);
+    top: calc(env(safe-area-inset-top, 0px) + 122px);
     left: 50%;
     transform: translateX(-50%);
     max-width: calc(100% - 32px);
     padding: 9px 18px;
-    border-radius: 999px;
-    background: rgba(8, 20, 12, 0.88);
+    border-radius: 0;
+    clip-path: var(--notch);
+    background: rgba(8, 20, 12, 0.92);
     border: 2px solid var(--brass);
     color: #ffe39a;
     font-family: var(--font-display);
-    font-weight: 600;
-    font-size: 17px;
+    font-weight: 400;
+    font-size: 22px;
+    letter-spacing: 0.03em;
     text-align: center;
     text-wrap: balance;
     box-shadow: 0 6px 18px rgba(0,0,0,0.35);
@@ -147,8 +151,9 @@
     width: min(340px, calc(100% - 24px));
     box-sizing: border-box;
     padding: 14px 18px 12px;
-    border-radius: 16px;
-    background: rgba(20, 45, 28, 0.95);
+    border-radius: 0;
+    clip-path: var(--notch);
+    background: rgba(20, 45, 28, 0.96);
     border: 2px solid var(--board-light);
     box-shadow: 0 10px 28px rgba(0,0,0,0.45);
     pointer-events: auto;
@@ -156,12 +161,13 @@
   }
   @keyframes rise { from { transform: translate(-50%, 10px); opacity: 0; } }
   .sheet-head { display: flex; align-items: center; gap: 10px; }
-  .swatch { width: 16px; height: 16px; border-radius: 5px; border: 2px solid rgba(255,255,255,0.25); flex: none; }
+  .swatch { width: 16px; height: 16px; border-radius: 0; border: 2px solid rgba(255,255,255,0.3); flex: none; }
   .sheet h2 {
     margin: 0;
     font-family: var(--font-display);
-    font-weight: 600;
-    font-size: 21px;
+    font-weight: 400;
+    font-size: 28px;
+    letter-spacing: 0.02em;
     color: var(--cream);
   }
   .sheet dl {
@@ -170,12 +176,13 @@
     gap: 6px 16px;
     margin: 10px 0 0;
     padding-top: 10px;
-    border-top: 1px solid rgba(255,255,255,0.12);
-    font-size: 16px;
+    border-top: 2px solid rgba(255,255,255,0.12);
+    font-size: 21px;
+    letter-spacing: 0.03em;
   }
-  .sheet dt { color: var(--cream-dim); font-weight: 700; }
-  .sheet dd { margin: 0; text-align: right; font-weight: 800; color: var(--cream); }
-  .hint p { margin: 0; font-size: 16px; line-height: 1.45; font-weight: 700; color: var(--cream); }
+  .sheet dt { color: var(--cream-dim); }
+  .sheet dd { margin: 0; text-align: right; color: var(--cream); }
+  .hint p { margin: 0; font-size: 20px; line-height: 1.3; letter-spacing: 0.03em; color: var(--cream); }
   .hint p + p { margin-top: 4px; }
   .hint span { color: var(--brass); }
 
@@ -191,13 +198,14 @@
     pointer-events: auto;
     width: 52px;
     height: 52px;
-    border-radius: 50%;
+    border-radius: 0;
+    clip-path: var(--notch);
     border: 2px solid var(--board-light);
     background: linear-gradient(180deg, var(--board) 0%, var(--board-deep) 100%);
     color: var(--cream);
     font-family: var(--font-display);
-    font-weight: 700;
-    font-size: 18px;
+    font-weight: 400;
+    font-size: 24px;
     display: grid;
     place-items: center;
     box-shadow: 0 4px 12px rgba(0,0,0,0.4);
@@ -215,14 +223,7 @@
 <canvas id="game" aria-label="Ameisenkolonie im Querschnitt durch den Boden"></canvas>
 <div id="hud">
   <div class="sign" role="status" aria-live="polite">
-    <svg class="ant-icon" viewBox="0 0 30 34" aria-hidden="true">
-      <g fill="#f4edd3" stroke="#f4edd3" stroke-linecap="round" stroke-width="1.8">
-        <ellipse cx="15" cy="6.5" rx="3.6" ry="3.4" stroke="none"/>
-        <ellipse cx="15" cy="14" rx="3" ry="4" stroke="none"/>
-        <ellipse cx="15" cy="25" rx="5" ry="7" stroke="none"/>
-        <path d="M13 4 L9 0.8 M17 4 L21 0.8 M12.5 12 L5 8 M17.5 12 L25 8 M12.5 15 L4 15.5 M17.5 15 L26 15.5 M13 17 L6 24 M17 17 L24 24" fill="none"/>
-      </g>
-    </svg>
+    <svg class="ant-icon" viewBox="0 0 7 9" aria-hidden="true" fill="#f4edd3" shape-rendering="crispEdges"><rect x="1" y="0" width="1" height="1"/><rect x="5" y="0" width="1" height="1"/><rect x="2" y="1" width="1" height="1"/><rect x="4" y="1" width="1" height="1"/><rect x="3" y="2" width="1" height="1"/><rect x="0" y="3" width="1" height="1"/><rect x="2" y="3" width="1" height="1"/><rect x="3" y="3" width="1" height="1"/><rect x="4" y="3" width="1" height="1"/><rect x="6" y="3" width="1" height="1"/><rect x="1" y="4" width="1" height="1"/><rect x="3" y="4" width="1" height="1"/><rect x="5" y="4" width="1" height="1"/><rect x="2" y="5" width="1" height="1"/><rect x="3" y="5" width="1" height="1"/><rect x="4" y="5" width="1" height="1"/><rect x="0" y="6" width="1" height="1"/><rect x="2" y="6" width="1" height="1"/><rect x="3" y="6" width="1" height="1"/><rect x="4" y="6" width="1" height="1"/><rect x="6" y="6" width="1" height="1"/><rect x="2" y="7" width="1" height="1"/><rect x="3" y="7" width="1" height="1"/><rect x="4" y="7" width="1" height="1"/><rect x="3" y="8" width="1" height="1"/></svg>
     <div class="sign-text"><span class="sign-label">ANT POP.</span><span class="sign-count" id="pop">6</span></div>
     <div class="sign-stats"><span>Futter <b id="food">20</b></span><span>Tag <b id="day">1</b></span><span class="warn" id="hunger" hidden>Hunger!</span></div>
   </div>
@@ -335,12 +336,57 @@ const world = {
   fields: [], dirty: [], has: [], water: new Float32Array(W * H), wet: false, waterShown: false,
   mound: new Float32Array(W), sources: [], byTrunk: new Map(), frame: 0,
 };
-// ---- Boden in hoher Auflösung: Erdschichten mit Körnung, runde Tunnel mit Rand
-const GS = 5;                                  // Pixel pro Weltpixel im Zwischenspeicher
+// ---- Pixel-Werkzeuge: alles rastet auf das Kunstpixel-Raster ein. Eingaben in Weltpixeln.
+const PIX = 2;   // Kunstpixel pro Weltpixel: doppelt so fein wie die erste Version
+const P = {
+  g: null, ox: 0, oy: 0,
+  use(g, ox = 0, oy = 0) { this.g = g; this.ox = ox; this.oy = oy; return this; },
+  fill(c) { this.g.fillStyle = c; return this; },
+  rect(x, y, w, h) {
+    const x0 = Math.round(x * PIX) + this.ox, y0 = Math.round(y * PIX) + this.oy;
+    this.g.fillRect(x0, y0, Math.max(1, Math.round((x + w) * PIX) + this.ox - x0), Math.max(1, Math.round((y + h) * PIX) + this.oy - y0));
+    return this;
+  },
+  dot(x, y) { this.g.fillRect(Math.floor(x * PIX) + this.ox, Math.floor(y * PIX) + this.oy, 1, 1); return this; },
+  ellipse(x, y, rx, ry) {
+    const cx = x * PIX + this.ox, cy = y * PIX + this.oy, RX = rx * PIX, RY = ry * PIX;
+    const top = Math.round(cy - RY), bot = Math.round(cy + RY);
+    for (let py = top; py < bot; py++) {
+      const t = (py + 0.5 - cy) / RY;
+      if (t <= -1 || t >= 1) continue;
+      const hw = RX * Math.sqrt(1 - t * t), x0 = Math.round(cx - hw), x1 = Math.round(cx + hw);
+      if (x1 > x0) this.g.fillRect(x0, py, x1 - x0, 1);
+    }
+    return this;
+  },
+  disc(x, y, r) { return this.ellipse(x, y, r, r); },
+  line(x0, y0, x1, y1) {
+    let ax = Math.round(x0 * PIX) + this.ox, ay = Math.round(y0 * PIX) + this.oy;
+    const bx = Math.round(x1 * PIX) + this.ox, by = Math.round(y1 * PIX) + this.oy;
+    const dx = Math.abs(bx - ax), dy = -Math.abs(by - ay), sx = ax < bx ? 1 : -1, sy = ay < by ? 1 : -1;
+    let e = dx + dy;
+    for (let n = 0; n < 400; n++) {
+      this.g.fillRect(ax, ay, 1, 1);
+      if (ax === bx && ay === by) break;
+      const e2 = 2 * e;
+      if (e2 >= dy) { e += dy; ax += sx; }
+      if (e2 <= dx) { e += dx; ay += sy; }
+    }
+  },
+  curve(x0, y0, cx, cy, x1, y1, steps = 6) {
+    let px = x0, py = y0;
+    for (let k = 1; k <= steps; k++) {
+      const t = k / steps, u = 1 - t;
+      const nx = u * u * x0 + 2 * u * t * cx + t * t * x1, ny = u * u * y0 + 2 * u * t * cy + t * t * y1;
+      this.line(px, py, nx, ny); px = nx; py = ny;
+    }
+  },
+};
+
+// ---- Boden als Pixelbild: Erdschichten mit Körnern und Steinen, runde Pixel-Tunnel mit Rand
 const RIM_DARK = mix(TUNNEL_COLOR, [0.2, 0.12, 0.07], 0.5);
-const [soilC, soilG] = canvas(WPX * GS, HPX * GS);
-const [groundC, groundG] = canvas(WPX * GS, HPX * GS);
-soilG.imageSmoothingEnabled = true; groundG.imageSmoothingEnabled = true;
+const [soilC, soilG] = canvas(WPX * PIX, HPX * PIX);
+const [groundC, groundG] = canvas(WPX * PIX, HPX * PIX);
 let soilSeed = -1;
 const groundDirty = new Set();
 
@@ -352,66 +398,53 @@ function solid(x, y) {
 function buildSoil() {
   soilSeed = world.seed;
   const g = soilG, r = mulberry(world.seed + 7), top = G * T;
-  g.setTransform(GS, 0, 0, GS, 0, 0);
-  g.clearRect(0, 0, WPX, HPX);
+  P.use(g);
+  g.clearRect(0, 0, soilC.width, soilC.height);
   const ys = [top, LAYER_ROWS[1] * T, LAYER_ROWS[2] * T, HPX];
   for (let l = 0; l < 3; l++) {
-    const gr = g.createLinearGradient(0, ys[l], 0, ys[l + 1]);
-    gr.addColorStop(0, css(lighten(SOIL_COLORS[l], 0.05)));
-    gr.addColorStop(1, css(darken(SOIL_COLORS[l], 0.05)));
-    g.fillStyle = gr;
-    g.fillRect(0, ys[l], WPX, ys[l + 1] - ys[l]);
+    // Farbbänder statt Verlauf, wie bei Pixel-Art
+    const h = ys[l + 1] - ys[l], bands = 4;
+    for (let b = 0; b < bands; b++) {
+      P.fill(css(mix(lighten(SOIL_COLORS[l], 0.04), darken(SOIL_COLORS[l], 0.04), b / (bands - 1))));
+      P.rect(0, ys[l] + h * b / bands, WPX, h / bands + 0.5);
+    }
   }
   // Sandkörner
-  for (let k = 0; k < 14000; k++) {
+  for (let k = 0; k < 9000; k++) {
     const x = r() * WPX, y = top + r() * (HPX - top), base = SOIL_COLORS[layerOf(Math.floor(y / T))];
-    const c = r() < 0.55 ? darken(base, r.rf(0.08, 0.28)) : lighten(base, r.rf(0.12, 0.35));
-    const s = r.rf(0.22, 0.55);
-    g.fillStyle = css(c, r.rf(0.45, 0.9));
-    g.fillRect(x, y, s, s);
+    g.fillStyle = css(r() < 0.55 ? darken(base, r.rf(0.08, 0.22)) : lighten(base, r.rf(0.12, 0.3)));
+    P.dot(x, y);
   }
-  // kleine Steine
-  for (let k = 0; k < 240; k++) {
-    const x = r() * WPX, y = top + 2 + r() * (HPX - top - 2), base = SOIL_COLORS[layerOf(Math.floor(y / T))];
-    const rx = r.rf(0.5, 1.5), ry = rx * r.rf(0.55, 0.85), rot = r.rf(-0.6, 0.6);
-    const stone = mix([0.56, 0.53, 0.49], base, r.rf(0.1, 0.4));
-    g.fillStyle = css(darken(stone, 0.3));
-    g.beginPath(); g.ellipse(x + 0.12, y + 0.15, rx, ry, rot, 0, Math.PI * 2); g.fill();
-    g.fillStyle = css(stone);
-    g.beginPath(); g.ellipse(x, y, rx, ry, rot, 0, Math.PI * 2); g.fill();
-    g.fillStyle = css(lighten(stone, 0.35), 0.8);
-    g.beginPath(); g.ellipse(x - rx * 0.3, y - ry * 0.35, rx * 0.35, ry * 0.3, rot, 0, Math.PI * 2); g.fill();
+  // kleine Steine mit Glanzlicht
+  for (let k = 0; k < 230; k++) {
+    const x = r() * WPX, y = top + 2 + r() * (HPX - top - 3), base = SOIL_COLORS[layerOf(Math.floor(y / T))];
+    const rx = r.rf(0.6, 1.5), ry = rx * r.rf(0.6, 0.85), stone = mix([0.56, 0.53, 0.49], base, r.rf(0.1, 0.35));
+    P.fill(css(darken(stone, 0.3))).ellipse(x, y + 0.5, rx, ry);
+    P.fill(css(stone)).ellipse(x, y, rx, ry);
+    P.fill(css(lighten(stone, 0.35))).dot(x - rx * 0.4, y - ry * 0.4);
   }
   // gestrichelte Linien zwischen den Schichten
-  g.lineCap = "round";
   for (const row of [LAYER_ROWS[1], LAYER_ROWS[2]]) {
-    const y = row * T;
-    g.strokeStyle = css(darken(SOIL_COLORS[layerOf(row)], 0.38), 0.85);
-    g.lineWidth = 0.55;
-    g.setLineDash([3.2, 1.8, 1.4, 1.8]);
-    g.beginPath();
-    for (let x = 0; x <= WPX; x += 2) {
-      const yy = y + Math.sin(x * 0.11 + row) * 0.7 + Math.sin(x * 0.37) * 0.25;
-      if (x === 0) g.moveTo(x, yy); else g.lineTo(x, yy);
+    P.fill(css(darken(SOIL_COLORS[layerOf(row)], 0.4)));
+    for (let x = 0; x < WPX; x += 3.5) {
+      const h = hash2(Math.floor(x), row);
+      if (h % 4 === 0) continue;
+      const y = row * T + Math.round(Math.sin(x * 0.11 + row) * 1.2) / PIX;
+      P.rect(x, y, h % 3 === 0 ? 1.5 : 2.5, 0.5);
     }
-    g.stroke();
   }
-  g.setLineDash([]);
-  // dunkle Kante an der Oberfläche
-  g.fillStyle = css(darken(SOIL_COLORS[0], 0.18), 0.6);
-  g.fillRect(0, top, WPX, 0.6);
-  g.setTransform(1, 0, 0, 1, 0, 0);
+  P.fill(css(darken(SOIL_COLORS[0], 0.2))).rect(0, top, WPX, 0.5);
 }
 function drawGroundRegion(x0, y0, x1, y1) {
   const g = groundG;
   x0 = Math.max(0, x0); x1 = Math.min(W - 1, x1); y0 = Math.max(G, y0); y1 = Math.min(H - 1, y1);
   if (x1 < x0 || y1 < y0) return;
-  const px = x0 * T, py = y0 * T, pw = (x1 - x0 + 1) * T, ph = (y1 - y0 + 1) * T;
+  const px = x0 * T * PIX, py = y0 * T * PIX, pw = (x1 - x0 + 1) * T * PIX, ph = (y1 - y0 + 1) * T * PIX;
   g.save();
-  g.setTransform(GS, 0, 0, GS, 0, 0);
   g.beginPath(); g.rect(px, py, pw, ph); g.clip();
   g.clearRect(px, py, pw, ph);
-  g.drawImage(soilC, px * GS, py * GS, pw * GS, ph * GS, px, py, pw, ph);
+  g.drawImage(soilC, px, py, pw, ph, px, py, pw, ph);
+  P.use(g);
   const m = 2;
   for (let pass = 0; pass < 3; pass++) {
     for (let y = Math.max(G, y0 - m); y <= Math.min(H - 1, y1 + m); y++) for (let x = Math.max(0, x0 - m); x <= Math.min(W - 1, x1 + m); x++) {
@@ -420,21 +453,13 @@ function drawGroundRegion(x0, y0, x1, y1) {
       const ch = world.chamber[i], h = hash2(x, y), cx = x * T + 1.5, cy = y * T + 1.5;
       if (pass === 0) {
         // krümeliger Rand
-        g.fillStyle = css(ch ? darken(CHAMBER_COLORS[ch], 0.38) : RIM_DARK);
-        g.beginPath(); g.arc(cx + ((h >> 3) % 3 - 1) * 0.15, cy + ((h >> 5) % 3 - 1) * 0.15, 2.75 + (h % 5) * 0.06, 0, Math.PI * 2); g.fill();
+        P.fill(css(ch ? darken(CHAMBER_COLORS[ch], 0.38) : RIM_DARK)).disc(cx + ((h >> 3) % 3 - 1) * 0.3, cy + ((h >> 5) % 3 - 1) * 0.3, 2.7 + (h % 4) * 0.12);
       } else if (pass === 1) {
-        g.fillStyle = css(ch ? CHAMBER_COLORS[ch] : TUNNEL_COLOR);
-        g.beginPath(); g.arc(cx, cy, 2.25 + (h % 3) * 0.04, 0, Math.PI * 2); g.fill();
+        P.fill(css(ch ? CHAMBER_COLORS[ch] : TUNNEL_COLOR)).disc(cx, cy, 2.2);
       } else {
         // Schatten am Boden des Gangs und ein paar Krümel
-        if (solid(x, y + 1)) {
-          g.fillStyle = "rgba(0,0,0,0.14)";
-          g.beginPath(); g.ellipse(cx, cy + 1.1, 1.7, 0.55, 0, 0, Math.PI * 2); g.fill();
-        }
-        if (h % 5 === 0) {
-          g.fillStyle = css(ch ? darken(CHAMBER_COLORS[ch], 0.2) : lighten(TUNNEL_COLOR, 0.15), 0.8);
-          g.fillRect(cx + ((h >> 4) % 3) - 1, cy + ((h >> 6) % 2), 0.45, 0.45);
-        }
+        if (solid(x, y + 1)) P.fill(css(ch ? darken(CHAMBER_COLORS[ch], 0.15) : darken(TUNNEL_COLOR, 0.18))).rect(cx - 1.5, cy + 1, 3, 0.5);
+        if (h % 4 === 0) P.fill(css(ch ? darken(CHAMBER_COLORS[ch], 0.25) : lighten(TUNNEL_COLOR, 0.18))).dot(cx + ((h >> 4) % 3) - 1, cy + ((h >> 6) % 2) - 0.5);
       }
     }
   }
@@ -444,7 +469,6 @@ function updateTile(x, y) { if (inGrid(x, y) && y >= G) groundDirty.add(idx(x, y
 function rebuildTiles() {
   if (soilSeed !== world.seed) buildSoil();
   groundDirty.clear();
-  groundG.setTransform(1, 0, 0, 1, 0, 0);
   groundG.clearRect(0, 0, groundC.width, groundC.height);
   drawGroundRegion(0, G, W - 1, H - 1);
 }
@@ -1029,17 +1053,15 @@ const ants = {
       this.setState(i, s);
     }
   },
-  draw(g, s, ox, oy, vis) {
-    buildAntAtlas(s);
-    g.setTransform(1, 0, 0, 1, 0, 0);
-    const half = ACELL / 2;
+  draw(g, F) {
+    buildAntAtlas();
+    const half = ACELL >> 1;
     for (let i = 0; i < this.count; i++) {
       const dxs = this.tx[i] - this.cx[i], dys = this.ty[i] - this.cy[i];
       let f = this.face[i];
       if (dxs > 0) f = 0; else if (dxs < 0) f = 1; else if (dys < 0) f = 2; else if (dys > 0) f = 3;
       this.face[i] = f;
       let x = this.px[i], y = this.py[i];
-      if (x < vis[0] || x > vis[2] || y < vis[1] || y > vis[3]) continue;
       if (y < G * T && y > SURF * T - 1) y -= surfaceOffset(Math.floor(x / T));
       y -= 0.4;
       let fr = 0;
@@ -1047,7 +1069,7 @@ const ants = {
       else if (this.role[i] === R_QUEEN) fr = 4;
       else if (this.carry[i]) fr = 4 + this.carry[i] * 2;
       fr += Math.floor(this.anim[i] * 2) & 1;
-      g.drawImage(antAtlas, fr * ACELL, f * ACELL, ACELL, ACELL, Math.round(ox + x * s - half), Math.round(oy + y * s - half), ACELL, ACELL);
+      g.drawImage(antAtlas, fr * ACELL, f * ACELL, ACELL, ACELL, F + Math.round(x * PIX) - half, F + Math.round(y * PIX) - half, ACELL, ACELL);
     }
   },
 };
@@ -1132,31 +1154,38 @@ function drawAntShape(g, kind, phase, item) {
     }
   }
 }
-// Der Atlas wird in der Größe gezeichnet, in der die Ameisen gerade auf dem Bildschirm erscheinen,
-// und zwar in allen vier Blickrichtungen. Beim Zeichnen wird nur noch kopiert, nichts gedreht.
+// Pixel-Sprites: der Atlas wird in Kunstpixel-Größe gezeichnet und danach hart begrenzt,
+// in allen vier Blickrichtungen. Beim Zeichnen wird nur noch kopiert.
 const FACES = [[1, 0, 0, 1], [-1, 0, 0, 1], [0, -1, 1, 0], [0, 1, -1, 0]];
 let ACELL = 0;
-function buildAntAtlas(scale) {
-  const want = clamp(Math.round(scale * 4) / 4, 1.5, 24);
-  if (want === AS) return;
-  AS = want;
+function buildAntAtlas() {
+  if (AS) return;
+  AS = PIX;
   ACELL = Math.ceil(AFW * AS * 1.15);
-  antAtlas.width = ACELL * A_FRAMES; antAtlas.height = ACELL * 4;
-  const g = antAtlasG;
-  g.imageSmoothingEnabled = true;
-  g.setTransform(1, 0, 0, 1, 0, 0);
-  g.clearRect(0, 0, antAtlas.width, antAtlas.height);
+  const SS = 4;   // erst größer zeichnen, dann auf Kunstpixel verkleinern
+  const [big, bg] = canvas(ACELL * A_FRAMES * SS, ACELL * 4 * SS);
+  bg.imageSmoothingEnabled = true;
   const frames = [];
   for (let a = 0; a < 2; a++) {
     frames[a] = [0, a, 0]; frames[2 + a] = [1, a, 0]; frames[4 + a] = [2, a, 0];
     for (let c = 1; c < 5; c++) frames[4 + c * 2 + a] = [0, a, c];
   }
   FACES.forEach(([a, b, c, d], o) => frames.forEach(([kind, phase, item], f) => {
-    const k = AS * (kind === 2 ? 1.15 : (kind === 1 ? 1.05 : 0.92));
-    g.setTransform(a * k, b * k, c * k, d * k, f * ACELL + ACELL / 2, o * ACELL + ACELL / 2);
-    drawAntShape(g, kind, phase, item);
+    const k = AS * SS * (kind === 2 ? 1.15 : (kind === 1 ? 1.05 : 0.92));
+    bg.setTransform(a * k, b * k, c * k, d * k, (f * ACELL + ACELL / 2) * SS, (o * ACELL + ACELL / 2) * SS);
+    drawAntShape(bg, kind, phase, item);
   }));
-  g.setTransform(1, 0, 0, 1, 0, 0);
+  antAtlas.width = ACELL * A_FRAMES; antAtlas.height = ACELL * 4;
+  const g = antAtlasG;
+  g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
+  g.drawImage(big, 0, 0, antAtlas.width, antAtlas.height);
+  // harte Kanten: jedes Pixel ganz sichtbar oder ganz durchsichtig
+  const img = g.getImageData(0, 0, antAtlas.width, antAtlas.height), d = img.data;
+  for (let i = 3; i < d.length; i += 4) {
+    if (d[i] < 90) d[i] = 0;
+    else d[i] = 255;
+  }
+  g.putImageData(img, 0, 0);
 }
 
 // ---------------------------------------------------------------- Zustandsmaschine einer Ameise
@@ -1526,42 +1555,30 @@ const events = {
     }
     if (this.centFleeing && (this.centX < -30 || this.centX > WPX + 30)) { this.centActive = false; this.nextCent = rf(150, 300); }
   },
-  draw(g) {
+  draw(F) {
     if (this.drops.length) {
-      g.strokeStyle = "rgba(190,215,250,0.65)"; g.lineWidth = 0.3; g.lineCap = "round";
-      g.beginPath();
-      for (const d of this.drops) { g.moveTo(d[0], d[1]); g.lineTo(d[0] - 0.5, d[1] + 3.2); }
-      g.stroke();
+      P.fill("rgba(190,215,250,0.7)");
+      for (const d of this.drops) P.line(d[0], d[1], d[0] - 0.5, d[1] + 3);
     }
     if (!this.centActive) return;
-    g.lineCap = "round";
     for (let k = SEGS - 1; k >= 0; k--) {
       const p = this.segs[k], n = this.segs[Math.max(k - 1, 0)];
       let fx = Math.cos(this.angle), fy = Math.sin(this.angle);
       if (k > 0) { const d = Math.hypot(n[0] - p[0], n[1] - p[1]) || 1; fx = (n[0] - p[0]) / d; fy = (n[1] - p[1]) / d; }
       const sx = -fy, sy = fx, sw = Math.sin(this.walk * 14 + k * 1.3) * 1.1;
-      g.strokeStyle = "#5a2414"; g.lineWidth = 0.38;
-      g.beginPath();
-      g.moveTo(p[0] + sx * 1.2, p[1] + sy * 1.2); g.lineTo(p[0] + sx * 3.4 + fx * sw, p[1] + sy * 3.4 + fy * sw);
-      g.moveTo(p[0] - sx * 1.2, p[1] - sy * 1.2); g.lineTo(p[0] - sx * 3.4 - fx * sw, p[1] - sy * 3.4 - fy * sw);
-      g.stroke();
+      P.fill("#5a2414");
+      P.line(p[0] + sx * 1.2, p[1] + sy * 1.2, p[0] + sx * 3.4 + fx * sw, p[1] + sy * 3.4 + fy * sw);
+      P.line(p[0] - sx * 1.2, p[1] - sy * 1.2, p[0] - sx * 3.4 - fx * sw, p[1] - sy * 3.4 - fy * sw);
       if (k === 0) {
-        g.strokeStyle = "#3a160c"; g.lineWidth = 0.32;
-        g.beginPath();
-        g.moveTo(p[0] + fx * 1.5 + sx * 0.6, p[1] + fy * 1.5 + sy * 0.6);
-        g.quadraticCurveTo(p[0] + fx * 4 + sx * 1.5, p[1] + fy * 4 + sy * 1.5, p[0] + fx * 5.5 + sx * 3.2, p[1] + fy * 5.5 + sy * 3.2);
-        g.moveTo(p[0] + fx * 1.5 - sx * 0.6, p[1] + fy * 1.5 - sy * 0.6);
-        g.quadraticCurveTo(p[0] + fx * 4 - sx * 1.5, p[1] + fy * 4 - sy * 1.5, p[0] + fx * 5.5 - sx * 3.2, p[1] + fy * 5.5 - sy * 3.2);
-        g.stroke();
-        g.fillStyle = "#3d150b"; g.beginPath(); g.arc(p[0], p[1], 1.9, 0, Math.PI * 2); g.fill();
-        g.fillStyle = "#f0c04a";
-        g.beginPath(); g.arc(p[0] + fx * 0.9 + sx * 0.7, p[1] + fy * 0.9 + sy * 0.7, 0.32, 0, Math.PI * 2); g.fill();
-        g.beginPath(); g.arc(p[0] + fx * 0.9 - sx * 0.7, p[1] + fy * 0.9 - sy * 0.7, 0.32, 0, Math.PI * 2); g.fill();
+        P.fill("#3a160c");
+        P.curve(p[0] + fx * 1.5 + sx * 0.6, p[1] + fy * 1.5 + sy * 0.6, p[0] + fx * 4 + sx * 1.5, p[1] + fy * 4 + sy * 1.5, p[0] + fx * 5.5 + sx * 3.2, p[1] + fy * 5.5 + sy * 3.2, 4);
+        P.curve(p[0] + fx * 1.5 - sx * 0.6, p[1] + fy * 1.5 - sy * 0.6, p[0] + fx * 4 - sx * 1.5, p[1] + fy * 4 - sy * 1.5, p[0] + fx * 5.5 - sx * 3.2, p[1] + fy * 5.5 - sy * 3.2, 4);
+        P.fill("#3d150b").disc(p[0], p[1], 1.9);
+        P.fill("#f0c04a").dot(p[0] + fx * 0.9 + sx * 0.7, p[1] + fy * 0.9 + sy * 0.7);
+        P.dot(p[0] + fx * 0.9 - sx * 0.7, p[1] + fy * 0.9 - sy * 0.7);
       } else {
-        g.fillStyle = k % 2 ? "#7a2c18" : "#9a3a1e";
-        g.beginPath(); g.ellipse(p[0], p[1], 1.75, 1.45, Math.atan2(fy, fx), 0, Math.PI * 2); g.fill();
-        g.fillStyle = "rgba(255,190,140,0.3)";
-        g.beginPath(); g.ellipse(p[0] - sx * 0.5, p[1] - sy * 0.5, 0.9, 0.45, Math.atan2(fy, fx), 0, Math.PI * 2); g.fill();
+        P.fill(k % 2 ? "#7a2c18" : "#9a3a1e").disc(p[0], p[1], 1.6);
+        P.fill("rgba(255,190,140,0.35)").rect(p[0] - sx * 0.5 - 0.5, p[1] - sy * 0.5 - 0.5, 1, 0.5);
       }
     }
   },
@@ -1569,15 +1586,16 @@ const events = {
 
 // =====================================================================
 // HIMMEL: Sonne, Mond, Wolken, Bäume, Büsche, Gras, Blumen, Sandhügel
-// Alles wird jedes Bild als Vektorgrafik gezeichnet und bleibt beim Zoomen scharf.
+// Als Pixelbild im Zwischenspeicher, neu gezeichnet viermal pro Sekunde.
 // =====================================================================
 const SKY_TOP = [0.56, 0.76, 0.92], SKY_LOW = [0.86, 0.93, 0.95];
 const TRUNK = [0.45, 0.30, 0.19], TRUNK_DARK = [0.31, 0.20, 0.12];
-const LEAF = [[0.33, 0.56, 0.29], [0.45, 0.67, 0.35], [0.26, 0.46, 0.24]], LEAF_LIGHT = [0.66, 0.82, 0.5];
+const LEAF = [[0.33, 0.56, 0.29], [0.45, 0.67, 0.35], [0.26, 0.46, 0.24]], LEAF_LIGHT = [0.62, 0.8, 0.47];
 const SAND = [0.89, 0.78, 0.56], SAND_DARK = [0.76, 0.64, 0.44];
 const TAU = Math.PI * 2;
+const [skyC, skyG] = canvas(WPX * PIX, G * T * PIX);
 const sky = {
-  dirty: true, clock: 0, seed: -1, stalks: [], tufts: [], stars: [], clouds: [],
+  dirty: true, t: 0, clock: 0, seed: -1, stalks: [], tufts: [], stars: [], clouds: [],
   generate() {
     this.seed = world.seed;
     const r = mulberry(world.seed + 99);
@@ -1588,146 +1606,124 @@ const sky = {
       const q = r();
       this.stalks.push([x, r.ri(7, 30), r.rf(-0.12, 0.12), q < 0.35 ? 1 : (q < 0.55 ? 2 : 0), r.ri(0, 2)]);
     }
-    for (let k = 0; k < 220; k++) this.tufts.push([r.rf(0, WPX), r.rf(1.2, 4.5), r.rf(-0.8, 0.8), r.ri(0, 2)]);
-    for (let k = 0; k < 50; k++) this.stars.push([r.rf(2, WPX - 3), r.rf(2, 90), r.rf(0.25, 0.55)]);
+    for (let k = 0; k < 200; k++) this.tufts.push([r.rf(0, WPX), r.rf(1.5, 4.5), r.rf(-0.8, 0.8), r.ri(0, 2)]);
+    for (let k = 0; k < 50; k++) this.stars.push([r.rf(2, WPX - 3), r.rf(2, 90)]);
     for (let k = 0; k < 5; k++) this.clouds.push([r.rf(0, WPX), r.rf(8, 42), r.rf(12, 24), r.rf(1, 2.5)]);
   },
-  tick(dt) { this.clock += dt; },
-  circle(g, x, y, r) { g.moveTo(x + r, y); g.arc(x, y, r, 0, TAU); },
-  draw(g) {
+  tick(dt) {
+    this.clock += dt; this.t -= dt;
+    if (this.dirty || this.t <= 0) { this.t = 0.25; this.dirty = false; this.draw(); }
+  },
+  draw() {
     if (this.seed !== world.seed) this.generate();
-    const gy = G * T, light = events.daylight();
+    const g = skyG, gy = G * T, light = events.daylight();
+    P.use(g);
+    g.clearRect(0, 0, skyC.width, skyC.height);
     let top = SKY_TOP, low = SKY_LOW;
     if (events.raining) { top = mix(top, [0.5, 0.55, 0.6], 0.6); low = mix(low, [0.62, 0.66, 0.7], 0.6); }
-    const gr = g.createLinearGradient(0, 0, 0, gy);
-    gr.addColorStop(0, css(top)); gr.addColorStop(1, css(low));
-    g.fillStyle = gr; g.fillRect(-0.5, -0.5, WPX + 1, gy + 1);
+    const bands = 12;
+    for (let b = 0; b < bands; b++) P.fill(css(mix(top, low, b / (bands - 1)))).rect(0, gy * b / bands, WPX, gy / bands + 0.5);
     if (light < 0.45) {
       const a = clamp((0.45 - light) * 3, 0, 1);
-      g.fillStyle = "#fffbe6";
-      for (const s of this.stars) { g.globalAlpha = a * (0.55 + 0.45 * Math.sin(this.clock * 2 + s[0])); g.beginPath(); this.circle(g, s[0], s[1], s[2]); g.fill(); }
-      g.globalAlpha = 1;
+      for (const s of this.stars) P.fill(`rgba(255,251,230,${a * (0.55 + 0.45 * Math.sin(this.clock * 2 + s[0]))})`).dot(s[0], s[1]);
     }
-    // Sonne
+    // Sonne mit Strahlenkranz
     const dayT = (events.time - 0.22) / 0.56;
     if (dayT > 0 && dayT < 1) {
       const px = 18 + (WPX - 36) * dayT, py = 32 - Math.sin(dayT * Math.PI) * 20;
-      const glow = g.createRadialGradient(px, py, 3, px, py, 16);
-      glow.addColorStop(0, "rgba(255,240,170,0.65)"); glow.addColorStop(1, "rgba(255,240,170,0)");
-      g.fillStyle = glow; g.beginPath(); this.circle(g, px, py, 16); g.fill();
-      g.fillStyle = "#ffe98c"; g.beginPath(); this.circle(g, px, py, 5.6); g.fill();
-      g.fillStyle = "#fff6cc"; g.beginPath(); this.circle(g, px - 1, py - 1, 3.4); g.fill();
+      P.fill("rgba(255,240,170,0.18)").disc(px, py, 12);
+      P.fill("rgba(255,240,170,0.25)").disc(px, py, 8.5);
+      P.fill("#ffe98c").disc(px, py, 5.5);
+      P.fill("#fff6cc").disc(px - 1, py - 1, 3);
     }
-    // Mond
     const nT = (((events.time + 0.5) % 1) - 0.22) / 0.56;
     if (nT > 0 && nT < 1) {
       const mx = 18 + (WPX - 36) * nT, my = 28 - Math.sin(nT * Math.PI) * 16;
-      g.fillStyle = "#f3f0dc"; g.beginPath(); this.circle(g, mx, my, 4.6); g.fill();
-      g.fillStyle = css(mix(top, [0.1, 0.12, 0.25], 0.5)); g.beginPath(); this.circle(g, mx + 2, my - 1, 3.8); g.fill();
+      P.fill("#f3f0dc").disc(mx, my, 4.5);
+      P.fill(css(mix(top, [0.1, 0.12, 0.25], 0.5))).disc(mx + 2, my - 1, 3.8);
     }
-    // Wolken
     for (const c of this.clouds) {
       const x = ((c[0] + this.clock * c[3]) % (WPX + 60)) - 30, y = c[1], w = c[2];
       const col = events.raining ? [0.58, 0.61, 0.66] : [0.98, 0.99, 1];
-      g.fillStyle = css(darken(col, 0.1));
-      g.beginPath(); this.circle(g, x + w * 0.25, y + 1.2, w * 0.2); this.circle(g, x + w * 0.55, y + 1.4, w * 0.24); this.circle(g, x + w * 0.8, y + 1.2, w * 0.17); g.fill();
-      g.fillStyle = css(col);
-      g.beginPath(); this.circle(g, x + w * 0.25, y, w * 0.2); this.circle(g, x + w * 0.52, y - w * 0.12, w * 0.25); this.circle(g, x + w * 0.8, y, w * 0.17); g.fill();
-      g.fillRect(x + w * 0.25, y - 0.5, w * 0.55, w * 0.18);
+      P.fill(css(darken(col, 0.1)));
+      P.disc(x + w * 0.25, y + 1, w * 0.2); P.disc(x + w * 0.55, y + 1.2, w * 0.24); P.disc(x + w * 0.8, y + 1, w * 0.17);
+      P.fill(css(col));
+      P.disc(x + w * 0.25, y, w * 0.2); P.disc(x + w * 0.52, y - w * 0.12, w * 0.25); P.disc(x + w * 0.8, y, w * 0.17);
     }
-    for (const s of world.sources) if (s.kind === 0) this.tree(g, s);
-    for (const st of this.stalks) this.stalk(g, st, gy);
-    for (const s of world.sources) if (s.kind === 1) this.bush(g, s);
-    this.mound(g, gy);
-    // Grasbüschel am Boden
-    g.lineCap = "round"; g.lineWidth = 0.42;
-    for (let c = 0; c < 3; c++) {
-      g.strokeStyle = css(LEAF[c]); g.beginPath();
-      for (const t of this.tufts) if (t[3] === c) {
-        const sway = Math.sin(this.clock * 1.2 + t[0] * 0.2) * 0.25;
-        g.moveTo(t[0], gy + 0.3); g.quadraticCurveTo(t[0] + t[2] * 0.4, gy - t[1] * 0.5, t[0] + t[2] + sway, gy - t[1]);
-      }
-      g.stroke();
+    for (const s of world.sources) if (s.kind === 0) this.tree(s);
+    for (const st of this.stalks) this.stalk(st, gy);
+    for (const s of world.sources) if (s.kind === 1) this.bush(s);
+    this.mound(gy);
+    for (const t of this.tufts) {
+      const sway = Math.sin(this.clock * 1.2 + t[0] * 0.2) * 0.4;
+      P.fill(css(LEAF[t[3]])).line(t[0], gy - 0.5, t[0] + t[2] + sway, gy - t[1]);
     }
   },
-  tree(g, s) {
+  tree(s) {
     const tx = s.trunk * T + 1.5, top = s.cy * T, gy = G * T;
-    g.fillStyle = css(TRUNK);
-    g.beginPath(); g.moveTo(tx - 2.1, gy + 0.3); g.quadraticCurveTo(tx - 1.0, gy - 6, tx - 0.95, top); g.lineTo(tx + 0.95, top);
-    g.quadraticCurveTo(tx + 1.0, gy - 6, tx + 2.1, gy + 0.3); g.closePath(); g.fill();
-    g.strokeStyle = css(TRUNK_DARK); g.lineWidth = 0.5;
-    g.beginPath(); g.moveTo(tx + 0.7, top + 2); g.lineTo(tx + 0.9, gy - 1); g.stroke();
-    g.strokeStyle = css(TRUNK); g.lineWidth = 0.8; g.lineCap = "round";
-    g.beginPath(); g.moveTo(tx, top + 4); g.lineTo(tx - 5, top - 2); g.moveTo(tx, top + 6); g.lineTo(tx + 6, top); g.stroke();
+    // Stamm, unten breiter
+    for (let y = top; y < gy; y += 0.5) {
+      const w = 1.9 + Math.max(0, (y - (gy - 6)) / 6) * 1.6;
+      P.fill(css(TRUNK)).rect(tx - w / 2, y, w, 0.5);
+      P.fill(css(TRUNK_DARK)).rect(tx + w / 2 - 0.5, y, 0.5, 0.5);
+    }
+    P.fill(css(TRUNK)); P.line(tx, top + 4, tx - 5, top - 2); P.line(tx, top + 6, tx + 6, top);
     const cx = s.cx * T + 1.5, cy = s.cy * T;
     for (const pass of [0, 1, 2]) for (const b of s.blobs) {
       const bx = cx + b[0] * T, by = cy + b[1] * T, br = b[2] * T;
-      if (pass === 0) { g.fillStyle = css(darken(LEAF[b[3]], 0.22)); g.beginPath(); this.circle(g, bx + 0.6, by + 1, br); g.fill(); }
-      else if (pass === 1) { g.fillStyle = css(LEAF[b[3]]); g.beginPath(); this.circle(g, bx, by, br * 0.94); g.fill(); }
-      else { g.fillStyle = css(LEAF_LIGHT, 0.55); g.beginPath(); this.circle(g, bx - br * 0.32, by - br * 0.35, br * 0.38); g.fill(); }
+      if (pass === 0) P.fill(css(darken(LEAF[b[3]], 0.22))).disc(bx + 0.5, by + 1, br);
+      else if (pass === 1) P.fill(css(LEAF[b[3]])).disc(bx, by, br * 0.92);
+      else P.fill(css(LEAF_LIGHT)).disc(bx - br * 0.35, by - br * 0.38, br * 0.3);
     }
-    this.fruits(g, s);
+    // Blattstruktur
+    P.fill(css(darken(LEAF[0], 0.3)));
+    for (let k = 0; k < 26; k++) { const h = hash2(s.trunk, k); P.dot(cx + (h % 100) / 100 * s.r * T * 1.4 - s.r * T * 0.7, cy + ((h >> 8) % 100) / 100 * s.r * T * 1.0 - s.r * T * 0.5); }
+    this.fruits(s);
   },
-  bush(g, s) {
+  bush(s) {
     const cx = s.cx * T + 1.5, cy = (SURF - 2) * T;
     for (const pass of [0, 1, 2]) for (const b of s.blobs) {
       const bx = cx + b[0] * T, by = cy + b[1] * T, br = b[2] * T;
-      if (pass === 0) { g.fillStyle = css(darken(LEAF[b[3]], 0.22)); g.beginPath(); this.circle(g, bx + 0.5, by + 0.8, br); g.fill(); }
-      else if (pass === 1) { g.fillStyle = css(LEAF[b[3]]); g.beginPath(); this.circle(g, bx, by, br * 0.94); g.fill(); }
-      else { g.fillStyle = css(LEAF_LIGHT, 0.5); g.beginPath(); this.circle(g, bx - br * 0.3, by - br * 0.35, br * 0.35); g.fill(); }
+      if (pass === 0) P.fill(css(darken(LEAF[b[3]], 0.22))).disc(bx + 0.5, by + 0.8, br);
+      else if (pass === 1) P.fill(css(LEAF[b[3]])).disc(bx, by, br * 0.92);
+      else P.fill(css(LEAF_LIGHT)).disc(bx - br * 0.32, by - br * 0.36, br * 0.3);
     }
-    this.fruits(g, s);
+    this.fruits(s);
   },
-  fruits(g, s) {
+  fruits(s) {
     for (const f of s.fruits) {
       if (!f.alive) continue;
       const x = f.x * T + 1.5, y = f.y * T + 1.5;
-      g.strokeStyle = css(TRUNK_DARK); g.lineWidth = 0.35;
-      g.beginPath(); g.moveTo(x, y - 1.2); g.lineTo(x + 0.4, y - 2.2); g.stroke();
-      g.fillStyle = "#d4352a"; g.beginPath(); this.circle(g, x, y, 1.45); g.fill();
-      g.fillStyle = "rgba(255,190,175,0.85)"; g.beginPath(); this.circle(g, x - 0.5, y - 0.5, 0.45); g.fill();
+      P.fill(css(TRUNK_DARK)).line(x, y - 1.2, x + 0.5, y - 2.2);
+      P.fill("#9e1f18").disc(x + 0.2, y + 0.2, 1.45);
+      P.fill("#d4352a").disc(x, y, 1.35);
+      P.fill("#ffc2b4").dot(x - 0.6, y - 0.6);
     }
   },
-  stalk(g, st, gy) {
+  stalk(st, gy) {
     const x = st[0], h = st[1], lean = st[2] + Math.sin(this.clock * 0.8 + x * 0.3) * 0.04;
     const tx = x + lean * h, ty = gy - h;
-    g.strokeStyle = css(LEAF[st[4]]); g.lineWidth = 0.45; g.lineCap = "round";
-    g.beginPath(); g.moveTo(x, gy); g.quadraticCurveTo(x + lean * h * 0.3, gy - h * 0.5, tx, ty); g.stroke();
-    if (h > 10) {
-      g.fillStyle = css(LEAF[st[4]]);
-      g.beginPath(); g.ellipse(x + lean * h * 0.4 - 1.2, gy - h * 0.45, 1.4, 0.45, -0.5, 0, TAU); g.fill();
-    }
+    P.fill(css(LEAF[st[4]])).curve(x, gy, x + lean * h * 0.3, gy - h * 0.5, tx, ty, 6);
+    if (h > 10) P.ellipse(x + lean * h * 0.4 - 1.2, gy - h * 0.45, 1.4, 0.5);
     if (st[3] === 1) {
-      g.fillStyle = "#e9b93a"; g.beginPath(); g.ellipse(tx, ty - 1.4, 0.9, 1.9, lean, 0, TAU); g.fill();
-      g.fillStyle = "#fbe08a"; g.beginPath(); g.ellipse(tx - 0.3, ty - 2, 0.35, 0.8, lean, 0, TAU); g.fill();
+      P.fill("#e9b93a").ellipse(tx, ty - 1.4, 0.9, 1.9);
+      P.fill("#fbe08a").dot(tx - 0.5, ty - 2.2);
     } else if (st[3] === 2) {
-      g.fillStyle = "#fbd85a";
-      for (let k = 0; k < 6; k++) { const a = k / 6 * TAU + x; g.beginPath(); g.ellipse(tx + Math.cos(a) * 1.3, ty + Math.sin(a) * 1.3, 1.0, 0.6, a, 0, TAU); g.fill(); }
-      g.fillStyle = "#d98a24"; g.beginPath(); this.circle(g, tx, ty, 0.75); g.fill();
+      P.fill("#fbd85a");
+      for (let k = 0; k < 6; k++) { const a = k / 6 * TAU + x; P.disc(tx + Math.cos(a) * 1.3, ty + Math.sin(a) * 1.3, 0.85); }
+      P.fill("#d98a24").disc(tx, ty, 0.7);
     }
   },
-  mound(g, gy) {
-    // weicher Sandhügel aus dem Aushub
+  mound(gy) {
+    // Sandhügel aus dem Aushub, Spalte für Spalte
     const m = world.mound;
-    let any = false;
-    for (let x = 0; x < W; x++) if (m[x] > 0.4) { any = true; break; }
-    if (!any) return;
-    const pts = [];
-    for (let x = 0; x < W; x++) pts.push([x * T + 1.5, gy - m[x]]);
-    g.fillStyle = css(SAND);
-    g.beginPath(); g.moveTo(0, gy + 0.5); g.lineTo(0, pts[0][1]);
-    for (let k = 1; k < pts.length; k++) {
-      const mx = (pts[k - 1][0] + pts[k][0]) / 2, my = (pts[k - 1][1] + pts[k][1]) / 2;
-      g.quadraticCurveTo(pts[k - 1][0], pts[k - 1][1], mx, my);
-    }
-    g.lineTo(WPX, pts[pts.length - 1][1]); g.lineTo(WPX, gy + 0.5); g.closePath(); g.fill();
-    g.fillStyle = css(SAND_DARK, 0.7);
-    for (let x = 0; x < W; x++) {
-      const h = m[x];
-      for (let k = 0; k < Math.floor(h / 2.5); k++) {
-        const hh = hash2(x, k);
-        g.fillRect(x * T + (hh % 30) / 10, gy - h + 1 + k * 2.5 + (hh >> 5) % 2, 0.5, 0.5);
-      }
+    for (let ax = 0; ax < WPX * PIX; ax++) {
+      const wx = ax / PIX, cxf = wx / T - 0.5, c0 = clamp(Math.floor(cxf), 0, W - 1), c1 = clamp(c0 + 1, 0, W - 1), t = clamp(cxf - c0, 0, 1);
+      const h = m[c0] * (1 - t) + m[c1] * t;
+      if (h < 0.3) continue;
+      P.fill(css(SAND)).rect(wx, gy - h, 1 / PIX, h);
+      P.fill(css(lighten(SAND, 0.18))).rect(wx, gy - h, 1 / PIX, 0.5);
+      if (hash2(ax, 7) % 9 === 0) P.fill(css(SAND_DARK)).dot(wx, gy - h + 1 + (hash2(ax, 3) % 100) / 100 * Math.max(0, h - 1.5));
     }
   },
 };
@@ -1736,88 +1732,77 @@ const sky = {
 // KAMMERINHALT: Futter, Eier, Larven, Tote, Abfall
 // =====================================================================
 const decor = {
-  slots: [[0.8, 2.1], [2.2, 2.1], [1.5, 1.0]],
+  slots: [[0.7, 2.0], [2.2, 2.0], [1.5, 0.9]],
   sorted(ch) { return [...world.chamberCells[ch]].sort((a, b) => b - a); },
-  deadAnt(g, x, y) {
-    g.fillStyle = "#3b2a22";
-    g.beginPath(); g.ellipse(x - 0.6, y, 1.1, 0.6, 0, 0, TAU); g.ellipse(x + 0.9, y - 0.1, 0.55, 0.5, 0, 0, TAU); g.fill();
-    g.strokeStyle = "#3b2a22"; g.lineWidth = 0.22;
-    g.beginPath(); for (const o of [-0.5, 0.1, 0.6]) { g.moveTo(x + o, y + 0.2); g.lineTo(x + o + 0.4, y - 0.9); } g.stroke();
+  deadAnt(x, y) {
+    P.fill("#3b2a22").ellipse(x - 0.6, y, 1.1, 0.6).disc(x + 0.9, y - 0.1, 0.55);
+    P.line(x - 0.4, y + 0.2, x, y - 0.9); P.line(x + 0.4, y + 0.2, x + 0.8, y - 0.9);
   },
-  draw(g) {
+  draw() {
     const foodCols = ["#d8352a", "#f08c2a", "#f2c84b"];
     const gran = this.sorted(CH_GRANARY);
     let k = 0;
     const items = Math.floor(colony.food);
     outer: for (const cell of gran) for (const s of this.slots) {
       if (k >= items) break outer;
-      const x = (cell % W) * T + s[0], y = Math.floor(cell / W) * T + s[1];
-      g.fillStyle = foodCols[hash2(cell, k) % 3]; g.beginPath(); g.arc(x, y, 0.75, 0, TAU); g.fill();
+      P.fill(foodCols[hash2(cell, k) % 3]).disc((cell % W) * T + s[0], Math.floor(cell / W) * T + s[1], 0.75);
       k++;
     }
-    g.fillStyle = "#6e5236";
+    P.fill("#6e5236");
     for (let n = 0; n < Math.min(Math.floor(colony.trashWaiting), gran.length); n++) {
-      const c = gran[gran.length - 1 - n]; g.beginPath(); g.arc((c % W) * T + 1.5, Math.floor(c / W) * T + 2.2, 0.5, 0, TAU); g.fill();
+      const c = gran[gran.length - 1 - n]; P.rect((c % W) * T + 1.2, Math.floor(c / W) * T + 2, 0.5, 0.5);
     }
     let bi = 0;
     for (const b of colony.brood) {
       const c = b[4], o = hash2(c, bi++) % 3 * 0.6, x = (c % W) * T + 0.8 + o, y = Math.floor(c / W) * T + 1.9;
-      if (b[0] === 0) {
-        g.fillStyle = "#fbf6e8"; g.beginPath(); g.ellipse(x, y, 0.5, 0.75, 0.3, 0, TAU); g.fill();
-      } else {
-        g.fillStyle = b[2] > 0.3 ? "#f6e3b0" : "#d9d2bf";
-        g.beginPath(); g.ellipse(x, y, 1.1, 0.7, 0.2, 0, TAU); g.fill();
-        g.strokeStyle = "rgba(120,90,50,0.45)"; g.lineWidth = 0.15;
-        g.beginPath(); g.moveTo(x - 0.3, y - 0.6); g.lineTo(x - 0.3, y + 0.6); g.moveTo(x + 0.3, y - 0.6); g.lineTo(x + 0.3, y + 0.6); g.stroke();
+      if (b[0] === 0) P.fill("#fbf6e8").ellipse(x, y, 0.5, 0.8);
+      else {
+        P.fill(b[2] > 0.3 ? "#f6e3b0" : "#d9d2bf").ellipse(x, y, 1.1, 0.75);
+        P.fill("rgba(120,90,50,0.5)").rect(x - 0.3, y - 0.5, 0.5, 1);
       }
     }
     const cem = this.sorted(CH_CEMETERY);
     for (let n = 0; n < Math.min(colony.buried, cem.length * 2); n++) {
-      const c = cem[n % cem.length]; this.deadAnt(g, (c % W) * T + 1.5, Math.floor(c / W) * T + (n < cem.length ? 2.2 : 1.0));
+      const c = cem[n % cem.length]; this.deadAnt((c % W) * T + 1.5, Math.floor(c / W) * T + (n < cem.length ? 2.2 : 1.0));
     }
     const tr = this.sorted(CH_TRASH);
     for (let n = 0; n < Math.min(colony.trashStored, tr.length * 3); n++) {
       const c = tr[n % tr.length], s = this.slots[Math.floor(n / tr.length) % 3];
-      g.fillStyle = hash2(c, n) % 2 ? "#8b806b" : "#6e5236";
-      g.beginPath(); g.ellipse((c % W) * T + s[0], Math.floor(c / W) * T + s[1], 0.7, 0.45, n, 0, TAU); g.fill();
+      P.fill(hash2(c, n) % 2 ? "#8b806b" : "#6e5236").ellipse((c % W) * T + s[0], Math.floor(c / W) * T + s[1], 0.7, 0.5);
     }
-    for (const c of colony.corpses) this.deadAnt(g, (c % W) * T + 1.5, Math.floor(c / W) * T + 2);
+    for (const c of colony.corpses) this.deadAnt((c % W) * T + 1.5, Math.floor(c / W) * T + 2);
     for (const sc of colony.surfaceCorpses) {
-      g.globalAlpha = clamp(1 - sc[2] / 30, 0, 1);
-      this.deadAnt(g, sc[0], sc[1] + 0.8 - surfaceOffset(Math.floor(sc[0] / T)));
-      g.globalAlpha = 1;
+      P.g.globalAlpha = clamp(1 - sc[2] / 30, 0, 1);
+      this.deadAnt(sc[0], sc[1] + 0.8 - surfaceOffset(Math.floor(sc[0] / T)));
+      P.g.globalAlpha = 1;
     }
   },
 };
 
 // =====================================================================
-// RAHMEN: dunkelgrünes Formicarium mit Glas
+// RAHMEN: dunkelgrünes Formicarium mit Glas, als Pixelbild
 // =====================================================================
-function drawFrame(g) {
+const [frameC, frameG] = canvas(FULL_W * PIX, FULL_H * PIX);
+function buildFrame() {
   const f = FRAME, w = WPX, h = HPX;
-  g.fillStyle = "#17402a";
-  g.beginPath(); g.rect(-f, -f, w + 2 * f, h + 2 * f); g.rect(0, 0, w, h); g.fill("evenodd");
-  g.strokeStyle = "#3f7a52"; g.lineWidth = 0.8;
-  g.strokeRect(-f + 0.4, -f + 0.4, w + 2 * f - 0.8, h + 2 * f - 0.8);
-  g.strokeStyle = "#0a1f12"; g.lineWidth = 0.9;
-  g.strokeRect(-0.45, -0.45, w + 0.9, h + 0.9);
-  g.strokeStyle = "rgba(120,190,140,0.35)"; g.lineWidth = 0.4;
-  g.strokeRect(-1.4, -1.4, w + 2.8, h + 2.8);
+  P.use(frameG, f * PIX, f * PIX);
+  P.fill("#17402a");
+  P.rect(-f, -f, w + 2 * f, f); P.rect(-f, h, w + 2 * f, f); P.rect(-f, 0, f, h); P.rect(w, 0, f, h);
+  P.fill("#3f7a52"); P.rect(-f, -f, w + 2 * f, 0.5); P.rect(-f, -f, 0.5, h + 2 * f); P.rect(-1, h, w + 2, 0.5); P.rect(w, -1, 0.5, h + 2);
+  P.fill("#0a1f12"); P.rect(-1, -1, w + 2, 0.5); P.rect(-1, -1, 0.5, h + 2); P.rect(-f, h + f - 0.5, w + 2 * f, 0.5); P.rect(w + f - 0.5, -f, 0.5, h + 2 * f);
+  P.fill("#24563a"); P.rect(-f + 1.5, -f + 1.5, w + 2 * f - 3, 0.5); P.rect(-f + 1.5, -f + 1.5, 0.5, h + 2 * f - 3);
   for (const [px, py] of [[-3, -3], [w + 3, -3], [-3, h + 3], [w + 3, h + 3]]) {
-    const sg = g.createRadialGradient(px - 0.4, py - 0.4, 0.1, px, py, 1.5);
-    sg.addColorStop(0, "#e8ecd8"); sg.addColorStop(1, "#7d8a72");
-    g.fillStyle = sg; g.beginPath(); g.arc(px, py, 1.4, 0, TAU); g.fill();
-    g.strokeStyle = "#4a5644"; g.lineWidth = 0.3;
-    g.beginPath(); g.moveTo(px - 0.9, py + 0.4); g.lineTo(px + 0.9, py - 0.4); g.stroke();
+    P.fill("#7d8a72").disc(px, py, 1.5);
+    P.fill("#e8ecd8").dot(px - 0.6, py - 0.6);
+    P.fill("#4a5644").line(px - 0.9, py + 0.4, px + 0.9, py - 0.4);
   }
-  // Glas: zarte Spiegelung
-  g.save();
-  g.beginPath(); g.rect(0, 0, w, h); g.clip();
-  g.fillStyle = "rgba(255,255,255,0.05)";
-  for (const [x0, bw] of [[20, 14], [42, 5]]) {
-    g.beginPath(); g.moveTo(x0, h); g.lineTo(x0 + bw, h); g.lineTo(x0 + bw + 200, h - 360); g.lineTo(x0 + 200, h - 360); g.closePath(); g.fill();
+  // Glas: zarte Spiegelung in Pixelstreifen
+  P.fill("rgba(255,255,255,0.06)");
+  for (const [x0, bw] of [[20, 12], [40, 4]]) for (let s = 0; s < 360; s += 0.5) {
+    const y = h - s, x = x0 + s * 200 / 360;
+    if (y < 0) break;
+    P.rect(x, y, bw, 0.5);
   }
-  g.restore();
 }
 
 // =====================================================================
@@ -2066,32 +2051,47 @@ window.addEventListener("pagehide", save);
 function step(dt) {
   events.tick(dt); colony.tick(dt); ants.tick(dt); worldTick(dt); phero.tick();
 }
+// Die Szene entsteht als kleines Pixelbild. Für den Bildschirm wird sie erst ganzzahlig
+// mit harten Kanten vergrößert und dann minimal angepasst. So bleiben alle Pixel gleich groß.
+const [sceneC, sceneG] = canvas(FULL_W * PIX, FULL_H * PIX);
+const [upC, upG] = canvas(1, 1);
 function render() {
   flushGround();
-  const cw = cv.width, ch = cv.height, s = scale() * view.dpr;
-  const ox = cw / 2 - view.x * s, oy = ch / 2 - view.y * s;
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.globalCompositeOperation = "source-over";
-  ctx.fillStyle = "#0f2a19"; ctx.fillRect(0, 0, cw, ch);
-  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "low";
-  ctx.setTransform(s, 0, 0, s, ox, oy);
-  sky.draw(ctx);
-  ctx.drawImage(groundC, 0, G * T * GS, WPX * GS, (HPX - G * T) * GS, 0, G * T, WPX, HPX - G * T);
-  decor.draw(ctx);
-  ctx.drawImage(pheroC, 0, 0, W, G, 0, 0, WPX, G * T);
-  ants.draw(ctx, s, ox, oy, [-ox / s - 8, -oy / s - 8, (cw - ox) / s + 8, (ch - oy) / s + 8]);
-  ctx.setTransform(s, 0, 0, s, ox, oy);
-  if (world.waterShown || world.wet) ctx.drawImage(waterC, 0, 0, W, H, 0, 0, WPX, HPX);
-  events.draw(ctx);
-  drawFrame(ctx);
+  const F = FRAME * PIX, g = sceneG;
+  g.globalCompositeOperation = "source-over";
+  g.clearRect(0, 0, sceneC.width, sceneC.height);
+  g.drawImage(skyC, F, F);
+  g.drawImage(groundC, F, F);
+  P.use(g, F, F);
+  decor.draw();
+  g.drawImage(pheroC, 0, 0, W, G, F, F, WPX * PIX, G * T * PIX);
+  ants.draw(g, F);
+  if (world.waterShown || world.wet) g.drawImage(waterC, 0, 0, W, H, F, F, WPX * PIX, HPX * PIX);
+  P.use(g, F, F);
+  events.draw(F);
+  g.drawImage(frameC, 0, 0);
   // Tag und Nacht: Farbe über die ganze Szene legen
   const c = events.light();
   if (c[0] < 0.999 || c[1] < 0.999 || c[2] < 0.999) {
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.globalCompositeOperation = "multiply";
-    ctx.fillStyle = css(c); ctx.fillRect(0, 0, cw, ch);
-    ctx.globalCompositeOperation = "source-over";
+    g.globalCompositeOperation = "multiply";
+    g.fillStyle = css(c); g.fillRect(0, 0, sceneC.width, sceneC.height);
+    g.globalCompositeOperation = "source-over";
   }
+  // auf den Bildschirm
+  const cw = cv.width, ch = cv.height, s = scale() * view.dpr / PIX;
+  const ox = cw / 2 - (view.x + FRAME) * PIX * s, oy = ch / 2 - (view.y + FRAME) * PIX * s;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = "#0f2a19"; ctx.fillRect(0, 0, cw, ch);
+  const ax0 = Math.max(0, Math.floor(-ox / s)), ay0 = Math.max(0, Math.floor(-oy / s));
+  const ax1 = Math.min(sceneC.width, Math.ceil((cw - ox) / s)), ay1 = Math.min(sceneC.height, Math.ceil((ch - oy) / s));
+  const aw = ax1 - ax0, ah = ay1 - ay0;
+  if (aw <= 0 || ah <= 0) return;
+  const k = Math.max(1, Math.min(Math.ceil(s - 0.01), Math.floor(4096 / Math.max(aw, ah))));
+  if (upC.width < aw * k || upC.height < ah * k) { upC.width = Math.max(upC.width, aw * k); upC.height = Math.max(upC.height, ah * k); upG.imageSmoothingEnabled = false; }
+  upG.imageSmoothingEnabled = false;
+  upG.drawImage(sceneC, ax0, ay0, aw, ah, 0, 0, aw * k, ah * k);
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "medium";
+  ctx.drawImage(upC, 0, 0, aw * k, ah * k, ox + ax0 * s, oy + ay0 * s, aw * s, ah * s);
 }
 
 let last = performance.now(), acc = 0;
@@ -2124,7 +2124,7 @@ function frame(now) {
 }
 
 function start(data) {
-  resize();
+  buildFrame(); resize();
   if (!(data && data.save && deserialize(data.save)) && !loadLocal()) newGame();
   hud.updateButtons();
   window.claude?.hot?.snapshot?.(() => ({ save: serialize() }));
