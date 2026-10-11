@@ -10,6 +10,8 @@ config/description="Ameisenkolonie-Simulation im Querschnitt durch den Boden."
 run/main_scene="res://scenes/Main.tscn"
 config/features=PackedStringArray("4.4", "GL Compatibility")
 config/icon="res://icon.svg"
+run/max_fps=60
+run/low_processor_mode=false
 
 [display]
 
@@ -20,6 +22,10 @@ window/size/window_height_override=720
 window/stretch/mode="viewport"
 window/stretch/aspect="expand"
 window/handheld/orientation=1
+window/ios/hide_home_indicator=true
+window/ios/hide_status_bar=true
+window/ios/suppress_ui_gesture=true
+window/energy_saving/keep_screen_on=true
 
 [input_devices]
 

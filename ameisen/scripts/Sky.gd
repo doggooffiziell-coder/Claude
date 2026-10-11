@@ -57,7 +57,7 @@ func tick(dt: float) -> void:
 	_clock += dt
 	_redraw_t -= dt
 	if dirty or _redraw_t <= 0.0:
-		_redraw_t = 0.12
+		_redraw_t = 0.25
 		dirty = false
 		queue_redraw()
 

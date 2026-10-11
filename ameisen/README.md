@@ -14,6 +14,8 @@ Das Spiel läuft auf iPhone, Android, Tablet und PC. Die Basisauflösung ist 270
 
 Tippe auf eine Kammer, und unten erscheint ihr Name mit Inhalt. Zieh zwei Finger auseinander, um zu zoomen. Schieb zwei Finger, um die Ansicht zu verschieben.
 
+Mit einem Finger verschiebst du die Ansicht. Tippe zweimal schnell, um hineinzuzoomen oder wieder alles zu sehen. Unten rechts pausierst du das Spiel und stellst das Tempo auf 1x, 2x oder 4x.
+
 Am PC zoomst du mit dem Mausrad. Mit gedrückter rechter Maustaste verschiebst du die Ansicht. Ein Linksklick wählt eine Kammer.
 
 Der Spielstand landet alle 30 Sekunden in `user://save.json`. Er wird auch gespeichert, wenn du das Fenster schließt oder die App in den Hintergrund geht.

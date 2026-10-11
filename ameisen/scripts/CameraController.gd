@@ -1,12 +1,15 @@
 extends Camera2D
 ## Zoomen und Verschieben: zwei Finger auf Handy und Tablet, Mausrad und Rechtsklick am PC.
-## Ein kurzes Tippen oder ein Linksklick meldet die Weltposition über das Signal tapped.
+## Ein Finger verschiebt die Ansicht, Doppeltippen zoomt hinein oder heraus.
+## Ein kurzes Tippen oder ein Linksklick meldet Welt- und Bildschirmposition über tapped.
 
-signal tapped(world_pos: Vector2)
+signal tapped(world_pos: Vector2, screen_pos: Vector2)
 
 const MAX_ZOOM := 6.0
 const TAP_MOVE := 8.0
 const TAP_TIME := 450
+const DOUBLE_TAP := 320
+const DOUBLE_ZOOM := 3.0
 
 var _touches := {}
 var _pinch_dist := 0.0
@@ -17,6 +20,9 @@ var _tap_time := 0
 var _drag_mouse := false
 var _left_down := false
 var _left_start := Vector2.ZERO
+var _last_tap_time := -1000
+var _last_tap_pos := Vector2.ZERO
+var _zoom_tween: Tween
 
 
 func _ready() -> void:
@@ -100,7 +106,7 @@ func _on_touch(e: InputEventScreenTouch) -> void:
 		_touches.erase(e.index)
 		if _tap_valid and _touches.is_empty() and e.position.distance_to(_tap_start) < TAP_MOVE \
 				and Time.get_ticks_msec() - _tap_time < TAP_TIME:
-			tapped.emit(screen_to_world(e.position))
+			_on_tap(e.position)
 		_tap_valid = false
 		if _touches.size() >= 2:
 			_start_pinch()
@@ -112,6 +118,30 @@ func _on_drag(e: InputEventScreenDrag) -> void:
 		_tap_valid = false
 	if _touches.size() >= 2:
 		_update_pinch()
+	elif not _tap_valid:
+		# ein Finger verschiebt die Ansicht
+		position -= e.relative / zoom.x
+		_clamp()
+
+
+func _on_tap(p: Vector2) -> void:
+	var now := Time.get_ticks_msec()
+	if now - _last_tap_time < DOUBLE_TAP and p.distance_to(_last_tap_pos) < TAP_MOVE * 2.0:
+		_last_tap_time = -1000
+		var target := DOUBLE_ZOOM if zoom.x < DOUBLE_ZOOM * 0.8 else _min_zoom()
+		_animate_zoom(target, p)
+		return
+	_last_tap_time = now
+	_last_tap_pos = p
+	tapped.emit(screen_to_world(p), p)
+
+
+func _animate_zoom(target: float, screen_p: Vector2) -> void:
+	if _zoom_tween:
+		_zoom_tween.kill()
+	_zoom_tween = create_tween()
+	_zoom_tween.tween_method(func(z: float): _set_zoom_at(z, screen_p), zoom.x, target, 0.22) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 
 func _two_points() -> Array:
@@ -160,4 +190,4 @@ func _on_mouse_button(e: InputEventMouseButton) -> void:
 			elif _left_down:
 				_left_down = false
 				if e.position.distance_to(_left_start) < TAP_MOVE:
-					tapped.emit(screen_to_world(e.position))
+					_on_tap(e.position)

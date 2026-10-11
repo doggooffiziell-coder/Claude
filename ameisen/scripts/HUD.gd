@@ -27,6 +27,9 @@ var _banner := ""
 var _banner_t := 0.0
 var _redraw_t := 0.0
 var _blink := 0.0
+var _top := 0.0        # Abstand zur Notch oder Statusleiste
+var _bottom := 0.0     # Abstand zum Home-Balken
+var _buttons: Array = []   # [Rect2, Aktion]
 
 @onready var canvas: Control = $Canvas
 
@@ -35,6 +38,35 @@ func setup(m) -> void:
 	main = m
 	canvas.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	canvas.draw.connect(_draw_hud)
+
+
+## Ränder für Notch und Home-Balken in Viewport-Pixeln.
+func _update_safe_area() -> void:
+	_top = 0.0
+	_bottom = 0.0
+	if not OS.has_feature("mobile"):
+		return
+	var win := DisplayServer.window_get_size()
+	var safe := DisplayServer.get_display_safe_area()
+	if win.y <= 0:
+		return
+	var k := canvas.size.y / float(win.y)
+	_top = maxf(0.0, safe.position.y * k)
+	_bottom = maxf(0.0, (win.y - safe.end.y) * k)
+
+
+## Prüft, ob ein Tippen einen Knopf getroffen hat.
+func handle_tap(screen_pos: Vector2) -> bool:
+	for b in _buttons:
+		if b[0].grow(4).has_point(screen_pos):
+			match b[1]:
+				"pause":
+					main.paused = not main.paused
+				"speed":
+					main.speed = 1 if main.speed >= 4 else main.speed * 2
+			canvas.queue_redraw()
+			return true
+	return false
 
 
 func show_info(title: String, lines: Array, ch: int) -> void:
@@ -69,12 +101,14 @@ func tick(dt: float) -> void:
 func _draw_hud() -> void:
 	if main == null:
 		return
-	_draw_sign(Vector2(3, 3))
+	_update_safe_area()
+	_draw_sign(Vector2(3, 3 + _top))
 	var c = main.colony
 	var line := "FUTTER %d  TAG %d" % [int(c.food), main.events.day]
-	AntFont.draw_text_shadow(canvas, Vector2(5, 37), line, CREAM, Color(0, 0, 0, 0.6))
+	AntFont.draw_text_shadow(canvas, Vector2(5, 37 + _top), line, CREAM, Color(0, 0, 0, 0.6))
 	if c.starving and fmod(_blink, 1.0) < 0.6:
-		AntFont.draw_text_shadow(canvas, Vector2(5, 44), "HUNGER!", Color(1.0, 0.4, 0.3), Color(0, 0, 0, 0.6))
+		AntFont.draw_text_shadow(canvas, Vector2(5, 44 + _top), "HUNGER!", Color(1.0, 0.4, 0.3), Color(0, 0, 0, 0.6))
+	_draw_buttons()
 	if _banner_t > 0.0:
 		_draw_banner()
 	if _info_t > 0.0:
@@ -116,19 +150,19 @@ func _draw_sign(o: Vector2) -> void:
 func _draw_banner() -> void:
 	var vw := canvas.size.x
 	var tw := AntFont.text_width(_banner)
-	var r := Rect2(roundf(vw * 0.5 - tw * 0.5) - 4, 58, tw + 8, 11)
+	var r := Rect2(roundf(vw * 0.5 - tw * 0.5) - 4, 58 + _top, tw + 8, 11)
 	canvas.draw_rect(r, Color(0.05, 0.12, 0.08, 0.85))
 	canvas.draw_rect(Rect2(r.position, Vector2(r.size.x, 1)), BOARD_LIGHT)
 	canvas.draw_rect(Rect2(r.position + Vector2(0, r.size.y - 1), Vector2(r.size.x, 1)), BOARD_LIGHT)
 	var col := Color(1.0, 0.85, 0.35) if fmod(_blink, 0.8) < 0.5 else CREAM
-	AntFont.draw_text_centered(canvas, vw * 0.5, 61, _banner, col)
+	AntFont.draw_text_centered(canvas, vw * 0.5, 61 + _top, _banner, col)
 
 
 func _draw_info() -> void:
 	var vs := canvas.size
 	var w := 150.0
 	var h := 16.0 + _info_lines.size() * 7.0
-	var r := Rect2(roundf((vs.x - w) * 0.5), roundf(vs.y - h - 10.0), w, h)
+	var r := Rect2(roundf((vs.x - w) * 0.5), roundf(vs.y - h - 30.0 - _bottom), w, h)
 	canvas.draw_rect(Rect2(r.position + Vector2(2, 2), r.size), Color(0, 0, 0, 0.35))
 	canvas.draw_rect(r, BOARD_LIGHT)
 	canvas.draw_rect(r.grow(-1), BOARD)
@@ -138,3 +172,28 @@ func _draw_info() -> void:
 	canvas.draw_rect(Rect2(r.position.x + 4, r.position.y + 12, w - 8, 1), BOARD_DARK)
 	for k in _info_lines.size():
 		AntFont.draw_text(canvas, r.position + Vector2(8, 15 + k * 7), str(_info_lines[k]), CREAM.darkened(0.08))
+
+
+## Knöpfe unten rechts: Pause und Tempo. Groß genug für den Daumen.
+func _draw_buttons() -> void:
+	_buttons.clear()
+	var vs := canvas.size
+	var y := roundf(vs.y - 22.0 - _bottom)
+	var speed_r := Rect2(vs.x - 30.0, y, 26, 18)
+	var pause_r := Rect2(vs.x - 60.0, y, 26, 18)
+	for r in [pause_r, speed_r]:
+		canvas.draw_rect(Rect2(r.position + Vector2(1, 1), r.size), Color(0, 0, 0, 0.35))
+		canvas.draw_rect(r, BOARD_LIGHT)
+		canvas.draw_rect(r.grow(-1), BOARD)
+	if main.paused:
+		var p := pause_r.get_center()
+		canvas.draw_colored_polygon(PackedVector2Array([p + Vector2(-3, -5), p + Vector2(4, 0), p + Vector2(-3, 5)]), CREAM)
+	else:
+		var p2 := pause_r.get_center()
+		canvas.draw_rect(Rect2(p2 + Vector2(-4, -4), Vector2(3, 9)), CREAM)
+		canvas.draw_rect(Rect2(p2 + Vector2(1, -4), Vector2(3, 9)), CREAM)
+	AntFont.draw_text_centered(canvas, speed_r.get_center().x + 1, speed_r.position.y + 7, "%dX" % main.speed, CREAM)
+	_buttons.append([pause_r, "pause"])
+	_buttons.append([speed_r, "speed"])
+	if main.paused:
+		AntFont.draw_text_shadow(canvas, Vector2(vs.x - 60.0, y - 9), "PAUSE", CREAM, Color(0, 0, 0, 0.6))

@@ -15,6 +15,8 @@ const AUTOSAVE := 30.0
 @onready var day_night: CanvasModulate = $DayNight
 
 var _save_t := 0.0
+var paused := false
+var speed := 1
 var _dead_t := -1.0
 
 
@@ -47,11 +49,14 @@ func new_game() -> void:
 
 func _process(delta: float) -> void:
 	var dt := minf(delta, 0.05)
-	events.tick(dt)
-	colony.tick(dt)
-	ants.tick(dt)
-	world.tick(dt)
-	phero.tick(dt)
+	if not paused:
+		# bei 2x und 4x läuft die Simulation mehrmals pro Frame
+		for k in speed:
+			events.tick(dt)
+			colony.tick(dt)
+			ants.tick(dt)
+			world.tick(dt)
+			phero.tick(dt)
 	world.sky.tick(dt)
 	world.decor.tick(dt)
 	hud.tick(dt)
@@ -77,11 +82,20 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_APPLICATION_PAUSED \
 			or what == NOTIFICATION_APPLICATION_FOCUS_OUT:
 		save_game()
+	# im Hintergrund nichts zeichnen, das spart Akku
+	if what == NOTIFICATION_APPLICATION_PAUSED:
+		get_tree().paused = true
+	elif what == NOTIFICATION_APPLICATION_RESUMED:
+		get_tree().paused = false
 
 
 # ---------------------------------------------------------------- Antippen
 
-func _on_tap(wp: Vector2) -> void:
+func _on_tap(wp: Vector2, sp: Vector2) -> void:
+	if hud.handle_tap(sp):
+		return
+	if OS.has_feature("mobile"):
+		Input.vibrate_handheld(12)
 	var x := floori(wp.x / World.T)
 	var y := floori(wp.y / World.T)
 	if not world.in_grid(x, y):
