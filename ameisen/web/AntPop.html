@@ -1,0 +1,1846 @@
+<title>Ant Pop</title>
+<meta name="theme-color" content="#0f2a19">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<style>
+  /* Ein Bildschirm, ein Formicarium: das Spielfeld füllt das Display, der Rahmen ist dunkelgrün. */
+  :root {
+    --frame: #0f2a19;
+    --board: #24502f;
+    --cream: #f0e8c7;
+    color-scheme: dark;
+  }
+  html, body {
+    height: 100%;
+    margin: 0;
+    background: var(--frame);
+    color: var(--cream);
+    overflow: hidden;
+    overscroll-behavior: none;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #game {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    background: var(--frame);
+    cursor: default;
+  }
+  #safe {
+    position: fixed;
+    visibility: hidden;
+    pointer-events: none;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+</style>
+
+<canvas id="game" aria-label="Ameisenkolonie im Querschnitt durch den Boden"></canvas>
+<div id="safe"></div>
+
+<script>
+"use strict";
+// =====================================================================
+// Ant Pop: Ameisenkolonie im Formicarium. Browser-Version der Godot-Fassung.
+// Gleiche Logik: Boden-Grid, Wegfelder, Zustandsmaschine pro Ameise,
+// Duftspuren, Flut als zellulärer Automat, Tausendfüßler, Tag und Nacht.
+// =====================================================================
+
+const T = 3, W = 86, H = 156, G = 40, SURF = 39, ENT = 43, FRAME = 6;
+const WPX = W * T, HPX = H * T;                    // 258 x 468
+const FULL_W = WPX + 2 * FRAME, FULL_H = HPX + 2 * FRAME;  // 270 x 480
+const INF = 1 << 28;
+const AIR = 0, SOIL = 1, TUNNEL = 2;
+const CH_GRANARY = 1, CH_BROOD = 2, CH_QUEEN = 3, CH_CEMETERY = 4, CH_TRASH = 5;
+const F_EXIT = 0, F_GRANARY = 1, F_BROOD = 2, F_QUEEN = 3, F_CEMETERY = 4, F_TRASH = 5, F_DIG = 6, F_CORPSE = 7, F_COUNT = 8;
+const ARRIVED = -1, NO_PATH = -2;
+const LAYER_ROWS = [40, 79, 118];
+const SAVE_KEY = "antpop-save-v1";
+
+const S_IDLE = 0, S_DIG = 1, S_FORAGE = 2, S_CARRY = 3, S_NURSE = 4, S_UNDERTAKE = 5, S_SOLDIER = 6, S_QUEEN = 7;
+const R_WORKER = 0, R_SOLDIER = 1, R_QUEEN = 2;
+const C_NONE = 0, C_FOOD = 1, C_DIRT = 2, C_CORPSE = 3, C_TRASH = 4;
+
+// ---------------------------------------------------------------- Hilfen
+const rand = Math.random;
+const ri = (a, b) => a + Math.floor(rand() * (b - a + 1));
+const rf = (a, b) => a + rand() * (b - a);
+const clamp = (v, a, b) => v < a ? a : (v > b ? b : v);
+const sign = v => v > 0 ? 1 : (v < 0 ? -1 : 0);
+function mulberry(seed) {
+  let a = seed >>> 0;
+  const f = () => {
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  f.ri = (x, y) => x + Math.floor(f() * (y - x + 1));
+  f.rf = (x, y) => x + f() * (y - x);
+  return f;
+}
+function hash2(x, y) {
+  let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) & 0x7fffffff;
+}
+const lighten = (c, a) => [c[0] + (1 - c[0]) * a, c[1] + (1 - c[1]) * a, c[2] + (1 - c[2]) * a];
+const darken = (c, a) => [c[0] * (1 - a), c[1] * (1 - a), c[2] * (1 - a)];
+const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+const css = (c, a = 1) => `rgba(${Math.round(clamp(c[0], 0, 1) * 255)},${Math.round(clamp(c[1], 0, 1) * 255)},${Math.round(clamp(c[2], 0, 1) * 255)},${a})`;
+const idx = (x, y) => y * W + x;
+const inGrid = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
+const layerOf = y => y < LAYER_ROWS[1] ? 0 : (y < LAYER_ROWS[2] ? 1 : 2);
+function canvas(w, h) {
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  const g = c.getContext("2d");
+  g.imageSmoothingEnabled = false;
+  return [c, g];
+}
+// Pixel-Linie und Pixel-Kreis für scharfe Pixel-Art
+function pline(g, x0, y0, x1, y1) {
+  x0 = Math.round(x0); y0 = Math.round(y0); x1 = Math.round(x1); y1 = Math.round(y1);
+  const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+  let e = dx + dy;
+  for (let n = 0; n < 64; n++) {
+    g.fillRect(x0, y0, 1, 1);
+    if (x0 === x1 && y0 === y1) break;
+    const e2 = 2 * e;
+    if (e2 >= dy) { e += dy; x0 += sx; }
+    if (e2 <= dx) { e += dx; y0 += sy; }
+  }
+}
+function pcircle(g, cx, cy, r) {
+  const ri2 = Math.ceil(r);
+  for (let dy = -ri2; dy <= ri2; dy++) {
+    const hw = Math.floor(Math.sqrt(Math.max(r * r - dy * dy, 0)));
+    if (hw > 0) g.fillRect(Math.floor(cx) - hw, Math.floor(cy) + dy, hw * 2, 1);
+  }
+}
+
+// ---------------------------------------------------------------- Pixelschrift 3x5
+const GLYPHS = {
+  A: [".#.", "#.#", "###", "#.#", "#.#"], B: ["##.", "#.#", "##.", "#.#", "##."], C: [".##", "#..", "#..", "#..", ".##"],
+  D: ["##.", "#.#", "#.#", "#.#", "##."], E: ["###", "#..", "##.", "#..", "###"], F: ["###", "#..", "##.", "#..", "#.."],
+  G: [".##", "#..", "#.#", "#.#", ".##"], H: ["#.#", "#.#", "###", "#.#", "#.#"], I: ["###", ".#.", ".#.", ".#.", "###"],
+  J: ["..#", "..#", "..#", "#.#", ".#."], K: ["#.#", "#.#", "##.", "#.#", "#.#"], L: ["#..", "#..", "#..", "#..", "###"],
+  M: ["#.#", "###", "###", "#.#", "#.#"], N: ["##.", "#.#", "#.#", "#.#", "#.#"], O: [".#.", "#.#", "#.#", "#.#", ".#."],
+  P: ["##.", "#.#", "##.", "#..", "#.."], Q: [".#.", "#.#", "#.#", "##.", ".##"], R: ["##.", "#.#", "##.", "#.#", "#.#"],
+  S: [".##", "#..", ".#.", "..#", "##."], T: ["###", ".#.", ".#.", ".#.", ".#."], U: ["#.#", "#.#", "#.#", "#.#", "###"],
+  V: ["#.#", "#.#", "#.#", "#.#", ".#."], W: ["#.#", "#.#", "###", "###", "#.#"], X: ["#.#", "#.#", ".#.", "#.#", "#.#"],
+  Y: ["#.#", "#.#", ".#.", ".#.", ".#."], Z: ["###", "..#", ".#.", "#..", "###"],
+  "Ä": ["#.#", "...", ".#.", "###", "#.#"], "Ö": ["#.#", "...", "###", "#.#", "###"], "Ü": ["#.#", "...", "#.#", "#.#", "###"],
+  0: ["###", "#.#", "#.#", "#.#", "###"], 1: [".#.", "##.", ".#.", ".#.", "###"], 2: ["##.", "..#", ".#.", "#..", "###"],
+  3: ["##.", "..#", ".#.", "..#", "##."], 4: ["#.#", "#.#", "###", "..#", "..#"], 5: ["###", "#..", "##.", "..#", "##."],
+  6: [".##", "#..", "###", "#.#", "###"], 7: ["###", "..#", ".#.", ".#.", ".#."], 8: ["###", "#.#", "###", "#.#", "###"],
+  9: ["###", "#.#", "###", "..#", "##."], "-": ["...", "...", "###", "...", "..."], ".": ["...", "...", "...", "...", ".#."],
+  ":": ["...", ".#.", "...", ".#.", "..."], "!": [".#.", ".#.", ".#.", "...", ".#."], "+": ["...", ".#.", "###", ".#.", "..."],
+  "/": ["..#", "..#", ".#.", "#..", "#.."], "%": ["#.#", "..#", ".#.", "#..", "#.#"],
+};
+const Font = {
+  width: (t, s = 1) => t.length ? (t.length * 4 - 1) * s : 0,
+  draw(g, x, y, text, color, s = 1) {
+    g.fillStyle = color;
+    x = Math.floor(x); y = Math.floor(y);
+    for (const ch of text.toUpperCase()) {
+      const rows = GLYPHS[ch];
+      if (rows) for (let r = 0; r < 5; r++) for (let c = 0; c < 3; c++) if (rows[r][c] === "#") g.fillRect(x + c * s, y + r * s, s, s);
+      x += 4 * s;
+    }
+  },
+  shadow(g, x, y, text, color, sh, s = 1) { this.draw(g, x + s, y + s, text, sh, s); this.draw(g, x, y, text, color, s); },
+  center(g, cx, y, text, color, s = 1) { this.draw(g, Math.round(cx - this.width(text, s) / 2), y, text, color, s); },
+};
+
+// =====================================================================
+// WELT: Grid, Tiles, Tunnel, Wegfelder, Wasser, Sandhügel, Früchte
+// =====================================================================
+const SOIL_COLORS = [[0.87, 0.76, 0.53], [0.82, 0.70, 0.48], [0.73, 0.62, 0.43]];
+const TUNNEL_COLOR = [0.36, 0.24, 0.14], RIM_COLOR = [0.52, 0.38, 0.23];
+const CHAMBER_COLORS = [[0, 0, 0], [0.72, 0.62, 0.24], [0.52, 0.38, 0.55], [0.30, 0.28, 0.30], [0.45, 0.51, 0.40], [0.68, 0.56, 0.40]];
+
+const world = {
+  seed: 1, cells: new Uint8Array(W * H), chamber: new Uint8Array(W * H), chamberCells: [],
+  fields: [], dirty: [], has: [], water: new Float32Array(W * H), wet: false, waterShown: false,
+  mound: new Float32Array(W), sources: [], byTrunk: new Map(), frame: 0,
+};
+const [groundC, groundG] = canvas(WPX, HPX);
+const groundImg = groundG.createImageData(WPX, HPX);
+let groundDirty = true;
+let atlasPx = null;   // Uint8ClampedArray, 16 x 12 Tiles zu je 3 x 3 Pixeln
+
+function buildAtlas() {
+  const aw = 16 * T, ah = 12 * T;
+  atlasPx = new Uint8ClampedArray(aw * ah * 4);
+  const r = mulberry(4242);
+  const set = (x, y, c) => { const o = (y * aw + x) * 4; atlasPx[o] = c[0] * 255; atlasPx[o + 1] = c[1] * 255; atlasPx[o + 2] = c[2] * 255; atlasPx[o + 3] = 255; };
+  const soil = (col, row, layer, variant, dash) => {
+    const base = SOIL_COLORS[layer];
+    for (let py = 0; py < T; py++) for (let px = 0; px < T; px++) {
+      const n = r.rf(-0.035, 0.035);
+      let c = [base[0] + n, base[1] + n, base[2] + n * 0.8];
+      if (r() < 0.06) c = lighten(c, 0.12);
+      set(col * T + px, row * T + py, c);
+    }
+    if (variant === 5) set(col * T + r.ri(0, 2), row * T + r.ri(0, 2), darken(base, 0.35));
+    if (variant === 6) {
+      const ox = r.ri(0, 1), oy = r.ri(0, 1), st = [0.55, 0.52, 0.48];
+      set(col * T + ox, row * T + oy, lighten(st, 0.2)); set(col * T + ox + 1, row * T + oy, st);
+      set(col * T + ox, row * T + oy + 1, st); set(col * T + ox + 1, row * T + oy + 1, darken(st, 0.25));
+    }
+    if (variant === 7) {
+      set(col * T + r.ri(0, 2), row * T + r.ri(0, 2), darken(base, 0.2));
+      set(col * T + r.ri(0, 2), row * T + r.ri(0, 2), lighten(base, 0.2));
+    }
+    if (dash >= 0) {
+      const line = darken(base, 0.42);
+      if (dash === 0) for (let px = 0; px < 3; px++) set(col * T + px, row * T, line);
+      if (dash === 1) { set(col * T, row * T, line); set(col * T + 1, row * T, line); }
+      if (dash === 2) { set(col * T + 1, row * T + 1, line); set(col * T + 2, row * T + 1, line); }
+      if (dash === 3) set(col * T + 2, row * T, line);
+    }
+  };
+  const hollow = (col, row, base, rim, mask) => {
+    for (let py = 0; py < T; py++) for (let px = 0; px < T; px++) {
+      const n = r.rf(-0.03, 0.03);
+      let c = [base[0] + n, base[1] + n, base[2] + n];
+      if (r() < 0.1) c = darken(c, 0.18);
+      const edge = (mask & 1 && py === 0) || (mask & 2 && px === T - 1) || (mask & 4 && py === T - 1) || (mask & 8 && px === 0);
+      if (edge) { const k = r(); if (k < 0.45) c = rim; else if (k < 0.6) c = darken(base, 0.3); }
+      set(col * T + px, row * T + py, c);
+    }
+  };
+  for (let l = 0; l < 3; l++) for (let v = 0; v < 8; v++) soil(v, l, l, v, -1);
+  for (let l = 0; l < 2; l++) for (let v = 0; v < 4; v++) soil(l * 4 + v, 3, l + 1, r.ri(0, 4), v);
+  for (let v = 0; v < 3; v++) for (let m = 0; m < 16; m++) hollow(m, 4 + v, TUNNEL_COLOR, RIM_COLOR, m);
+  for (let ch = 1; ch < 6; ch++) for (let m = 0; m < 16; m++) hollow(m, 6 + ch, CHAMBER_COLORS[ch], mix(CHAMBER_COLORS[ch], RIM_COLOR, 0.5), m);
+}
+
+function writeTile(x, y, col, row) {
+  const d = groundImg.data, aw = 16 * T;
+  for (let py = 0; py < T; py++) for (let px = 0; px < T; px++) {
+    const s = ((row * T + py) * aw + col * T + px) * 4, o = ((y * T + py) * WPX + x * T + px) * 4;
+    d[o] = atlasPx[s]; d[o + 1] = atlasPx[s + 1]; d[o + 2] = atlasPx[s + 2]; d[o + 3] = 255;
+  }
+  groundDirty = true;
+}
+function solid(x, y) {
+  if (y < G) return false;
+  if (x < 0 || x >= W || y >= H) return true;
+  return world.cells[idx(x, y)] === SOIL;
+}
+function soilTile(x, y) {
+  const l = layerOf(y), h = hash2(x, y);
+  if ((y === LAYER_ROWS[1] || y === LAYER_ROWS[2]) && h % 7 !== 0) return [(l - 1) * 4 + (h >> 4) % 4, 3];
+  const v = h % 100;
+  let variant = (h >> 5) % 5;
+  if (v >= 98) variant = 6; else if (v >= 93) variant = 7; else if (v >= 86) variant = 5;
+  return [variant, l];
+}
+function updateTile(x, y) {
+  if (x < 0 || x >= W || y < G || y >= H) return;
+  const i = idx(x, y), c = world.cells[i];
+  if (c === SOIL) { const t = soilTile(x, y); writeTile(x, y, t[0], t[1]); }
+  else if (c === TUNNEL) {
+    let m = 0;
+    if (solid(x, y - 1)) m |= 1;
+    if (solid(x + 1, y)) m |= 2;
+    if (solid(x, y + 1)) m |= 4;
+    if (solid(x - 1, y)) m |= 8;
+    const ch = world.chamber[i];
+    writeTile(x, y, m, ch === 0 ? 4 + hash2(x, y) % 3 : 6 + ch);
+  }
+}
+function rebuildTiles() {
+  groundImg.data.fill(0);
+  for (let y = G; y < H; y++) for (let x = 0; x < W; x++) updateTile(x, y);
+}
+
+function newWorld(seed) {
+  world.seed = seed;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) world.cells[idx(x, y)] = y < G ? AIR : SOIL;
+  world.chamber.fill(0);
+  world.mound.fill(0);
+  generateSources();
+  resetRuntime();
+  rebuildTiles();
+}
+function resetRuntime() {
+  world.chamberCells = [[], [], [], [], [], []];
+  for (let i = 0; i < W * H; i++) if (world.cells[i] === TUNNEL && world.chamber[i]) world.chamberCells[world.chamber[i]].push(i);
+  world.fields = []; world.dirty = []; world.has = [];
+  for (let f = 0; f < F_COUNT; f++) { world.fields.push(new Int32Array(W * H).fill(INF)); world.dirty.push(true); world.has.push(false); }
+  world.water.fill(0); world.wet = false; world.waterShown = true;
+}
+function generateSources() {
+  const r = mulberry(world.seed);
+  world.sources = []; world.byTrunk.clear();
+  for (const tx of [7, 22, 63, 78]) {
+    const cy = r.ri(13, 18), rad = r.ri(7, 9);
+    const s = { kind: 0, trunk: tx, cx: tx + r.ri(-1, 1), cy, r: rad, fruits: [], blobs: [] };
+    for (let b = 0; b < 9; b++) {
+      const a = r() * Math.PI * 2, d = r() * rad * 0.7;
+      s.blobs.push([Math.cos(a) * d, Math.sin(a) * d * 0.75, r.rf(rad * 0.45, rad * 0.7), r.ri(0, 2)]);
+    }
+    for (let f = 0; f < 7; f++) s.fruits.push({ x: clamp(tx + r.ri(-rad + 2, rad - 2), 1, W - 2), y: clamp(cy + r.ri(-rad + 3, rad - 2), 4, SURF - 6), alive: true, t: 0 });
+    world.sources.push(s);
+  }
+  for (const bx of [15, 33, 70]) {
+    const s = { kind: 1, trunk: bx, cx: bx, cy: SURF - 3, r: 4, fruits: [], blobs: [] };
+    for (let b = 0; b < 5; b++) s.blobs.push([r.rf(-3, 3), r.rf(-1.5, 1), r.rf(2, 3.2), r.ri(0, 2)]);
+    for (let f = 0; f < 4; f++) s.fruits.push({ x: clamp(bx + r.ri(-3, 3), 1, W - 2), y: r.ri(SURF - 5, SURF - 2), alive: true, t: 0 });
+    world.sources.push(s);
+  }
+  world.sources.forEach((s, i) => world.byTrunk.set(s.trunk, i));
+}
+
+const isTunnel = (x, y) => inGrid(x, y) && world.cells[idx(x, y)] === TUNNEL;
+const cellAt = (x, y) => inGrid(x, y) ? world.cells[idx(x, y)] : SOIL;
+const chamberAt = (x, y) => inGrid(x, y) ? world.chamber[idx(x, y)] : 0;
+const digTime = y => 0.45 + 0.2 * layerOf(y);
+function markAllDirty() { for (let f = 0; f < F_COUNT; f++) world.dirty[f] = true; }
+
+function dig(x, y) {
+  if (!inGrid(x, y) || y < G) return;
+  const i = idx(x, y);
+  if (world.cells[i] !== SOIL) return;
+  world.cells[i] = TUNNEL;
+  if (world.chamber[i]) world.chamberCells[world.chamber[i]].push(i);
+  updateTile(x, y); updateTile(x - 1, y); updateTile(x + 1, y); updateTile(x, y - 1); updateTile(x, y + 1);
+  markAllDirty();
+}
+
+// ---- Wegfelder: Breitensuche durch die Tunnel
+function fieldSources(fid) {
+  switch (fid) {
+    case F_EXIT: { const e = idx(ENT, G); return world.cells[e] === TUNNEL ? [e] : []; }
+    case F_GRANARY: return world.chamberCells[CH_GRANARY];
+    case F_BROOD: return world.chamberCells[CH_BROOD];
+    case F_QUEEN: return world.chamberCells[CH_QUEEN];
+    case F_CEMETERY: return world.chamberCells[CH_CEMETERY];
+    case F_TRASH: return world.chamberCells[CH_TRASH];
+    case F_DIG: return colony.digSources();
+    case F_CORPSE: return colony.corpses;
+  }
+  return [];
+}
+const bfsQueue = new Int32Array(W * H);
+function computeField(fid) {
+  const f = world.fields[fid], cells = world.cells;
+  f.fill(INF);
+  let tail = 0;
+  for (const s of fieldSources(fid)) if (cells[s] === TUNNEL && f[s] !== 0) { f[s] = 0; bfsQueue[tail++] = s; }
+  world.has[fid] = tail > 0;
+  let head = 0;
+  while (head < tail) {
+    const i = bfsQueue[head++], d = f[i] + 1, x = i % W;
+    let n = i - W;
+    if (n >= 0 && cells[n] === TUNNEL && f[n] > d) { f[n] = d; bfsQueue[tail++] = n; }
+    n = i + W;
+    if (n < W * H && cells[n] === TUNNEL && f[n] > d) { f[n] = d; bfsQueue[tail++] = n; }
+    if (x > 0) { n = i - 1; if (cells[n] === TUNNEL && f[n] > d) { f[n] = d; bfsQueue[tail++] = n; } }
+    if (x < W - 1) { n = i + 1; if (cells[n] === TUNNEL && f[n] > d) { f[n] = d; bfsQueue[tail++] = n; } }
+  }
+  world.dirty[fid] = false;
+}
+function hasField(fid) { if (world.dirty[fid]) computeField(fid); return world.has[fid]; }
+function fieldValue(fid, x, y) { if (world.dirty[fid]) computeField(fid); return inGrid(x, y) ? world.fields[fid][idx(x, y)] : INF; }
+function nextStep(fid, x, y) {
+  if (world.dirty[fid]) computeField(fid);
+  if (!inGrid(x, y)) return NO_PATH;
+  const f = world.fields[fid], cur = f[idx(x, y)];
+  if (cur === 0) return ARRIVED;
+  if (cur >= INF) return NO_PATH;
+  const opts = [];
+  if (y > 0 && f[idx(x, y - 1)] < cur) opts.push(idx(x, y - 1));
+  if (y < H - 1 && f[idx(x, y + 1)] < cur) opts.push(idx(x, y + 1));
+  if (x > 0 && f[idx(x - 1, y)] < cur) opts.push(idx(x - 1, y));
+  if (x < W - 1 && f[idx(x + 1, y)] < cur) opts.push(idx(x + 1, y));
+  return opts.length ? opts[Math.floor(rand() * opts.length)] : NO_PATH;
+}
+function randomNeighbor(x, y, onlyCh = -1) {
+  const opts = [];
+  for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+    const nx = x + dx, ny = y + dy;
+    if (isTunnel(nx, ny) && (onlyCh < 0 || world.chamber[idx(nx, ny)] === onlyCh)) opts.push(idx(nx, ny));
+  }
+  return opts.length ? opts[Math.floor(rand() * opts.length)] : idx(x, y);
+}
+function nearestTunnel(x, y, radius = 14) {
+  for (let r = 1; r <= radius; r++)
+    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+      if (isTunnel(x + dx, y + dy)) return [x + dx, y + dy];
+    }
+  return [ENT, G];
+}
+
+// ---- Früchte
+const sourceAt = x => world.byTrunk.has(x) ? world.byTrunk.get(x) : -1;
+const hasFruit = si => world.sources[si].fruits.some(f => f.alive);
+function pickFruit(si) {
+  const alive = world.sources[si].fruits.filter(f => f.alive);
+  return alive.length ? alive[Math.floor(rand() * alive.length)] : null;
+}
+function takeFruit(x, y) {
+  for (const s of world.sources) for (const f of s.fruits)
+    if (f.alive && f.x === x && f.y === y) { f.alive = false; f.t = 0; sky.dirty = true; return true; }
+  return false;
+}
+
+// ---- Sandhügel
+function addDirt(x) {
+  x = clamp(x, 2, W - 3);
+  if (Math.abs(x - ENT) <= 1) x = ENT + (x >= ENT ? 2 : -2);
+  const m = world.mound;
+  m[x] += 0.8;
+  for (let it = 0; it < 4; it++) for (let c = 2; c < W - 2; c++) {
+    if (Math.abs(c - ENT) <= 1) { m[c] = 0; continue; }
+    for (const n of [c - 1, c + 1]) {
+      if (Math.abs(n - ENT) <= 1) continue;
+      const diff = m[c] - m[n];
+      if (diff > 1.4) { const mv = (diff - 1) * 0.5; m[c] -= mv; m[n] += mv; }
+    }
+  }
+  for (let c = 0; c < W; c++) m[c] = Math.min(m[c], 28);
+  sky.dirty = true;
+}
+const surfaceOffset = x => (x < 0 || x >= W) ? 0 : world.mound[x];
+
+// ---- Wasser als zellulärer Automat
+function addRain(amount) {
+  const w = world.water;
+  for (let k = 0; k < 8; k++) { const i = idx(ri(1, W - 2), SURF); w[i] = Math.min(1, w[i] + amount); }
+  const e = idx(ENT, SURF);
+  w[e] = Math.min(1, w[e] + amount * 1.5);
+  world.wet = true;
+}
+const waterAt = (x, y) => inGrid(x, y) ? world.water[idx(x, y)] : 0;
+function waterStep() {
+  const w = world.water, cells = world.cells, flip = (world.frame & 1) === 0;
+  let any = false;
+  for (let y = H - 1; y >= SURF; y--) {
+    const row = y * W;
+    for (let k = 0; k < W; k++) {
+      const x = flip ? k : W - 1 - k, i = row + x;
+      let v = w[i];
+      if (v < 0.003) { if (v > 0) w[i] = 0; continue; }
+      any = true;
+      v -= y >= G ? 0.0012 : 0.006;
+      if (v <= 0) { w[i] = 0; continue; }
+      if (y + 1 < H && cells[i + W] !== SOIL) {
+        const b = w[i + W], fl = Math.min(v, 1 - b);
+        if (fl > 0) { w[i + W] = b + fl; v -= fl; }
+      }
+      if (v > 0.01) {
+        if (x > 0 && cells[i - 1] !== SOIL) { const l = w[i - 1]; if (l < v) { const d = (v - l) * 0.3; w[i - 1] = l + d; v -= d; } }
+        if (x < W - 1 && cells[i + 1] !== SOIL) { const r2 = w[i + 1]; if (r2 < v) { const d = (v - r2) * 0.3; w[i + 1] = r2 + d; v -= d; } }
+      }
+      w[i] = v;
+    }
+  }
+  world.wet = any;
+}
+const [waterC, waterG] = canvas(W, H);
+const waterImg = waterG.createImageData(W, H);
+function waterRender() {
+  const d = waterImg.data;
+  d.fill(0);
+  if (world.wet) for (let i = SURF * W; i < W * H; i++) {
+    const v = world.water[i];
+    if (v < 0.02) continue;
+    const o = i * 4;
+    d[o] = 60; d[o + 1] = 120 + v * 30; d[o + 2] = 215; d[o + 3] = clamp(90 + v * 140, 0, 230);
+  }
+  waterG.putImageData(waterImg, 0, 0);
+  world.waterShown = world.wet;
+}
+
+function worldTick(dt) {
+  let done = 0;
+  for (let f = 0; f < F_COUNT; f++) if (world.dirty[f] && done < 3) { computeField(f); done++; }
+  for (const s of world.sources) for (const f of s.fruits)
+    if (!f.alive) { f.t += dt; if (f.t > 32) { f.alive = true; sky.dirty = true; } }
+  world.frame++;
+  if (world.wet && world.frame % 3 === 0) waterStep();
+  if ((world.wet || world.waterShown) && world.frame % 6 === 0) waterRender();
+}
+
+// =====================================================================
+// DUFTSPUREN: 2D-Array grid[y][x], verblassen alle 6 Frames
+// =====================================================================
+const phero = {
+  rows: G, grid: [], active: new Uint8Array(G), frame: 0,
+  clear() { this.grid = []; for (let y = 0; y < this.rows; y++) this.grid.push(new Float32Array(W)); this.active.fill(0); },
+  deposit(x, y, a) {
+    if (y < 0 || y >= this.rows || x < 0 || x >= W) return;
+    const row = this.grid[y];
+    row[x] = Math.min(1, Math.max(row[x], a));   // nahe am Futter bleibt der Duft am stärksten
+    this.active[y] = 1;
+  },
+  sense(x, y, reach) {
+    if (y < 0 || y >= this.rows) return [0, 0];
+    const row = this.grid[y];
+    let l = 0, r = 0;
+    for (let k = 1; k <= reach; k++) { if (x - k >= 0) l += row[x - k]; if (x + k < W) r += row[x + k]; }
+    return [l, r];
+  },
+  tick() {
+    if (++this.frame % 6) return;
+    const d = pheroImg.data;
+    d.fill(0);
+    for (let y = 0; y < this.rows; y++) {
+      if (!this.active[y]) continue;
+      const row = this.grid[y];
+      let any = false;
+      for (let x = 0; x < W; x++) {
+        let v = row[x];
+        if (v <= 0) continue;
+        v *= 0.993;
+        if (v < 0.02) v = 0;
+        else { any = true; const o = (y * W + x) * 4; d[o] = 250; d[o + 1] = 235; d[o + 2] = 140; d[o + 3] = v * 110; }
+        row[x] = v;
+      }
+      if (!any) this.active[y] = 0;
+    }
+    pheroG.putImageData(pheroImg, 0, 0);
+  },
+};
+const [pheroC, pheroG] = canvas(W, G);
+const pheroImg = pheroG.createImageData(W, G);
+
+// =====================================================================
+// KOLONIE: Königin, Futter, Brut, Tote, Müll, Bauplan
+// =====================================================================
+const colony = {
+  food: 20, brood: [], corpses: [], surfaceCorpses: [], trashWaiting: 0, trashStored: 0, buried: 0,
+  eggsLaid: 0, born: 0, died: 0, delivered: 0, queenAlive: true, plan: [], expansions: 0, starving: false,
+  eggT: 0, feedT: 0, starve: 0, killT: 0, jobsDirty: true, jobCells: new Set(), frontier: [], decorDirty: true,
+  EGG_TIME: 12, LARVA_TIME: 18, FRUIT_FOOD: 3, MAX_POP: 300,
+
+  newColony() {
+    Object.assign(this, { food: 20, brood: [], corpses: [], surfaceCorpses: [], trashWaiting: 0, trashStored: 0, buried: 0,
+      eggsLaid: 0, born: 0, died: 0, delivered: 0, queenAlive: true, plan: [], expansions: 0, starve: 0, starving: false });
+    for (const i of this.tunnelCells([ENT, G], [ENT, 52], 0)) world.cells[i] = TUNNEL;
+    for (const i of this.chamberCellsOf([ENT, 54], 6, 2.4, CH_QUEEN)) world.cells[i] = TUNNEL;
+    this.planItem([ENT - 4, 54], [23, 61], CH_BROOD, 6, 2.4);
+    this.planItem([ENT + 4, 53], [64, 48], CH_GRANARY, 6.5, 2.4);
+    this.planItem([ENT + 2, 56], [60, 68], CH_TRASH, 4.5, 2);
+    this.planItem([22, 63], [11, 76], CH_CEMETERY, 5, 2);
+    this.planItem([ENT, 56], [48, 96], CH_GRANARY, 6.5, 2.4);
+    this.planItem([46, 95], [22, 101], CH_BROOD, 6, 2.4);
+    this.planItem([62, 70], [74, 86], CH_GRANARY, 5.5, 2.2);
+    this.planItem([46, 98], [30, 128], CH_BROOD, 6, 2.4);
+    this.planItem([50, 98], [58, 132], CH_GRANARY, 6, 2.4);
+    this.planItem([60, 134], [74, 144], CH_CEMETERY, 5, 2);
+    resetRuntime();
+    rebuildTiles();
+    this.jobsDirty = true; this.decorDirty = true;
+  },
+  planItem(from, center, ch, rx, ry) {
+    const cells = this.tunnelCells(from, center, 0.28);
+    for (const i of this.chamberCellsOf(center, rx, ry, ch)) if (!cells.includes(i)) cells.push(i);
+    this.plan.push([cells, ch]);
+  },
+  addCell(out, x, y) {
+    if (x < 1 || x > W - 2 || y < G || y > H - 2) return;
+    const i = idx(x, y);
+    if (!out.includes(i)) out.push(i);
+  },
+  // Gang als zufälliger Weg mit zwei Zellen Breite
+  tunnelCells(from, to, wobble) {
+    const out = [];
+    let [x, y] = from;
+    for (let guard = 0; (x !== to[0] || y !== to[1]) && guard < 600; guard++) {
+      this.addCell(out, x, y);
+      const dx = to[0] - x, dy = to[1] - y;
+      let sx = 0, sy = 0;
+      if (rand() < wobble) { if (Math.abs(dx) > Math.abs(dy)) sy = rand() < 0.5 ? 1 : -1; else sx = rand() < 0.5 ? 1 : -1; }
+      else if (rand() * (Math.abs(dx) + Math.abs(dy)) < Math.abs(dx)) sx = sign(dx);
+      else sy = sign(dy);
+      x = clamp(x + sx, 2, W - 4); y = clamp(y + sy, G, H - 4);
+      if (sy !== 0) this.addCell(out, x + 1, y); else this.addCell(out, x, y + 1);
+    }
+    this.addCell(out, to[0], to[1]);
+    return out;
+  },
+  chamberCellsOf(c, rx, ry, ch) {
+    const out = [];
+    for (let dy = -Math.floor(ry) - 1; dy <= Math.floor(ry) + 1; dy++)
+      for (let dx = -Math.floor(rx) - 1; dx <= Math.floor(rx) + 1; dx++) {
+        const x = c[0] + dx, y = c[1] + dy;
+        if (x < 1 || x > W - 2 || y <= G || y > H - 2) continue;
+        const n = (hash2(x, y) % 100) / 100 * 0.5 - 0.2;
+        if ((dx / rx) ** 2 + (dy / ry) ** 2 <= 1 + n) { world.chamber[idx(x, y)] = ch; this.addCell(out, x, y); }
+      }
+    return out;
+  },
+  refreshJobs() {
+    this.jobsDirty = false;
+    this.jobCells.clear();
+    let active = 0;
+    for (const item of this.plan) {
+      let left = false;
+      for (const i of item[0]) if (world.cells[i] === SOIL) { this.jobCells.add(i); left = true; }
+      if (left && ++active >= 2) break;
+    }
+    if (active === 0 && this.tunnelCount() < 2600 && this.expansions < 40) {
+      this.planExpansion();
+      if (this.plan.length) for (const i of this.plan[this.plan.length - 1][0]) if (world.cells[i] === SOIL) this.jobCells.add(i);
+    }
+    const fr = new Set();
+    for (const i of this.jobCells) for (const n of [i - W, i + W, i - 1, i + 1])
+      if (n >= 0 && n < W * H && world.cells[n] === TUNNEL) fr.add(n);
+    this.frontier = [...fr];
+  },
+  tunnelCount() { let n = 0; for (let i = 0; i < W * H; i++) if (world.cells[i] === TUNNEL) n++; return n; },
+  planExpansion() {
+    this.expansions++;
+    const cc = world.chamberCells;
+    let ch = 0;
+    if (this.food > cc[CH_GRANARY].length * 3) ch = CH_GRANARY;
+    else if (this.brood.length > cc[CH_BROOD].length) ch = CH_BROOD;
+    else if (this.buried > cc[CH_CEMETERY].length * 3) ch = CH_CEMETERY;
+    else if (this.trashStored > cc[CH_TRASH].length * 3) ch = CH_TRASH;
+    for (let a = 0; a < 30; a++) {
+      const c = [ri(8, W - 9), ri(G + 10, H - 6)];
+      if (!this.areaFree(c, 8, 4)) continue;
+      const from = nearestTunnel(c[0], c[1], 40);
+      if (Math.hypot(from[0] - c[0], from[1] - c[1]) > 35) continue;
+      if (ch === 0) this.plan.push([this.tunnelCells(from, c, 0.35), 0]);
+      else this.planItem(from, c, ch, 5.5, 2.2);
+      return;
+    }
+  },
+  areaFree(c, rx, ry) {
+    for (let y = c[1] - ry; y <= c[1] + ry; y++) for (let x = c[0] - rx; x <= c[0] + rx; x++)
+      if (!inGrid(x, y) || world.cells[idx(x, y)] !== SOIL) return false;
+    return true;
+  },
+  digSources() { if (this.jobsDirty) this.refreshJobs(); return this.frontier; },
+  hasDigWork() { if (this.jobsDirty) this.refreshJobs(); return this.frontier.length > 0; },
+  digTargetNear(x, y) {
+    if (this.jobsDirty) this.refreshJobs();
+    for (const [dx, dy] of [[0, 1], [-1, 0], [1, 0], [0, -1]]) {
+      const nx = x + dx, ny = y + dy;
+      if (inGrid(nx, ny)) { const i = idx(nx, ny); if (this.jobCells.has(i) && world.cells[i] === SOIL) return [nx, ny]; }
+    }
+    return null;
+  },
+  onDug() { this.jobsDirty = true; world.dirty[F_DIG] = true; this.decorDirty = true; },
+  storeFood(a) { this.food += a; this.delivered++; this.decorDirty = true; },
+  takeFood(a) { if (this.food >= a) { this.food -= a; this.decorDirty = true; return true; } return false; },
+  broodCell() {
+    let cells = world.chamberCells[CH_BROOD];
+    if (!cells.length) cells = world.chamberCells[CH_QUEEN];
+    return cells.length ? cells[Math.floor(rand() * cells.length)] : idx(ENT, G);
+  },
+  larvae() { return this.brood.filter(b => b[0] === 1).length; },
+  hungryLarvae() { return this.brood.filter(b => b[0] === 1 && b[2] < 0.5).length; },
+  feedLarva() {
+    let best = -1, low = 99;
+    this.brood.forEach((b, k) => { if (b[0] === 1 && b[2] < low) { low = b[2]; best = k; } });
+    if (best >= 0) { this.brood[best][2] = 1; this.brood[best][3] = 0; }
+  },
+  broodCap() { return Math.max(6, 4 + Math.floor(world.chamberCells[CH_BROOD].length / 2)); },
+  addCorpse(x, y) {
+    this.died++;
+    if (y >= G && isTunnel(x, y)) { this.corpses.push(idx(x, y)); world.dirty[F_CORPSE] = true; }
+    else this.surfaceCorpses.push([x * T + 1.5, y * T + 1.5, 0]);
+    this.decorDirty = true;
+  },
+  takeCorpseAt(x, y) {
+    const k = this.corpses.indexOf(idx(x, y));
+    if (k < 0) return false;
+    this.corpses.splice(k, 1); world.dirty[F_CORPSE] = true; this.decorDirty = true;
+    return true;
+  },
+  bury() { this.buried++; this.decorDirty = true; },
+  takeTrash() { if (this.trashWaiting >= 1) { this.trashWaiting -= 1; this.decorDirty = true; return true; } return false; },
+  dumpTrash() { this.trashStored++; this.decorDirty = true; },
+
+  tick(dt) {
+    const pop = ants.count;
+    for (let k = this.brood.length - 1; k >= 0; k--) {
+      const b = this.brood[k];
+      if (b[0] === 0) {
+        b[1] += dt;
+        if (b[1] >= this.EGG_TIME) { b[0] = 1; b[1] = 0; b[2] = 0.6; this.decorDirty = true; }
+      } else {
+        b[2] = Math.max(0, b[2] - 0.03 * dt);
+        if (b[2] > 0) b[1] += dt; else { b[1] += dt * 0.2; b[3] += dt; }
+        if (b[3] > 50) { this.addCorpse(b[4] % W, Math.floor(b[4] / W)); this.brood.splice(k, 1); }
+        else if (b[1] >= this.LARVA_TIME) {
+          ants.spawn(b[4] % W, Math.floor(b[4] / W), rand() < 0.15 ? R_SOLDIER : R_WORKER);
+          this.born++; this.brood.splice(k, 1); this.decorDirty = true;
+        }
+      }
+    }
+    // Königin legt Eier, wenn genug Futter da ist
+    const reserve = 3 + pop * 0.4;
+    if (this.queenAlive && this.brood.length < this.broodCap() && pop + this.brood.length < this.MAX_POP) {
+      this.eggT += dt;
+      let interval = 6 - Math.min(this.food / 15, 3.5);
+      if (this.food < reserve) interval = pop <= 4 ? 18 : 1e9;   // kleine Kolonie: die Königin zehrt von ihren Reserven
+      if (this.eggT >= interval) {
+        this.eggT = 0; this.food = Math.max(0, this.food - 0.6); this.eggsLaid++;
+        this.brood.push([0, 0, 0, 0, this.broodCell()]); this.decorDirty = true;
+      }
+    }
+    // Futterverbrauch jede Sekunde
+    this.feedT += dt;
+    if (this.feedT >= 1) {
+      this.feedT -= 1;
+      let need = Math.max(0, pop - 1) * 0.007 + (this.queenAlive ? 0.02 : 0);
+      if (events.isNight()) need *= 0.5;
+      if (this.food >= need) { this.food -= need; this.trashWaiting += need * 0.08; this.starve = Math.max(0, this.starve - 2); this.starving = false; }
+      else { this.food = 0; this.starve += 1; this.starving = this.starve > 4; }
+      this.decorDirty = true;
+    }
+    // Ohne Futter schrumpft die Kolonie
+    if (this.starve > 30) { this.killT += dt; if (this.killT > 5) { this.killT = 0; ants.killRandomWorker(); } }
+    for (const sc of this.surfaceCorpses) sc[2] += dt;
+    if (this.surfaceCorpses.length && this.surfaceCorpses[0][2] > 30) { this.surfaceCorpses.shift(); this.decorDirty = true; }
+    if (this.jobsDirty) this.refreshJobs();
+  },
+  chamberInfo(ch) {
+    const size = world.chamberCells[ch] ? world.chamberCells[ch].length : 0;
+    switch (ch) {
+      case CH_GRANARY: return ["KORNKAMMER", ["FUTTER: " + Math.floor(this.food), "GESAMMELT: " + this.delivered, "GRÖSSE: " + size]];
+      case CH_BROOD: return ["BRUTKAMMER", ["EIER: " + (this.brood.length - this.larvae()), "LARVEN: " + this.larvae(), "HUNGRIG: " + this.hungryLarvae()]];
+      case CH_QUEEN: return ["KÖNIGINNENKAMMER", ["KÖNIGIN: " + (this.queenAlive ? "LEBT" : "TOT"), "EIER GELEGT: " + this.eggsLaid, "GEBOREN: " + this.born]];
+      case CH_CEMETERY: return ["FRIEDHOF", ["TOTE: " + this.buried, "NOCH IM NEST: " + this.corpses.length, "GESTORBEN: " + this.died]];
+      case CH_TRASH: return ["MÜLLKAMMER", ["ABFALL: " + this.trashStored, "WARTET: " + Math.floor(this.trashWaiting)]];
+    }
+    return ["GANG", []];
+  },
+};
+
+// =====================================================================
+// AMEISEN: zentrale Arrays, Zustandsmaschine, Zeichnen in einem Durchgang
+// =====================================================================
+const MAX_ANTS = 320;
+const SPEED = [10, 11, 3];
+const ants = {
+  count: 0,
+  px: new Float32Array(MAX_ANTS), py: new Float32Array(MAX_ANTS),
+  cx: new Int16Array(MAX_ANTS), cy: new Int16Array(MAX_ANTS), tx: new Int16Array(MAX_ANTS), ty: new Int16Array(MAX_ANTS),
+  state: new Uint8Array(MAX_ANTS), phase: new Uint8Array(MAX_ANTS), role: new Uint8Array(MAX_ANTS), carry: new Uint8Array(MAX_ANTS),
+  face: new Uint8Array(MAX_ANTS), dir: new Int8Array(MAX_ANTS), gx: new Int16Array(MAX_ANTS), gy: new Int16Array(MAX_ANTS), tk: new Int16Array(MAX_ANTS),
+  age: new Float32Array(MAX_ANTS), maxAge: new Float32Array(MAX_ANTS), hp: new Float32Array(MAX_ANTS), timer: new Float32Array(MAX_ANTS),
+  wt: new Float32Array(MAX_ANTS), trail: new Float32Array(MAX_ANTS), anim: new Float32Array(MAX_ANTS),
+  kills: new Map(), assignT: 0,
+  KEYS: ["px", "py", "cx", "cy", "tx", "ty", "state", "phase", "role", "carry", "face", "dir", "gx", "gy", "tk", "age", "maxAge", "hp", "timer", "wt", "trail", "anim"],
+
+  clear() { this.count = 0; this.kills.clear(); },
+  spawn(x, y, r, startAge = 0) {
+    if (this.count >= MAX_ANTS) return -1;
+    const i = this.count++;
+    this.px[i] = x * T + 1.5; this.py[i] = y * T + 1.5;
+    this.cx[i] = this.tx[i] = this.gx[i] = this.tk[i] = x;
+    this.cy[i] = this.ty[i] = this.gy[i] = y;
+    this.role[i] = r;
+    this.state[i] = r === R_QUEEN ? S_QUEEN : (r === R_SOLDIER ? S_SOLDIER : S_IDLE);
+    this.phase[i] = 0; this.carry[i] = 0; this.face[i] = 0; this.dir[i] = 1;
+    this.age[i] = startAge;
+    this.maxAge[i] = r === R_QUEEN ? 1e9 : rf(300, 600);
+    this.hp[i] = r === R_QUEEN ? 3 : (r === R_SOLDIER ? 1.5 : 1);
+    this.timer[i] = rf(0, 0.6); this.wt[i] = 0; this.trail[i] = 0; this.anim[i] = rand() * 4;
+    return i;
+  },
+  requestKill(i, corpse) { if (i >= 0 && i < this.count) this.kills.set(i, corpse); },
+  killRandomWorker() {
+    if (this.count <= 1) return;
+    for (let t = 0; t < 10; t++) { const i = Math.floor(rand() * this.count); if (this.role[i] !== R_QUEEN) { this.requestKill(i, true); return; } }
+  },
+  processKills() {
+    if (!this.kills.size) return;
+    const list = [...this.kills.keys()].sort((a, b) => b - a);
+    for (const i of list) {
+      if (i >= this.count) continue;
+      if (this.kills.get(i)) colony.addCorpse(this.cx[i], this.cy[i]); else colony.died++;
+      if (this.role[i] === R_QUEEN) { colony.queenAlive = false; hud.banner("DIE KÖNIGIN IST TOT", 6); }
+      const j = this.count - 1;
+      if (i !== j) for (const k of this.KEYS) this[k][i] = this[k][j];
+      this.count--;
+    }
+    this.kills.clear();
+  },
+  setState(i, s) { this.state[i] = s; this.phase[i] = 0; this.wt[i] = 0; this.trail[i] = 0; },
+  countRole(r) { let n = 0; for (let i = 0; i < this.count; i++) if (this.role[i] === r) n++; return n; },
+  countState(s) { let n = 0; for (let i = 0; i < this.count; i++) if (this.state[i] === s) n++; return n; },
+
+  tick(dt) {
+    const wet = world.wet;
+    for (let i = 0; i < this.count; i++) {
+      this.age[i] += dt; this.wt[i] += dt;
+      if (this.age[i] > this.maxAge[i]) { this.requestKill(i, true); continue; }
+      // Wasser in tiefen Gängen ertränkt Ameisen
+      if (wet && waterAt(this.cx[i], this.cy[i]) > 0.55) {
+        this.hp[i] -= dt * (this.role[i] === R_QUEEN ? 0.05 : 0.7);
+        if (this.hp[i] <= 0) { this.requestKill(i, true); continue; }
+      }
+      if (this.timer[i] > 0) { this.timer[i] -= dt; this.anim[i] += dt * 0.5; continue; }
+      const gx = this.tx[i] * T + 1.5, gy = this.ty[i] * T + 1.5;
+      const dx = gx - this.px[i], dy = gy - this.py[i], dist = Math.sqrt(dx * dx + dy * dy);
+      let sp = SPEED[this.role[i]];
+      if (this.carry[i]) sp *= 0.8;
+      const step = sp * dt;
+      if (dist <= step) {
+        this.px[i] = gx; this.py[i] = gy; this.cx[i] = this.tx[i]; this.cy[i] = this.ty[i];
+        Ant.think(i);
+      } else {
+        this.px[i] += dx / dist * step; this.py[i] += dy / dist * step;
+        this.anim[i] += dt * sp * 0.35;
+      }
+    }
+    this.processKills();
+    this.assignT += dt;
+    if (this.assignT > 0.7) { this.assignT = 0; this.assignJobs(); }
+  },
+  // Freie Arbeiterinnen bekommen die Aufgabe, die gerade am meisten fehlt
+  assignJobs() {
+    const counts = [0, 0, 0, 0, 0, 0, 0, 0], idle = [];
+    let workers = 0;
+    for (let i = 0; i < this.count; i++) {
+      counts[this.state[i]]++;
+      if (this.role[i] === R_WORKER) {
+        workers++;
+        if (this.state[i] === S_IDLE && this.timer[i] <= 0 && this.cy[i] >= G) idle.push(i);
+      }
+    }
+    if (!idle.length) return;
+    idle.sort(() => rand() - 0.5);
+    const wantDig = colony.hasDigWork() ? clamp(2 + Math.floor(workers / 8), 2, 16) : 0;
+    const larvae = colony.larvae();
+    let wantNurse = 0;
+    if (larvae > 0) wantNurse = clamp(Math.ceil(larvae / 3), 1, 14);
+    else if (colony.brood.length && workers > 8) wantNurse = 1;
+    let wantUnder = 0;
+    if (colony.corpses.length || colony.trashWaiting >= 1) wantUnder = clamp(1 + Math.floor(colony.corpses.length / 3), 1, 6);
+    const wantForage = Math.max(2, Math.ceil(workers * 0.6));
+    const goOut = !events.isNight() && !events.raining;
+    for (const i of idle) {
+      let s = -1;
+      if (counts[S_NURSE] < wantNurse) s = S_NURSE;
+      else if (counts[S_UNDERTAKE] < wantUnder) s = S_UNDERTAKE;
+      else if (counts[S_DIG] < wantDig) s = S_DIG;
+      else if (goOut && counts[S_FORAGE] + counts[S_CARRY] < wantForage) s = S_FORAGE;
+      if (s < 0) continue;
+      counts[s]++; counts[S_IDLE]--;
+      this.setState(i, s);
+    }
+  },
+  draw(g) {
+    for (let i = 0; i < this.count; i++) {
+      const dxs = this.tx[i] - this.cx[i], dys = this.ty[i] - this.cy[i];
+      let f = this.face[i];
+      if (dxs > 0) f = 0; else if (dxs < 0) f = 1; else if (dys < 0) f = 2; else if (dys > 0) f = 3;
+      this.face[i] = f;
+      let x = this.px[i], y = this.py[i];
+      if (y < G * T && y > SURF * T - 1) y -= surfaceOffset(Math.floor(x / T));
+      x = Math.round(x + FRAME); y = Math.round(y + FRAME);
+      if (f === 0) g.setTransform(1, 0, 0, 1, x, y);
+      else if (f === 1) g.setTransform(-1, 0, 0, 1, x, y);
+      else if (f === 2) g.setTransform(0, -1, 1, 0, x, y);
+      else g.setTransform(0, 1, -1, 0, x, y);
+      let fr = 0;
+      if (this.role[i] === R_SOLDIER) fr = 2;
+      else if (this.role[i] === R_QUEEN) fr = 4;
+      else if (this.carry[i]) fr = 4 + this.carry[i] * 2;
+      fr += Math.floor(this.anim[i] * 2) & 1;
+      g.drawImage(antAtlas, fr * 8, 0, 8, 6, -4, -3, 8, 6);
+    }
+    g.setTransform(1, 0, 0, 1, 0, 0);
+  },
+};
+
+// Ameisen-Sprites als Pixel-Muster, Blick nach rechts
+const SPRITES = {
+  worker: [["........", "......#.", ".+#.#.##", "#######.", ".#.#.#..", "........"], ["........", ".......#", ".+#.#.##", "#######.", "#.#.#.#.", "........"]],
+  soldier: [["........", ".....##.", ".+#.####", "########", ".#.#.#..", "........"], ["........", ".....##.", ".+#.####", "#######.", "#.#.#.##", "........"]],
+  queen: [[".....y.y", ".....yyy", "+##.#.##", "#######.", "###.#.#.", ".#......"], [".....y.y", ".....yyy", "+##.#.##", "#######.", "###..#.#", "..#.#..."]],
+};
+const ITEM_COLORS = [null, [0.88, 0.2, 0.15], [0.86, 0.74, 0.5], [0.25, 0.22, 0.2], [0.6, 0.47, 0.3]];
+const [antAtlas, antAtlasG] = canvas(8 * 14, 6);
+function buildAntAtlas() {
+  const paint = (frame, rows, item) => {
+    for (let y = 0; y < 6; y++) for (let x = 0; x < 8; x++) {
+      const ch = rows[y][x];
+      const col = ch === "#" ? [0.11, 0.06, 0.05] : ch === "+" ? [0.36, 0.2, 0.14] : ch === "y" ? [0.98, 0.82, 0.2] : null;
+      if (col) { antAtlasG.fillStyle = css(col); antAtlasG.fillRect(frame * 8 + x, y, 1, 1); }
+    }
+    if (item) for (let y = 0; y < 2; y++) for (let x = 4; x < 7; x++) {
+      antAtlasG.fillStyle = css((x + y) % 3 ? item : lighten(item, 0.25));
+      antAtlasG.fillRect(frame * 8 + x, y, 1, 1);
+    }
+  };
+  for (let a = 0; a < 2; a++) {
+    paint(a, SPRITES.worker[a]); paint(2 + a, SPRITES.soldier[a]); paint(4 + a, SPRITES.queen[a]);
+    for (let c = 1; c < 5; c++) paint(4 + c * 2 + a, SPRITES.worker[a], ITEM_COLORS[c]);
+  }
+}
+
+// ---------------------------------------------------------------- Zustandsmaschine einer Ameise
+const Ant = {
+  think(i) {
+    switch (ants.state[i]) {
+      case S_IDLE: return this.idle(i);
+      case S_DIG: return this.dig(i);
+      case S_FORAGE: return this.forage(i);
+      case S_CARRY: return this.carry(i);
+      case S_NURSE: return this.nurse(i);
+      case S_UNDERTAKE: return this.undertake(i);
+      case S_SOLDIER: return this.soldier(i);
+      case S_QUEEN: return this.queen(i);
+    }
+  },
+  go(i, x, y) { ants.tx[i] = x; ants.ty[i] = y; },
+  goIdx(i, c) { ants.tx[i] = c % W; ants.ty[i] = Math.floor(c / W); },
+  wait(i, t) { ants.tx[i] = ants.cx[i]; ants.ty[i] = ants.cy[i]; ants.timer[i] = t; },
+  wander(i, ch = -1) {
+    const n = randomNeighbor(ants.cx[i], ants.cy[i], ch);
+    if (n === idx(ants.cx[i], ants.cy[i])) this.wait(i, 0.5); else this.goIdx(i, n);
+  },
+  // Oberirdisch zurück zum Eingang und hinab. true, solange die Ameise oben ist.
+  headHome(i) {
+    const x = ants.cx[i], y = ants.cy[i];
+    if (y >= G) return false;
+    if (y < SURF) { if (x !== ants.tk[i]) this.go(i, x + sign(ants.tk[i] - x), y); else this.go(i, x, y + 1); return true; }
+    if (x !== ENT) this.go(i, x + sign(ENT - x), y); else this.go(i, x, G);
+    return true;
+  },
+  // Einem Wegfeld folgen. 0 = unterwegs, 1 = angekommen, 2 = kein Weg.
+  travel(i, fid) {
+    if (this.headHome(i)) return 0;
+    const x = ants.cx[i], y = ants.cy[i];
+    if (!isTunnel(x, y)) {
+      const t = nearestTunnel(x, y);
+      if (t[0] !== x) this.go(i, x + sign(t[0] - x), y); else this.go(i, x, y + sign(t[1] - y));
+      return 0;
+    }
+    const s = nextStep(fid, x, y);
+    if (s === ARRIVED) return 1;
+    if (s === NO_PATH) return 2;
+    this.goIdx(i, s);
+    return 0;
+  },
+  pick(fids) { for (const f of fids) if (hasField(f)) return f; return F_EXIT; },
+  goSurface(i) {
+    if (ants.cy[i] < G) return true;
+    const r = this.travel(i, F_EXIT);
+    if (r === 1) this.go(i, ENT, SURF); else if (r === 2) this.wander(i);
+    return false;
+  },
+
+  idle(i) {
+    if (this.headHome(i)) return;
+    if (!isTunnel(ants.cx[i], ants.cy[i])) { this.travel(i, F_EXIT); return; }
+    if (hasField(F_QUEEN) && fieldValue(F_QUEEN, ants.cx[i], ants.cy[i]) > 22 && this.travel(i, F_QUEEN) === 0) return;
+    if (rand() < 0.4) this.wait(i, rf(0.5, 2)); else this.wander(i);
+  },
+  dig(i) {
+    switch (ants.phase[i]) {
+      case 0: {
+        const r = this.travel(i, F_DIG);
+        if (r === 2) {
+          if (ants.carry[i] === C_DIRT) { ants.phase[i] = 2; return this.dig(i); }
+          ants.setState(i, S_IDLE); this.wait(i, 0.3);
+        } else if (r === 1) {
+          const t = colony.digTargetNear(ants.cx[i], ants.cy[i]);
+          if (!t) { world.dirty[F_DIG] = true; this.wait(i, 0.4); return; }
+          ants.gx[i] = t[0]; ants.gy[i] = t[1]; ants.phase[i] = 1;
+          ants.face[i] = t[0] > ants.cx[i] ? 0 : (t[0] < ants.cx[i] ? 1 : (t[1] < ants.cy[i] ? 2 : 3));
+          this.wait(i, digTime(t[1]));
+        }
+        return;
+      }
+      case 1:
+        if (cellAt(ants.gx[i], ants.gy[i]) === SOIL) {
+          dig(ants.gx[i], ants.gy[i]); colony.onDug();
+          ants.carry[i] = C_DIRT; ants.trail[i] += 1;
+        }
+        // erst mit voller Ladung nach oben
+        if (ants.carry[i] === C_DIRT && (ants.trail[i] >= 3 || !colony.hasDigWork())) { ants.phase[i] = 2; return this.dig(i); }
+        ants.phase[i] = 0; this.wait(i, 0.1);
+        return;
+      case 2:
+        if (this.goSurface(i)) {
+          ants.phase[i] = 3;
+          ants.gx[i] = clamp(ENT + (rand() < 0.5 ? -1 : 1) * ri(2, 11), 2, W - 3);
+          return this.dig(i);
+        }
+        return;
+      case 3: {
+        const x = ants.cx[i];
+        if (x !== ants.gx[i]) this.go(i, x + sign(ants.gx[i] - x), SURF);
+        else {
+          for (let k = 0; k < Math.max(1, Math.floor(ants.trail[i])); k++) addDirt(x + k % 2);
+          ants.trail[i] = 0; ants.carry[i] = C_NONE; ants.phase[i] = 4; this.wait(i, 0.3);
+        }
+        return;
+      }
+      case 4:
+        if (!this.headHome(i)) { ants.phase[i] = 0; this.dig(i); }
+    }
+  },
+  forage(i) {
+    if (ants.phase[i] <= 1 && (events.isNight() || events.raining)) { ants.setState(i, S_IDLE); return this.idle(i); }
+    switch (ants.phase[i]) {
+      case 0:
+        if (this.goSurface(i)) {
+          ants.phase[i] = 1; ants.wt[i] = 0; ants.dir[i] = rand() < 0.5 ? -1 : 1;
+          // Gedächtnis: zurück zur letzten ergiebigen Quelle
+          const mem = sourceAt(ants.tk[i]);
+          if (mem >= 0 && ants.tk[i] !== ants.cx[i] && hasFruit(mem) && rand() < 0.75) {
+            ants.dir[i] = sign(ants.tk[i] - ants.cx[i]);
+            ants.trail[i] = -Math.abs(ants.tk[i] - ants.cx[i]);
+          }
+          this.forage(i);
+        }
+        return;
+      case 1: {
+        if (ants.wt[i] > 50) { ants.setState(i, S_IDLE); return this.idle(i); }
+        const x = ants.cx[i], si = sourceAt(x);
+        if (si >= 0) {
+          if (hasFruit(si) && rand() < 0.85) {
+            const f = pickFruit(si);
+            ants.tk[i] = x; ants.gx[i] = f.x; ants.gy[i] = f.y; ants.phase[i] = 2;
+            return this.forage(i);
+          }
+          if (!hasFruit(si)) ants.trail[i] = -10;   // leere Quelle: Duft eine Weile ignorieren
+        }
+        if (ants.trail[i] < 0) ants.trail[i] += 1;
+        else {
+          // Der Duft ist nahe am Futter am stärksten: dem Anstieg folgen
+          const far = phero.sense(x, SURF, 6);
+          if (far[0] + far[1] > 0.08) {
+            const near = phero.sense(x, SURF, 2);
+            if (near[0] > near[1] * 1.02) ants.dir[i] = -1; else if (near[1] > near[0] * 1.02) ants.dir[i] = 1;
+            if (rand() < 0.01) ants.dir[i] = -ants.dir[i];
+          } else if (rand() < 0.05) ants.dir[i] = -ants.dir[i];
+        }
+        let nx = x + ants.dir[i];
+        if (nx < 1 || nx > W - 2) { ants.dir[i] = -ants.dir[i]; nx = x + ants.dir[i]; }
+        this.go(i, nx, SURF);
+        return;
+      }
+      case 2: {
+        // den Stamm hoch und am Ast entlang zur Frucht
+        const x = ants.cx[i], y = ants.cy[i];
+        if (x === ants.gx[i] && y === ants.gy[i]) {
+          if (takeFruit(x, y)) { ants.carry[i] = C_FOOD; ants.setState(i, S_CARRY); ants.trail[i] = 1; return this.carry(i); }
+          ants.phase[i] = 3; return this.forage(i);
+        }
+        if (y > ants.gy[i] && x === ants.tk[i]) this.go(i, x, y - 1);
+        else if (y === ants.gy[i]) this.go(i, x + sign(ants.gx[i] - x), y);
+        else { ants.phase[i] = 3; this.forage(i); }
+        return;
+      }
+      case 3: {
+        const x = ants.cx[i], y = ants.cy[i];
+        if (y < SURF) { if (x !== ants.tk[i]) this.go(i, x + sign(ants.tk[i] - x), y); else this.go(i, x, y + 1); }
+        else { ants.phase[i] = 1; this.forage(i); }
+      }
+    }
+  },
+  carry(i) {
+    if (ants.phase[i] === 0) {
+      // oben: zum Eingang und dabei eine Duftspur legen
+      if (ants.cy[i] < G) {
+        phero.deposit(ants.cx[i], ants.cy[i], ants.trail[i]);
+        ants.trail[i] = Math.max(0.25, ants.trail[i] * 0.975);
+        this.headHome(i);
+        return;
+      }
+      ants.phase[i] = 1;
+    }
+    const r = this.travel(i, this.pick([F_GRANARY, F_QUEEN]));
+    if (r !== 0) { colony.storeFood(colony.FRUIT_FOOD); ants.carry[i] = C_NONE; ants.setState(i, S_IDLE); this.wait(i, 0.5); }
+  },
+  nurse(i) {
+    switch (ants.phase[i]) {
+      case 0: {
+        if (!colony.brood.length) { ants.setState(i, S_IDLE); return this.idle(i); }
+        const r = this.travel(i, this.pick([F_GRANARY, F_QUEEN]));
+        if (r !== 0) { if (colony.takeFood(0.3)) ants.carry[i] = C_FOOD; ants.phase[i] = 1; this.wait(i, 0.4); }
+        return;
+      }
+      case 1: {
+        const r = this.travel(i, this.pick([F_BROOD, F_QUEEN]));
+        if (r !== 0) {
+          if (ants.carry[i] === C_FOOD) { colony.feedLarva(); ants.carry[i] = C_NONE; }
+          ants.phase[i] = 2; ants.wt[i] = 0; this.wait(i, 0.6);
+        }
+        return;
+      }
+      case 2: {
+        // Brut pflegen: in der Kammer umhergehen
+        if (ants.wt[i] > 7) {
+          if (colony.hungryLarvae() > 0) { ants.phase[i] = 0; return this.nurse(i); }
+          ants.setState(i, S_IDLE); return this.wait(i, 0.5);
+        }
+        const ch = chamberAt(ants.cx[i], ants.cy[i]);
+        if (rand() < 0.4) this.wait(i, rf(0.4, 1.2)); else this.wander(i, ch || -1);
+      }
+    }
+  },
+  undertake(i) {
+    switch (ants.phase[i]) {
+      case 0:
+        if (colony.corpses.length) {
+          const r = this.travel(i, F_CORPSE);
+          if (r === 1) {
+            if (colony.takeCorpseAt(ants.cx[i], ants.cy[i])) { ants.carry[i] = C_CORPSE; ants.phase[i] = 1; this.wait(i, 0.4); }
+            else this.wait(i, 0.2);
+          } else if (r === 2) {
+            if (colony.trashWaiting >= 1) ants.phase[i] = 3; else ants.setState(i, S_IDLE);
+            this.wait(i, 0.3);
+          }
+        } else if (colony.trashWaiting >= 1) { ants.phase[i] = 3; this.undertake(i); }
+        else { ants.setState(i, S_IDLE); this.idle(i); }
+        return;
+      case 1: {
+        // Tote zum Friedhof
+        const r = this.travel(i, this.pick([F_CEMETERY, F_TRASH, F_EXIT]));
+        if (r !== 0) { colony.bury(); ants.carry[i] = C_NONE; ants.setState(i, S_IDLE); this.wait(i, 0.4); }
+        return;
+      }
+      case 3: {
+        const r = this.travel(i, this.pick([F_GRANARY, F_QUEEN]));
+        if (r !== 0) {
+          if (colony.takeTrash()) { ants.carry[i] = C_TRASH; ants.phase[i] = 4; } else ants.setState(i, S_IDLE);
+          this.wait(i, 0.3);
+        }
+        return;
+      }
+      case 4: {
+        // Abfall in die Müllkammer
+        const r = this.travel(i, this.pick([F_TRASH, F_CEMETERY, F_EXIT]));
+        if (r !== 0) { colony.dumpTrash(); ants.carry[i] = C_NONE; ants.setState(i, S_IDLE); this.wait(i, 0.4); }
+      }
+    }
+  },
+  soldier(i) {
+    if (events.centActive && !events.centFleeing) {
+      const hx = events.centX, hy = events.centY;
+      if (Math.hypot(ants.px[i] - hx, ants.py[i] - hy) < 90 && hy > G * T) {
+        // Angriff: direkt auf den Kopf zu, notfalls durch die Erde
+        const cx = Math.floor(hx / T), cy = Math.floor(hy / T), x = ants.cx[i], y = ants.cy[i];
+        if (Math.abs(cx - x) <= 1 && Math.abs(cy - y) <= 1) this.wait(i, 0.25);
+        else if (Math.abs(cx - x) > Math.abs(cy - y)) this.go(i, x + sign(cx - x), y);
+        else this.go(i, x, Math.max(G, y + sign(cy - y)));
+        return;
+      }
+    }
+    if (this.headHome(i)) return;
+    if (hasField(F_QUEEN) && fieldValue(F_QUEEN, ants.cx[i], ants.cy[i]) > 16 && this.travel(i, F_QUEEN) === 0) return;
+    if (!isTunnel(ants.cx[i], ants.cy[i])) { this.travel(i, F_EXIT); return; }
+    if (rand() < 0.5) this.wait(i, rf(0.5, 2.5)); else this.wander(i);
+  },
+  queen(i) {
+    if (chamberAt(ants.cx[i], ants.cy[i]) !== CH_QUEEN && hasField(F_QUEEN) && this.travel(i, F_QUEEN) === 0) return;
+    if (rand() < 0.6) this.wait(i, rf(1, 3)); else this.wander(i, CH_QUEEN);
+  },
+};
+
+// =====================================================================
+// EREIGNISSE: Tag und Nacht, Flut, Tausendfüßler
+// =====================================================================
+const DAY_LENGTH = 300, SEGS = 12, SPACING = 3;
+const events = {
+  time: 0.3, day: 1, raining: false, rainT: 0, nextFlood: 0, drops: [],
+  centActive: false, centFleeing: false, centX: 0, centY: 0, centHp: 0, angle: 0, life: 0, segs: [], nextCent: 0, eatCd: 0,
+  targetX: 0, targetY: 0, targetT: 0, walk: 0,
+  reset() {
+    this.raining = false; this.centActive = false; this.drops = [];
+    this.nextFlood = rf(300, 450); this.nextCent = rf(200, 320);
+  },
+  daylight() { return clamp(0.5 - 0.5 * Math.cos(this.time * Math.PI * 2), 0, 1); },
+  isNight() { return this.daylight() < 0.2; },
+  light() {
+    const t = clamp(this.daylight() / 0.6, 0, 1), l = t * t * (3 - 2 * t);
+    let c = mix([0.36, 0.40, 0.62], [1, 1, 1], l);
+    c = mix(c, [1, 0.78, 0.6], (1 - Math.abs(l - 0.5) * 2) * 0.22);
+    if (this.raining) c = darken(c, 0.12);
+    return c;
+  },
+  tick(dt) {
+    this.time += dt / DAY_LENGTH;
+    if (this.time >= 1) { this.time -= 1; this.day++; }
+    this.tickFlood(dt);
+    this.tickCentipede(dt);
+  },
+  tickFlood(dt) {
+    if (!this.raining) {
+      this.nextFlood -= dt;
+      if (this.nextFlood <= 0 && colony.tunnelCount() > 220) this.startFlood();
+      return;
+    }
+    this.rainT -= dt;
+    addRain(0.015);
+    while (this.drops.length < 70) this.drops.push([rf(0, WPX), rf(-G * T, 0)]);
+    for (const d of this.drops) {
+      d[1] += 170 * dt; d[0] -= 20 * dt;
+      if (d[1] > G * T - 2) { d[0] = rf(0, WPX + 20); d[1] = rf(-20, 0); }
+    }
+    if (this.rainT <= 0) { this.raining = false; this.drops = []; this.nextFlood = rf(220, 420); }
+  },
+  startFlood() { this.raining = true; this.rainT = 20; hud.banner("FLUT! REGEN LÄUFT INS NEST", 4); },
+  startCentipede() {
+    this.centActive = true; this.centFleeing = false; this.centHp = 24; this.life = 0; this.eatCd = 1;
+    const left = rand() < 0.5;
+    this.centX = left ? -12 : WPX + 12; this.centY = rf((G + 12) * T, (H - 10) * T);
+    this.angle = left ? 0 : Math.PI;
+    this.segs = [];
+    for (let k = 0; k < SEGS; k++) this.segs.push([this.centX - Math.cos(this.angle) * SPACING * k, this.centY]);
+    this.targetX = ENT * T; this.targetY = (G + 20) * T;
+    hud.banner("TAUSENDFÜSSLER!", 4);
+  },
+  tickCentipede(dt) {
+    if (!this.centActive) {
+      this.nextCent -= dt;
+      if (this.nextCent <= 0 && ants.count >= 25) this.startCentipede();
+      return;
+    }
+    this.life += dt; this.walk += dt;
+    if (!this.centFleeing && (this.centHp <= 0 || this.life > 40)) {
+      this.centFleeing = true;
+      if (this.centHp <= 0) hud.banner("SOLDATEN VERJAGEN DEN TAUSENDFÜSSLER", 4);
+    }
+    // Ziel: nächste Ameise unter der Erde
+    this.targetT -= dt;
+    if (this.centFleeing) { this.targetX = this.centX < WPX / 2 ? -40 : WPX + 40; this.targetY = this.centY; }
+    else if (this.targetT <= 0) {
+      this.targetT = 0.6;
+      let best = 1e9;
+      for (let i = 0; i < ants.count; i++) {
+        if (ants.role[i] === R_QUEEN || ants.cy[i] < G) continue;
+        const d = (ants.px[i] - this.centX) ** 2 + (ants.py[i] - this.centY) ** 2;
+        if (d < best) { best = d; this.targetX = ants.px[i]; this.targetY = ants.py[i]; }
+      }
+    }
+    const want = Math.atan2(this.targetY - this.centY, this.targetX - this.centX);
+    let diff = want - this.angle;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    this.angle += clamp(diff, -2.2 * dt, 2.2 * dt) + Math.sin(this.walk * 3) * 0.6 * dt;
+    const sp = this.centFleeing ? 24 : 13;
+    this.centX += Math.cos(this.angle) * sp * dt; this.centY += Math.sin(this.angle) * sp * dt;
+    if (this.centY < G * T + 4) { this.centY = G * T + 4; this.angle = Math.abs(this.angle); }
+    if (this.centY > H * T - 4) { this.centY = H * T - 4; this.angle = -Math.abs(this.angle); }
+    // Segmente folgen dem Kopf
+    this.segs[0] = [this.centX, this.centY];
+    for (let k = 1; k < SEGS; k++) {
+      const a = this.segs[k - 1], b = this.segs[k], d = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (d > SPACING) this.segs[k] = [a[0] + (b[0] - a[0]) / d * SPACING, a[1] + (b[1] - a[1]) / d * SPACING];
+    }
+    // fressen und kämpfen
+    this.eatCd -= dt;
+    if (!this.centFleeing) for (let i = 0; i < ants.count; i++) {
+      const d = Math.hypot(ants.px[i] - this.centX, ants.py[i] - this.centY);
+      if (d > 7) continue;
+      if (ants.role[i] === R_SOLDIER) this.centHp -= 2.6 * dt;
+      else if (d < 4.5) {
+        this.centHp -= 0.35 * dt;
+        if (this.eatCd <= 0 && ants.role[i] !== R_QUEEN) { ants.requestKill(i, false); this.eatCd = 3; }
+      }
+    }
+    if (this.centFleeing && (this.centX < -30 || this.centX > WPX + 30)) { this.centActive = false; this.nextCent = rf(150, 300); }
+  },
+  draw(g) {
+    g.fillStyle = "rgba(179,209,250,0.7)";
+    for (const d of this.drops) g.fillRect(Math.floor(d[0]) + FRAME, Math.floor(d[1]) + FRAME, 1, 3);
+    if (!this.centActive) return;
+    for (let k = SEGS - 1; k >= 0; k--) {
+      const p = this.segs[k], x = Math.floor(p[0]) + FRAME, y = Math.floor(p[1]) + FRAME;
+      const n = this.segs[Math.max(k - 1, 0)];
+      let fx = Math.cos(this.angle), fy = Math.sin(this.angle);
+      if (k > 0) { const d = Math.hypot(n[0] - p[0], n[1] - p[1]) || 1; fx = (n[0] - p[0]) / d; fy = (n[1] - p[1]) / d; }
+      const sx = -fy, sy = fx, sw = Math.sin(this.walk * 14 + k * 1.3) * 1.2;
+      g.fillStyle = css([0.30, 0.12, 0.08]);
+      pline(g, x + sx * 1.5, y + sy * 1.5, x + sx * 3.5 + fx * sw, y + sy * 3.5 + fy * sw);
+      pline(g, x - sx * 1.5, y - sy * 1.5, x - sx * 3.5 - fx * sw, y - sy * 3.5 - fy * sw);
+      if (k === 0) {
+        g.fillStyle = css([0.3, 0.1, 0.06]); g.fillRect(x - 2, y - 2, 5, 4);
+        g.fillStyle = css([0.30, 0.12, 0.08]);
+        pline(g, x + fx * 2 + sx, y + fy * 2 + sy, x + fx * 6 + sx * 3, y + fy * 6 + sy * 3);
+        pline(g, x + fx * 2 - sx, y + fy * 2 - sy, x + fx * 6 - sx * 3, y + fy * 6 - sy * 3);
+        g.fillStyle = css([0.9, 0.8, 0.3]); g.fillRect(Math.round(x + fx * 2), Math.round(y + fy * 2), 1, 1);
+      } else {
+        const c = k % 2 === 0 ? [0.55, 0.20, 0.12] : [0.42, 0.14, 0.09];
+        g.fillStyle = css(c); g.fillRect(x - 2, y - 1, 4, 3);
+        g.fillStyle = css(lighten(c, 0.25)); g.fillRect(x - 1, y - 1, 2, 1);
+      }
+    }
+  },
+};
+
+// =====================================================================
+// HIMMEL: Sonne, Mond, Wolken, Bäume, Büsche, Gras, Blumen, Sandhügel
+// =====================================================================
+const SKY_TOP = [0.60, 0.78, 0.92], SKY_LOW = [0.86, 0.93, 0.95];
+const TRUNK = [0.47, 0.31, 0.19], TRUNK_DARK = [0.33, 0.21, 0.12];
+const LEAF = [[0.36, 0.58, 0.30], [0.47, 0.68, 0.36], [0.28, 0.48, 0.25]], LEAF_LIGHT = [0.62, 0.79, 0.47];
+const SAND = [0.88, 0.77, 0.55], SAND_DARK = [0.78, 0.66, 0.45];
+const [skyC, skyG] = canvas(WPX, G * T);
+const sky = {
+  dirty: true, t: 0, clock: 0, seed: -1, stalks: [], tufts: [], stars: [], clouds: [],
+  generate() {
+    this.seed = world.seed;
+    const r = mulberry(world.seed + 99);
+    this.stalks = []; this.tufts = []; this.stars = []; this.clouds = [];
+    for (let k = 0; k < 70; k++) {
+      const x = r.ri(1, WPX - 2);
+      if (Math.abs(x - ENT * T) < 30 && r() < 0.7) continue;
+      const q = r();
+      this.stalks.push([x, r.ri(6, 30), r.rf(-0.12, 0.12), q < 0.35 ? 1 : (q < 0.5 ? 2 : 0), r.ri(0, 2)]);
+    }
+    for (let k = 0; k < 140; k++) this.tufts.push([r.ri(0, WPX - 1), r.ri(1, 4), r.ri(0, 2)]);
+    for (let k = 0; k < 40; k++) this.stars.push([r.ri(2, WPX - 3), r.ri(2, 90)]);
+    for (let k = 0; k < 5; k++) this.clouds.push([r.rf(0, WPX), r.ri(6, 40), r.ri(10, 22), r.rf(1, 2.5)]);
+  },
+  tick(dt) {
+    this.clock += dt; this.t -= dt;
+    if (this.dirty || this.t <= 0) { this.t = 0.25; this.dirty = false; this.draw(); }
+  },
+  draw() {
+    const g = skyG, gy = G * T;
+    if (this.seed !== world.seed) this.generate();
+    g.clearRect(0, 0, WPX, gy);
+    for (let b = 0; b < 16; b++) {
+      let c = mix(SKY_TOP, SKY_LOW, b / 15);
+      if (events.raining) c = mix(c, [0.55, 0.6, 0.65], 0.55);
+      g.fillStyle = css(c); g.fillRect(0, Math.floor(b * gy / 16), WPX, Math.ceil(gy / 16) + 1);
+    }
+    const light = events.daylight();
+    if (light < 0.45) {
+      const a = clamp((0.45 - light) * 3, 0, 1);
+      for (const s of this.stars) { g.fillStyle = `rgba(255,255,230,${a * (0.6 + 0.4 * Math.sin(this.clock * 2 + s[0]))})`; g.fillRect(s[0], s[1], 1, 1); }
+    }
+    // Sonne und Mond
+    const dayT = (events.time - 0.22) / 0.56;
+    if (dayT > 0 && dayT < 1) {
+      const px = 18 + (WPX - 36) * dayT, py = 34 - Math.sin(dayT * Math.PI) * 22;
+      for (let k = 0; k < 3; k++) { g.fillStyle = `rgba(255,237,153,${0.12 + k * 0.05})`; pcircle(g, px, py, 11 - k * 2); }
+      g.fillStyle = css([1, 0.92, 0.55]); pcircle(g, px, py, 6);
+      g.fillStyle = css([1, 0.97, 0.78]); pcircle(g, px - 1, py - 1, 4);
+    }
+    const nT = (((events.time + 0.5) % 1) - 0.22) / 0.56;
+    if (nT > 0 && nT < 1) {
+      const mx = 18 + (WPX - 36) * nT, my = 30 - Math.sin(nT * Math.PI) * 18;
+      g.fillStyle = css([0.95, 0.95, 0.85]); pcircle(g, mx, my, 5);
+      g.fillStyle = css(darken(SKY_TOP, 0.6)); pcircle(g, mx + 2, my - 1, 4);
+    }
+    // Wolken
+    for (const c of this.clouds) {
+      const x = Math.floor(((c[0] + this.clock * c[3]) % (WPX + 60)) - 30), y = c[1], w = c[2];
+      const col = events.raining ? [0.55, 0.58, 0.62] : [0.97, 0.98, 1];
+      g.fillStyle = css(darken(col, 0.12)); g.fillRect(x, y + 2, w, 3);
+      g.fillStyle = css(col); g.fillRect(x + 2, y, w - 5, 3); g.fillRect(Math.floor(x + w * 0.3), y - 2, Math.floor(w * 0.4), 3);
+    }
+    for (const s of world.sources) if (s.kind === 0) this.tree(s);
+    for (const st of this.stalks) this.stalk(st, gy);
+    for (const s of world.sources) if (s.kind === 1) this.bush(s);
+    // Sandhügel
+    for (let x = 0; x < W; x++) {
+      const h = world.mound[x];
+      if (h < 0.4) continue;
+      const hp = Math.ceil(h);
+      g.fillStyle = css(SAND); g.fillRect(x * T, gy - hp, T, hp);
+      g.fillStyle = css(lighten(SAND, 0.15)); g.fillRect(x * T, gy - hp, T, 1);
+      g.fillStyle = css(SAND_DARK);
+      for (let k = 0; k < Math.floor(hp / 3); k++) if (hash2(x, k) % 3 === 0) g.fillRect(x * T + k % 3, gy - hp + 2 + k * 3, 1, 1);
+    }
+    for (const tf of this.tufts) { g.fillStyle = css(LEAF[tf[2]]); g.fillRect(tf[0], gy - tf[1], 1, tf[1]); }
+    g.fillStyle = css([0.40, 0.62, 0.30]); g.fillRect(0, gy - 1, WPX, 1);
+  },
+  blob(px, py, r, col) {
+    const g = skyG, rr = Math.floor(r);
+    g.fillStyle = css(col);
+    for (let dy = -rr; dy <= rr; dy += 2) {
+      const hw = Math.floor(Math.sqrt(Math.max(r * r - dy * dy, 0)));
+      g.fillRect(Math.floor(px) - hw, Math.floor(py) + dy, hw * 2, 2);
+    }
+    g.fillStyle = css(darken(col, 0.15)); g.fillRect(Math.floor(px - rr * 0.5), Math.floor(py + rr * 0.5), rr, 2);
+  },
+  tree(s) {
+    const g = skyG, tx = s.trunk * T + 1, top = s.cy * T, gy = G * T;
+    g.fillStyle = css(TRUNK); g.fillRect(tx - 1, top, 4, gy - top); g.fillRect(tx - 2, gy - 3, 6, 3);
+    g.fillStyle = css(TRUNK_DARK); g.fillRect(tx + 2, top, 1, gy - top);
+    const cx = s.cx * T + 1.5, cy = s.cy * T;
+    for (const b of s.blobs) this.blob(cx + b[0] * T, cy + b[1] * T, b[2] * T, LEAF[b[3]]);
+    g.fillStyle = css(LEAF_LIGHT);
+    for (const b of s.blobs) g.fillRect(Math.floor(cx + b[0] * T - b[2] * T * 0.45), Math.floor(cy + b[1] * T - b[2] * T * 0.45), 3, 2);
+    this.fruits(s);
+  },
+  bush(s) {
+    const cx = s.cx * T + 1.5, cy = (SURF - 2) * T;
+    for (const b of s.blobs) this.blob(cx + b[0] * T, cy + b[1] * T, b[2] * T, LEAF[b[3]]);
+    this.fruits(s);
+  },
+  fruits(s) {
+    const g = skyG;
+    for (const f of s.fruits) {
+      if (!f.alive) continue;
+      const x = f.x * T, y = f.y * T;
+      g.fillStyle = css([0.86, 0.22, 0.16]); g.fillRect(x, y, 3, 3);
+      g.fillStyle = css([1, 0.55, 0.45]); g.fillRect(x, y, 1, 1);
+      g.fillStyle = css(TRUNK_DARK); g.fillRect(x + 1, y - 1, 1, 1);
+    }
+  },
+  stalk(st, gy) {
+    const g = skyG, x = st[0], h = st[1], lean = st[2] + Math.sin(this.clock * 0.8 + x * 0.3) * 0.04;
+    g.fillStyle = css(LEAF[st[4]]);
+    for (let k = 0; k < h; k++) g.fillRect(Math.floor(x + lean * k), gy - 1 - k, 1, 1);
+    const tx = Math.floor(x + lean * h), ty = gy - 1 - h;
+    if (h > 10) g.fillRect(Math.floor(x + lean * h * 0.5) - 2, Math.floor(gy - h * 0.5), 2, 1);
+    if (st[3] === 1) {
+      g.fillStyle = css([0.93, 0.76, 0.22]); g.fillRect(tx - 1, ty - 3, 2, 4);
+      g.fillStyle = css([1, 0.92, 0.5]); g.fillRect(tx - 1, ty - 3, 1, 1);
+    } else if (st[3] === 2) {
+      g.fillStyle = css([0.98, 0.85, 0.3]);
+      g.fillRect(tx - 1, ty - 2, 3, 3); g.fillRect(tx - 2, ty - 1, 5, 1); g.fillRect(tx, ty - 3, 1, 5);
+      g.fillStyle = css([0.85, 0.55, 0.15]); g.fillRect(tx, ty - 1, 1, 1);
+    }
+  },
+};
+
+// =====================================================================
+// KAMMERINHALT: Futter, Eier, Larven, Tote, Abfall
+// =====================================================================
+const [decorC, decorG] = canvas(WPX, HPX);
+const decor = {
+  t: 0,
+  tick(dt) { this.t -= dt; if (colony.decorDirty && this.t <= 0) { this.t = 0.25; colony.decorDirty = false; this.draw(); } },
+  sorted(ch) { return [...world.chamberCells[ch]].sort((a, b) => b - a); },
+  deadAnt(g, x, y) {
+    g.fillStyle = css([0.16, 0.11, 0.09]); g.fillRect(x, y + 1, 3, 1);
+    g.fillStyle = css([0.28, 0.22, 0.2]); g.fillRect(x, y, 1, 1); g.fillRect(x + 2, y, 1, 1);
+  },
+  draw() {
+    const g = decorG, slots = [[0, 2], [2, 2], [1, 1]];
+    const foodCols = [[0.86, 0.22, 0.16], [0.95, 0.55, 0.15], [0.95, 0.8, 0.25]];
+    g.clearRect(0, 0, WPX, HPX);
+    const gran = this.sorted(CH_GRANARY);
+    let k = 0;
+    const items = Math.floor(colony.food);
+    outer: for (const cell of gran) for (const s of slots) {
+      if (k >= items) break outer;
+      g.fillStyle = css(foodCols[hash2(cell, k) % 3]); g.fillRect((cell % W) * T + s[0], Math.floor(cell / W) * T + s[1], 1, 1);
+      k++;
+    }
+    g.fillStyle = css([0.45, 0.35, 0.22]);
+    for (let n = 0; n < Math.min(Math.floor(colony.trashWaiting), gran.length); n++) {
+      const c = gran[gran.length - 1 - n]; g.fillRect((c % W) * T + 1, Math.floor(c / W) * T + 2, 1, 1);
+    }
+    for (const b of colony.brood) {
+      const c = b[4], o = hash2(c, Math.floor(b[1] * 10) % 3) % 2, x = (c % W) * T + o, y = Math.floor(c / W) * T + 1;
+      if (b[0] === 0) { g.fillStyle = css([0.97, 0.95, 0.88]); g.fillRect(x, y, 1, 2); }
+      else {
+        const col = b[2] > 0.3 ? [0.96, 0.88, 0.68] : [0.85, 0.82, 0.75];
+        g.fillStyle = css(col); g.fillRect(x, y, 2, 2);
+        g.fillStyle = css(darken(col, 0.2)); g.fillRect(x, y, 1, 1);
+      }
+    }
+    const cem = this.sorted(CH_CEMETERY);
+    for (let n = 0; n < Math.min(colony.buried, cem.length * 2); n++) {
+      const c = cem[n % cem.length]; this.deadAnt(g, (c % W) * T, Math.floor(c / W) * T + (n < cem.length ? 2 : 0));
+    }
+    const tr = this.sorted(CH_TRASH);
+    for (let n = 0; n < Math.min(colony.trashStored, tr.length * 3); n++) {
+      const c = tr[n % tr.length], s = slots[Math.floor(n / tr.length) % 3];
+      g.fillStyle = css(hash2(c, n) % 2 ? [0.55, 0.5, 0.42] : [0.45, 0.33, 0.2]);
+      g.fillRect((c % W) * T + s[0], Math.floor(c / W) * T + s[1], 1, 1);
+    }
+    for (const c of colony.corpses) this.deadAnt(g, (c % W) * T, Math.floor(c / W) * T + 1);
+    for (const sc of colony.surfaceCorpses) {
+      g.fillStyle = `rgba(38,26,20,${clamp(1 - sc[2] / 30, 0, 1)})`;
+      g.fillRect(Math.floor(sc[0] - 1.5), Math.floor(sc[1] - surfaceOffset(Math.floor(sc[0] / T))), 3, 1);
+    }
+  },
+};
+
+// =====================================================================
+// RAHMEN: dunkelgrünes Formicarium mit Glas
+// =====================================================================
+const [frameC, frameG] = canvas(FULL_W, FULL_H);
+function drawFrame() {
+  const g = frameG, f = FRAME, w = WPX, h = HPX;
+  g.translate(f, f);
+  g.fillStyle = css([0.10, 0.25, 0.14]);
+  g.fillRect(-f, -f, w + 2 * f, f); g.fillRect(-f, h, w + 2 * f, f); g.fillRect(-f, 0, f, h); g.fillRect(w, 0, f, h);
+  g.fillStyle = css([0.20, 0.42, 0.26]);
+  g.fillRect(-f, -f, w + 2 * f, 1); g.fillRect(-f, -f, 1, h + 2 * f); g.fillRect(-1, h, w + 2, 1); g.fillRect(w, -1, 1, h + 2);
+  g.fillStyle = css([0.05, 0.14, 0.08]);
+  g.fillRect(-1, -1, w + 2, 1); g.fillRect(-1, -1, 1, h + 2); g.fillRect(-f, h + f - 1, w + 2 * f, 1); g.fillRect(w + f - 1, -f, 1, h + 2 * f);
+  for (const [px, py] of [[-3, -3], [w + 2, -3], [-3, h + 2], [w + 2, h + 2]]) {
+    g.fillStyle = css([0.55, 0.6, 0.5]); g.fillRect(px - 1, py - 1, 2, 2);
+    g.fillStyle = css([0.8, 0.85, 0.75]); g.fillRect(px - 1, py - 1, 1, 1);
+  }
+  // Glas: zarte Spiegelung
+  g.fillStyle = "rgba(255,255,255,0.05)";
+  for (let k = 0; k < 3; k++) for (let s = 0; s < 300; s++) {
+    const x = 30 + k * 9 + s * 160 / 300, y = h - s;
+    g.fillRect(Math.floor(x), Math.floor(y), k === 2 ? 1 : 2, 1);
+  }
+  g.setTransform(1, 0, 0, 1, 0, 0);
+}
+
+// =====================================================================
+// ANZEIGE: grünes Holzschild, Kammer-Infos, Meldungen, Knöpfe
+// =====================================================================
+const CREAM = "#f0e8c7", BOARD = css([0.14, 0.31, 0.21]), BOARD_LIGHT = css([0.29, 0.50, 0.36]), BOARD_DARK = css([0.09, 0.21, 0.14]);
+const ANT_ICON = [".#...#.", "..#.#..", "...#...", "#.###.#", ".#.#.#.", "..###..", "#.###.#", "..###..", "...#..."];
+const hud = {
+  infoTitle: "", infoLines: [], infoColor: CREAM, infoT: 0, bannerText: "", bannerT: 0, blink: 0, buttons: [], hintT: 9,
+  showInfo(title, lines, ch) { this.infoTitle = title; this.infoLines = lines; this.infoColor = ch > 0 ? css(CHAMBER_COLORS[ch]) : CREAM; this.infoT = 5; this.hintT = 0; },
+  hideInfo() { this.infoT = 0; },
+  banner(t, time = 4) { this.bannerText = t; this.bannerT = time; },
+  tick(dt) { this.blink += dt; this.infoT = Math.max(0, this.infoT - dt); this.bannerT = Math.max(0, this.bannerT - dt); this.hintT = Math.max(0, this.hintT - dt); },
+  handleTap(x, y) {
+    for (const b of this.buttons) {
+      if (x >= b.x - 4 && x <= b.x + b.w + 4 && y >= b.y - 4 && y <= b.y + b.h + 4) {
+        if (b.id === "pause") game.paused = !game.paused;
+        else game.speed = game.speed >= 4 ? 1 : game.speed * 2;
+        return true;
+      }
+    }
+    return false;
+  },
+  panel(g, x, y, w, h) {
+    g.fillStyle = "rgba(0,0,0,0.35)"; g.fillRect(x + 2, y + 2, w, h);
+    g.fillStyle = BOARD_LIGHT; g.fillRect(x, y, w, h);
+    g.fillStyle = BOARD; g.fillRect(x + 1, y + 1, w - 2, h - 2);
+  },
+  draw(g, bw, bh, top, bottom) {
+    // Holzschild oben links
+    const ox = 3, oy = 3 + top, w = 74, h = 30;
+    const poly = (pts, color) => { g.fillStyle = color; g.beginPath(); pts.forEach((p, k) => k ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.closePath(); g.fill(); };
+    poly([[ox + 9, oy + 2], [ox + w + 2, oy + 2], [ox + w + 2, oy + h + 2], [ox + 2, oy + h + 2], [ox + 2, oy + 9]], "rgba(0,0,0,0.35)");
+    poly([[ox + 7, oy], [ox + w, oy], [ox + w, oy + h], [ox, oy + h], [ox, oy + 7]], BOARD_LIGHT);
+    poly([[ox + 7, oy + 1], [ox + w - 1, oy + 1], [ox + w - 1, oy + h - 1], [ox + 1, oy + h - 1], [ox + 1, oy + 7]], BOARD);
+    for (let k = 6; k < h - 2; k += 6) {
+      g.fillStyle = BOARD_DARK; g.fillRect(ox + 2, oy + k, w - 3, 1);
+      g.fillStyle = css([0.18, 0.36, 0.25]); g.fillRect(ox + 10 + (k * 7) % 23, oy + k - 2, 8, 1);
+    }
+    g.fillStyle = BOARD_DARK; g.fillRect(ox + 1, oy + h - 2, w - 2, 1);
+    g.fillStyle = css([0.75, 0.6, 0.25]); g.fillRect(ox + 4, oy + 7, 5, 5);
+    g.fillStyle = css([0.2, 0.18, 0.12]); g.fillRect(ox + 5, oy + 8, 3, 3);
+    g.fillStyle = css([1, 0.9, 0.55]); g.fillRect(ox + 5, oy + 8, 1, 1);
+    Font.draw(g, ox + 15, oy + 5, "ANT POP.", CREAM);
+    g.fillStyle = "#f7f2e0";
+    ANT_ICON.forEach((row, y) => { for (let x = 0; x < row.length; x++) if (row[x] === "#") g.fillRect(ox + 4 + x, oy + 14 + y, 1, 1); });
+    Font.draw(g, ox + 16, oy + 13, String(ants.count), CREAM, 2);
+    Font.shadow(g, 5, 37 + top, `FUTTER ${Math.floor(colony.food)}  TAG ${events.day}`, CREAM, "rgba(0,0,0,0.6)");
+    if (colony.starving && this.blink % 1 < 0.6) Font.shadow(g, 5, 44 + top, "HUNGER!", "#ff6a4d", "rgba(0,0,0,0.6)");
+    // Meldung
+    if (this.bannerT > 0) {
+      const tw = Font.width(this.bannerText), x = Math.round(bw / 2 - tw / 2) - 4, y = 58 + top;
+      g.fillStyle = "rgba(13,31,20,0.85)"; g.fillRect(x, y, tw + 8, 11);
+      g.fillStyle = BOARD_LIGHT; g.fillRect(x, y, tw + 8, 1); g.fillRect(x, y + 10, tw + 8, 1);
+      Font.center(g, bw / 2, y + 3, this.bannerText, this.blink % 0.8 < 0.5 ? "#ffd95a" : CREAM);
+    }
+    // Knöpfe unten rechts: Pause und Tempo
+    this.buttons = [];
+    const by = Math.round(bh - 22 - bottom), pause = { id: "pause", x: bw - 60, y: by, w: 26, h: 18 }, speed = { id: "speed", x: bw - 30, y: by, w: 26, h: 18 };
+    for (const b of [pause, speed]) { this.panel(g, b.x, b.y, b.w, b.h); this.buttons.push(b); }
+    g.fillStyle = CREAM;
+    const pcx = pause.x + 13, pcy = pause.y + 9;
+    if (game.paused) { g.beginPath(); g.moveTo(pcx - 3, pcy - 5); g.lineTo(pcx + 4, pcy); g.lineTo(pcx - 3, pcy + 5); g.closePath(); g.fill(); }
+    else { g.fillRect(pcx - 4, pcy - 4, 3, 9); g.fillRect(pcx + 1, pcy - 4, 3, 9); }
+    Font.center(g, speed.x + 14, speed.y + 7, game.speed + "X", CREAM);
+    if (game.paused) Font.shadow(g, bw - 60, by - 9, "PAUSE", CREAM, "rgba(0,0,0,0.6)");
+    // Hinweis beim Start
+    if (this.hintT > 0 && this.infoT <= 0) {
+      const lines = ["TIPPE AUF EINE KAMMER", "ZWEI FINGER ZOOMEN", "ZWEIMAL TIPPEN: NÄHER"];
+      const pw = 104, ph = 8 + lines.length * 7, px = Math.round((bw - pw) / 2), py = Math.round(bh - ph - 30 - bottom);
+      this.panel(g, px, py, pw, ph);
+      lines.forEach((l, k) => Font.center(g, bw / 2, py + 5 + k * 7, l, CREAM));
+    }
+    // Kammer-Info
+    if (this.infoT > 0) {
+      const pw = 150, ph = 16 + this.infoLines.length * 7, px = Math.round((bw - pw) / 2), py = Math.round(bh - ph - 30 - bottom);
+      this.panel(g, px, py, pw, ph);
+      g.fillStyle = this.infoColor; g.fillRect(px + 5, py + 5, 5, 5);
+      Font.draw(g, px + 14, py + 5, this.infoTitle, CREAM);
+      g.fillStyle = BOARD_DARK; g.fillRect(px + 4, py + 12, pw - 8, 1);
+      this.infoLines.forEach((l, k) => Font.draw(g, px + 8, py + 15 + k * 7, l, "#e2d9b8"));
+    }
+  },
+};
+
+// =====================================================================
+// KAMERA UND EINGABE: zwei Finger zoomen, ein Finger schiebt, Doppeltippen zoomt
+// =====================================================================
+const view = { x: WPX / 2, y: HPX / 2, z: 1, bw: FULL_W, bh: FULL_H, cssW: 1, cssH: 1, top: 0, bottom: 0 };
+const minZoom = () => Math.min(view.bw / FULL_W, view.bh / FULL_H);
+function clampView() {
+  view.z = clamp(view.z, minZoom(), 6);
+  const vw = view.bw / view.z, vh = view.bh / view.z;
+  view.x = vw >= FULL_W ? WPX / 2 : clamp(view.x, -FRAME + vw / 2, WPX + FRAME - vw / 2);
+  view.y = vh >= FULL_H ? HPX / 2 : clamp(view.y, -FRAME + vh / 2, HPX + FRAME - vh / 2);
+}
+const toWorld = (sx, sy) => [view.x + (sx - view.bw / 2) / view.z, view.y + (sy - view.bh / 2) / view.z];
+function zoomAt(z, sx, sy) {
+  const [wx, wy] = toWorld(sx, sy);
+  view.z = clamp(z, minZoom(), 6);
+  view.x = wx - (sx - view.bw / 2) / view.z; view.y = wy - (sy - view.bh / 2) / view.z;
+  clampView();
+}
+let zoomAnim = null;
+function animateZoom(target, sx, sy) { zoomAnim = { from: view.z, to: target, sx, sy, t: 0 }; }
+
+const cv = document.getElementById("game");
+const ctx = cv.getContext("2d");
+const [worldC, worldG] = canvas(FULL_W, FULL_H);
+function resize() {
+  view.cssW = window.innerWidth; view.cssH = window.innerHeight;
+  const ratio = view.cssH / view.cssW;
+  if (ratio >= FULL_H / FULL_W) { view.bw = FULL_W; view.bh = Math.round(FULL_W * ratio); }
+  else { view.bh = FULL_H; view.bw = Math.round(FULL_H / ratio); }
+  cv.width = view.bw; cv.height = view.bh;
+  ctx.imageSmoothingEnabled = false;
+  const st = getComputedStyle(document.getElementById("safe"));
+  const k = view.bh / view.cssH;
+  view.top = (parseFloat(st.paddingTop) || 0) * k;
+  view.bottom = (parseFloat(st.paddingBottom) || 0) * k;
+  clampView();
+}
+window.addEventListener("resize", resize);
+
+const pointers = new Map();
+let tapStart = null, pinch = null, lastTap = { t: -1000, x: 0, y: 0 }, rightDrag = false;
+const TAP_MOVE = 8;
+const toBase = e => [e.clientX * view.bw / view.cssW, e.clientY * view.bh / view.cssH];
+function startPinch() {
+  const p = [...pointers.values()];
+  pinch = { d: Math.max(1, Math.hypot(p[0][0] - p[1][0], p[0][1] - p[1][1])), mx: (p[0][0] + p[1][0]) / 2, my: (p[0][1] + p[1][1]) / 2 };
+}
+cv.addEventListener("pointerdown", e => {
+  cv.setPointerCapture(e.pointerId);
+  requestWakeLock();
+  const p = toBase(e);
+  if (e.pointerType === "mouse" && e.button !== 0) { rightDrag = true; return; }
+  pointers.set(e.pointerId, p);
+  if (pointers.size === 1) tapStart = { x: p[0], y: p[1], t: performance.now(), moved: false };
+  else { tapStart = null; startPinch(); }
+});
+cv.addEventListener("pointermove", e => {
+  const p = toBase(e);
+  if (rightDrag) { view.x -= e.movementX * view.bw / view.cssW / view.z; view.y -= e.movementY * view.bh / view.cssH / view.z; clampView(); return; }
+  if (!pointers.has(e.pointerId)) return;
+  const old = pointers.get(e.pointerId);
+  pointers.set(e.pointerId, p);
+  if (pointers.size >= 2 && pinch) {
+    const q = [...pointers.values()];
+    const d = Math.max(1, Math.hypot(q[0][0] - q[1][0], q[0][1] - q[1][1])), mx = (q[0][0] + q[1][0]) / 2, my = (q[0][1] + q[1][1]) / 2;
+    const [ax, ay] = toWorld(pinch.mx, pinch.my);
+    view.z = clamp(view.z * d / pinch.d, minZoom(), 6);
+    view.x = ax - (mx - view.bw / 2) / view.z; view.y = ay - (my - view.bh / 2) / view.z;
+    clampView();
+    pinch = { d, mx, my };
+    return;
+  }
+  if (tapStart && !tapStart.moved && Math.hypot(p[0] - tapStart.x, p[1] - tapStart.y) > TAP_MOVE) tapStart.moved = true;
+  if (!tapStart || tapStart.moved) {
+    // ein Finger verschiebt die Ansicht
+    view.x -= (p[0] - old[0]) / view.z; view.y -= (p[1] - old[1]) / view.z;
+    clampView();
+  }
+});
+function endPointer(e) {
+  if (rightDrag && e.pointerType === "mouse") { rightDrag = false; return; }
+  if (!pointers.has(e.pointerId)) return;
+  pointers.delete(e.pointerId);
+  if (e.type === "pointerup" && tapStart && !tapStart.moved && pointers.size === 0 && performance.now() - tapStart.t < 450) onTap(tapStart.x, tapStart.y);
+  if (pointers.size >= 2) startPinch(); else pinch = null;
+  if (pointers.size === 0) tapStart = null;
+}
+cv.addEventListener("pointerup", endPointer);
+cv.addEventListener("pointercancel", endPointer);
+cv.addEventListener("contextmenu", e => e.preventDefault());
+cv.addEventListener("wheel", e => {
+  e.preventDefault();
+  const [x, y] = toBase(e);
+  zoomAt(view.z * (e.deltaY < 0 ? 1.15 : 1 / 1.15), x, y);
+}, { passive: false });
+document.addEventListener("gesturestart", e => e.preventDefault());
+
+function onTap(sx, sy) {
+  if (hud.handleTap(sx, sy)) return;
+  const now = performance.now();
+  if (now - lastTap.t < 320 && Math.hypot(sx - lastTap.x, sy - lastTap.y) < TAP_MOVE * 2) {
+    lastTap.t = -1000;
+    animateZoom(view.z < 3 * 0.8 ? 3 : minZoom(), sx, sy);
+    return;
+  }
+  lastTap = { t: now, x: sx, y: sy };
+  if (navigator.vibrate) try { navigator.vibrate(10); } catch (_) { }
+  const [wx, wy] = toWorld(sx, sy), x = Math.floor(wx / T), y = Math.floor(wy / T);
+  if (!inGrid(x, y)) return hud.hideInfo();
+  if (y >= G) {
+    for (let r = 0; r < 3; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      const ch = chamberAt(x + dx, y + dy);
+      if (ch && isTunnel(x + dx, y + dy)) { const info = colony.chamberInfo(ch); return hud.showInfo(info[0], info[1], ch); }
+    }
+    if (isTunnel(x, y)) return hud.showInfo("GANG", ["AMEISEN: " + ants.count, "SOLDATEN: " + ants.countRole(R_SOLDIER), "GRABEN: " + ants.countState(S_DIG)], 0);
+    return hud.showInfo("ERDE", ["SCHICHT " + (layerOf(y) + 1), "TIEFE: " + (y - G)], 0);
+  }
+  for (const s of world.sources) if (Math.abs(s.trunk - x) <= s.r && y >= s.cy - s.r) {
+    return hud.showInfo(s.kind === 0 ? "BAUM" : "BUSCH", ["FRÜCHTE: " + s.fruits.filter(f => f.alive).length, "SAMMLER: " + ants.countState(S_FORAGE)], 0);
+  }
+  hud.hideInfo();
+}
+
+let wakeLock = null;
+async function requestWakeLock() {
+  if (wakeLock || !navigator.wakeLock) return;
+  try { wakeLock = await navigator.wakeLock.request("screen"); wakeLock.addEventListener("release", () => { wakeLock = null; }); } catch (_) { }
+}
+
+// =====================================================================
+// SPIEL: Takt, Zeichnen, Speichern
+// =====================================================================
+const game = { paused: false, speed: 1, deadT: -1, saveT: 0 };
+
+function newGame() {
+  newWorld(Math.floor(rand() * 1e6) + 1);
+  phero.clear();
+  colony.newColony();
+  ants.clear();
+  events.reset();
+  ants.spawn(ENT, 54, R_QUEEN);
+  const cells = world.chamberCells[CH_QUEEN];
+  for (let k = 0; k < 5; k++) { const c = cells[Math.floor(rand() * cells.length)]; ants.spawn(c % W, Math.floor(c / W), R_WORKER, rf(0, 60)); }
+  game.deadT = -1;
+  hud.banner("EINE NEUE KOLONIE", 3);
+}
+
+function b64(u8) { let s = ""; for (let i = 0; i < u8.length; i += 4096) s += String.fromCharCode.apply(null, u8.subarray(i, i + 4096)); return btoa(s); }
+function unb64(s) { const b = atob(s), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; }
+function serialize() {
+  const a = [];
+  for (let i = 0; i < ants.count; i++) a.push([ants.cx[i], ants.cy[i], ants.role[i], Math.round(ants.age[i]), Math.round(ants.maxAge[i])]);
+  return {
+    v: 1, seed: world.seed, cells: b64(world.cells), chamber: b64(world.chamber), mound: Array.from(world.mound, v => +v.toFixed(2)),
+    fruits: world.sources.flatMap(s => s.fruits.map(f => [f.alive ? 1 : 0, +f.t.toFixed(1)])),
+    colony: {
+      food: colony.food, brood: colony.brood, corpses: colony.corpses, trashWaiting: colony.trashWaiting, trashStored: colony.trashStored,
+      buried: colony.buried, eggsLaid: colony.eggsLaid, born: colony.born, died: colony.died, delivered: colony.delivered,
+      queenAlive: colony.queenAlive, expansions: colony.expansions, starve: colony.starve, plan: colony.plan,
+    },
+    ants: a, time: events.time, day: events.day, nextFlood: events.nextFlood, nextCent: events.nextCent,
+    view: [view.x, view.y, view.z], speed: game.speed,
+  };
+}
+function deserialize(d) {
+  if (!d || d.v !== 1) return false;
+  const c = unb64(d.cells), ch = unb64(d.chamber);
+  if (c.length !== W * H || ch.length !== W * H) return false;
+  world.seed = d.seed; world.cells.set(c); world.chamber.set(ch);
+  world.mound.fill(0); (d.mound || []).forEach((v, x) => { if (x < W) world.mound[x] = v; });
+  generateSources();
+  let k = 0;
+  for (const s of world.sources) for (const f of s.fruits) { const q = d.fruits[k++]; if (q) { f.alive = q[0] === 1; f.t = q[1]; } }
+  resetRuntime(); rebuildTiles();
+  phero.clear();
+  Object.assign(colony, d.colony, { surfaceCorpses: [], jobsDirty: true, decorDirty: true });
+  ants.clear();
+  for (const q of d.ants) { const i = ants.spawn(q[0], q[1], q[2], q[3]); if (i >= 0) ants.maxAge[i] = q[4]; }
+  events.reset();
+  Object.assign(events, { time: d.time, day: d.day, nextFlood: d.nextFlood, nextCent: d.nextCent });
+  if (d.view) { view.x = d.view[0]; view.y = d.view[1]; view.z = d.view[2]; }
+  game.speed = d.speed || 1;
+  clampView();
+  return ants.count > 0;
+}
+function save() {
+  if (!ants.count) return;
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(serialize())); } catch (_) { }
+}
+function loadLocal() {
+  try { const s = localStorage.getItem(SAVE_KEY); return s ? deserialize(JSON.parse(s)) : false; } catch (_) { return false; }
+}
+document.addEventListener("visibilitychange", () => { if (document.hidden) save(); });
+window.addEventListener("pagehide", save);
+
+function step(dt) {
+  events.tick(dt); colony.tick(dt); ants.tick(dt); worldTick(dt); phero.tick();
+}
+function render() {
+  const g = worldG;
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.clearRect(0, 0, FULL_W, FULL_H);
+  g.drawImage(skyC, FRAME, FRAME);
+  if (groundDirty) { groundG.putImageData(groundImg, 0, 0); groundDirty = false; }
+  g.drawImage(groundC, FRAME, FRAME);
+  g.drawImage(decorC, FRAME, FRAME);
+  g.drawImage(pheroC, 0, 0, W, G, FRAME, FRAME, WPX, G * T);
+  ants.draw(g);
+  if (world.waterShown || world.wet) g.drawImage(waterC, 0, 0, W, H, FRAME, FRAME, WPX, HPX);
+  events.draw(g);
+  g.drawImage(frameC, 0, 0);
+  // Tag und Nacht: Farbe über die ganze Szene legen
+  const c = events.light();
+  if (c[0] < 0.999 || c[1] < 0.999 || c[2] < 0.999) {
+    g.globalCompositeOperation = "multiply";
+    g.fillStyle = css(c); g.fillRect(0, 0, FULL_W, FULL_H);
+    g.globalCompositeOperation = "source-over";
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = "#0f2a19"; ctx.fillRect(0, 0, view.bw, view.bh);
+  ctx.imageSmoothingEnabled = false;
+  const z = view.z;
+  ctx.setTransform(z, 0, 0, z, Math.round(view.bw / 2 - (view.x + FRAME) * z), Math.round(view.bh / 2 - (view.y + FRAME) * z));
+  ctx.drawImage(worldC, 0, 0);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  hud.draw(ctx, view.bw, view.bh, view.top, view.bottom);
+}
+
+let last = performance.now(), acc = 0;
+function frame(now) {
+  let dt = Math.min((now - last) / 1000, 0.1);
+  last = now;
+  if (zoomAnim) {
+    zoomAnim.t = Math.min(1, zoomAnim.t + dt / 0.22);
+    const e = 1 - (1 - zoomAnim.t) ** 2;
+    zoomAt(zoomAnim.from + (zoomAnim.to - zoomAnim.from) * e, zoomAnim.sx, zoomAnim.sy);
+    if (zoomAnim.t >= 1) zoomAnim = null;
+  }
+  // feste Schritte von 1/60 s, bei 2x und 4x mehrere pro Frame
+  if (!game.paused) {
+    acc += dt * game.speed;
+    let n = 0;
+    while (acc >= 1 / 60 && n < 12) { step(1 / 60); acc -= 1 / 60; n++; }
+    if (n === 12) acc = 0;
+  }
+  sky.tick(dt); decor.tick(dt); hud.tick(dt);
+  if (ants.count === 0) {
+    if (game.deadT < 0) { game.deadT = 0; hud.banner("DIE KOLONIE IST AUSGESTORBEN", 6); }
+    game.deadT += dt;
+    if (game.deadT > 6) { try { localStorage.removeItem(SAVE_KEY); } catch (_) { } newGame(); }
+  }
+  game.saveT += dt;
+  if (game.saveT > 30) { game.saveT = 0; save(); }
+  render();
+  requestAnimationFrame(frame);
+}
+
+function start(data) {
+  buildAtlas(); buildAntAtlas(); drawFrame(); resize();
+  if (!(data && data.save && deserialize(data.save)) && !loadLocal()) newGame();
+  window.claude?.hot?.snapshot?.(() => ({ save: serialize() }));
+  last = performance.now();
+  requestAnimationFrame(frame);
+}
+window.claude?.hot?.ready ? window.claude.hot.ready(start) : start(window.claude?.hot?.data ?? {});
+</script>

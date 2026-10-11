@@ -10,6 +10,10 @@ Das Spiel läuft auf iPhone, Android, Tablet und PC. Die Basisauflösung ist 270
 2. Wähle Importieren und dann `ameisen/project.godot`.
 3. Drück F5. Die Hauptszene ist `scenes/Main.tscn`.
 
+## Im Browser spielen
+
+`web/AntPop.html` ist eine Browser-Version mit derselben Logik und Grafik, geschrieben in JavaScript. Sie läuft auf dem iPhone in Safari ohne Installation. Der Spielstand liegt dort im Speicher des Browsers.
+
 ## Bedienung
 
 Tippe auf eine Kammer, und unten erscheint ihr Name mit Inhalt. Zieh zwei Finger auseinander, um zu zoomen. Schieb zwei Finger, um die Ansicht zu verschieben.
