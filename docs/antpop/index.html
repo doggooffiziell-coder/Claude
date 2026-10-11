@@ -845,6 +845,8 @@ const DEFAULT_SETTINGS = { diff: 1, founders: 5, day: 1, floods: true, birds: tr
 // Tempo "Natürlich": Brut braucht viel länger, Ameisen leben viel länger
 const TEMPO_K = [1, 12];
 const tempoK = () => TEMPO_K[settings.tempo] || 1;
+// im Tempo "Natürlich" wächst die Kolonie langsam, darum kommen Vogel und Flut seltener
+const dangerK = () => settings.tempo ? 3 : 1;
 const settings = { ...DEFAULT_SETTINGS };
 const diff = () => DIFFS[settings.diff] || DIFFS[1];
 // Ameisenarten: Farben für die Sprites und Eigenheiten im Spiel
@@ -2512,8 +2514,9 @@ const ants = {
       const mc = this.cy[i] * W + this.cx[i];
       if (world.mold[mc] > 0.4 && !queen) { this.hp[i] -= dt * 0.006 * world.mold[mc]; this.fatigue[i] += dt * 0.01; if (this.hp[i] <= 0) { this.requestKill(i, true, "ist an Schimmel erkrankt und gestorben"); continue; } }
       // Wasser in tiefen Gängen ertränkt Ameisen
-      if (wet && waterAt(this.cx[i], this.cy[i]) > 0.55) {
-        this.hp[i] -= dt * (queen ? 0.05 : 0.7);
+      // die Königin überlebt in einer Luftblase, wie echte Königinnen bei Hochwasser
+      if (wet && !queen && waterAt(this.cx[i], this.cy[i]) > 0.55) {
+        this.hp[i] -= dt * 0.7;
         if (this.hp[i] <= 0) { this.requestKill(i, true, "ist in der Flut ertrunken"); continue; }
       }
       // Alarm: Arbeiterinnen fliehen, Soldatinnen eilen herbei
@@ -3490,7 +3493,7 @@ const events = {
   bird: null, nextBird: 0, nextBeetle: 0, fruitT: 0, flyers: [], drainLogged: false, roofT: 0,
   reset() {
     this.raining = false; this.centActive = false; this.drops = []; this.flyers = []; this.roofT = 0;
-    this.nextFlood = rf(300, 450) * diff().flood; this.nextCent = rf(200, 320); this.bird = null; this.nextBird = rf(160, 260) * diff().bird; this.nextBeetle = rf(90, 180);
+    this.nextFlood = rf(300, 450) * diff().flood * dangerK(); this.nextCent = rf(200, 320); this.bird = null; this.nextBird = rf(160, 260) * diff().bird * dangerK(); this.nextBeetle = rf(90, 180);
   },
   daylight() { return clamp(0.5 - 0.5 * Math.cos(this.time * Math.PI * 2), 0, 1); },
   isNight() { return this.daylight() < 0.2; },
@@ -3548,7 +3551,7 @@ const events = {
       d[1] += 170 * dt; d[0] -= 20 * dt;
       if (d[1] > G * T - 2) { d[0] = rf(0, WPX + 20); d[1] = rf(-20, 0); }
     }
-    if (this.rainT <= 0) { this.raining = false; this.drops = []; this.nextFlood = rf(220, 420) * diff().flood; }
+    if (this.rainT <= 0) { this.raining = false; this.drops = []; this.nextFlood = rf(220, 420) * diff().flood * dangerK(); }
   },
   startFlood() {
     // im Winter fällt Schnee statt Regen, das flutet nichts
@@ -3652,7 +3655,7 @@ const events = {
         if (inNest(ants.cx[i], ants.cy[i]) || ants.role[i] === R_QUEEN || toolFx.guarded(ants.px[i])) continue;
         if (Math.abs(ants.px[i] - b.x - b.vx * 0.4) < 6 && rand() < 0.5) { b.mode = 1; b.target = ants.id[i]; break; }
       }
-      if (b.x < -20 || b.x > WPX + 20) { this.bird = null; this.nextBird = rf(140, 260) * diff().bird; }
+      if (b.x < -20 || b.x > WPX + 20) { this.bird = null; this.nextBird = rf(140, 260) * diff().bird * dangerK(); }
     } else if (b.mode === 1) {
       const i = ants.indexOfId(b.target);
       if (i < 0 || inNest(ants.cx[i], ants.cy[i])) { b.mode = 2; return; }
@@ -3672,7 +3675,7 @@ const events = {
       b.x += dx / d * 55 * dt; b.y += dy / d * 55 * dt;
     } else {
       b.y -= 30 * dt; b.x += b.vx * dt;
-      if (b.y < -15 || b.x < -20 || b.x > WPX + 20) { this.bird = null; this.nextBird = rf(140, 260) * diff().bird; }
+      if (b.y < -15 || b.x < -20 || b.x > WPX + 20) { this.bird = null; this.nextBird = rf(140, 260) * diff().bird * dangerK(); }
     }
   },
   // Fallobst, tote Käfer und Verderben an der Oberfläche
@@ -3920,7 +3923,7 @@ const neighbors = {
   found(kind, opts = {}) {
     const x = this.findSpot(kind === "rival" ? -sign(opts.prefer || 1) : (opts.prefer || 1));
     if (x < 0) return null;
-    const n = Object.assign({ id: this.nextId++, kind, x, pop: kind === "rival" ? 12 : 1, stock: kind === "rival" ? [1, 1, 3, 3, 4, 6] : [4, 4], brood: [], reserve: kind === "rival" ? 0 : 4, agents: [], inside: [], raidCd: 300, growT: 0,
+    const n = Object.assign({ id: this.nextId++, kind, x, pop: kind === "rival" ? 8 : 1, stock: kind === "rival" ? [1, 1, 3, 3, 4, 6] : [4, 4], brood: [], reserve: kind === "rival" ? 0 : 4, agents: [], inside: [], raidCd: 300, growT: 0,
       name: COLONY_NAMES[ri(0, COLONY_NAMES.length - 1)], queen: QUEEN_NAMES[ri(0, QUEEN_NAMES.length - 1)] }, opts.data || {});
     this.list.push(n);
     this.carve(n);
@@ -3952,7 +3955,7 @@ const neighbors = {
         const need = [14, 22, 12][b.s];
         if (b.t >= need) { b.t = 0; b.s++; if (b.s > 2) { n.brood.splice(k, 1); n.pop++; } }
       }
-      const cap = n.kind === "rival" ? 40 : 30;
+      const cap = n.kind === "rival" ? this.rivalCap() : 30;
       if (n.growT > 10) {
         n.growT = 0;
         // ein Ei kostet 5 Futter, jedes Tier isst etwas, ohne Futter schrumpft die Kolonie
@@ -3979,7 +3982,7 @@ const neighbors = {
       // Raubzug: eine starke Rivalin schickt Kämpferinnen ins Nest, um Futter und Puppen zu stehlen
       if (n.kind === "rival") {
         n.raidCd -= dt;
-        if (n.raidCd <= 0 && day && n.pop > 18 && n.pop > ants.count * 0.6) {
+        if (n.raidCd <= 0 && day && !this.calm() && n.pop > 18 && n.pop > ants.count * 0.6) {
           n.raidCd = rf(320, 520);
           const k = Math.min(4, 2 + Math.floor(n.pop / 15));
           for (let r = 0; r < k; r++) { const a = this.agent(n, true); a.delay = r * 0.8; n.agents.push(a); }
@@ -3991,6 +3994,10 @@ const neighbors = {
     }
     this.fights(dt);
   },
+  // eine kleine Kolonie wird in Ruhe gelassen, bis sie 15 Ameisen hat
+  calm() { return ants.count < 15; },
+  // die fremde Kolonie wächst nur mit eurer mit: anfangs klein, höchstens 40
+  rivalCap() { return Math.round(clamp(10 + ants.count * 0.5, 10, 40)); },
   agent(n, raid) {
     return { x: n.x * T + 1.5, y: SURF * T + 1.5, cx: n.x, cy: SURF, tx: n.x, ty: SURF, state: raid ? 10 : 0, dir: n.x < ENT ? 1 : -1, t: 0,
       carry: C_NONE, raid, soldier: raid || rand() < 0.25, hp: raid ? 2 : 1, wait: 0, delay: 0, anim: rand() * 4, under: false, face: 0 };
@@ -4083,11 +4090,13 @@ const neighbors = {
       if (n.kind !== "rival") continue;
       for (let k = n.agents.length - 1; k >= 0; k--) {
         const a = n.agents[k];
-        if (a.delay > 0) continue;
+        if (a.delay > 0 || a.wait > 0) continue;
         for (let i = 0; i < ants.count; i++) {
           if (ants.role[i] === R_QUEEN || ants.role[i] === R_REPLETE || Math.abs(ants.cx[i] - a.cx) > 1 || Math.abs(ants.cy[i] - a.cy) > 1 || inNest(ants.cx[i], ants.cy[i]) !== a.under) continue;
           // Arbeiterinnen weichen meist aus, Soldatinnen und Räuberinnen suchen den Kampf
           const soldier = ants.role[i] === R_SOLDIER;
+          // Schonzeit: solange eure Kolonie klein ist, gehen fremde Sammlerinnen euren Arbeiterinnen aus dem Weg
+          if (!soldier && !a.raid && this.calm()) continue;
           if (rand() > (soldier || a.raid ? 0.6 : 0.15)) continue;
           const ours = soldier ? 0.7 : 0.32, theirs = a.soldier ? 0.6 : 0.45;
           ants.tx[i] = ants.cx[i]; ants.ty[i] = ants.cy[i]; ants.timer[i] = 0.8; ants.doing[i] = D_FIGHT;
@@ -4197,7 +4206,7 @@ const neighbors = {
     const rows = [["Ameisen", n.pop], ["Davon unterwegs", n.agents.filter(q => !q.raid).length], ["Eier / Larven / Puppen", st.join(" / ")], ["Königin", n.queen]];
     for (const k in kinds) rows.push([FOOD_NAMES[k], kinds[k]]);
     if (!n.stock.length) rows.push(["Vorrat", "leer"]);
-    if (n.kind === "rival") rows.push(["Nächster Raubzug", n.pop > 18 ? (n.raidCd < 60 ? "bald" : "später") : "zu schwach"]);
+    if (n.kind === "rival") rows.push(["Nächster Raubzug", this.calm() ? "friedlich, solange ihr unter 15 Ameisen seid" : n.pop > 18 ? (n.raidCd < 60 ? "bald" : "später") : "zu schwach"]);
     return [n.kind === "rival" ? `Fremde Kolonie ${n.name}` : `Tochterkolonie ${n.name}`, rows,
       n.kind === "rival" ? "Eine fremde Art. Sie sammelt an denselben Bäumen, kämpft um Futter und schickt Räuberinnen in euer Nest. Gestohlene Puppen schlüpfen bei ihr." :
       "Gegründet von einer eurer Prinzessinnen. Sie lebt friedlich nebenan und wächst mit eigenem Futter."];
