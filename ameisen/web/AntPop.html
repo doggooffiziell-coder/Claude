@@ -1360,6 +1360,22 @@ function groundFoodAt(x) {
   for (const g of world.groundFood) if (g.n > 0 && Math.abs(g.x - x) <= 1 && (g.kind !== "leaves" || colony.wantLeaves)) return g;
   return null;
 }
+// Ameisen riechen Futter: liefert die Richtung zur nächsten Quelle im Umkreis, sonst 0
+const SMELL = 14;
+function smellFood(x) {
+  let best = 0, bd = SMELL + 1;
+  for (const g of world.groundFood) {
+    if (g.n <= 0 || (g.kind === "leaves" && !colony.wantLeaves)) continue;
+    const d = Math.abs(g.x - x);
+    if (d > 0 && d < bd) { bd = d; best = sign(g.x - x); }
+  }
+  for (const s of world.sources) {
+    if (!(hasFruit(world.sources.indexOf(s)) || (s.kind === 1 && colony.wantLeaves))) continue;
+    const d = Math.abs(s.trunk - x);
+    if (d > 0 && d < bd) { bd = d; best = sign(s.trunk - x); }
+  }
+  return best;
+}
 function addGroundFood(x, n, kind) {
   x = clamp(Math.round(x), 2, W - 3);
   const g = world.groundFood.find(q => q.kind === kind && Math.abs(q.x - x) <= 1);
@@ -2040,7 +2056,10 @@ const colony = {
     ];
     const doing = [c.byState[S_DIG], c.byState[S_FORAGE] + c.byState[S_CARRY], c.byState[S_NURSE], c.byState[S_CLEAN]];
     for (let k = 0; k < 4; k++) this.stim[k] = clamp((demand[k] - doing[k]) / (demand[k] + 1) * 1.3, 0, 1);
-    this.starving = this.foodTotal === 0 && this.honey === 0 && pop > 1;
+    // kurze Lücken im Vorrat sind normal, gemeldet wird erst echter Hunger
+    const empty = this.foodTotal === 0 && this.honey === 0 && pop > 1;
+    this.emptyT = empty ? (this.emptyT || 0) + 1 : 0;
+    this.starving = this.emptyT >= 8;
   },
   // ---- Hochzeitsflug: an einem warmen, trockenen Tag fliegen alle Geflügelten zugleich aus
   tickSwarm(dt) {
@@ -2719,6 +2738,7 @@ const Ant = {
       case 1: {
         if (ants.wt[i] > 60 || ants.energy[i] < 0.25) { ants.setState(i, S_IDLE); return this.idle(i); }
         const x = ants.cx[i];
+        let s = 0;
         const g = groundFoodAt(x);
         if (g) {
           g.n--;
@@ -2744,7 +2764,10 @@ const Ant = {
           if (!hasFruit(si)) ants.trail[i] = -10;
         }
         if (ants.trail[i] < 0) ants.trail[i] += 1;
-        else {
+        else if (rand() < 0.6 && (s = smellFood(x)) !== 0) {
+          // Duft von reifem Obst oder Futter im Gras: direkt darauf zu
+          ants.dir[i] = s;
+        } else {
           const far = phero.sense(x, SURF, 6);
           if (far[0] + far[1] > 0.08) {
             const near = phero.sense(x, SURF, 2);

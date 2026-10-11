@@ -19,6 +19,7 @@ Das Spiel läuft auf iPhone, Android, Tablet und PC. Die Basisauflösung ist 270
 - Jede Ameise lebt eigenständig. Sie hat einen Namen, eigene Vorlieben für Arbeiten, Hunger, Müdigkeit und ein Alter. Junge Ameisen pflegen lieber die Brut, ältere gehen lieber hinaus. Was eine Ameise oft tut, fällt ihr leichter.
 - Es gibt keinen festen Bauplan. Wenn die Kolonie Platz für Futter, Brut, Tote oder Abfall braucht, wählen die Ameisen einen passenden Ort, graben einen Verbindungsgang und heben die Kammer gemeinsam aus. Danach bringen sie alles an den richtigen Ort: Futter in die Kornkammer, Eier in die Brutkammer, Tote auf den Friedhof, Abfall in die Müllkammer.
 - Die Königin legt nur Eier, wenn sie gefüttert wird und genug Vorrat da ist. Eier werden zu Larven und Puppen. Ammen tragen die Brut in die Brutkammer und füttern die Larven.
+- Sammlerinnen riechen reife Äpfel, Futter im Gras und Büsche, deren Blätter gebraucht werden, auf etwa 4 cm Entfernung und laufen gezielt hin. Hunger meldet das Schild erst, wenn der Vorrat mehrere Sekunden lang leer ist.
 - An der Oberfläche fällt Obst von den Bäumen, tote Käfer liegen im Gras, und ein Vogel jagt Ameisen. Der Tausendfüßler ist vorerst abgeschaltet.
 - Wächst die Kolonie, bauen die Ameisen Sonderkammern:
   - Schlafkammer: Müde Ameisen erholen sich dort doppelt so schnell. Nachts steigen kleine Zs auf.
