@@ -31,7 +31,15 @@ Das Spiel läuft auf iPhone, Android, Tablet und PC. Die Basisauflösung ist 270
   - Prinzessinnenkammer: Ab 60 Ameisen zieht die Königin Prinzessinnen und Männchen mit Flügeln auf. An einem warmen, trockenen Tag klettern alle auf Grashalme und starten zum Hochzeitsflug.
 - Wird es eng, laufen die Ameisen in vollen Gängen langsamer. Dann verbreitern sie die meistbenutzten Gänge, graben neue Seitengänge und legen Abkürzungen an.
 - Das Kolonie-Panel zeigt alle Sonderkammern mit ihrem Zustand, die Zahl der Hochzeitsflüge und das Gedränge in den Gängen.
-- Tippe auf eine Ameise, um ihr zu folgen und ihren Steckbrief zu sehen. Das Schild öffnet das Kolonie-Panel mit Aufgabenverteilung, Verlauf und Chronik. Unten links streust du Zucker ins Gras.
+- Tippe auf eine Ameise, um ihr zu folgen und ihren Steckbrief zu sehen. Das Schild öffnet das Kolonie-Panel mit Aufgabenverteilung, Verlauf und Chronik.
+- Unten links liegt die Werkzeugkiste. Jedes Werkzeug braucht danach eine Pause:
+  - Zucker: 8 Portionen ins Gras, sie landen zuerst in den Honigtöpfen.
+  - Baum schütteln: Bis zu 3 Äpfel fallen ins Gras.
+  - Blätter: ein Haufen Blätter für den Pilzgarten.
+  - Windrad: Drei Minuten lang jagt der Vogel in seiner Nähe keine Ameisen.
+  - Blattdach: Vier Minuten lang läuft kein Regen in den Eingang.
+  - Wärme: Zwei Minuten lang reift die Brut in einer Kammer schneller, und Ruhende erholen sich schneller.
+- Die Bäume haben breite Stämme, ihre Wurzeln wachsen sichtbar aus dem Stammfuß in die Erde. Äpfel wachsen nur an den Bäumen, die Büsche liefern Blätter.
 
 Der Spielstand liegt dort im Speicher des Browsers.
 

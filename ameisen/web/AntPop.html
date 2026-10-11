@@ -342,6 +342,25 @@
   .tools button.on { background: #6d5420; border-color: var(--brass); }
   .tools svg { width: 26px; height: 26px; }
   .tools .cd { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: rgba(0,0,0,0.45); }
+  .toolmenu {
+    position: absolute; left: 0; bottom: 62px; width: 236px;
+    display: grid; gap: 6px; padding: 8px;
+    background: rgba(20, 45, 28, 0.97); border: 2px solid var(--board-light); clip-path: var(--notch);
+    box-shadow: 0 10px 28px rgba(0,0,0,0.45); pointer-events: auto;
+    animation: rise2 0.18s ease-out;
+  }
+  .toolmenu[hidden] { display: none; }
+  .tools .toolmenu button {
+    width: 100%; height: auto; min-height: 50px; display: grid; grid-template-columns: 34px 1fr; column-gap: 10px; align-items: center;
+    padding: 4px 10px 4px 6px; text-align: left; place-items: initial; font: inherit; color: var(--cream);
+  }
+  .toolmenu .tname { font-size: 21px; line-height: 1; }
+  .toolmenu .tdesc { grid-column: 2; font-size: 15px; color: var(--cream-dim); line-height: 1.1; }
+  .toolmenu .ticon, .tools .ticon { width: 30px; height: 30px; display: grid; place-items: center; grid-row: span 2; }
+  .toolmenu .ticon svg, .tools .ticon svg { width: 28px; height: 28px; }
+  .toolmenu button[aria-disabled="true"] { opacity: 0.55; }
+  .toolmenu button .cd { z-index: 0; }
+  .toolmenu button > * { position: relative; z-index: 1; }
   .tools .label { position: absolute; left: 60px; bottom: 14px; font-size: 18px; color: var(--cream); white-space: nowrap; text-shadow: 0 2px 0 rgba(0,0,0,0.6); pointer-events: none; }
 
   /* Ladebildschirm und Hauptmenü */
@@ -518,10 +537,8 @@
     <p class="note">Die Kolonie wird gespeichert. Im Hauptmenü gründest du auch eine neue.</p>
   </div>
   <div class="tools">
-    <button id="btnFeed" type="button" aria-label="Zucker streuen" aria-pressed="false">
-      <svg viewBox="0 0 13 13" aria-hidden="true" shape-rendering="crispEdges"><rect x="2" y="5" width="9" height="7" fill="#e6e9ef"/><rect x="2" y="5" width="9" height="1" fill="#ffffff"/><rect x="10" y="6" width="1" height="6" fill="#b9bfca"/><rect x="5" y="1" width="3" height="3" fill="#ffffff"/><rect x="7" y="3" width="1" height="1" fill="#b9bfca"/></svg>
-      <span class="cd" id="feedCd"></span>
-    </button>
+    <div class="toolmenu" id="toolMenu" hidden role="menu" aria-label="Werkzeuge"></div>
+    <button id="btnTools" type="button" aria-label="Werkzeuge" aria-expanded="false"><span class="ticon" id="toolIcon"></span><span class="cd" id="toolCd"></span></button>
   </div>
   <div class="controls">
     <button id="btnPause" type="button" aria-label="Pause"></button>
@@ -841,6 +858,16 @@ function buildSoil() {
       }
     }
   }
+  // Wurzelansatz: der Stamm geht im Boden breit in die Wurzeln über
+  for (const s of world.sources) if (s.kind === 0) {
+    const bx = s.trunk * T + 1.5, by = G * T;
+    for (let k = 0; k < 8; k++) {
+      const w = 5.7 - k * 0.6, y = by + k * 0.5;
+      P.fill(css(darken(ROOT, 0.35))).rect(bx - w + 0.5, y, w * 2, 0.5);
+      P.fill(css(ROOT)).rect(bx - w + 0.5, y, w * 2 - 1, 0.5);
+      P.fill(css(lighten(ROOT, 0.25))).rect(bx - w + 0.5, y, 0.5, 0.5);
+    }
+  }
   // feine Haarwurzeln an den Spitzen
   P.fill(css(lighten(ROOT, 0.1)));
   for (const rt of world.roots) {
@@ -958,7 +985,7 @@ function newWorld(seed) {
   world.chamber.fill(0); world.mound.fill(0);
   world.food.fill(0); world.corpses.fill(0); world.trash.fill(0); world.roomOf.fill(-1);
   world.leaf.fill(0); world.fgrow.fill(0); world.traffic.fill(0); world.doneTypes.fill(0);
-  world.groundFood = []; world.rooms = [];
+  world.groundFood = []; world.rooms = []; world.pinwheels = []; world.falling = [];
   generateSources();
 }
 function generateSources() {
@@ -979,12 +1006,9 @@ function generateSources() {
     world.sources.push(s);
   }
   for (const bx of [15, 33, 70]) {
+    // Büsche tragen keine Früchte, ihre Blätter holen sich die Blattschneiderinnen
     const s = { kind: 1, trunk: bx, cx: bx, cy: SURF - 3, r: 4, fruits: [], blobs: [] };
     for (let b = 0; b < 5; b++) s.blobs.push([r.rf(-3, 3), r.rf(-1.5, 1), r.rf(2, 3.2), r.ri(0, 2)]);
-    for (let f = 0; f < 4; f++) {
-      const bl = s.blobs[r.ri(0, s.blobs.length - 1)];
-      s.fruits.push({ x: clamp(Math.round(bx + bl[0] * 0.8), 1, W - 2), y: clamp(Math.round(SURF - 2 + bl[1] - r() * 1.2), SURF - 5, SURF - 2), alive: true, t: 0 });
-    }
     world.sources.push(s);
   }
   world.sources.forEach((s, i) => world.byTrunk.set(s.trunk, i));
@@ -1003,8 +1027,10 @@ function generateSources() {
     if (depth === 0) world.rootTips.push([clamp(Math.round(x / T), 6, W - 7), Math.round(y / T)]);
   };
   for (const s of world.sources) if (s.kind === 0) {
+    // die Hauptwurzeln setzen am Stammfuß an: links, rechts und eine Pfahlwurzel in der Mitte
     const bx = s.trunk * T + 1.5, by = G * T;
-    for (const a of [Math.PI * 0.62, Math.PI * 0.38, Math.PI * 0.5]) grow(bx + Math.cos(a) * 2, by, a, r.ri(16, 30), 1.4, 0);
+    for (const [off, a, w] of [[-4.2, Math.PI * 0.72, 1.7], [4.2, Math.PI * 0.28, 1.7], [0, Math.PI * 0.5, 2], [-2, Math.PI * 0.6, 1.2], [2, Math.PI * 0.4, 1.2]])
+      grow(bx + off, by, a, r.ri(14, 28), w, 0);
   }
 }
 
@@ -1277,7 +1303,8 @@ function roomProgress(r) {
 
 // ---- Futter an der Oberfläche: Fallobst, tote Käfer, Zucker
 function groundFoodAt(x) {
-  for (const g of world.groundFood) if (g.n > 0 && Math.abs(g.x - x) <= 1) return g;
+  // Blätter holen die Ameisen nur, wenn ein Pilzgarten sie braucht
+  for (const g of world.groundFood) if (g.n > 0 && Math.abs(g.x - x) <= 1 && (g.kind !== "leaves" || colony.wantLeaves)) return g;
   return null;
 }
 function addGroundFood(x, n, kind) {
@@ -1327,7 +1354,7 @@ function addRain(amount) {
   const w = world.water;
   for (let k = 0; k < 8; k++) { const i = idx(ri(1, W - 2), SURF); w[i] = Math.min(1, w[i] + amount); }
   const e = idx(ENT, SURF);
-  w[e] = Math.min(1, w[e] + amount * 1.5);
+  if (!(events.roofT > 0)) w[e] = Math.min(1, w[e] + amount * 1.5);
   world.wet = true;
 }
 const waterAt = (x, y) => inGrid(x, y) ? world.water[idx(x, y)] : 0;
@@ -1346,7 +1373,8 @@ function waterStep() {
       // der Drainage-Schacht lässt Wasser im Boden versickern
       if (world.chamber[i] === CH_DRAIN && cells[i] === TUNNEL) { v -= 0.035; drainedWater += 0.035; }
       if (v <= 0) { w[i] = 0; continue; }
-      if (y + 1 < H && cells[i + W] !== SOIL) {
+      // unter dem Blattdach läuft kein Regen in den Eingang
+      if (y + 1 < H && cells[i + W] !== SOIL && !(y === SURF && events.roofT > 0 && Math.abs(x - ENT) <= 3)) {
         const b = w[i + W], fl = Math.min(v, 1 - b);
         if (fl > 0) { w[i + W] = b + fl; v -= fl; }
       }
@@ -1809,17 +1837,17 @@ const colony = {
       const b = this.brood[k];
       b.age += dt;
       if (b.carried) continue;
-      if (b.s === 0) { b.t += dt; if (b.t >= EGG_T) { b.s = 1; b.t = 0; b.fed = 0.7; markItems(); } }
+      if (b.s === 0) { b.t += dt * (toolFx.warmAt(b.cell) ? 1.6 : 1); if (b.t >= EGG_T) { b.s = 1; b.t = 0; b.fed = 0.7; markItems(); } }
       else if (b.s === 1) {
         // königliche Larven brauchen mehr Futter und wachsen länger
         b.fed = Math.max(0, b.fed - 0.022 * dt * (b.royal ? 1.5 : 1));
-        if (b.fed > 0) b.t += dt; else { b.t += dt * 0.15; b.starve += dt; }
+        if (b.fed > 0) b.t += dt * (toolFx.warmAt(b.cell) ? 1.6 : 1); else { b.t += dt * 0.15; b.starve += dt; }
         if (b.fed < 0.5) fieldDirty[F_HUNGRY] = true;
         if (b.starve > 60) { this.brood.splice(k, 1); world.corpses[b.cell] = Math.min(9, world.corpses[b.cell] + 1); this.died++; markItems(); continue; }
         if (b.t >= LARVA_T * (b.royal ? 1.4 : 1)) { b.s = 2; b.t = 0; markItems(); }
       } else {
         // in der warmen Puppenkammer reifen Puppen schneller
-        b.t += dt * (roomType(b.cell) === CH_PUPA ? 1.7 : 1);
+        b.t += dt * (roomType(b.cell) === CH_PUPA ? 1.7 : 1) * (toolFx.warmAt(b.cell) ? 1.6 : 1);
         if (b.t >= PUPA_T * (b.royal ? 1.3 : 1)) { this.brood.splice(k, 1); this.hatch(b); markItems(); }
       }
     }
@@ -2090,7 +2118,8 @@ const ants = {
       this.energy[i] -= dt / (queen ? 280 : 210) * (resting ? (inBed ? 0.5 : 0.6) : 1) * hungerK;
       // Honigtöpfe zehren von ihrem eigenen Vorrat
       if (this.role[i] === R_REPLETE && this.energy[i] < 0.4 && this.load[i] > 0) { this.load[i]--; this.energy[i] = 1; }
-      if (!queen) this.fatigue[i] = clamp(this.fatigue[i] + (resting ? -dt / (inBed ? 10 : 22) : dt / 140), 0, 1.5);
+      const warm = resting && toolFx.warmAt(this.cy[i] * W + this.cx[i]) ? 1.5 : 1;
+      if (!queen) this.fatigue[i] = clamp(this.fatigue[i] + (resting ? -dt / (inBed ? 10 : 22) * warm : dt / 140), 0, 1.5);
       if (this.energy[i] <= 0) {
         this.energy[i] = 0;
         this.hp[i] -= dt * 0.025;
@@ -2567,7 +2596,7 @@ const Ant = {
         const g = groundFoodAt(x);
         if (g) {
           g.n--;
-          ants.tk[i] = x; ants.carry[i] = g.kind === "sugar" ? C_SUGAR : C_FOOD; ants.setState(i, S_CARRY); ants.trail[i] = 1;
+          ants.tk[i] = x; ants.carry[i] = g.kind === "sugar" ? C_SUGAR : (g.kind === "leaves" ? C_LEAF : C_FOOD); ants.setState(i, S_CARRY); ants.trail[i] = 1;
           return this.carryFood(i);
         }
         const si = sourceAt(x);
@@ -2944,9 +2973,9 @@ const events = {
   time: 0.3, day: 1, raining: false, rainT: 0, nextFlood: 0, drops: [],
   centActive: false, centFleeing: false, centX: 0, centY: 0, centHp: 0, angle: 0, life: 0, segs: [], nextCent: 0, eatCd: 0,
   targetX: 0, targetY: 0, targetT: 0, walk: 0,
-  bird: null, nextBird: 0, nextBeetle: 0, fruitT: 0, flyers: [], drainLogged: false,
+  bird: null, nextBird: 0, nextBeetle: 0, fruitT: 0, flyers: [], drainLogged: false, roofT: 0,
   reset() {
-    this.raining = false; this.centActive = false; this.drops = []; this.flyers = [];
+    this.raining = false; this.centActive = false; this.drops = []; this.flyers = []; this.roofT = 0;
     this.nextFlood = rf(300, 450) * diff().flood; this.nextCent = rf(200, 320); this.bird = null; this.nextBird = rf(160, 260) * diff().bird; this.nextBeetle = rf(90, 180);
   },
   daylight() { return clamp(0.5 - 0.5 * Math.cos(this.time * Math.PI * 2), 0, 1); },
@@ -3098,13 +3127,15 @@ const events = {
       }
       // Beute suchen: eine Ameise auf dem Boden unter dem Vogel
       for (let i = 0; i < ants.count; i++) {
-        if (ants.cy[i] > SURF || ants.role[i] === R_QUEEN) continue;
+        if (ants.cy[i] > SURF || ants.role[i] === R_QUEEN || toolFx.guarded(ants.px[i])) continue;
         if (Math.abs(ants.px[i] - b.x - b.vx * 0.4) < 6 && rand() < 0.5) { b.mode = 1; b.target = ants.id[i]; break; }
       }
       if (b.x < -20 || b.x > WPX + 20) { this.bird = null; this.nextBird = rf(140, 260) * diff().bird; }
     } else if (b.mode === 1) {
       const i = ants.indexOfId(b.target);
       if (i < 0 || ants.cy[i] > SURF) { b.mode = 2; return; }
+      // das Windrad blitzt, und der Vogel dreht ab
+      if (toolFx.guarded(ants.px[i])) { b.mode = 2; b.prey = false; return; }
       const dx = ants.px[i] - b.x, dy = ants.py[i] - 2 - b.y, d = Math.hypot(dx, dy);
       // eine Wächterin in der Nähe beißt zu, und der Vogel lässt ab
       for (let j = 0; j < ants.count; j++) {
@@ -3123,6 +3154,7 @@ const events = {
   },
   // Fallobst, tote Käfer und Verderben an der Oberfläche
   tickSurface(dt) {
+    toolFx.tick(dt);
     this.fruitT -= dt;
     if (this.fruitT <= 0) {
       this.fruitT = 1;
@@ -3147,7 +3179,7 @@ const events = {
     for (let k = world.groundFood.length - 1; k >= 0; k--) {
       const g = world.groundFood[k];
       g.t += dt;
-      const life = g.kind === "beetle" ? 420 : (g.kind === "sugar" ? 360 : (g.kind === "corpse" ? 60 : 200));
+      const life = g.kind === "beetle" ? 420 : (g.kind === "sugar" ? 360 : (g.kind === "corpse" ? 60 : (g.kind === "leaves" ? 300 : 200)));
       if (g.n <= 0 || g.t > life) world.groundFood.splice(k, 1);
     }
   },
@@ -3177,6 +3209,7 @@ const events = {
     }
   },
   draw(F) {
+    toolFx.draw();
     this.drawFlyers();
     this.drawBird(F);
     if (this.drops.length) {
@@ -3285,14 +3318,20 @@ const sky = {
   },
   tree(s) {
     const tx = s.trunk * T + 1.5, top = s.cy * T, gy = G * T;
-    // Stamm, unten breiter
+    // kräftiger Stamm mit Rinde, unten breit ausgestellt wie die Wurzeln darunter
+    const sh = s.shakeT > 0 ? Math.sin(s.shakeT * 40) * s.shakeT * 1.2 : 0;
     for (let y = top; y < gy; y += 0.5) {
-      const w = 1.9 + Math.max(0, (y - (gy - 6)) / 6) * 1.6;
-      P.fill(css(TRUNK)).rect(tx - w / 2, y, w, 0.5);
-      P.fill(css(TRUNK_DARK)).rect(tx + w / 2 - 0.5, y, 0.5, 0.5);
+      const flare = Math.max(0, (y - (gy - 8)) / 8);
+      const w = 5.5 + flare * flare * 6, lean = sh * (1 - (y - top) / (gy - top));
+      P.fill(css(TRUNK)).rect(tx - w / 2 + lean, y, w, 0.5);
+      P.fill(css(TRUNK_DARK)).rect(tx + w / 2 - 1 + lean, y, 1, 0.5);
+      P.fill(css(lighten(TRUNK, 0.18))).rect(tx - w / 2 + lean, y, 0.5, 0.5);
+      // Rindenfurchen
+      if (hash2(Math.floor(y * 2), s.trunk) % 5 === 0) P.fill(css(TRUNK_DARK)).rect(tx - 0.5 + ((hash2(s.trunk, Math.floor(y)) % 5) - 2) + lean, y, 0.5, 2);
     }
-    P.fill(css(TRUNK)); P.line(tx, top + 4, tx - 5, top - 2); P.line(tx, top + 6, tx + 6, top);
-    const cx = s.cx * T + 1.5, cy = s.cy * T;
+    P.fill(css(TRUNK));
+    for (let o = -1; o <= 1; o += 0.5) { P.line(tx + o + sh, top + 5, tx - 7 + o + sh, top - 2); P.line(tx + o + sh, top + 7, tx + 8 + o + sh, top); }
+    const cx = s.cx * T + 1.5 + sh, cy = s.cy * T;
     for (const pass of [0, 1, 2]) for (const b of s.blobs) {
       const bx = cx + b[0] * T, by = cy + b[1] * T, br = b[2] * T;
       if (pass === 0) P.fill(css(darken(LEAF[b[3]], 0.22))).disc(bx + 0.5, by + 1, br);
@@ -3303,7 +3342,7 @@ const sky = {
     // Blattstruktur
     P.fill(css(darken(LEAF[0], 0.3)));
     for (let k = 0; k < 26; k++) { const h = hash2(s.trunk, k); P.dot(cx + (h % 100) / 100 * s.r * T * 1.4 - s.r * T * 0.7, cy + ((h >> 8) % 100) / 100 * s.r * T * 1.0 - s.r * T * 0.5); }
-    this.fruits(s);
+    this.fruits(s, sh);
   },
   bush(s) {
     const cx = s.cx * T + 1.5, cy = (SURF - 2) * T;
@@ -3325,10 +3364,10 @@ const sky = {
       P.fill(css(LEAF_LIGHT, (a * 0.8).toFixed(2))).rect(x - 1, y - 1.2, 2, 0.5);
     }
   },
-  fruits(s) {
+  fruits(s, sh = 0) {
     for (const f of s.fruits) {
       if (!f.alive) continue;
-      const x = f.x * T + 1.5, y = f.y * T + 1.5;
+      const x = f.x * T + 1.5 + sh, y = f.y * T + 1.5;
       P.fill(css(TRUNK_DARK)).line(x, y - 1.2, x + 0.5, y - 2.2);
       P.fill("#9e1f18").disc(x + 0.2, y + 0.2, 1.45);
       P.fill("#d4352a").disc(x, y, 1.35);
@@ -3444,11 +3483,26 @@ const decor = {
         P.fill("#2c4a3a").ellipse(x, y - 0.6, 3.6 * s, 1.9 * s);
         P.fill("#1d2a24").disc(x + 3.6 * s, y - 0.4, 1.0 * s);
         P.fill("#5f8f74").rect(x - 1.5 * s, y - 1.9 * s, 2 * s, 0.5);
+      } else if (g.kind === "leaves") {
+        // Haufen frischer Blätter, schräg übereinander
+        for (let k = 0; k < Math.min(g.n, 6); k++) {
+          const h = hash2(k, g.x + 3), lx = x - 2.5 + (h % 6), ly = y - 0.3 - ((h >> 4) % 3) * 0.6;
+          P.fill(k % 2 ? "#4f8f3f" : "#62a84c").ellipse(lx, ly, 1.6, 0.7);
+          P.fill("#2f6328").rect(lx - 1.2, ly, 2.2, 0.5);
+        }
       } else this.deadAnt(x, y);
     }
   },
   // Einrichtung der Sonderkammern: Wurzeln mit Läusen, Kies, Schlafmulden, Honigflecken
   rooms() {
+    // gewärmte Kammern glühen leicht und flimmern
+    for (const r of world.rooms) if (r.warmT > 0 && r.done) {
+      const a = Math.min(1, r.warmT / 10) * (0.13 + Math.sin(blink * 3) * 0.04);
+      P.fill(`rgba(255,160,60,${a.toFixed(3)})`);
+      for (const i of r.cells) if (world.cells[i] === TUNNEL) P.rect((i % W) * T, Math.floor(i / W) * T, T, T);
+      P.fill("rgba(255,220,140,0.7)");
+      for (let k = 0; k < 4; k++) { const i = r.cells[(hash2(r.id, k) + Math.floor(blink * 2)) % r.cells.length], ph = (blink * 0.8 + k * 0.25) % 1; P.dot((i % W) * T + 1.5, Math.floor(i / W) * T + 2 - ph * 3); }
+    }
     for (const r of world.rooms) {
       if (!r.done || r.type < CH_FUNGUS) continue;
       if (r.type === CH_APHID) this.aphidRoom(r);
@@ -3588,8 +3642,7 @@ const hud = {
     $("btnPause").innerHTML = game.paused ? ICON_PLAY : ICON_PAUSE;
     $("btnPause").setAttribute("aria-label", game.paused ? "Weiter" : "Pause");
     $("btnSpeed").textContent = game.speed + "×";
-    $("btnFeed").classList.toggle("on", game.feedMode);
-    $("btnFeed").setAttribute("aria-pressed", game.feedMode ? "true" : "false");
+    if (typeof tools !== "undefined") tools.sync();
   },
   // ---- Steckbrief einer Ameise
   openAnt(i) {
@@ -3717,10 +3770,7 @@ const hud = {
     if (this.infoT > 0 && (this.infoT -= dt) <= 0) this.hideInfo();
     if (this.bannerT > 0 && (this.bannerT -= dt) <= 0) $("banner").hidden = true;
     if (this.hintT > 0 && (this.hintT -= dt) <= 0) $("hint").hidden = true;
-    if (game.feedCd > 0) {
-      game.feedCd = Math.max(0, game.feedCd - dt);
-      $("feedCd").style.height = Math.round(game.feedCd / 20 * 100) + "%";
-    }
+    if (typeof tools !== "undefined") tools.tick(dt);
     this.t -= dt;
     if (this.t > 0) return;
     this.t = 0.25;
@@ -3735,11 +3785,6 @@ const hud = {
 };
 $("btnPause").addEventListener("click", () => { game.paused = !game.paused; hud.updateButtons(); });
 $("btnSpeed").addEventListener("click", () => { game.speed = game.speed >= 4 ? 1 : game.speed * 2; hud.updateButtons(); });
-$("btnFeed").addEventListener("click", () => {
-  if (game.feedCd > 0 && !game.feedMode) return hud.banner("Der Zucker ist gleich wieder bereit", 2);
-  game.feedMode = !game.feedMode; hud.updateButtons();
-  if (game.feedMode) hud.banner("Tippe auf das Gras, um Zucker zu streuen", 3);
-});
 $("info").addEventListener("click", () => hud.hideInfo());
 $("hint").addEventListener("click", () => { $("hint").hidden = true; hud.hintT = 0; });
 $("sign").addEventListener("click", () => hud.panelOpen ? hud.closePanel() : hud.openPanel());
@@ -3849,6 +3894,199 @@ document.addEventListener("gesturestart", e => e.preventDefault());
 
 
 // =====================================================================
+// WERKZEUGE: so hilfst du der Kolonie, ohne die Ameisen zu steuern
+// =====================================================================
+const svgI = body => `<svg viewBox="0 0 13 13" aria-hidden="true" shape-rendering="crispEdges">${body}</svg>`;
+const TOOLS = [
+  { id: "sugar", name: "Zucker", desc: "8 Portionen ins Gras", cd: 20,
+    hint: "Tippe auf das Gras, um Zucker zu streuen",
+    icon: svgI('<rect x="2" y="5" width="9" height="7" fill="#e6e9ef"/><rect x="2" y="5" width="9" height="1" fill="#fff"/><rect x="10" y="6" width="1" height="6" fill="#b9bfca"/><rect x="5" y="1" width="3" height="3" fill="#fff"/><rect x="7" y="3" width="1" height="1" fill="#b9bfca"/>'),
+    use(x, y) {
+      if (!(y >= 2 && y <= G && x >= 1 && x < W - 1)) return "Tippe auf das Gras über der Erde";
+      addGroundFood(x, 8, "sugar");
+      return "Zucker liegt im Gras. Mal sehen, wer ihn findet";
+    } },
+  { id: "shake", name: "Baum schütteln", desc: "Äpfel fallen herunter", cd: 40,
+    hint: "Tippe auf einen Apfelbaum",
+    icon: svgI('<rect x="6" y="1" width="1" height="2" fill="#6b4a2c"/><rect x="7" y="1" width="2" height="1" fill="#5f9b45"/><rect x="4" y="3" width="5" height="1" fill="#d4352a"/><rect x="3" y="4" width="7" height="5" fill="#d4352a"/><rect x="4" y="9" width="5" height="1" fill="#9e1f18"/><rect x="4" y="4" width="1" height="2" fill="#ffc2b4"/><rect x="0" y="5" width="2" height="1" fill="#f4edd3"/><rect x="11" y="5" width="2" height="1" fill="#f4edd3"/><rect x="0" y="8" width="1" height="1" fill="#f4edd3"/><rect x="12" y="8" width="1" height="1" fill="#f4edd3"/><rect x="5" y="11" width="3" height="1" fill="#f4edd3"/>'),
+    use(x, y) {
+      if (y > G) return "Tippe auf einen Apfelbaum";
+      const s = world.sources.find(q => q.kind === 0 && Math.abs(q.cx - x) <= q.r + 1);
+      if (!s) return "Tippe auf einen Apfelbaum, Büsche tragen keine Äpfel";
+      const ripe = s.fruits.filter(f => f.alive);
+      s.shakeT = 0.8; sky.dirty = true;
+      if (!ripe.length) return "An diesem Baum hängen gerade keine Äpfel";
+      for (let k = 0; k < Math.min(3, ripe.length); k++) {
+        const f = ripe.splice(Math.floor(rand() * ripe.length), 1)[0];
+        f.alive = false; f.t = 0;
+        world.falling.push({ x: f.x * T + 1.5, y: f.y * T + 1.5, vy: 0, vx: rf(-6, 6), tx: f.x, delay: k * 0.12 });
+      }
+      return "Der Baum wackelt, Äpfel fallen ins Gras";
+    } },
+  { id: "leaves", name: "Blätter", desc: "Futter für den Pilzgarten", cd: 30,
+    hint: "Tippe auf das Gras, um Blätter abzulegen",
+    icon: svgI('<rect x="6" y="1" width="3" height="1" fill="#62a84c"/><rect x="4" y="2" width="6" height="1" fill="#62a84c"/><rect x="3" y="3" width="7" height="3" fill="#62a84c"/><rect x="2" y="6" width="7" height="2" fill="#4f8f3f"/><rect x="2" y="8" width="5" height="1" fill="#4f8f3f"/><rect x="4" y="3" width="1" height="1" fill="#8cc76a"/><rect x="3" y="8" width="1" height="1" fill="#2f6328"/><rect x="4" y="7" width="1" height="1" fill="#2f6328"/><rect x="5" y="6" width="1" height="1" fill="#2f6328"/><rect x="6" y="5" width="1" height="1" fill="#2f6328"/><rect x="7" y="4" width="1" height="1" fill="#2f6328"/><rect x="1" y="9" width="2" height="1" fill="#6b4a2c"/><rect x="0" y="10" width="1" height="1" fill="#6b4a2c"/>'),
+    use(x, y) {
+      if (!(y >= 2 && y <= G && x >= 1 && x < W - 1)) return "Tippe auf das Gras über der Erde";
+      addGroundFood(x, 6, "leaves");
+      return hasRoom(CH_FUNGUS) ? "Frische Blätter für den Pilzgarten liegen bereit" : "Die Blätter liegen bereit. Geholt werden sie, sobald es einen Pilzgarten gibt";
+    } },
+  { id: "pinwheel", name: "Windrad", desc: "hält 3 Minuten den Vogel fern", cd: 150,
+    hint: "Tippe auf das Gras, um das Windrad aufzustellen",
+    icon: svgI('<rect x="6" y="6" width="1" height="7" fill="#c9b48a"/><rect x="3" y="1" width="3" height="1" fill="#e05a3a"/><rect x="4" y="2" width="2" height="1" fill="#e05a3a"/><rect x="5" y="3" width="1" height="2" fill="#e05a3a"/><rect x="7" y="2" width="1" height="3" fill="#f2c84b"/><rect x="8" y="3" width="3" height="1" fill="#f2c84b"/><rect x="7" y="5" width="3" height="1" fill="#4a9ad9"/><rect x="7" y="6" width="2" height="1" fill="#4a9ad9"/><rect x="5" y="6" width="1" height="3" fill="#7cc35a"/><rect x="2" y="7" width="3" height="1" fill="#7cc35a"/><rect x="6" y="5" width="1" height="1" fill="#f4edd3"/>'),
+    use(x, y) {
+      if (!(y >= 2 && y <= G && x >= 2 && x < W - 2)) return "Tippe auf das Gras über der Erde";
+      world.pinwheels.push({ x, t: 180, a: 0 });
+      return "Das Windrad dreht sich. Der Vogel traut sich hier nicht hin";
+    } },
+  { id: "roof", name: "Blattdach", desc: "schützt den Eingang vor Regen", cd: 200,
+    hint: "Tippe auf den Eingang in der Mitte",
+    icon: svgI('<rect x="3" y="2" width="7" height="1" fill="#62a84c"/><rect x="1" y="3" width="11" height="2" fill="#4f8f3f"/><rect x="0" y="5" width="13" height="1" fill="#3f7d34"/><rect x="2" y="3" width="2" height="1" fill="#8cc76a"/><rect x="3" y="6" width="1" height="6" fill="#8a6a48"/><rect x="9" y="6" width="1" height="6" fill="#8a6a48"/><rect x="6" y="8" width="1" height="2" fill="#7fb6e8"/><rect x="5" y="10" width="3" height="1" fill="#7fb6e8"/><rect x="0" y="12" width="13" height="1" fill="#d9be86"/>'),
+    use(x, y) {
+      if (Math.abs(x - ENT) > 8 || y > G + 3 || y < SURF - 12) return "Tippe auf den Eingang in der Mitte";
+      events.roofT = 240;
+      return "Ein Blattdach schützt jetzt 4 Minuten den Eingang";
+    } },
+  { id: "warm", name: "Wärme", desc: "Brut in einer Kammer reift schneller", cd: 60,
+    hint: "Tippe auf eine Kammer, die warm werden soll",
+    icon: svgI('<rect x="6" y="0" width="1" height="2" fill="#ffd36a"/><rect x="6" y="11" width="1" height="2" fill="#ffd36a"/><rect x="0" y="6" width="2" height="1" fill="#ffd36a"/><rect x="11" y="6" width="2" height="1" fill="#ffd36a"/><rect x="2" y="2" width="1" height="1" fill="#ffd36a"/><rect x="10" y="2" width="1" height="1" fill="#ffd36a"/><rect x="2" y="10" width="1" height="1" fill="#ffd36a"/><rect x="10" y="10" width="1" height="1" fill="#ffd36a"/><rect x="4" y="3" width="5" height="7" fill="#f29a3a"/><rect x="3" y="4" width="7" height="5" fill="#f29a3a"/><rect x="5" y="4" width="3" height="5" fill="#ffd36a"/><rect x="4" y="5" width="5" height="3" fill="#ffd36a"/>'),
+    use(x, y) {
+      if (y <= G) return "Tippe auf eine Kammer unter der Erde";
+      let room = null;
+      for (let r = 0; r < 3 && !room; r++) for (let dy = -r; dy <= r && !room; dy++) for (let dx = -r; dx <= r; dx++) {
+        if (!inGrid(x + dx, y + dy)) continue;
+        const id = world.roomOf[idx(x + dx, y + dy)];
+        if (id >= 0 && world.rooms[id] && world.rooms[id].done) { room = world.rooms[id]; break; }
+      }
+      if (!room) return "Tippe auf eine fertige Kammer";
+      room.warmT = 120;
+      const der = [CH_CEMETERY, CH_FUNGUS, CH_APHID, CH_DRAIN].includes(room.type) ? "Der" : "Die";
+      return `${der} ${ROOM_NAMES[room.type]} wird 2 Minuten lang gewärmt`;
+    } },
+];
+const tools = {
+  open: false, cds: {},
+  build() {
+    const m = $("toolMenu");
+    m.replaceChildren();
+    for (const t of TOOLS) {
+      const b = document.createElement("button");
+      b.type = "button"; b.dataset.tool = t.id; b.setAttribute("role", "menuitem");
+      b.innerHTML = `<span class="ticon">${t.icon}</span><span class="tname"></span><span class="tdesc"></span><span class="cd"></span>`;
+      b.querySelector(".tname").textContent = t.name;
+      b.querySelector(".tdesc").textContent = t.desc;
+      b.addEventListener("click", () => this.pick(t.id));
+      m.append(b);
+    }
+    this.sync();
+  },
+  toggleMenu(open = !this.open) {
+    this.open = open;
+    $("toolMenu").hidden = !open;
+    $("btnTools").setAttribute("aria-expanded", String(open));
+    if (open) { game.tool = null; this.sync(); hud.closeAnt(); hud.hideInfo(); }
+  },
+  pick(id) {
+    const t = TOOLS.find(q => q.id === id);
+    if ((this.cds[id] || 0) > 0) return hud.banner(`${t.name} ist in ${Math.ceil(this.cds[id])} s wieder bereit`, 2);
+    this.toggleMenu(false);
+    game.tool = id;
+    this.sync();
+    hud.banner(t.hint, 3);
+  },
+  // Tippen ins Spielfeld mit einem gewählten Werkzeug
+  apply(x, y) {
+    const t = TOOLS.find(q => q.id === game.tool);
+    if (!t) return false;
+    const msg = t.use(x, y);
+    const ok = msg && msg !== t.hint && !/^Tippe/.test(msg);
+    if (ok) { this.cds[t.id] = t.cd; game.tool = null; this.sync(); }
+    hud.banner(msg, ok ? 3 : 2);
+    return true;
+  },
+  tick(dt) {
+    for (const k in this.cds) if (this.cds[k] > 0) this.cds[k] = Math.max(0, this.cds[k] - dt);
+    this.t = (this.t || 0) - dt;
+    if (this.t <= 0) { this.t = 0.2; this.sync(); }
+  },
+  sync() {
+    const cur = TOOLS.find(q => q.id === game.tool);
+    const btn = $("btnTools");
+    btn.classList.toggle("on", !!cur);
+    $("toolIcon").innerHTML = cur ? cur.icon : TOOLBOX_ICON;
+    btn.setAttribute("aria-label", cur ? `${cur.name} abbrechen` : "Werkzeuge");
+    $("toolCd").style.height = "0%";
+    for (const b of $("toolMenu").children) {
+      const t = TOOLS.find(q => q.id === b.dataset.tool), cd = this.cds[t.id] || 0;
+      b.querySelector(".cd").style.height = Math.round(cd / t.cd * 100) + "%";
+      b.setAttribute("aria-disabled", cd > 0 ? "true" : "false");
+      const d = b.querySelector(".tdesc"), txt = cd > 0 ? `bereit in ${Math.ceil(cd)} s` : t.desc;
+      if (d.textContent !== txt) d.textContent = txt;
+    }
+  },
+};
+const TOOLBOX_ICON = svgI('<rect x="4" y="1" width="5" height="1" fill="#c9b48a"/><rect x="4" y="2" width="1" height="2" fill="#c9b48a"/><rect x="8" y="2" width="1" height="2" fill="#c9b48a"/><rect x="1" y="4" width="11" height="8" fill="#b0563f"/><rect x="1" y="4" width="11" height="1" fill="#d97a5c"/><rect x="1" y="7" width="11" height="1" fill="#7c3a2a"/><rect x="5" y="6" width="3" height="3" fill="#d1a94e"/><rect x="6" y="7" width="1" height="1" fill="#6d5420"/>');
+$("btnTools").addEventListener("click", () => {
+  if (game.tool) { game.tool = null; tools.sync(); hud.banner("Werkzeug weggelegt", 1.5); return; }
+  tools.toggleMenu();
+});
+
+// ---- Wirkung der Werkzeuge in der Welt
+const toolFx = {
+  tick(dt) {
+    for (let k = world.pinwheels.length - 1; k >= 0; k--) {
+      const p = world.pinwheels[k];
+      p.t -= dt; p.a += dt * (events.raining ? 9 : 5);
+      if (p.t <= 0) world.pinwheels.splice(k, 1);
+    }
+    if (events.roofT > 0) events.roofT = Math.max(0, events.roofT - dt);
+    for (const s of world.sources) if (s.shakeT > 0) { s.shakeT = Math.max(0, s.shakeT - dt); sky.dirty = true; }
+    for (const r of world.rooms) if (r.warmT > 0) r.warmT = Math.max(0, r.warmT - dt);
+    // fallende Äpfel landen im Gras und bleiben als Fallobst liegen
+    for (let k = world.falling.length - 1; k >= 0; k--) {
+      const f = world.falling[k];
+      if (f.delay > 0) { f.delay -= dt; continue; }
+      f.vy += 140 * dt; f.y += f.vy * dt; f.x += f.vx * dt;
+      const ground = SURF * T + 2 - surfaceOffset(clamp(Math.round(f.x / T), 0, W - 1));
+      if (f.y >= ground) { addGroundFood(clamp(Math.round(f.x / T), 2, W - 3), 2, "fruit"); world.falling.splice(k, 1); }
+    }
+  },
+  guarded(px) { return world.pinwheels.some(p => Math.abs(p.x * T + 1.5 - px) < 14 * T); },
+  warmAt(i) { const r = world.roomOf[i]; return r >= 0 && world.rooms[r] && world.rooms[r].warmT > 0; },
+  draw() {
+    for (const f of world.falling) {
+      P.fill("#9e1f18").disc(f.x + 0.2, f.y + 0.2, 1.45);
+      P.fill("#d4352a").disc(f.x, f.y, 1.35);
+      P.fill("#ffc2b4").dot(f.x - 0.6, f.y - 0.6);
+    }
+    for (const p of world.pinwheels) {
+      const x = p.x * T + 1.5, base = SURF * T + 2.5 - surfaceOffset(p.x), top = base - 12;
+      P.fill("#8a6a48").rect(x - 0.5, top, 1, base - top);
+      P.fill("#c9b48a").rect(x - 0.5, top, 0.5, base - top);
+      const cols = ["#e05a3a", "#f2c84b", "#4a9ad9", "#7cc35a"];
+      for (let k = 0; k < 4; k++) {
+        const a = p.a + k * Math.PI / 2, ca = Math.cos(a), sa = Math.sin(a);
+        P.fill(cols[k]);
+        for (let d = 0.5; d <= 3.5; d += 0.5) { const w = (3.5 - d) * 0.35; P.rect(x + ca * d - sa * w * 0.5 - 0.25, top + sa * d + ca * w * 0.5 - 0.25, 0.5 + w * 0.4, 0.5 + w * 0.4); }
+      }
+      P.fill("#f4edd3").disc(x, top, 0.6);
+      // kurz vor Schluss blinkt es, damit du siehst, dass es bald weg ist
+      if (p.t < 20 && Math.floor(p.t * 3) % 2) P.fill("rgba(255,255,255,0.5)").disc(x, top, 1.4);
+    }
+    if (events.roofT > 0) {
+      const x = ENT * T + 1.5, y = SURF * T - 7;
+      P.fill("#6b4a2c").rect(x - 6, y, 1, 9.5).rect(x + 5, y, 1, 9.5);
+      P.fill("#3f7d34").ellipse(x, y + 0.6, 10, 2.6);
+      P.fill("#62a84c").ellipse(x - 0.5, y, 9.5, 2.2);
+      P.fill("#8cc76a").ellipse(x - 4, y - 0.8, 3, 0.7);
+      P.fill("#2f6328").rect(x - 9, y, 18, 0.5);
+      for (let k = -8; k <= 8; k += 2) P.fill("#2f6328").line(x + k * 0.3, y, x + k, y + (Math.abs(k) < 4 ? -1.4 : -0.8));
+      if (events.roofT < 20 && Math.floor(events.roofT * 3) % 2) P.fill("rgba(255,255,255,0.35)").ellipse(x, y, 9, 2);
+    }
+  },
+};
+
+// =====================================================================
 // LADEBILDSCHIRM UND HAUPTMENÜ
 // =====================================================================
 const TIPS = [
@@ -3907,7 +4145,7 @@ const loader = {
 const menu = {
   draft: null,
   open() {
-    game.sel = null; game.follow = false; game.feedMode = false;
+    game.sel = null; game.follow = false; game.tool = null; tools.toggleMenu(false);
     hud.closeAnt(); hud.closePanel(); hud.hideInfo();
     if (!game.menu) { game.view = [view.x, view.y, view.z]; game.menuSpeed = game.speed; }
     game.menu = true; game.paused = false; game.speed = 1;
@@ -4011,16 +4249,9 @@ function onTap(sx, sy) {
   lastTap = { t: now, x: sx, y: sy };
   if (navigator.vibrate) try { navigator.vibrate(10); } catch (_) { }
   const [wx, wy] = toWorld(sx, sy), x = Math.floor(wx / T), y = Math.floor(wy / T);
-  // Zucker streuen
-  if (game.feedMode) {
-    if (y >= 2 && y <= G && x >= 1 && x < W - 1) {
-      addGroundFood(x, 8, "sugar");
-      game.feedMode = false; game.feedCd = 20;
-      hud.updateButtons();
-      hud.banner("Zucker liegt im Gras. Mal sehen, wer ihn findet", 3);
-    } else hud.banner("Tippe auf das Gras über der Erde", 2);
-    return;
-  }
+  // ein Werkzeug ist gewählt
+  if (game.tool) { tools.apply(x, y); return; }
+  if (tools.open) tools.toggleMenu(false);
   // Ameise antippen
   const reach = Math.max(3.5, 16 / scale());
   let best = -1, bd = reach;
@@ -4041,13 +4272,14 @@ function onTap(sx, sy) {
   }
   const g = world.groundFood.find(q => Math.abs(q.x - x) <= 2 && y >= SURF - 3);
   if (g) {
-    const names = { fruit: "Fallobst", sugar: "Zucker", beetle: "Toter Käfer", corpse: "Tote Ameise" };
+    const names = { fruit: "Fallobst", sugar: "Zucker", beetle: "Toter Käfer", corpse: "Tote Ameise", leaves: "Blätterhaufen" };
     return hud.showInfo(names[g.kind], [["Noch übrig", g.n + " Portionen"]], 0);
   }
   for (const s of world.sources) if (Math.abs(s.trunk - x) <= s.r && y >= s.cy - s.r) {
     let n = 0;
     for (let i = 0; i < ants.count; i++) if (ants.doing[i] === D_SEARCH) n++;
-    return hud.showInfo(s.kind === 0 ? "Apfelbaum" : "Beerenbusch", [["Reife Früchte", s.fruits.filter(f => f.alive).length], ["Ameisen auf Futtersuche", n]], 0);
+    if (s.kind === 1) return hud.showInfo("Busch", [["Blätter für den Pilzgarten", hasRoom(CH_FUNGUS) ? "ja" : "noch nicht gebraucht"], ["Ameisen auf Futtersuche", n]], 0);
+    return hud.showInfo("Apfelbaum", [["Reife Äpfel", s.fruits.filter(f => f.alive).length], ["Ameisen auf Futtersuche", n]], 0);
   }
   hud.hideInfo(); hud.closeAnt();
 }
@@ -4061,7 +4293,7 @@ async function requestWakeLock() {
 // =====================================================================
 // SPIEL: Takt, Zeichnen, Speichern
 // =====================================================================
-const game = { paused: false, speed: 1, deadT: -1, saveT: 0, sel: null, follow: false, feedMode: false, feedCd: 0, menu: false, demo: false, menuT: 0 };
+const game = { paused: false, speed: 1, deadT: -1, saveT: 0, sel: null, follow: false, tool: null, menu: false, demo: false, menuT: 0 };
 
 function newGame(seed) {
   DAY_LENGTH = DAY_LENGTHS[settings.day] || 300;
@@ -4090,7 +4322,8 @@ function serialize() {
     v: 3, seed: world.seed, cells: b64(world.cells), food: b64(world.food), corpses: b64(world.corpses), trash: b64(world.trash), leaf: b64(world.leaf),
     mound: Array.from(world.mound, v => +v.toFixed(2)),
     fruits: world.sources.flatMap(s => s.fruits.map(f => [f.alive ? 1 : 0, +f.t.toFixed(1)])),
-    ground: world.groundFood,
+    ground: world.groundFood, pinwheels: world.pinwheels, roofT: events.roofT,
+    warm: world.rooms.map(r => Math.round(r.warmT || 0)),
     colony: { brood: colony.brood.map(b => ({ ...b, carried: false })), nextBrood: colony.nextBrood, born: colony.born, died: colony.died,
       eggsLaid: colony.eggsLaid, delivered: colony.delivered, dugTotal: colony.dugTotal, history: colony.history, entries: colony.entries,
       milestones: [...colony.milestones], queenAlive: colony.queenAlive, floods: colony.floods, flights: colony.flights,
@@ -4116,6 +4349,7 @@ function deserialize(d) {
   let k = 0;
   for (const s of world.sources) for (const f of s.fruits) { const q = d.fruits[k++]; if (q) { f.alive = q[0] === 1; f.t = q[1]; } }
   world.groundFood = d.ground || [];
+  world.pinwheels = d.pinwheels || [];
   world.rooms = (d.rooms || []).map((r, id) => ({ aphids: 0, dew: 0, tend: 0, rootX: r.cx, ...r, id, size: r.cells.length }));
   for (const r of world.rooms) for (const i of r.cells) { world.roomOf[i] = r.id; world.chamber[i] = r.type; }
   refreshRoomTypes();
@@ -4135,6 +4369,8 @@ function deserialize(d) {
   }
   events.reset();
   Object.assign(events, { time: d.time, day: d.day, nextFlood: d.nextFlood, nextCent: d.nextCent, nextBird: d.nextBird ?? 200, nextBeetle: d.nextBeetle ?? 200 });
+  events.roofT = d.roofT || 0;
+  (d.warm || []).forEach((t, k) => { if (world.rooms[k]) world.rooms[k].warmT = t; });
   if (d.view) { view.x = d.view[0]; view.y = d.view[1]; view.z = d.view[2]; }
   game.speed = d.speed || 1;
   clampView();
@@ -4257,6 +4493,7 @@ function frame(now) {
 // Ladebildschirm: jeder Schritt läuft in einem eigenen Bild, damit der Balken sich bewegt
 async function start(data) {
   const t0 = performance.now();
+  tools.build();
   await loader.step(0.1, "Schrift wird geladen", () => Promise.race([document.fonts ? document.fonts.ready : null, new Promise(r => setTimeout(r, 1500))]));
   await loader.step(0.25, "Ameisen werden gezeichnet", () => { buildFrame(); resize(); buildAntAtlas(); loader.antReady = true; });
   let loaded = false;
