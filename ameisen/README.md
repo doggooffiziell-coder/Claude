@@ -67,6 +67,10 @@ Die Namen müssen genau so lauten. `Main.gd` holt sich die Knoten über diese Pf
 | `CameraController.gd` | Zoom und Verschieben für Touch und Maus |
 | `AntFont.gd` | Kleine 3x5-Pixelschrift |
 
+## Icon
+
+Das Icon liegt in `icons/`. Es ist Pixel-Art mit 48 x 48 Pixeln: die Königin mit Krone auf dem Sandhügel, darunter das Nest mit Königinnenkammer, Brutkammer und Kornkammer. `icon.svg` ist das Projekt-Icon in Godot. Die PNG-Dateien gibt es von 16 bis 1024 Pixel, dazu Vorder- und Hintergrund für das adaptive Android-Icon. Beide Export-Presets nutzen sie schon.
+
 ## Exportieren
 
 Lade zuerst die Export-Vorlagen über Editor, Export-Vorlagen verwalten.
