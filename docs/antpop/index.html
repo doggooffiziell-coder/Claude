@@ -328,6 +328,9 @@
   #chron li { padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.08); }
   #chron .day { color: var(--brass); margin-right: 8px; }
   .confirm { margin-top: 10px; font-size: 18px; }
+  .roomlist { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; font-size: 17px; }
+  .roomlist dt { color: var(--cream-dim); }
+  .roomlist dd { margin: 0; text-align: right; color: var(--cream); }
 
   /* Werkzeug unten links */
   .tools {
@@ -387,13 +390,15 @@
     <div class="tiles">
       <div class="tile"><b id="tPop">0</b><span>Ameisen</span><small><span id="tSoldiers">0</span> davon Soldatinnen</small></div>
       <div class="tile"><b id="tBrood">0</b><span>Brut</span><small id="tBroodSub"></small></div>
-      <div class="tile"><b id="tFood">0</b><span>Futter im Nest</span></div>
+      <div class="tile"><b id="tFood">0</b><span>Futter im Nest</span><small id="tFoodSub"></small></div>
       <div class="tile"><b id="tRooms">0</b><span>Kammern</span><small><span id="tTunnels">0</span> Felder gegraben</small></div>
       <div class="tile"><b id="tBorn">0</b><span>Geschlüpft</span></div>
       <div class="tile"><b id="tDied">0</b><span>Gestorben</span></div>
     </div>
     <h3>Was die Ameisen gerade tun</h3>
     <div id="taskBars"></div>
+    <h3>Sonderkammern</h3>
+    <dl class="roomlist" id="roomsList"></dl>
     <h3>Verlauf</h3>
     <canvas id="chart" width="300" height="84"></canvas>
     <div class="legend"><span><i style="background:#f4edd3"></i>Ameisen</span><span><i style="background:#e0a43a"></i>Futter</span></div>
@@ -435,28 +440,42 @@ const WPX = W * T, HPX = H * T;                    // 258 x 468
 const FULL_W = WPX + 2 * FRAME, FULL_H = HPX + 2 * FRAME;  // 270 x 480
 const INF = 1 << 28;
 const AIR = 0, SOIL = 1, TUNNEL = 2;
-const CH_GRANARY = 1, CH_BROOD = 2, CH_QUEEN = 3, CH_CEMETERY = 4, CH_TRASH = 5;
-const ROOM_NAMES = ["Leere Kammer", "Kornkammer", "Brutkammer", "Königinnenkammer", "Friedhof", "Müllkammer"];
-const ROOM_NEW = ["", "eine neue Kornkammer", "eine neue Brutkammer", "", "einen neuen Friedhof", "eine neue Müllkammer"];
-const ROOM_DONE = ["", "Die Kornkammer ist fertig", "Die Brutkammer ist fertig", "", "Der Friedhof ist fertig", "Die Müllkammer ist fertig"];
+const CH_GRANARY = 1, CH_BROOD = 2, CH_QUEEN = 3, CH_CEMETERY = 4, CH_TRASH = 5,
+  CH_FUNGUS = 6, CH_HONEY = 7, CH_APHID = 8, CH_GUARD = 9, CH_PUPA = 10, CH_SLEEP = 11, CH_DRAIN = 12, CH_ROYAL = 13, CH_COUNT = 14;
+const ROOM_NAMES = ["Leere Kammer", "Kornkammer", "Brutkammer", "Königinnenkammer", "Friedhof", "Müllkammer",
+  "Pilzgarten", "Honigtopf-Kammer", "Blattlaus-Stall", "Wachkammer", "Puppenkammer", "Schlafkammer", "Drainage-Schacht", "Prinzessinnenkammer"];
+const ROOM_NEW = ["", "eine neue Kornkammer", "eine neue Brutkammer", "", "einen neuen Friedhof", "eine neue Müllkammer",
+  "einen Pilzgarten", "eine Honigtopf-Kammer", "einen Blattlaus-Stall an einer Baumwurzel", "eine Wachkammer am Eingang",
+  "eine warme Puppenkammer nah an der Oberfläche", "eine Schlafkammer", "einen Drainage-Schacht ganz unten", "eine Prinzessinnenkammer"];
+const ROOM_DONE = ["", "Die Kornkammer ist fertig", "Die Brutkammer ist fertig", "", "Der Friedhof ist fertig", "Die Müllkammer ist fertig",
+  "Der Pilzgarten ist fertig. Jetzt brauchen die Ameisen Blätter", "Die Honigtopf-Kammer ist fertig", "Der Blattlaus-Stall ist fertig",
+  "Die Wachkammer ist fertig", "Die Puppenkammer ist fertig", "Die Schlafkammer ist fertig", "Der Drainage-Schacht ist fertig",
+  "Die Prinzessinnenkammer ist fertig"];
 const ARRIVED = -1, NO_PATH = -2;
 const LAYER_ROWS = [40, 79, 118];
 const SAVE_KEY = "antpop-save-v3";
 
-const R_WORKER = 0, R_SOLDIER = 1, R_QUEEN = 2;
-const C_NONE = 0, C_FOOD = 1, C_DIRT = 2, C_CORPSE = 3, C_TRASH = 4, C_BROOD = 5;
+// Honigtöpfe sind umgebaute Arbeiterinnen, Prinzessinnen und Männchen haben Flügel
+const R_WORKER = 0, R_SOLDIER = 1, R_QUEEN = 2, R_REPLETE = 3, R_PRINCESS = 4, R_MALE = 5;
+const C_NONE = 0, C_FOOD = 1, C_DIRT = 2, C_CORPSE = 3, C_TRASH = 4, C_BROOD = 5, C_LEAF = 6, C_SUGAR = 7, C_DEW = 8;
 // Zustände der Zustandsmaschine
-const S_IDLE = 0, S_REST = 1, S_EAT = 2, S_DIG = 3, S_FORAGE = 4, S_CARRY = 5, S_NURSE = 6, S_CLEAN = 7, S_SOLDIER = 8, S_QUEEN = 9, S_FLEE = 10;
+const S_IDLE = 0, S_REST = 1, S_EAT = 2, S_DIG = 3, S_FORAGE = 4, S_CARRY = 5, S_NURSE = 6, S_CLEAN = 7, S_SOLDIER = 8, S_QUEEN = 9, S_FLEE = 10,
+  S_REPLETE = 11, S_ALATE = 12, S_COUNT = 13;
 // Aufgaben mit eigenen Schwellenwerten pro Ameise
 const TK_DIG = 0, TK_FORAGE = 1, TK_NURSE = 2, TK_CLEAN = 3;
 const TASK_NAMES = ["Graben", "Futtersuche", "Brutpflege", "Aufräumen"];
 const TASK_STATE = [S_DIG, S_FORAGE, S_NURSE, S_CLEAN];
 // Was eine Ameise gerade tut, für die Anzeige
 const D_IDLE = 0, D_REST = 1, D_SLEEP = 2, D_EAT = 3, D_DIG = 4, D_HAUL = 5, D_SEARCH = 6, D_FETCH = 7, D_FEEDLARVA = 8,
-  D_FEEDQUEEN = 9, D_MOVEBROOD = 10, D_CORPSE = 11, D_TRASH = 12, D_PATROL = 13, D_DEFEND = 14, D_FLEE = 15, D_LAY = 16, D_HOME = 17, D_STORE = 18;
+  D_FEEDQUEEN = 9, D_MOVEBROOD = 10, D_CORPSE = 11, D_TRASH = 12, D_PATROL = 13, D_DEFEND = 14, D_FLEE = 15, D_LAY = 16, D_HOME = 17, D_STORE = 18,
+  D_CUTLEAF = 19, D_LEAFHOME = 20, D_MILK = 21, D_DEWHOME = 22, D_HANG = 23, D_FILLPOT = 24, D_GUARD = 25, D_DOOR = 26, D_ALATE = 27,
+  D_SWARM = 28, D_TENDFUNGUS = 29, D_MOVEPUPA = 30, D_SUGARHOME = 31;
 const DOING = ["Schaut sich um", "Ruht sich aus", "Schläft", "Isst", "Gräbt", "Trägt Erde hinaus", "Sucht Futter", "Trägt Futter heim",
   "Füttert Larven", "Füttert die Königin", "Trägt Brut", "Trägt Tote weg", "Räumt Abfall weg", "Bewacht das Nest", "Verteidigt das Nest",
-  "Flieht", "Legt Eier", "Geht nach Hause", "Lagert Futter ein"];
+  "Flieht", "Legt Eier", "Geht nach Hause", "Lagert Futter ein",
+  "Schneidet ein Blatt", "Trägt ein Blatt in den Pilzgarten", "Melkt Blattläuse", "Trägt Honigtau heim", "Hängt als Honigtopf an der Decke",
+  "Füllt einen Honigtopf", "Hält Wache", "Verschließt den Eingang mit dem Kopf", "Wartet auf den Hochzeitsflug", "Startet zum Hochzeitsflug",
+  "Pflegt den Pilzgarten", "Trägt eine Puppe ins Warme", "Trägt Zucker heim"];
 const NAMES = ["Anni", "Berta", "Clara", "Dora", "Emma", "Frieda", "Greta", "Hanna", "Ida", "Jule", "Karla", "Lotte", "Mia", "Nele",
   "Olga", "Paula", "Resi", "Sina", "Thea", "Uschi", "Vera", "Wilma", "Xenia", "Yva", "Zoe", "Alma", "Bea", "Cleo", "Edda", "Fine",
   "Gesa", "Hedi", "Ilse", "Juna", "Kira", "Lina", "Maja", "Nora", "Ottilie", "Pia", "Rieke", "Selma", "Tilda", "Ulla", "Wanda"];
@@ -527,7 +546,8 @@ function pcircle(g, cx, cy, r) {
 // =====================================================================
 const SOIL_COLORS = [[0.87, 0.76, 0.53], [0.82, 0.70, 0.48], [0.73, 0.62, 0.43]];
 const TUNNEL_COLOR = [0.36, 0.24, 0.14], RIM_COLOR = [0.52, 0.38, 0.23];
-const CHAMBER_COLORS = [[0, 0, 0], [0.72, 0.62, 0.24], [0.52, 0.38, 0.55], [0.30, 0.28, 0.30], [0.45, 0.51, 0.40], [0.68, 0.56, 0.40]];
+const CHAMBER_COLORS = [[0, 0, 0], [0.72, 0.62, 0.24], [0.52, 0.38, 0.55], [0.30, 0.28, 0.30], [0.45, 0.51, 0.40], [0.68, 0.56, 0.40],
+  [0.34, 0.47, 0.29], [0.78, 0.50, 0.20], [0.56, 0.64, 0.31], [0.60, 0.30, 0.24], [0.74, 0.54, 0.50], [0.37, 0.35, 0.58], [0.36, 0.47, 0.52], [0.66, 0.30, 0.50]];
 
 const world = {
   seed: 1, cells: new Uint8Array(W * H), chamber: new Uint8Array(W * H), chamberCells: [],
@@ -621,6 +641,29 @@ function buildSoil() {
     P.fill(css(stone)).ellipse(x, y, rx, ry);
     P.fill(css(lighten(stone, 0.35))).dot(x - rx * 0.4, y - ry * 0.4);
   }
+  // Baumwurzeln: dunkle Stränge mit hellerer Oberkante
+  const ROOT = [0.42, 0.28, 0.17];
+  for (const pass of [0, 1]) for (const rt of world.roots) {
+    const pts = rt.pts;
+    for (let k = 1; k < pts.length; k++) {
+      const t = k / pts.length, w = Math.max(0.5, rt.w * (1 - t * 0.7));
+      const [x0, y0] = pts[k - 1], [x1, y1] = pts[k];
+      if (pass === 0) {
+        P.fill(css(darken(ROOT, 0.35)));
+        for (let o = -w; o <= w; o += 0.5) P.line(x0 + o, y0 + 0.5, x1 + o, y1 + 0.5);
+      } else {
+        P.fill(css(ROOT));
+        for (let o = -w + 0.5; o < w; o += 0.5) P.line(x0 + o, y0, x1 + o, y1);
+        P.fill(css(lighten(ROOT, 0.25))).line(x0 - w + 0.5, y0, x1 - w + 0.5, y1);
+      }
+    }
+  }
+  // feine Haarwurzeln an den Spitzen
+  P.fill(css(lighten(ROOT, 0.1)));
+  for (const rt of world.roots) {
+    const [x, y] = rt.pts[rt.pts.length - 1];
+    for (let k = 0; k < 4; k++) { const a = r.rf(0.3, Math.PI - 0.3); P.line(x, y, x + Math.cos(a) * r.rf(1.5, 3.5), y + Math.sin(a) * r.rf(1.5, 3.5)); }
+  }
   // gestrichelte Linien zwischen den Schichten
   for (const row of [LAYER_ROWS[1], LAYER_ROWS[2]]) {
     P.fill(css(darken(SOIL_COLORS[layerOf(row)], 0.4)));
@@ -684,7 +727,18 @@ Object.assign(world, {
   food: new Uint8Array(W * H), corpses: new Uint8Array(W * H), trash: new Uint8Array(W * H),
   digPh: new Float32Array(W * H), alarm: new Float32Array(W * H), roomOf: new Int16Array(W * H).fill(-1),
   rooms: [], tunnels: [], topo: 0, groundFood: [], simTime: 0,
+  // Blätter im Pilzgarten, Wachstum des Pilzes, Verkehr in den Gängen
+  leaf: new Uint8Array(W * H), fgrow: new Float32Array(W * H), traffic: new Float32Array(W * H),
+  roots: [], rootTips: [], doneTypes: new Uint16Array(CH_COUNT),
 });
+// welche Kammerarten fertig sind, wird oft gefragt und deshalb mitgezählt
+function refreshRoomTypes() {
+  world.doneTypes.fill(0);
+  for (const r of world.rooms) if (r.done && r.type > 0) world.doneTypes[r.type]++;
+}
+const hasRoom = t => world.doneTypes[t] > 0;
+// Futter in Kornkammer, Pilzgarten und Honigtopf-Kammer gilt als eingelagert
+const isStore = i => { const t = roomType(i); return t === CH_GRANARY || t === CH_FUNGUS || t === CH_HONEY; };
 const digPhActive = new Set(), alarmActive = new Set();
 
 // Grabfront: alle Erdzellen direkt neben einem Gang. Liste mit Positionsindex für schnelles Ziehen.
@@ -720,6 +774,7 @@ function newWorld(seed) {
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) world.cells[idx(x, y)] = y < G ? AIR : SOIL;
   world.chamber.fill(0); world.mound.fill(0);
   world.food.fill(0); world.corpses.fill(0); world.trash.fill(0); world.roomOf.fill(-1);
+  world.leaf.fill(0); world.fgrow.fill(0); world.traffic.fill(0); world.doneTypes.fill(0);
   world.groundFood = []; world.rooms = [];
   generateSources();
 }
@@ -750,6 +805,24 @@ function generateSources() {
     world.sources.push(s);
   }
   world.sources.forEach((s, i) => world.byTrunk.set(s.trunk, i));
+  // Wurzeln der Bäume reichen in die Erde. An ihren Spitzen leben später die Wurzelläuse.
+  world.roots = []; world.rootTips = [];
+  const grow = (x, y, ang, len, w, depth) => {
+    const pts = [[x, y]];
+    for (let k = 0; k < len; k++) {
+      ang += r.rf(-0.35, 0.35);
+      ang = clamp(ang, 0.25, Math.PI - 0.25);
+      x += Math.cos(ang) * 1.6; y += Math.sin(ang) * 1.6;
+      pts.push([x, y]);
+      if (depth < 2 && k > 2 && r() < 0.18) grow(x, y, ang + r.rf(-0.9, 0.9), Math.floor(len * 0.45), w * 0.6, depth + 1);
+    }
+    world.roots.push({ pts, w });
+    if (depth === 0) world.rootTips.push([clamp(Math.round(x / T), 6, W - 7), Math.round(y / T)]);
+  };
+  for (const s of world.sources) if (s.kind === 0) {
+    const bx = s.trunk * T + 1.5, by = G * T;
+    for (const a of [Math.PI * 0.62, Math.PI * 0.38, Math.PI * 0.5]) grow(bx + Math.cos(a) * 2, by, a, r.ri(16, 30), 1.4, 0);
+  }
 }
 
 const isTunnel = (x, y) => inGrid(x, y) && world.cells[idx(x, y)] === TUNNEL;
@@ -797,7 +870,9 @@ function addAlarm(x, y, a) {
 
 // ---- Wegfelder: Breitensuche durch die Gänge zu dem, was eine Ameise gerade sucht
 const F_EXIT = 0, F_FOOD = 1, F_QUEEN = 2, F_HUNGRY = 3, F_DIG = 4, F_GRANSPACE = 5, F_BROODSPACE = 6, F_LOOSEBROOD = 7,
-  F_LOOSECORPSE = 8, F_CEMSPACE = 9, F_LOOSETRASH = 10, F_TRASHSPACE = 11, F_LOOSEFOOD = 12, F_COUNT = 13;
+  F_LOOSECORPSE = 8, F_CEMSPACE = 9, F_LOOSETRASH = 10, F_TRASHSPACE = 11, F_LOOSEFOOD = 12,
+  F_LEAFSPACE = 13, F_POTSPACE = 14, F_DEW = 15, F_PUPASPACE = 16, F_SLEEP = 17, F_GUARD = 18, F_ROYALSPACE = 19, F_ROYALROOM = 20,
+  F_COUNT = 21;
 const fields = [], fieldDirty = [], fieldTime = [], fieldHas = [], fieldTopo = [];
 for (let f = 0; f < F_COUNT; f++) { fields.push(new Int32Array(W * H).fill(INF)); fieldDirty.push(true); fieldTime.push(-99); fieldHas.push(false); fieldTopo.push(-1); }
 function markFields() { for (let f = 0; f < F_COUNT; f++) fieldDirty[f] = true; }
@@ -810,6 +885,17 @@ function broodCount() {
   for (const b of colony.brood) if (!b.carried) m.set(b.cell, (m.get(b.cell) || 0) + 1);
   return m;
 }
+// Wohin gehört ein Stück Brut? Puppen ins Warme, königliche Brut zu den Prinzessinnen.
+function broodRoom(b) {
+  if (b.royal && hasRoom(CH_ROYAL)) return CH_ROYAL;
+  if (b.s === 2 && !b.royal && hasRoom(CH_PUPA)) return CH_PUPA;
+  return CH_BROOD;
+}
+const spaceField = t => t === CH_ROYAL ? F_ROYALSPACE : (t === CH_PUPA ? F_PUPASPACE : F_BROODSPACE);
+function repleteAt(c) {
+  for (let i = 0; i < ants.count; i++) if (ants.role[i] === R_REPLETE && ants.home[i] === c && idx(ants.cx[i], ants.cy[i]) === c) return i;
+  return -1;
+}
 function fieldSources(fid) {
   const out = [], t = world.tunnels;
   switch (fid) {
@@ -820,12 +906,26 @@ function fieldSources(fid) {
     case F_DIG: return colony.digSources();
     case F_GRANSPACE: for (const i of t) if (roomType(i) === CH_GRANARY && world.food[i] < 4) out.push(i); break;
     case F_BROODSPACE: { const m = broodCount(); for (const i of t) if (roomType(i) === CH_BROOD && (m.get(i) || 0) < 3) out.push(i); break; }
-    case F_LOOSEBROOD: for (const b of colony.brood) if (!b.carried && roomType(b.cell) !== CH_BROOD && b.age > 3) out.push(b.cell); break;
+    case F_LOOSEBROOD: for (const b of colony.brood) {
+      if (b.carried || b.age <= 3) continue;
+      const want = broodRoom(b);
+      if (roomType(b.cell) !== want && hasField(spaceField(want))) out.push(b.cell);
+    } break;
     case F_LOOSECORPSE: for (const i of t) if (world.corpses[i] > 0 && roomType(i) !== CH_CEMETERY) out.push(i); break;
     case F_CEMSPACE: for (const i of t) if (roomType(i) === CH_CEMETERY && world.corpses[i] < 4) out.push(i); break;
     case F_LOOSETRASH: for (const i of t) if (world.trash[i] > 0 && roomType(i) !== CH_TRASH) out.push(i); break;
     case F_TRASHSPACE: for (const i of t) if (roomType(i) === CH_TRASH && world.trash[i] < 5) out.push(i); break;
-    case F_LOOSEFOOD: for (const i of t) if (world.food[i] > 0 && roomType(i) !== CH_GRANARY) out.push(i); break;
+    case F_LOOSEFOOD: for (const i of t) if (world.food[i] > 0 && !isStore(i)) out.push(i); break;
+    case F_LEAFSPACE: for (const i of t) if (roomType(i) === CH_FUNGUS && world.leaf[i] < 2 && world.food[i] < 3) out.push(i); break;
+    case F_POTSPACE: for (let i = 0; i < ants.count; i++)
+      if (ants.role[i] === R_REPLETE && ants.phase[i] === 1 && ants.load[i] < REPLETE_MAX) out.push(idx(ants.cx[i], ants.cy[i])); break;
+    case F_DEW: for (const r of world.rooms) if (r.done && r.type === CH_APHID && r.dew >= 1)
+      for (const i of r.cells) if (Math.abs(i % W - r.rootX) <= 2) out.push(i); break;
+    case F_PUPASPACE: { const m = broodCount(); for (const i of t) if (roomType(i) === CH_PUPA && (m.get(i) || 0) < 3) out.push(i); break; }
+    case F_SLEEP: for (const i of t) if (roomType(i) === CH_SLEEP && (ants.occ[i] || 0) < 2) out.push(i); break;
+    case F_GUARD: for (const i of t) if (roomType(i) === CH_GUARD) out.push(i); break;
+    case F_ROYALSPACE: { const m = broodCount(); for (const i of t) if (roomType(i) === CH_ROYAL && (m.get(i) || 0) < 2) out.push(i); break; }
+    case F_ROYALROOM: for (const i of t) if (roomType(i) === CH_ROYAL) out.push(i); break;
   }
   return out;
 }
@@ -925,11 +1025,17 @@ function dropCell(i, arr, max, avoid) {
 }
 
 // ---- Kammern: Wenn die Kolonie Platz braucht, wählen die Ameisen einen Ort und heben die Kammer gemeinsam aus
-const ROOM_SIZE = { [CH_GRANARY]: [5.5, 2.3], [CH_BROOD]: [5, 2.3], [CH_QUEEN]: [5, 2.2], [CH_CEMETERY]: [4.5, 2], [CH_TRASH]: [4, 2] };
-const ROOM_CAP = { [CH_GRANARY]: 3, [CH_BROOD]: 1, [CH_CEMETERY]: 4, [CH_TRASH]: 5, [CH_QUEEN]: 0 };
+const ROOM_SIZE = { [CH_GRANARY]: [5.5, 2.3], [CH_BROOD]: [5, 2.3], [CH_QUEEN]: [5, 2.2], [CH_CEMETERY]: [4.5, 2], [CH_TRASH]: [4, 2],
+  [CH_FUNGUS]: [5.5, 2.4], [CH_HONEY]: [4.5, 2.2], [CH_APHID]: [4, 2.2], [CH_GUARD]: [3.5, 1.8], [CH_PUPA]: [4, 2],
+  [CH_SLEEP]: [5, 2.2], [CH_DRAIN]: [3.2, 2.8], [CH_ROYAL]: [5, 2.3] };
+const ROOM_CAP = { [CH_GRANARY]: 3, [CH_BROOD]: 1, [CH_CEMETERY]: 4, [CH_TRASH]: 5, [CH_QUEEN]: 0, [CH_SLEEP]: 1.2, [CH_PUPA]: 2 };
+const REPLETE_MAX = 8;
 const rooms = {
-  t: 0,
-  tick(dt) { this.t -= dt; if (this.t <= 0) { this.t = 3; colony.planRooms(); } },
+  t: 0, t1: 0,
+  tick(dt) {
+    this.t -= dt; if (this.t <= 0) { this.t = 3; colony.planRooms(); colony.planExpansion(); colony.planRepletes(); }
+    this.t1 -= dt; if (this.t1 <= 0) { this.t1 = 1; colony.tickRooms(1); }
+  },
 };
 function ellipseCells(cx, cy, rx, ry, margin = 0) {
   const out = [];
@@ -964,15 +1070,22 @@ function makeRoom(type, cx, cy, from, predug = false) {
     for (const c of cells) { const d = Math.hypot(c % W - from % W, Math.floor(c / W) - Math.floor(from / W)); if (d < bd) { bd = d; best = c; } }
     path = corridorCells(from, best).filter(c => !cells.includes(c));
   }
-  const room = { id: world.rooms.length, type, cells, path, cx, cy, size: cells.length, done: predug };
+  const room = { id: world.rooms.length, type, cells, path, cx, cy, size: cells.length, done: predug, aphids: 0, dew: 0, tend: 0, rootX: cx };
   for (const i of cells) { world.roomOf[i] = room.id; world.chamber[i] = type; if (predug) world.cells[i] = TUNNEL; }
   if (predug) for (const i of path) world.cells[i] = TUNNEL;
   world.rooms.push(room);
   colony.jobsDirty = true;
   return room;
 }
+// Ausbau: breitere Gänge und Abkürzungen. Das ist ein Bauprojekt ohne eigene Kammer.
+function makeProject(kind, path, label) {
+  const room = { id: world.rooms.length, type: 0, kind, label, cells: [], path, cx: 0, cy: 0, size: 0, done: false };
+  world.rooms.push(room);
+  colony.jobsDirty = true;
+  return room;
+}
 function roomProgress(r) {
-  const all = r.cells.length + r.path.length;
+  const all = Math.max(1, r.cells.length + r.path.length);
   let dug = 0;
   for (const i of r.cells) if (world.cells[i] === TUNNEL) dug++;
   for (const i of r.path) if (world.cells[i] === TUNNEL) dug++;
@@ -1035,6 +1148,7 @@ function addRain(amount) {
   world.wet = true;
 }
 const waterAt = (x, y) => inGrid(x, y) ? world.water[idx(x, y)] : 0;
+let drainedWater = 0;
 function waterStep() {
   const w = world.water, cells = world.cells, flip = (world.frame & 1) === 0;
   let any = false;
@@ -1046,6 +1160,8 @@ function waterStep() {
       if (v < 0.003) { if (v > 0) w[i] = 0; continue; }
       any = true;
       v -= y >= G ? 0.0012 : 0.006;
+      // der Drainage-Schacht lässt Wasser im Boden versickern
+      if (world.chamber[i] === CH_DRAIN && cells[i] === TUNNEL) { v -= 0.035; drainedWater += 0.035; }
       if (v <= 0) { w[i] = 0; continue; }
       if (y + 1 < H && cells[i + W] !== SOIL) {
         const b = w[i + W], fl = Math.min(v, 1 - b);
@@ -1128,16 +1244,21 @@ const colony = {
   brood: [], nextBrood: 1, foodTotal: 0, born: 0, died: 0, eggsLaid: 0, delivered: 0, dugTotal: 0,
   stim: [0, 0, 0, 0], need: { room: 0.3 }, counts: {}, stimT: 0, eggT: 0, histT: 0, history: [], entries: [],
   milestones: new Set(), queenAlive: true, starving: false,
+  honey: 0, floods: 0, flights: 0, flownP: 0, flownM: 0, birdKills: 0, birdAlarm: false, swarming: false, flightCd: 0,
+  releaseT: 0, releaseDay: -1, crowd: 0, jam: 0, expandCd: 0, expandN: 0, doorId: -1, leavesIn: 0,
 
   reset() {
     Object.assign(this, { brood: [], nextBrood: 1, foodTotal: 0, born: 0, died: 0, eggsLaid: 0, delivered: 0, dugTotal: 0,
-      stim: [0, 0, 0, 0], history: [], entries: [], milestones: new Set(), queenAlive: true, starving: false, eggT: 0, histT: 0 });
+      stim: [0, 0, 0, 0], history: [], entries: [], milestones: new Set(), queenAlive: true, starving: false, eggT: 0, histT: 0,
+      honey: 0, floods: 0, flights: 0, flownP: 0, flownM: 0, birdKills: 0, birdAlarm: false, swarming: false, flightCd: 0,
+      releaseT: 0, releaseDay: -1, crowd: 0, jam: 0, expandCd: 60, expandN: 0, doorId: -1, leavesIn: 0, birdsRepelled: 0, swarmP: 0, swarmM: 0, wantLeaves: false });
     this.jobsDirty = true; this.jobCells = new Set(); this.frontier = [];
   },
   // Gründung: ein kurzer Schacht und die Königinnenkammer. Alles andere planen und bauen die Ameisen selbst.
   found() {
     for (let y = G; y <= 50; y++) world.cells[idx(ENT, y)] = TUNNEL;
     makeRoom(CH_QUEEN, ENT, 53, -1, true);
+    refreshRoomTypes();
     rebuildRuntime();
     rebuildTiles();
     // Vorrat der Königin aus dem Hochzeitsflug
@@ -1151,12 +1272,14 @@ const colony = {
     return c;
   },
   planRooms() {
-    const active = world.rooms.filter(r => !r.done);
-    if (active.length >= 2 || ants.count < 3) return;
+    const pop = ants.count;
+    const active = world.rooms.filter(r => !r.done && r.type > 0);
+    if (active.length >= (pop >= 60 ? 3 : 2) || pop < 3) return;
     const has = t => world.rooms.some(r => r.type === t);
     const building = t => active.some(r => r.type === t);
     let corpses = 0, trash = 0;
     for (const i of world.tunnels) { corpses += world.corpses[i]; trash += world.trash[i]; }
+    const c = this.counts || {};
     const wants = [];
     if (!has(CH_BROOD) && this.brood.length > 0) wants.push(CH_BROOD);
     if (!has(CH_GRANARY)) wants.push(CH_GRANARY);
@@ -1164,22 +1287,56 @@ const colony = {
     if (this.brood.length + 6 > this.capacity(CH_BROOD)) wants.push(CH_BROOD);
     if (corpses > 0 && corpses + 6 > this.capacity(CH_CEMETERY)) wants.push(CH_CEMETERY);
     if (trash > 1 && trash + 8 > this.capacity(CH_TRASH)) wants.push(CH_TRASH);
+    // Sonderkammern, sobald die Kolonie groß genug ist
+    if (pop >= 14 && !has(CH_SLEEP)) wants.push(CH_SLEEP);
+    if (pop >= 10 && (c.pupae || 0) >= 2 && !has(CH_PUPA)) wants.push(CH_PUPA);
+    if (pop >= 16 && (ants.countRole(R_SOLDIER) >= 2 || this.birdKills > 0) && !has(CH_GUARD)) wants.push(CH_GUARD);
+    if (pop >= 22 && !has(CH_FUNGUS)) wants.push(CH_FUNGUS);
+    if (pop >= 28 && !has(CH_HONEY)) wants.push(CH_HONEY);
+    if (pop >= 34 && !has(CH_APHID) && world.rootTips.length) wants.push(CH_APHID);
+    if (pop >= 20 && (this.floods > 0 || world.tunnels.length > 200) && !has(CH_DRAIN)) wants.push(CH_DRAIN);
+    if (pop >= 60 && !has(CH_ROYAL)) wants.push(CH_ROYAL);
+    if (has(CH_SLEEP) && pop > this.capacity(CH_SLEEP) * 2.5) wants.push(CH_SLEEP);
+    if (pop >= 100 && world.rooms.filter(r => r.type === CH_FUNGUS).length < 2 && this.leavesIn > 60) wants.push(CH_FUNGUS);
     for (const t of wants) {
       if (building(t)) continue;
       const site = this.findSite(t);
       if (!site) continue;
       const r = makeRoom(t, site[0], site[1], site[2]);
+      if (t === CH_APHID) r.rootX = site[3];
       this.log(`Die Ameisen beginnen ${ROOM_NEW[t]}`, !has(t) || world.rooms.filter(q => q.type === t).length === 1);
       return r;
     }
+  },
+  // möglicher Mittelpunkt für eine Kammer: manche Arten haben feste Vorlieben
+  candidate(type, rx) {
+    const any = () => [ri(Math.ceil(rx) + 3, W - Math.ceil(rx) - 4), ri(G + 8, H - 8)];
+    switch (type) {
+      case CH_GUARD: { const side = rand() < 0.5 ? -1 : 1; return [ENT + side * ri(6, 13), ri(G + 7, G + 11)]; }
+      case CH_PUPA: return [ri(Math.ceil(rx) + 3, W - Math.ceil(rx) - 4), ri(G + 8, G + 17)];
+      case CH_DRAIN: {
+        // unter dem tiefsten Gang, damit das Wasser von selbst hineinläuft
+        let deep = G;
+        for (const i of world.tunnels) deep = Math.max(deep, Math.floor(i / W));
+        return [clamp(ENT + ri(-12, 12), 8, W - 9), Math.min(H - 7, deep + ri(9, 18))];
+      }
+      case CH_APHID: {
+        const tip = world.rootTips[ri(0, world.rootTips.length - 1)];
+        return [clamp(tip[0] + ri(-2, 2), Math.ceil(rx) + 3, W - Math.ceil(rx) - 4), tip[1] + ri(1, 3), tip[0]];
+      }
+    }
+    return any();
   },
   findSite(type) {
     const [rx, ry] = ROOM_SIZE[type];
     const qr = world.rooms.find(r => r.type === CH_QUEEN);
     const qx = qr ? qr.cx : ENT, qy = qr ? qr.cy : 53;
-    let best = null, bs = -1e9;
-    for (let k = 0; k < 70; k++) {
-      const cx = ri(Math.ceil(rx) + 3, W - Math.ceil(rx) - 4), cy = ri(G + 8, H - 8);
+    const near = t => { let d = 1e9; for (const r of world.rooms) if (r.type === t) d = Math.min(d, Math.hypot(r.cx - cx0, r.cy - cy0)); return d; };
+    let best = null, bs = -1e9, cx0 = 0, cy0 = 0;
+    const maxReach = type === CH_DRAIN ? 40 : 28;
+    for (let k = 0; k < 90; k++) {
+      const cand = this.candidate(type, rx), cx = cand[0], cy = cand[1];
+      cx0 = cx; cy0 = cy;
       // Platz mit Rand aus Erde ringsum
       let ok = true;
       for (const [x, y] of ellipseCells(cx, cy, rx, ry, 2)) if (!inGrid(x, y) || world.cells[idx(x, y)] !== SOIL || y <= G + 2) { ok = false; break; }
@@ -1192,7 +1349,7 @@ const colony = {
         const d = Math.hypot(i % W - cx, (y - cy) * 1.3);
         if (d < fd) { fd = d; from = i; }
       }
-      if (from < 0 || fd > 28) continue;
+      if (from < 0 || fd > maxReach) continue;
       const dq = Math.hypot(cx - qx, cy - qy), depth = cy - G;
       let s = -fd * 0.35 + rand() * 2;
       if (type === CH_BROOD) s += -Math.abs(dq - 13) * 0.6 - Math.abs(cy - qy) * 0.2;
@@ -1202,9 +1359,194 @@ const colony = {
         s += Math.min(dq, 35) * 0.3 - depth * 0.1;
         for (const r of world.rooms) if (r.type === CH_CEMETERY && Math.hypot(r.cx - cx, r.cy - cy) < 18) s -= 4;
       }
-      if (s > bs) { bs = s; best = [cx, cy, from]; }
+      // feucht und tief genug für den Pilz, nicht neben Müll und Friedhof
+      if (type === CH_FUNGUS) s += -Math.abs(depth - 40) * 0.12 - Math.max(0, 16 - near(CH_TRASH)) * 0.5 - Math.max(0, 16 - near(CH_CEMETERY)) * 0.5;
+      if (type === CH_HONEY) s += -Math.abs(dq - 16) * 0.3 - Math.min(near(CH_GRANARY), 30) * 0.2;
+      if (type === CH_APHID) s += -Math.abs(cand[2] - cx) * 0.8;
+      if (type === CH_GUARD) s += -Math.abs(depth - 8) * 0.8;
+      if (type === CH_PUPA) s += -depth * 0.4 - Math.min(near(CH_BROOD), 30) * 0.15;
+      if (type === CH_SLEEP) s += -Math.abs(dq - 14) * 0.35;
+      if (type === CH_DRAIN) s += depth * 0.6 + fd * 0.25 - Math.abs(cx - ENT) * 0.2;
+      if (type === CH_ROYAL) s += -Math.abs(dq - 12) * 0.5;
+      if (s > bs) { bs = s; best = [cx, cy, from, cand[2]]; }
     }
     return best;
+  },
+  // ---- Ausbau bei Gedränge: viel benutzte Gänge verbreitern, Umwege mit Abkürzungen ersetzen
+  planExpansion() {
+    this.expandCd -= 3;
+    if (this.expandCd > 0 || ants.count < 18) return;
+    if (world.rooms.some(r => !r.done && r.type === 0)) return;
+    const corridors = world.tunnels.filter(i => world.roomOf[i] < 0).length;
+    this.crowd = ants.count / Math.max(1, corridors);
+    if (this.crowd < 0.3 && this.jam < 2.5) return;
+    // abwechselnd: Gänge verbreitern, neue Seitengänge, Abkürzungen
+    const kind = this.expandN % 3;
+    const p = kind === 0 ? this.findWidening() : (kind === 1 ? this.findGallery() : this.findShortcut());
+    this.expandN++;
+    if (!p) { this.expandCd = 9; return; }
+    this.expandCd = 60;
+    makeProject(p[0], p[1], p[2]);
+    this.log(p[3], this.expandN <= 2);
+  },
+  findWidening() {
+    // die meistbenutzten Gangzellen, die noch einspurig sind
+    const busy = world.tunnels.filter(i => world.roomOf[i] < 0 && Math.floor(i / W) > G + 1 && world.traffic[i] > 2)
+      .sort((a, b) => world.traffic[b] - world.traffic[a]).slice(0, 60);
+    const out = new Set();
+    for (const i of busy) {
+      if (out.size >= 26) break;
+      const x = i % W, y = Math.floor(i / W);
+      const vert = isTunnel(x, y - 1) || isTunnel(x, y + 1), horiz = isTunnel(x - 1, y) || isTunnel(x + 1, y);
+      // schon breit? dann weiter
+      if ((vert && (isTunnel(x - 1, y) || isTunnel(x + 1, y))) && (horiz && (isTunnel(x, y - 1) || isTunnel(x, y + 1)))) continue;
+      let opts = vert && !horiz ? [[x - 1, y], [x + 1, y]] : [[x, y + 1], [x, y - 1]];
+      if (vert && horiz) opts = [[x - 1, y], [x + 1, y], [x, y + 1]];
+      for (const [nx, ny] of opts) {
+        if (!diggable(nx, ny) || ny <= G + 1 || world.roomOf[idx(nx, ny)] >= 0) continue;
+        // die Seite des Gangs, auf der schon verbreitert wird, bleibt bevorzugt
+        const n = idx(nx, ny);
+        if (out.has(n - W) || out.has(n + W) || out.has(n - 1) || out.has(n + 1) || rand() < 0.5) { out.add(n); break; }
+      }
+    }
+    if (out.size < 6) return null;
+    return ["widen", [...out], "Die Gänge sind jetzt breiter", "Es wird eng. Die Ameisen verbreitern die Hauptgänge"];
+  },
+  findGallery() {
+    // ein neuer Seitengang ins unberührte Erdreich: mehr Platz zum Ausweichen und Rasten
+    const t = world.tunnels.filter(i => world.roomOf[i] < 0 && Math.floor(i / W) > G + 4);
+    if (!t.length) return null;
+    let best = null;
+    for (let k = 0; k < 25 && !best; k++) {
+      let i = t[ri(0, t.length - 1)], x = i % W, y = Math.floor(i / W);
+      const dx = x < W / 2 ? (rand() < 0.7 ? 1 : -1) : (rand() < 0.7 ? -1 : 1), len = ri(12, 20), path = [];
+      for (let n = 0; n < len; n++) {
+        if (n > 1 && rand() < 0.25) y += rand() < 0.7 ? 1 : -1; else x += dx;
+        if (!diggable(x, y) || y <= G + 3 || world.roomOf[idx(x, y)] >= 0) break;
+        // nicht in andere Gänge hineinlaufen
+        let touch = 0;
+        for (const [ax, ay] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) if (isTunnel(x + ax, y + ay)) touch++;
+        if (n > 1 && touch) break;
+        path.push(idx(x, y));
+      }
+      if (path.length >= 9) best = path;
+    }
+    if (!best) return null;
+    return ["gallery", best, "Der neue Seitengang ist fertig", "Die Ameisen graben einen neuen Seitengang, damit sie sich besser verteilen"];
+  },
+  findShortcut() {
+    const t = world.tunnels.filter(i => world.roomOf[i] < 0 && Math.floor(i / W) > G + 3);
+    if (t.length < 20) return null;
+    let best = null, bv = 0;
+    for (let k = 0; k < 14; k++) {
+      const a = t[ri(0, t.length - 1)], f = fieldTo(a);
+      for (let m = 0; m < 30; m++) {
+        const b = t[ri(0, t.length - 1)];
+        const dx = b % W - a % W, dy = Math.floor(b / W) - Math.floor(a / W), straight = Math.abs(dx) + Math.abs(dy);
+        if (straight < 7 || straight > 22 || f[b] >= INF) continue;
+        const gain = f[b] - straight * 1.3;
+        if (gain > bv) { bv = gain; best = [a, b]; }
+      }
+    }
+    if (!best || bv < 10) return null;
+    const path = corridorCells(best[0], best[1]).filter(i => world.roomOf[i] < 0 && Math.floor(i / W) > G + 1);
+    if (path.length < 3) return null;
+    return ["shortcut", path, "Die Abkürzung ist fertig", "Die Ameisen graben eine Abkürzung zwischen zwei Gängen"];
+  },
+  finishStalled(r) {
+    const keep = i => world.cells[i] === TUNNEL;
+    for (const i of r.cells) if (!keep(i)) { world.roomOf[i] = -1; world.chamber[i] = 0; }
+    r.cells = r.cells.filter(keep); r.path = r.path.filter(keep); r.size = r.cells.length;
+    if (r.type && r.size < 6) { for (const i of r.cells) { world.roomOf[i] = -1; world.chamber[i] = 0; updateTile(i % W, Math.floor(i / W)); } r.cells = []; r.size = 0; r.type = 0; r.kind = "abandoned"; }
+    for (const i of r.cells) updateTile(i % W, Math.floor(i / W));
+    r.done = true;
+    refreshRoomTypes(); this.jobsDirty = true; markFields();
+    if (r.type) this.log(ROOM_DONE[r.type], true);
+  },
+  // ---- Honigtöpfe: junge Arbeiterinnen werden zu lebenden Vorratsbehältern
+  planRepletes() {
+    if (!hasRoom(CH_HONEY) || ants.count < 24) return;
+    let have = 0;
+    for (let i = 0; i < ants.count; i++) if (ants.role[i] === R_REPLETE) have++;
+    let spots = 0;
+    for (const r of world.rooms) if (r.done && r.type === CH_HONEY) spots += Math.floor(r.size / 4);
+    const want = Math.min(spots, 3 + Math.floor((ants.count - 24) / 12));
+    if (have >= want) return;
+    const home = this.freePotSpot();
+    if (home < 0) return;
+    let pick = -1, pa = 1;
+    for (let i = 0; i < ants.count; i++) {
+      if (ants.role[i] !== R_WORKER || ants.carry[i] || ants.state[i] === S_DIG) continue;
+      const a = ants.age[i] / ants.maxAge[i];
+      if (a < pa) { pa = a; pick = i; }
+    }
+    if (pick < 0 || pa > 0.45) return;
+    ants.role[pick] = R_REPLETE; ants.home[pick] = home; ants.load[pick] = 0;
+    ants.maxAge[pick] *= 1.6;
+    ants.setState(pick, S_REPLETE);
+    if (have === 0) this.log(`${antName(ants.id[pick])} wird zum ersten Honigtopf der Kolonie`, true);
+  },
+  freePotSpot() {
+    const used = new Set();
+    for (let i = 0; i < ants.count; i++) if (ants.role[i] === R_REPLETE) used.add(ants.home[i]);
+    const opts = [];
+    for (const r of world.rooms) if (r.done && r.type === CH_HONEY)
+      for (const i of r.cells) if (world.cells[i] === TUNNEL && i - W >= 0 && world.cells[i - W] === SOIL && !used.has(i) && !used.has(i - 1) && !used.has(i + 1)) opts.push(i);
+    return opts.length ? opts[ri(0, opts.length - 1)] : -1;
+  },
+  // ---- jede Sekunde: Pilz wächst, Blattläuse geben Honigtau, Honigtöpfe geben Vorrat ab
+  tickRooms(dt) {
+    let honey = 0;
+    for (let i = 0; i < ants.count; i++) if (ants.role[i] === R_REPLETE) honey += ants.load[i];
+    this.honey = honey;
+    for (const r of world.rooms) {
+      if (!r.done) {
+        // Baustelle ohne Fortschritt: mit dem fertigen Teil abschließen
+        const pr = roomProgress(r);
+        if (pr > (r.lp || 0) + 1e-6) { r.lp = pr; r.st = 0; } else r.st = (r.st || 0) + dt;
+        if (r.st > 240) this.finishStalled(r);
+        continue;
+      }
+      if (r.type === CH_FUNGUS) {
+        for (const i of r.cells) {
+          if (!world.leaf[i]) { world.fgrow[i] = Math.max(0, world.fgrow[i] - dt * 0.01); continue; }
+          world.fgrow[i] += dt / 16;
+          if (world.fgrow[i] >= 1) {
+            // aus einem Blatt werden drei Pilzknollen
+            world.fgrow[i] = 0; world.leaf[i]--;
+            for (let k = 0; k < 3; k++) {
+              const c = dropCell(i, world.food, 4, n => roomType(n) !== CH_FUNGUS);
+              if (c >= 0) { world.food[c]++; this.foodTotal++; }
+            }
+            if (!this.milestones.has("pilz")) { this.milestones.add("pilz"); this.log("Im Pilzgarten wachsen die ersten Pilzknollen", true); }
+            markItems();
+          }
+        }
+      } else if (r.type === CH_APHID) {
+        r.tend += dt;
+        if (!r.aphids && !r.settled) {
+          r.settled = true; r.aphids = 3;
+          this.log("Wurzelläuse siedeln sich an der Baumwurzel im Stall an", true);
+        }
+        const maxA = 4 + Math.floor(r.size / 4);
+        r.dew = Math.min(r.aphids * 0.8 + 1, r.dew + r.aphids * 0.02 * dt);
+        if (r.dew >= 1) fieldDirty[F_DEW] = true;
+        // gepflegte Läuse vermehren sich, vernachlässigte wandern ab
+        if (r.tend < 50 && r.aphids < maxA && rand() < 0.006 * r.aphids * dt) r.aphids++;
+        if (r.tend > 150 && r.aphids > 1 && rand() < 0.01 * dt) r.aphids--;
+      }
+    }
+    // Wenn die Vorräte knapp werden, geben die Honigtöpfe Zucker ab
+    this.releaseT -= dt;
+    if (this.releaseT <= 0 && honey > 0 && this.foodTotal < Math.max(3, ants.count * 0.12)) {
+      this.releaseT = 1.5;
+      let best = -1;
+      for (let i = 0; i < ants.count; i++) if (ants.role[i] === R_REPLETE && ants.load[i] > 0 && ants.phase[i] === 1 && (best < 0 || ants.load[i] > ants.load[best])) best = i;
+      if (best >= 0 && this.addFood(idx(ants.cx[best], ants.cy[best]))) {
+        ants.load[best]--;
+        if (this.releaseDay !== events.day) { this.releaseDay = events.day; this.log("Die Honigtöpfe geben ihren Vorrat ab", true); }
+      }
+    }
   },
   refreshJobs() {
     this.jobsDirty = false;
@@ -1237,7 +1579,8 @@ const colony = {
       if (room.done || !(room === r || room.path.includes(i))) continue;
       if (roomProgress(room) >= 1) {
         room.done = true;
-        this.log(ROOM_DONE[room.type], true);
+        refreshRoomTypes();
+        this.log(room.type ? ROOM_DONE[room.type] : room.label, room.type > 0 || this.expandN <= 2);
         markItems();
       }
     }
@@ -1260,6 +1603,19 @@ const colony = {
   },
   hatch(b) {
     const x = b.cell % W, y = Math.floor(b.cell / W);
+    if (b.royal) {
+      const i = ants.spawn(x, y, b.royal === 1 ? R_PRINCESS : R_MALE);
+      this.born++;
+      if (i >= 0) {
+        ants.home[i] = b.cell;
+        const first = b.royal === 1 ? "prinzessin" : "maennchen";
+        if (!this.milestones.has(first)) {
+          this.milestones.add(first);
+          this.log(b.royal === 1 ? `${antName(ants.id[i])} schlüpft als erste Prinzessin mit Flügeln` : "Die ersten geflügelten Männchen sind geschlüpft", true);
+        }
+      }
+      return;
+    }
     const i = ants.spawn(x, y, rand() < 0.12 ? R_SOLDIER : R_WORKER);
     this.born++;
     if (i >= 0 && this.born === 1) this.log(`${antName(ants.id[i])} ist als erste Tochter geschlüpft`, true);
@@ -1272,14 +1628,16 @@ const colony = {
       if (b.carried) continue;
       if (b.s === 0) { b.t += dt; if (b.t >= EGG_T) { b.s = 1; b.t = 0; b.fed = 0.7; markItems(); } }
       else if (b.s === 1) {
-        b.fed = Math.max(0, b.fed - 0.022 * dt);
+        // königliche Larven brauchen mehr Futter und wachsen länger
+        b.fed = Math.max(0, b.fed - 0.022 * dt * (b.royal ? 1.5 : 1));
         if (b.fed > 0) b.t += dt; else { b.t += dt * 0.15; b.starve += dt; }
         if (b.fed < 0.5) fieldDirty[F_HUNGRY] = true;
         if (b.starve > 60) { this.brood.splice(k, 1); world.corpses[b.cell] = Math.min(9, world.corpses[b.cell] + 1); this.died++; markItems(); continue; }
-        if (b.t >= LARVA_T) { b.s = 2; b.t = 0; markItems(); }
+        if (b.t >= LARVA_T * (b.royal ? 1.4 : 1)) { b.s = 2; b.t = 0; markItems(); }
       } else {
-        b.t += dt;
-        if (b.t >= PUPA_T) { this.brood.splice(k, 1); this.hatch(b); markItems(); }
+        // in der warmen Puppenkammer reifen Puppen schneller
+        b.t += dt * (roomType(b.cell) === CH_PUPA ? 1.7 : 1);
+        if (b.t >= PUPA_T * (b.royal ? 1.3 : 1)) { this.brood.splice(k, 1); this.hatch(b); markItems(); }
       }
     }
     // Die Königin legt Eier, wenn sie satt ist
@@ -1287,13 +1645,21 @@ const colony = {
     if (q >= 0) {
       const workers = ants.count - 1, cap = 8 + Math.floor(workers * 0.6);
       // nur wenn genug Vorrat für die Brut da ist
-      const enough = this.foodTotal >= 3 + this.brood.length * 0.5 || (ants.count <= 4 && this.brood.length < 3);
+      const enough = this.foodTotal + this.honey * 0.5 >= 3 + this.brood.length * 0.5 || (ants.count <= 4 && this.brood.length < 3);
       if (enough && ants.energy[q] > 0.45 && this.brood.length < cap && ants.count + this.brood.length < 300 && ants.cy[q] >= G) {
         this.eggT += dt;
         if (this.eggT >= 8 - ants.energy[q] * 4) {
           this.eggT = 0;
           ants.energy[q] -= 0.06;
-          this.brood.push({ id: this.nextBrood++, s: 0, t: 0, fed: 0, starve: 0, age: 0, cell: idx(ants.cx[q], ants.cy[q]), carried: false });
+          const egg = { id: this.nextBrood++, s: 0, t: 0, fed: 0, starve: 0, age: 0, cell: idx(ants.cx[q], ants.cy[q]), carried: false };
+          // große, satte Kolonien ziehen Prinzessinnen und Männchen auf
+          if (hasRoom(CH_ROYAL) && ants.count >= 60 && this.eggsLaid % 4 === 0 && this.foodTotal + this.honey >= 15) {
+            let royals = 0;
+            for (const b of this.brood) if (b.royal) royals++;
+            for (let j = 0; j < ants.count; j++) if (ants.role[j] === R_PRINCESS || ants.role[j] === R_MALE) royals++;
+            if (royals < 8) egg.royal = rand() < 0.45 ? 1 : 2;
+          }
+          this.brood.push(egg);
           this.eggsLaid++;
           ants.doing[q] = D_LAY;
           markItems();
@@ -1309,6 +1675,7 @@ const colony = {
       this.history.push([ants.count, this.foodTotal]);
       if (this.history.length > 90) this.history.shift();
     }
+    this.tickSwarm(dt);
     for (const m of [10, 25, 50, 100, 150, 200, 250, 300]) if (ants.count >= m && !this.milestones.has(m)) {
       this.milestones.add(m);
       this.log(`Die Kolonie hat ${m} Ameisen`, m >= 25);
@@ -1326,28 +1693,55 @@ const colony = {
       if (b.s === 1 && b.fed < 0.5) c.hungryLarvae++;
     }
     let looseCorpses = 0, looseTrash = 0, looseFood = 0;
+    let leaves = 0, leafRoom = 0, fungus = 0;
     for (const i of world.tunnels) {
       if (world.corpses[i] && roomType(i) !== CH_CEMETERY) looseCorpses += world.corpses[i];
       if (world.trash[i] && roomType(i) !== CH_TRASH) looseTrash += world.trash[i];
-      if (world.food[i] && roomType(i) !== CH_GRANARY) looseFood += world.food[i];
+      if (world.food[i] && !isStore(i)) looseFood += world.food[i];
+      if (roomType(i) === CH_FUNGUS) { leaves += world.leaf[i]; fungus += world.food[i]; if (world.leaf[i] < 2) leafRoom++; }
     }
     c.looseCorpses = looseCorpses; c.looseTrash = looseTrash; c.looseFood = looseFood;
-    for (const b of this.brood) if (!b.carried && roomType(b.cell) !== CH_BROOD) c.looseBrood++;
+    c.leaves = leaves; c.fungus = fungus;
+    for (const b of this.brood) if (!b.carried && roomType(b.cell) !== broodRoom(b)) c.looseBrood++;
+    let dew = 0, aphids = 0;
+    for (const r of world.rooms) if (r.done && r.type === CH_APHID) { dew += Math.floor(r.dew); aphids += r.aphids; }
+    c.dew = dew; c.aphids = aphids;
+    // Blätter braucht der Garten nur, solange Platz ist und nicht zu viel Pilz auf Vorrat liegt
+    this.wantLeaves = hasRoom(CH_FUNGUS) && leafRoom > 0 && leaves < 14 && fungus < 30;
     this.counts = c;
     const pop = ants.count, q = ants.queenIndex();
     const queenHungry = q >= 0 && ants.energy[q] < 0.55;
-    const foodPerAnt = this.foodTotal / Math.max(1, pop);
+    const foodPerAnt = (this.foodTotal + this.honey * 0.5) / Math.max(1, pop);
     const out = !events.isNight() && !events.raining;
     const digJobs = this.hasDigWork() ? this.jobCells.size : 0;
     const demand = [
       digJobs ? clamp(digJobs / 5, 2, Math.max(2, c.workers * 0.35)) : 0,
-      out ? c.workers * clamp(0.75 - foodPerAnt / 8, 0.12, 0.7) : 0,
+      (out ? c.workers * clamp(0.75 - foodPerAnt / 8, 0.12, 0.7) + (this.wantLeaves ? 2 + c.workers * 0.06 : 0) : 0) + Math.min(4, dew * 0.7),
       c.hungryLarvae * 0.6 + (hasField(F_BROODSPACE) ? c.looseBrood * 0.5 : 0) + (queenHungry ? 1.5 : 0) + Math.min(3, this.brood.length * 0.15),
       (hasField(F_CEMSPACE) ? looseCorpses : 0) + (hasField(F_TRASHSPACE) ? looseTrash * 0.6 : 0) + (hasField(F_GRANSPACE) ? looseFood * 0.3 : 0),
     ];
     const doing = [c.byState[S_DIG], c.byState[S_FORAGE] + c.byState[S_CARRY], c.byState[S_NURSE], c.byState[S_CLEAN]];
     for (let k = 0; k < 4; k++) this.stim[k] = clamp((demand[k] - doing[k]) / (demand[k] + 1) * 1.3, 0, 1);
-    this.starving = this.foodTotal === 0 && pop > 1;
+    this.starving = this.foodTotal === 0 && this.honey === 0 && pop > 1;
+  },
+  // ---- Hochzeitsflug: an einem warmen, trockenen Tag fliegen alle Geflügelten zugleich aus
+  tickSwarm(dt) {
+    this.flightCd -= dt;
+    let alates = 0, princesses = 0;
+    for (let i = 0; i < ants.count; i++) {
+      if (ants.role[i] === R_PRINCESS) { alates++; princesses++; } else if (ants.role[i] === R_MALE) alates++;
+    }
+    if (this.swarming) {
+      if (!alates) {
+        this.swarming = false; this.flightCd = DAY_LENGTH * 1.5; this.flights++;
+        this.log(`Der ${this.flights}. Hochzeitsflug ist vorbei. ${this.swarmP} Prinzessinnen und ${this.swarmM} Männchen sind ausgeflogen`, true);
+      }
+      return;
+    }
+    if (this.flightCd > 0 || alates < 4 || !princesses || events.raining || events.daylight() < 0.75) return;
+    if (rand() > 0.03 * dt) return;
+    this.swarming = true; this.swarmP = 0; this.swarmM = 0;
+    this.log("Hochzeitsflug! Die Geflügelten klettern ins Freie", true);
   },
   roomInfo(r) {
     const eggs = [0, 0, 0];
@@ -1358,10 +1752,34 @@ const colony = {
     const rows = [];
     if (!r.done) rows.push(["Wird gerade gebaut", Math.round(roomProgress(r) * 100) + " %"]);
     rows.push(["Größe", r.size + " Felder"]);
-    if (r.food) rows.push(["Futter", r.food]);
+    let food = 0, corpses = 0, trash = 0;
+    for (const i of r.cells) { food += world.food[i]; corpses += world.corpses[i]; trash += world.trash[i]; }
+    if (food && r.type !== CH_FUNGUS) rows.push([r.type === CH_HONEY ? "Abgegebener Zucker" : "Futter", food]);
     if (eggs[0] + eggs[1] + eggs[2]) rows.push(["Eier / Larven / Puppen", `${eggs[0]} / ${eggs[1]} / ${eggs[2]}`]);
-    if (r.corpses) rows.push(["Tote", r.corpses]);
-    if (r.trash) rows.push(["Abfall", r.trash]);
+    if (corpses) rows.push(["Tote", corpses]);
+    if (trash) rows.push(["Abfall", trash]);
+    let sleeping = 0, pots = 0, potFill = 0, alP = 0, alM = 0, soldiers = 0, leaves = 0, fungus = 0, water = 0;
+    for (let i = 0; i < ants.count; i++) if (set.has(idx(ants.cx[i], ants.cy[i]))) {
+      if (ants.doing[i] === D_SLEEP || ants.doing[i] === D_REST) sleeping++;
+      if (ants.role[i] === R_REPLETE) { pots++; potFill += ants.load[i]; }
+      if (ants.role[i] === R_PRINCESS) alP++;
+      if (ants.role[i] === R_MALE) alM++;
+      if (ants.role[i] === R_SOLDIER) soldiers++;
+    }
+    for (const i of r.cells) { leaves += world.leaf[i]; water += world.water[i]; }
+    if (r.done) switch (r.type) {
+      case CH_FUNGUS:
+        rows.push(["Pilzknollen", food], ["Blätter zum Verarbeiten", leaves]);
+        if (!leaves && !food) rows.push(["Tipp", "Blätter kommen von Büschen und Bäumen"]);
+        break;
+      case CH_HONEY: rows.push(["Honigtöpfe", pots], ["Zucker darin", potFill + " von " + pots * REPLETE_MAX]); break;
+      case CH_APHID: rows.push(["Wurzelläuse", r.aphids], ["Honigtau bereit", Math.floor(r.dew)], ["Zuletzt gemolken", r.tend < 5 ? "gerade eben" : `vor ${Math.round(r.tend)} s`]); break;
+      case CH_GUARD: rows.push(["Wächterinnen", soldiers], ["Vögel vertrieben", this.birdsRepelled || 0]); break;
+      case CH_PUPA: rows.push(["Wärme", events.isNight() ? "kühl, nachts" : "warm"], ["Reifen hier", "1,7 × schneller"]); break;
+      case CH_SLEEP: rows.push(["Schlafende Ameisen", sleeping], ["Erholung", "doppelt so schnell"]); break;
+      case CH_DRAIN: rows.push(["Wasser gerade", water > 0.5 ? "versickert" : "trocken"], ["Fluten bisher", this.floods]); break;
+      case CH_ROYAL: rows.push(["Prinzessinnen", alP], ["Männchen", alM], ["Hochzeitsflüge", this.flights]); break;
+    }
     rows.push(["Ameisen hier", here]);
     return [ROOM_NAMES[r.type], rows];
   },
@@ -1371,7 +1789,7 @@ const colony = {
 // AMEISEN: Daten zentral in Arrays, gezeichnet in einem Durchgang
 // =====================================================================
 const MAX_ANTS = 320;
-const SPEED = [10, 11, 3];
+const SPEED = [10, 11, 3, 2, 8, 9];
 const ants = {
   count: 0, nextId: 1, assignT: 0, kills: new Map(),
   px: new Float32Array(MAX_ANTS), py: new Float32Array(MAX_ANTS),
@@ -1384,7 +1802,7 @@ const ants = {
   age: new Float32Array(MAX_ANTS), maxAge: new Float32Array(MAX_ANTS), hp: new Float32Array(MAX_ANTS), timer: new Float32Array(MAX_ANTS),
   wt: new Float32Array(MAX_ANTS), trail: new Float32Array(MAX_ANTS), anim: new Float32Array(MAX_ANTS),
   energy: new Float32Array(MAX_ANTS), fatigue: new Float32Array(MAX_ANTS), speed: new Float32Array(MAX_ANTS),
-  th: new Float32Array(MAX_ANTS * 4),
+  th: new Float32Array(MAX_ANTS * 4), occ: new Uint8Array(W * H), jamT: 0, jamSum: 0, jamN: 0,
   KEYS: ["px", "py", "cx", "cy", "tx", "ty", "state", "phase", "sub", "role", "carry", "face", "dir", "doing", "gx", "gy", "tk", "load",
     "id", "digSpot", "bref", "home", "dug", "fetched", "age", "maxAge", "hp", "timer", "wt", "trail", "anim", "energy", "fatigue", "speed"],
   _queen: -1,
@@ -1408,9 +1826,12 @@ const ants = {
     this.id[i] = opts.id ?? (r === R_QUEEN ? 0 : this.nextId++);
     this.digSpot[i] = -1; this.bref[i] = -1; this.home[i] = idx(x, y);
     this.dug[i] = opts.dug || 0; this.fetched[i] = opts.fetched || 0;
+    if (opts.load) this.load[i] = opts.load;
     this.age[i] = opts.age || 0;
-    this.maxAge[i] = opts.maxAge || (r === R_QUEEN ? 1e9 : rf(420, 780));
+    this.maxAge[i] = opts.maxAge || (r === R_QUEEN ? 1e9 : (r === R_PRINCESS || r === R_MALE ? rf(1600, 2200) : rf(420, 780)));
     this.hp[i] = r === R_QUEEN ? 3 : (r === R_SOLDIER ? 1.5 : 1);
+    if (r === R_REPLETE) this.state[i] = S_REPLETE;
+    else if (r === R_PRINCESS || r === R_MALE) this.state[i] = S_ALATE;
     this.timer[i] = rf(0, 0.6); this.wt[i] = 0; this.trail[i] = 0; this.anim[i] = rand() * 4;
     this.energy[i] = opts.energy ?? rf(0.7, 1); this.fatigue[i] = opts.fatigue ?? rf(0, 0.3);
     this.speed[i] = opts.speed || rf(0.85, 1.15);
@@ -1427,10 +1848,14 @@ const ants = {
       if (i >= this.count) continue;
       const [corpse, cause] = this.kills.get(i);
       this.dropCarried(i);
+      const flown = cause === "flight";
       if (corpse && this.cy[i] > G && isTunnel(this.cx[i], this.cy[i])) { world.corpses[idx(this.cx[i], this.cy[i])]++; markItems(); }
       else if (corpse && this.cy[i] <= SURF) addGroundFood(this.cx[i], 1, "corpse");
-      colony.died++;
+      // ein toter Honigtopf platzt, sein Zucker bleibt liegen
+      if (corpse && this.role[i] === R_REPLETE && this.load[i] && this.cy[i] > G) for (let k = 0; k < this.load[i]; k++) colony.addFood(idx(this.cx[i], this.cy[i]));
+      if (!flown) colony.died++;
       if (this.role[i] === R_QUEEN) { colony.queenAlive = false; colony.log("Die Königin ist gestorben", true); }
+      else if (flown) { }
       else if (cause && game.sel === this.id[i]) colony.log(`${antName(this.id[i])} ${cause}`, true);
       else if (cause === "wurde von einem Vogel geschnappt") colony.log(`${antName(this.id[i])} ${cause}`);
       const j = this.count - 1;
@@ -1446,7 +1871,8 @@ const ants = {
   // was eine sterbende Ameise trägt, fällt zu Boden
   dropCarried(i) {
     const cell = idx(this.cx[i], this.cy[i]), under = this.cy[i] > G && isTunnel(this.cx[i], this.cy[i]);
-    if (this.carry[i] === C_FOOD) { if (under) colony.addFood(cell); else addGroundFood(this.cx[i], 1, "fruit"); }
+    if (this.carry[i] === C_FOOD || this.carry[i] === C_SUGAR || this.carry[i] === C_DEW) { if (under) colony.addFood(cell); else addGroundFood(this.cx[i], 1, this.carry[i] === C_SUGAR ? "sugar" : "fruit"); }
+    else if (this.carry[i] === C_LEAF && under) world.trash[cell]++;
     else if (this.carry[i] === C_CORPSE && under) world.corpses[cell]++;
     else if (this.carry[i] === C_TRASH && under) world.trash[cell]++;
     else if (this.carry[i] === C_BROOD) {
@@ -1461,14 +1887,27 @@ const ants = {
   favorite(i) { let k = 0; for (let t = 1; t < 4; t++) if (this.th[i * 4 + t] < this.th[i * 4 + k]) k = t; return k; },
 
   tick(dt) {
-    const wet = world.wet;
+    const wet = world.wet, occ = this.occ;
+    // wie viele Ameisen stehen auf jeder Zelle? Volle Gänge bremsen.
+    for (let i = 0; i < this.count; i++) occ[this.cy[i] * W + this.cx[i]]++;
+    this.jamT -= dt;
+    if (this.jamT <= 0) {
+      this.jamT = 2;
+      let jam = 0;
+      for (let i = 0; i < this.count; i++) { const c = this.cy[i] * W + this.cx[i]; if (occ[c] >= 3 && world.roomOf[c] < 0 && this.cy[i] > G) jam++; }
+      colony.jam = colony.jam * 0.85 + jam * 0.15;
+      for (const i of world.tunnels) if (world.traffic[i] > 0) world.traffic[i] *= 0.9;
+    }
     for (let i = 0; i < this.count; i++) {
       this.age[i] += dt; this.wt[i] += dt;
       if (this.age[i] > this.maxAge[i]) { this.requestKill(i, true, "ist an Altersschwäche gestorben"); continue; }
       // Hunger und Müdigkeit
       const resting = this.state[i] === S_REST, queen = this.role[i] === R_QUEEN;
-      this.energy[i] -= dt / (queen ? 280 : 210) * (resting ? 0.6 : 1);
-      if (!queen) this.fatigue[i] = clamp(this.fatigue[i] + (resting ? -dt / 22 : dt / 140), 0, 1.5);
+      const inBed = resting && world.chamber[this.cy[i] * W + this.cx[i]] === CH_SLEEP;
+      this.energy[i] -= dt / (queen ? 280 : 210) * (resting ? (inBed ? 0.5 : 0.6) : 1);
+      // Honigtöpfe zehren von ihrem eigenen Vorrat
+      if (this.role[i] === R_REPLETE && this.energy[i] < 0.4 && this.load[i] > 0) { this.load[i]--; this.energy[i] = 1; }
+      if (!queen) this.fatigue[i] = clamp(this.fatigue[i] + (resting ? -dt / (inBed ? 10 : 22) : dt / 140), 0, 1.5);
       if (this.energy[i] <= 0) {
         this.energy[i] = 0;
         this.hp[i] -= dt * 0.025;
@@ -1487,17 +1926,25 @@ const ants = {
       const gx = this.tx[i] * T + 1.5, gy = this.ty[i] * T + 1.5;
       const dx = gx - this.px[i], dy = gy - this.py[i], dist = Math.sqrt(dx * dx + dy * dy);
       let sp = SPEED[this.role[i]] * this.speed[i];
-      if (this.carry[i]) sp *= 0.8;
+      if (this.carry[i]) sp *= this.carry[i] === C_LEAF ? 0.7 : 0.8;
       if (this.energy[i] < 0.15) sp *= 0.7;
+      // Gedränge: in einem vollen Gang geht es nur langsam voran
+      const tc = this.ty[i] * W + this.tx[i];
+      if (this.ty[i] > G && world.roomOf[tc] < 0) { const o = occ[tc] - (tc === this.cy[i] * W + this.cx[i] ? 1 : 0); if (o >= 3) sp *= o >= 5 ? 0.55 : 0.75; }
       const step = sp * dt;
       if (dist <= step) {
+        const oc = this.cy[i] * W + this.cx[i];
         this.px[i] = gx; this.py[i] = gy; this.cx[i] = this.tx[i]; this.cy[i] = this.ty[i];
+        const nc = this.cy[i] * W + this.cx[i];
+        if (nc !== oc) { occ[oc]--; occ[nc]++; world.traffic[nc] += 1; }
         Ant.think(i);
       } else {
         this.px[i] += dx / dist * step; this.py[i] += dy / dist * step;
         this.anim[i] += dt * sp * 0.35;
       }
     }
+    // Belegung wieder leeren, nur die benutzten Zellen
+    for (let i = 0; i < this.count; i++) occ[this.cy[i] * W + this.cx[i]] = 0;
     this.processKills();
   },
   killRandom() { for (let t = 0; t < 10; t++) { const i = Math.floor(rand() * this.count); if (this.role[i] !== R_QUEEN) return this.requestKill(i, true); } },
@@ -1513,11 +1960,28 @@ const ants = {
       if (y < G * T && y > SURF * T - 1) y -= surfaceOffset(Math.floor(x / T));
       y -= 0.4;
       let fr = 0;
-      if (this.role[i] === R_SOLDIER) fr = 2;
-      else if (this.role[i] === R_QUEEN) fr = 4;
+      const role = this.role[i];
+      if (role === R_SOLDIER) fr = 2;
+      else if (role === R_QUEEN) fr = 4;
+      else if (role === R_REPLETE) {
+        fr = 22 + Math.min(3, Math.floor(this.load[i] / REPLETE_MAX * 3.99)) * 2;
+        // hängt kopfüber an der Decke, der volle Hinterleib baumelt
+        // Kopf oben an der Decke, der Hinterleib hängt nach unten
+        if (this.phase[i] === 1 && this.state[i] === S_REPLETE) { f = 2; y = this.cy[i] * T + 1.2 + Math.sin(blink * 0.8 + this.id[i]) * 0.15; }
+      }
+      else if (role === R_PRINCESS) fr = 30;
+      else if (role === R_MALE) fr = 32;
       else if (this.carry[i]) fr = 4 + this.carry[i] * 2;
       fr += Math.floor(this.anim[i] * 2) & 1;
       g.drawImage(antAtlas, fr * ACELL, f * ACELL, ACELL, ACELL, F + Math.round(x * PIX) - half, F + Math.round(y * PIX) - half, ACELL, ACELL);
+    }
+    // kleine Zs über schlafenden Ameisen
+    for (let i = 0; i < this.count; i++) {
+      if (this.doing[i] !== D_SLEEP || (this.id[i] % 3)) continue;
+      const ph = (blink * 0.35 + this.id[i] * 0.37) % 1;
+      if (ph > 0.75) continue;
+      const x = this.px[i] + 1 + ph * 2.5, y = this.py[i] - 3 - ph * 4;
+      P.fill(`rgba(240,236,214,${(1 - ph / 0.75).toFixed(2)})`).rect(x, y, 1.5, 0.5).rect(x + 0.5, y + 0.5, 0.5, 0.5).rect(x, y + 1, 1.5, 0.5);
     }
   },
   pos(i) {
@@ -1547,12 +2011,12 @@ function worldTick(dt) {
 }
 
 // Ameisen als fein gezeichnete Sprites in der Seitenansicht, Blick nach rechts
-const AFW = 12, AFH = 9, A_FRAMES = 16;   // Rahmen in Weltpixeln
+const AFW = 12, AFH = 9, A_FRAMES = 34;   // Rahmen in Weltpixeln
 let AS = 0;                               // Atlas-Pixel pro Weltpixel, passend zum Zoom
 const [antAtlas, antAtlasG] = canvas(1, 1);
-function drawAntShape(g, kind, phase, item) {
-  const queen = kind === 2, soldier = kind === 1;
-  const body = "#2a140e", mid = "#46241a", legC = "#1f0f0a";
+function drawAntShape(g, kind, phase, item, fill = 0) {
+  const queen = kind === 2, soldier = kind === 1, replete = kind === 3, princess = kind === 4, male = kind === 5;
+  const body = male ? "#17100c" : "#2a140e", mid = male ? "#2a1d16" : "#46241a", legC = "#1f0f0a";
   g.lineCap = "round"; g.lineJoin = "round";
   // Beine: hintere Seite heller, vordere Seite dunkel
   for (const side of [0, 1]) {
@@ -1564,14 +2028,26 @@ function drawAntShape(g, kind, phase, item) {
       g.beginPath(); g.moveTo(ax, 0.35); g.lineTo(kneeX, -0.4 + side * 0.2); g.lineTo(footX, 2.2); g.stroke();
     }
   }
-  // Hinterleib
-  const ar = queen ? [2.5, 1.55] : [1.75, 1.2];
-  const ax = queen ? -2.9 : -2.35;
+  // Hinterleib: beim Honigtopf zu einer goldenen Kugel gedehnt
+  const big = queen || princess;
+  const ar = big ? [2.5, 1.55] : (male ? [1.6, 0.95] : (replete ? [1.75 + fill * 0.85, 1.2 + fill * 0.72] : [1.75, 1.2]));
+  const ax = big ? -2.9 : (replete ? -2.35 - fill * 0.85 : -2.35);
   let gr = g.createRadialGradient(ax + 0.4, -0.6, 0.2, ax, 0, ar[0]);
-  gr.addColorStop(0, "#6a3826"); gr.addColorStop(1, body);
+  if (replete && fill > 0) { gr.addColorStop(0, "#ffe9a6"); gr.addColorStop(0.55, "#f0b448"); gr.addColorStop(1, "#b9741e"); }
+  else { gr.addColorStop(0, male ? "#3a2a22" : "#6a3826"); gr.addColorStop(1, body); }
   g.fillStyle = gr;
   g.beginPath(); g.ellipse(ax, 0.05, ar[0], ar[1], -0.12, 0, Math.PI * 2); g.fill();
-  if (queen) {
+  if (replete && fill > 0) {
+    // die harten Rückenplatten liegen als dunkle Inseln auf der gedehnten Haut
+    g.fillStyle = "#4a2a14";
+    for (let k = 0; k < 4; k++) {
+      const px = ax + ar[0] * (0.55 - k * 0.38);
+      g.beginPath(); g.ellipse(px, -ar[1] * 0.78, 0.42, 0.22, 0, 0, Math.PI * 2); g.fill();
+    }
+    g.fillStyle = "rgba(255,250,225,0.9)";
+    g.beginPath(); g.ellipse(ax + ar[0] * 0.25, -ar[1] * 0.35, ar[0] * 0.22, ar[1] * 0.16, -0.3, 0, Math.PI * 2); g.fill();
+  }
+  if (queen || princess) {
     g.strokeStyle = "rgba(255,210,170,0.18)"; g.lineWidth = 0.22;
     for (const o of [-0.7, 0.2, 1.1]) { g.beginPath(); g.ellipse(ax + o, 0.05, 0.25, ar[1] * 0.9, 0, -1.2, 1.2); g.stroke(); }
   }
@@ -1583,7 +2059,7 @@ function drawAntShape(g, kind, phase, item) {
   g.fillStyle = gr;
   g.beginPath(); g.ellipse(0.4, -0.05, queen ? 1.1 : 0.95, 0.6, -0.2, 0, Math.PI * 2); g.fill();
   // Kopf
-  const hr = soldier ? 1.2 : 0.85, hx = soldier ? 2.35 : 2.05;
+  const hr = soldier ? 1.2 : (male ? 0.66 : 0.85), hx = soldier ? 2.35 : (male ? 1.8 : 2.05);
   gr = g.createRadialGradient(hx - 0.2, -0.45, 0.1, hx, -0.1, hr);
   gr.addColorStop(0, "#64341f"); gr.addColorStop(1, body);
   g.fillStyle = gr;
@@ -1597,6 +2073,21 @@ function drawAntShape(g, kind, phase, item) {
   g.strokeStyle = legC; g.lineWidth = 0.26;
   const sw = phase ? 0.25 : -0.1;
   g.beginPath(); g.moveTo(hx + 0.2, -0.85); g.quadraticCurveTo(hx + 0.6, -2.5 + sw, hx + 1.9, -2.0 + sw); g.stroke();
+  if (male) {
+    // große Augen der Männchen
+    g.fillStyle = "#3b4a52"; g.beginPath(); g.arc(hx + 0.15, -0.3, 0.32, 0, Math.PI * 2); g.fill();
+  }
+  if (princess || male) {
+    // Flügel liegen über dem Rücken, beim Laufen zittern sie leicht
+    const lift = phase ? -0.15 : 0.05, len = princess ? 3.3 : 2.9;
+    for (const [off, a] of [[0, 1], [0.35, 0.85]]) {
+      g.fillStyle = a === 1 ? "#dfe8f2" : "#c9d6e4";
+      g.beginPath(); g.ellipse(0.1 - len * 0.55 + off, -1.25 + lift - off * 0.6, len * 0.62, 0.78, 0.14, 0, Math.PI * 2); g.fill();
+    }
+    g.strokeStyle = "#8094aa"; g.lineWidth = 0.16;
+    g.beginPath(); g.moveTo(0.3, -1.1 + lift); g.lineTo(-len * 0.95, -1.5 + lift); g.stroke();
+    g.beginPath(); g.moveTo(-0.4, -1.3 + lift); g.lineTo(-len * 0.6, -0.95 + lift); g.stroke();
+  }
   if (queen) {
     // kleine goldene Krone
     g.fillStyle = "#f2c94c"; g.strokeStyle = "#8a6a14"; g.lineWidth = 0.15;
@@ -1621,6 +2112,21 @@ function drawAntShape(g, kind, phase, item) {
       g.beginPath(); g.ellipse(ix + 0.1, iy, 1.2, 0.55, 0.3, 0, Math.PI * 2); g.fill();
       g.strokeStyle = "#4a3a32"; g.lineWidth = 0.2;
       for (const o of [-0.4, 0.2, 0.7]) { g.beginPath(); g.moveTo(ix + o, iy + 0.3); g.lineTo(ix + o + 0.2, iy + 1.0); g.stroke(); }
+    } else if (item === C_LEAF) {
+      // Blattschneiderin: das Blattstück ragt senkrecht über den Kopf
+      g.save(); g.translate(hx + 0.5, -2.6); g.rotate(-0.35);
+      g.fillStyle = "#3f7d34"; g.beginPath(); g.ellipse(0.15, 0.1, 1.55, 2.5, 0, 0, Math.PI * 2); g.fill();
+      g.fillStyle = "#62a84c"; g.beginPath(); g.ellipse(0, 0, 1.4, 2.35, 0, 0, Math.PI * 2); g.fill();
+      g.fillStyle = "#8cc76a"; g.beginPath(); g.ellipse(-0.55, -0.6, 0.45, 1.1, 0, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = "#2f6328"; g.lineWidth = 0.22; g.beginPath(); g.moveTo(0, 2.3); g.lineTo(0, -2.2); g.stroke();
+      g.restore();
+    } else if (item === C_SUGAR) {
+      g.fillStyle = "#d5dbe6"; g.fillRect(ix - 0.75, iy - 0.6, 1.5, 1.4);
+      g.fillStyle = "#ffffff"; g.fillRect(ix - 0.75, iy - 0.6, 1.5, 0.5); g.fillRect(ix - 0.75, iy - 0.6, 0.45, 1.4);
+    } else if (item === C_DEW) {
+      g.fillStyle = "#e9a42c"; g.beginPath(); g.arc(ix, iy + 0.1, 0.95, 0, Math.PI * 2); g.fill();
+      g.beginPath(); g.moveTo(ix - 0.6, iy - 0.5); g.lineTo(ix, iy - 1.5); g.lineTo(ix + 0.6, iy - 0.5); g.fill();
+      g.fillStyle = "#fff0b8"; g.beginPath(); g.arc(ix - 0.3, iy - 0.2, 0.3, 0, Math.PI * 2); g.fill();
     } else if (item === C_BROOD) {
       g.fillStyle = "#fbf6e8"; g.beginPath(); g.ellipse(ix, iy, 1.2, 0.75, 0.4, 0, Math.PI * 2); g.fill();
       g.fillStyle = "#d9cfb0"; g.fillRect(ix - 0.2, iy - 0.6, 0.35, 1.2);
@@ -1631,26 +2137,30 @@ function drawAntShape(g, kind, phase, item) {
 }
 // Pixel-Sprites: der Atlas wird in Kunstpixel-Größe gezeichnet und danach hart begrenzt,
 // in allen vier Blickrichtungen. Beim Zeichnen wird nur noch kopiert.
-const FACES = [[1, 0, 0, 1], [-1, 0, 0, 1], [0, -1, 1, 0], [0, 1, -1, 0]];
+// rechts, links, hoch, runter und kopfüber an der Decke hängend
+const FACES = [[1, 0, 0, 1], [-1, 0, 0, 1], [0, -1, 1, 0], [0, 1, -1, 0], [1, 0, 0, -1], [-1, 0, 0, -1]];
 let ACELL = 0;
 function buildAntAtlas() {
   if (AS) return;
   AS = PIX;
   ACELL = Math.ceil(AFW * AS * 1.15);
   const SS = 4;   // erst größer zeichnen, dann auf Kunstpixel verkleinern
-  const [big, bg] = canvas(ACELL * A_FRAMES * SS, ACELL * 4 * SS);
+  const [big, bg] = canvas(ACELL * A_FRAMES * SS, ACELL * FACES.length * SS);
   bg.imageSmoothingEnabled = true;
+  // Bilder: Arbeiterin, Soldatin, Königin, Arbeiterin mit acht Lasten, Honigtopf in vier Füllständen, Prinzessin, Männchen
   const frames = [];
   for (let a = 0; a < 2; a++) {
     frames[a] = [0, a, 0]; frames[2 + a] = [1, a, 0]; frames[4 + a] = [2, a, 0];
-    for (let c = 1; c < 6; c++) frames[4 + c * 2 + a] = [0, a, c];
+    for (let c = 1; c <= 8; c++) frames[4 + c * 2 + a] = [0, a, c];
+    for (let l = 0; l < 4; l++) frames[22 + l * 2 + a] = [3, a, 0, l / 3];
+    frames[30 + a] = [4, a, 0]; frames[32 + a] = [5, a, 0];
   }
-  FACES.forEach(([a, b, c, d], o) => frames.forEach(([kind, phase, item], f) => {
-    const k = AS * SS * (kind === 2 ? 1.15 : (kind === 1 ? 1.05 : 0.92));
+  FACES.forEach(([a, b, c, d], o) => frames.forEach(([kind, phase, item, fill], f) => {
+    const k = AS * SS * (kind === 2 || kind === 4 ? 1.08 : (kind === 1 ? 1.05 : (kind === 5 ? 0.86 : 0.92)));
     bg.setTransform(a * k, b * k, c * k, d * k, (f * ACELL + ACELL / 2) * SS, (o * ACELL + ACELL / 2) * SS);
-    drawAntShape(bg, kind, phase, item);
+    drawAntShape(bg, kind, phase, item, fill || 0);
   }));
-  antAtlas.width = ACELL * A_FRAMES; antAtlas.height = ACELL * 4;
+  antAtlas.width = ACELL * A_FRAMES; antAtlas.height = ACELL * FACES.length;
   const g = antAtlasG;
   g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
   g.drawImage(big, 0, 0, antAtlas.width, antAtlas.height);
@@ -1681,6 +2191,8 @@ const Ant = {
       case S_SOLDIER: return this.soldier(i);
       case S_QUEEN: return this.queen(i);
       case S_FLEE: return this.flee(i);
+      case S_REPLETE: return this.replete(i);
+      case S_ALATE: return this.alate(i);
     }
   },
   go(i, x, y) { ants.tx[i] = x; ants.ty[i] = y; },
@@ -1740,6 +2252,8 @@ const Ant = {
   // ---- frei: Bedürfnisse zuerst, dann eine Aufgabe nach eigenem Geschmack
   idle(i) {
     ants.doing[i] = D_IDLE;
+    if (ants.role[i] === R_REPLETE) { ants.setState(i, S_REPLETE); return this.replete(i); }
+    if (ants.role[i] === R_PRINCESS || ants.role[i] === R_MALE) { ants.setState(i, S_ALATE); return this.alate(i); }
     if (this.headHome(i)) { ants.doing[i] = D_HOME; return; }
     if (!isTunnel(ants.cx[i], ants.cy[i])) { this.travel(i, F_EXIT); return; }
     if (ants.energy[i] < 0.35 && colony.foodTotal > 0) { ants.setState(i, S_EAT); return this.eat(i); }
@@ -1760,7 +2274,12 @@ const Ant = {
     ants.doing[i] = night ? D_SLEEP : D_REST;
     if (this.headHome(i)) return;
     if (ants.phase[i] === 0) {
-      if (hasField(F_QUEEN) && qDist(this.cell(i)) > 10 && this.travel(i, F_QUEEN) === 0) return;
+      // zum Schlafen in die Schlafkammer, sonst in die Nähe der Königin
+      if (hasRoom(CH_SLEEP) && roomType(this.cell(i)) !== CH_SLEEP) {
+        const r = hasField(F_SLEEP) ? this.travel(i, F_SLEEP) : 2;
+        if (r === 0) return;
+        if (r === 2 && hasField(F_QUEEN) && qDist(this.cell(i)) > 10 && this.travel(i, F_QUEEN) === 0) return;
+      } else if (!hasRoom(CH_SLEEP) && hasField(F_QUEEN) && qDist(this.cell(i)) > 10 && this.travel(i, F_QUEEN) === 0) return;
       ants.phase[i] = 1;
       return this.wait(i, rf(4, 9));
     }
@@ -1830,6 +2349,21 @@ const Ant = {
 
   // ---- Futtersuche: oben herumlaufen, Duftspuren folgen, sich an gute Stellen erinnern
   forage(i) {
+    // Blattläuse melken geht auch nachts und bei Regen, denn der Stall liegt unter der Erde
+    if (ants.phase[i] === 0 && ants.cy[i] >= G && hasField(F_DEW) && (events.isNight() || events.raining || rand() < 0.4)) ants.phase[i] = 10;
+    if (ants.phase[i] === 10) {
+      ants.doing[i] = D_MILK;
+      const r = this.travel(i, F_DEW);
+      if (r === 0) return;
+      const c = this.cell(i), room = world.roomOf[c] >= 0 ? world.rooms[world.roomOf[c]] : null;
+      if (r !== 1 || !room || room.type !== CH_APHID || room.dew < 1) return this.done(i);
+      room.dew -= 1; room.tend = 0;
+      ants.face[i] = (room.rootX > ants.cx[i]) ? 0 : 1;
+      ants.carry[i] = C_DEW; ants.setState(i, S_CARRY); ants.doing[i] = D_MILK;
+      fieldDirty[F_DEW] = true;
+      // Melken: mit den Fühlern streicheln, bis die Laus einen Tropfen abgibt
+      return this.wait(i, rf(1, 1.8));
+    }
     if (ants.phase[i] <= 1 && (events.isNight() || events.raining)) { ants.setState(i, S_IDLE); return this.idle(i); }
     ants.doing[i] = D_SEARCH;
     switch (ants.phase[i]) {
@@ -1850,14 +2384,23 @@ const Ant = {
         const g = groundFoodAt(x);
         if (g) {
           g.n--;
-          ants.tk[i] = x; ants.carry[i] = C_FOOD; ants.setState(i, S_CARRY); ants.trail[i] = 1;
+          ants.tk[i] = x; ants.carry[i] = g.kind === "sugar" ? C_SUGAR : C_FOOD; ants.setState(i, S_CARRY); ants.trail[i] = 1;
           return this.carryFood(i);
         }
         const si = sourceAt(x);
+        // für den Pilzgarten: ein Stück Blatt abschneiden
+        if (si >= 0 && colony.wantLeaves && rand() < (hasFruit(si) ? 0.5 : 0.85)) {
+          const s = world.sources[si], bl = s.blobs[ri(0, s.blobs.length - 1)];
+          const base = s.kind === 0 ? s.cy : SURF - 2;
+          ants.tk[i] = x; ants.sub[i] = 1; ants.phase[i] = 2;
+          ants.gx[i] = clamp(Math.round(s.cx + bl[0] + rf(-0.5, 0.5) * bl[2]), 1, W - 2);
+          ants.gy[i] = clamp(Math.round(base + bl[1] + rf(-0.4, 0.4) * bl[2]), 3, SURF - 1);
+          return this.forage(i);
+        }
         if (si >= 0) {
           if (hasFruit(si) && rand() < 0.85) {
             const f = pickFruit(si);
-            ants.tk[i] = x; ants.gx[i] = f.x; ants.gy[i] = f.y; ants.phase[i] = 2;
+            ants.tk[i] = x; ants.sub[i] = 0; ants.gx[i] = f.x; ants.gy[i] = f.y; ants.phase[i] = 2;
             return this.forage(i);
           }
           if (!hasFruit(si)) ants.trail[i] = -10;
@@ -1877,7 +2420,15 @@ const Ant = {
       }
       case 2: {
         const x = ants.cx[i], y = ants.cy[i];
+        if (ants.sub[i] === 1) ants.doing[i] = D_CUTLEAF;
         if (x === ants.gx[i] && y === ants.gy[i]) {
+          if (ants.sub[i] === 1) {
+            const si = sourceAt(ants.tk[i]);
+            if (si >= 0) { const s = world.sources[si]; (s.cuts || (s.cuts = [])).push([x, y, 0]); if (s.cuts.length > 14) s.cuts.shift(); sky.dirty = true; }
+            ants.carry[i] = C_LEAF; ants.setState(i, S_CARRY); ants.trail[i] = 1; ants.doing[i] = D_CUTLEAF;
+            // Schneiden dauert: die Ameise sägt mit den Kiefern einen Halbkreis aus dem Blatt
+            return this.wait(i, rf(1.2, 2.2));
+          }
           if (takeFruit(x, y)) { ants.carry[i] = C_FOOD; ants.setState(i, S_CARRY); ants.trail[i] = 1; return this.carryFood(i); }
           ants.phase[i] = 3; return this.forage(i);
         }
@@ -1895,7 +2446,9 @@ const Ant = {
   },
   // ---- Futter heimtragen: oben eine Spur legen, unten in die Kornkammer
   carryFood(i) {
-    ants.doing[i] = D_FETCH;
+    const k = ants.carry[i];
+    const surf = k === C_LEAF ? D_LEAFHOME : (k === C_SUGAR ? D_SUGARHOME : (k === C_DEW ? D_DEWHOME : D_FETCH));
+    ants.doing[i] = surf;
     if (ants.phase[i] === 0) {
       if (ants.cy[i] < G) {
         phero.deposit(ants.cx[i], ants.cy[i], ants.trail[i]);
@@ -1905,18 +2458,42 @@ const Ant = {
       }
       ants.phase[i] = 1;
     }
-    ants.doing[i] = D_STORE;
-    // in die Kornkammer, sonst vorerst zur Königin
-    const target = hasField(F_GRANSPACE) ? F_GRANSPACE : F_QUEEN;
+    // Blätter in den Pilzgarten, Zucker und Honigtau in die Honigtöpfe, alles andere in die Kornkammer
+    let target, mode;
+    if (k === C_LEAF) { mode = 1; target = hasField(F_LEAFSPACE) ? F_LEAFSPACE : (hasField(F_TRASHSPACE) ? F_TRASHSPACE : F_QUEEN); }
+    else if ((k === C_SUGAR || k === C_DEW) && hasField(F_POTSPACE)) { mode = 2; target = F_POTSPACE; }
+    else { mode = 0; target = hasField(F_GRANSPACE) ? F_GRANSPACE : F_QUEEN; }
+    ants.doing[i] = mode === 1 ? D_LEAFHOME : (mode === 2 ? D_FILLPOT : (k === C_DEW ? D_DEWHOME : D_STORE));
     const r = this.travel(i, target);
     if (r === 0 && !(target === F_QUEEN && qDist(this.cell(i)) <= 3)) return;
-    const c = this.cell(i), type = target === F_GRANSPACE ? CH_GRANARY : 0;
-    let stored = 0;
-    for (let k = 0; k < 3; k++) if (colony.addFood(c, type) || colony.addFood(c)) stored++;
-    if (!stored) return this.wander(i);
-    ants.carry[i] = C_NONE; ants.fetched[i]++; colony.delivered++;
+    const c = this.cell(i), units = k === C_DEW ? 2 : 3;
+    if (mode === 1) {
+      if (roomType(c) === CH_FUNGUS && world.leaf[c] < 3) {
+        world.leaf[c]++; colony.leavesIn++;
+        if (colony.leavesIn === 1) colony.log(`${antName(ants.id[i])} bringt das erste Blatt in den Pilzgarten`, true);
+      } else world.trash[c] = Math.min(9, world.trash[c] + 1);
+      markItems();
+    } else if (mode === 2) {
+      const j = r === 1 ? repleteAt(c) : -1;
+      let left = units;
+      if (j >= 0) {
+        const add = Math.min(left, REPLETE_MAX - ants.load[j]);
+        ants.load[j] += add; left -= add;
+        if (!colony.milestones.has("topf")) { colony.milestones.add("topf"); colony.log(`${antName(ants.id[j])} speichert den ersten Zucker im Hinterleib`, true); }
+      }
+      for (let n = 0; n < left; n++) colony.addFood(c);
+      fieldDirty[F_POTSPACE] = true;
+      colony.delivered++;
+    } else {
+      const type = target === F_GRANSPACE ? CH_GRANARY : 0;
+      let stored = 0;
+      for (let n = 0; n < units; n++) if (colony.addFood(c, type) || colony.addFood(c)) stored++;
+      if (!stored) return this.wander(i);
+      colony.delivered++;
+    }
+    ants.carry[i] = C_NONE; ants.fetched[i]++;
     this.learn(i, TK_FORAGE);
-    this.done(i, 0.5);
+    this.done(i, mode === 2 ? 1 : 0.5);
   },
 
   // ---- Brutpflege: Königin füttern, Larven füttern, Eier in die Brutkammer tragen
@@ -1926,7 +2503,7 @@ const Ant = {
       case 0:
         if (q >= 0 && ants.energy[q] < 0.55 && colony.foodTotal > 0) { ants.sub[i] = 1; ants.phase[i] = 1; }
         else if (colony.counts.hungryLarvae > 0 && colony.foodTotal > 0 && hasField(F_HUNGRY)) { ants.sub[i] = 2; ants.phase[i] = 1; }
-        else if (hasField(F_LOOSEBROOD) && hasField(F_BROODSPACE)) { ants.sub[i] = 3; ants.phase[i] = 3; }
+        else if (hasField(F_LOOSEBROOD)) { ants.sub[i] = 3; ants.phase[i] = 3; }
         else { ants.sub[i] = 4; ants.phase[i] = 5; ants.wt[i] = 0; }
         return this.nurse(i);
       case 1: {
@@ -1956,16 +2533,17 @@ const Ant = {
         ants.doing[i] = D_MOVEBROOD;
         const r = this.travel(i, F_LOOSEBROOD);
         if (r === 0) return;
-        const b = r === 1 ? colony.brood.find(q2 => q2.cell === c && !q2.carried && roomType(c) !== CH_BROOD) : null;
+        const b = r === 1 ? colony.brood.find(q2 => q2.cell === c && !q2.carried && roomType(c) !== broodRoom(q2)) : null;
         if (!b) return this.done(i);
         b.carried = true; ants.bref[i] = b.id; ants.carry[i] = C_BROOD; ants.phase[i] = 4; markItems();
         return this.wait(i, 0.4);
       }
       case 4: {
-        ants.doing[i] = D_MOVEBROOD;
-        const r = this.travel(i, F_BROODSPACE);
-        if (r === 0) return;
         const b = colony.brood.find(q2 => q2.id === ants.bref[i]);
+        const want = b ? broodRoom(b) : CH_BROOD;
+        ants.doing[i] = want === CH_PUPA ? D_MOVEPUPA : D_MOVEBROOD;
+        const r = this.travel(i, spaceField(want));
+        if (r === 0) return;
         if (b) { b.carried = false; b.cell = this.cell(i); }
         ants.bref[i] = -1; ants.carry[i] = C_NONE; markItems();
         if (r === 1) this.learn(i, TK_NURSE);
@@ -1974,6 +2552,20 @@ const Ant = {
       case 5: {
         ants.doing[i] = D_FEEDLARVA;
         if (ants.wt[i] > 6) return this.done(i);
+        // Gärtnerinnen zupfen den Pilz und verteilen die Blattstücke
+        if (hasRoom(CH_FUNGUS) && (ants.sub[i] === 5 || (ants.wt[i] < 0.1 && rand() < 0.35))) {
+          ants.sub[i] = 5; ants.doing[i] = D_TENDFUNGUS;
+          const fr = world.rooms.find(q2 => q2.done && q2.type === CH_FUNGUS);
+          if (roomType(c) !== CH_FUNGUS) {
+            const f = fieldTo(idx(fr.cx, fr.cy)), st = stepOn(f, ants.cx[i], ants.cy[i]);
+            if (st >= 0) return this.goIdx(i, st);
+          } else {
+            if (world.leaf[c]) world.fgrow[c] += 0.08;
+            const n = randomNeighbor(ants.cx[i], ants.cy[i]);
+            if (roomType(n) === CH_FUNGUS && rand() < 0.6) return this.goIdx(i, n);
+            return this.wait(i, rf(0.6, 1.4));
+          }
+        }
         const fid = hasField(F_BROODSPACE) ? F_BROODSPACE : F_QUEEN;
         if (getField(fid)[c] > 2 && this.travel(i, fid) === 0) return;
         if (rand() < 0.5) this.wait(i, rf(0.5, 1.5)); else this.wander(i);
@@ -2024,9 +2616,24 @@ const Ant = {
     }
   },
 
-  // ---- Soldatinnen: wachen nahe der Königin, folgen dem Alarmduft
+  // ---- Soldatinnen: wachen in der Wachkammer, verschließen nachts den Eingang, vertreiben den Vogel
   soldier(i) {
     ants.doing[i] = D_PATROL;
+    const b = events.bird;
+    if (colony.birdAlarm && b && hasRoom(CH_GUARD)) {
+      if (ants.cy[i] >= G) {
+        if (getField(F_EXIT)[this.cell(i)] < 45) { ants.doing[i] = D_DEFEND; this.goSurface(i); return; }
+      } else {
+        ants.doing[i] = D_DEFEND;
+        const x = ants.cx[i], y = ants.cy[i];
+        if (y < SURF) return this.go(i, x, y + 1);
+        let tx = Math.round(b.x / T);
+        if (b.mode === 1) { const j = ants.indexOfId(b.target); if (j >= 0) tx = ants.cx[j]; }
+        tx = clamp(tx, Math.max(2, ENT - 16), Math.min(W - 3, ENT + 16));
+        if (tx === x) { ants.face[i] = 2; return this.wait(i, 0.25); }
+        return this.go(i, x + sign(tx - x), SURF);
+      }
+    }
     if (events.centActive && !events.centFleeing) {
       const d = Math.hypot(ants.px[i] - events.centX, ants.py[i] - events.centY);
       if (d < 40 && events.centY > G * T) {
@@ -2047,9 +2654,82 @@ const Ant = {
     }
     if (best >= 0) { ants.doing[i] = D_DEFEND; return this.goIdx(i, best); }
     if (ants.energy[i] < 0.35 && colony.foodTotal > 0) { ants.setState(i, S_EAT); return this.eat(i); }
-    if (ants.fatigue[i] > 1) { ants.setState(i, S_REST); return this.rest(i); }
+    if (ants.fatigue[i] > 1 && colony.doorId !== ants.id[i]) { ants.setState(i, S_REST); return this.rest(i); }
+    // nachts verschließt eine Soldatin den Eingang mit ihrem breiten Kopf
+    if (colony.doorId === ants.id[i]) {
+      ants.doing[i] = D_DOOR;
+      const r = this.travel(i, F_EXIT);
+      if (r === 1) { ants.face[i] = 2; return this.wait(i, rf(2, 4)); }
+      if (r === 0) return;
+    }
+    if (hasRoom(CH_GUARD) && hasField(F_GUARD)) {
+      if (roomType(this.cell(i)) !== CH_GUARD) { if (this.travel(i, F_GUARD) === 0) return; }
+      ants.doing[i] = D_GUARD;
+      const n = randomNeighbor(x, y);
+      if (roomType(n) === CH_GUARD && rand() < 0.35) return this.goIdx(i, n);
+      return this.wait(i, rf(0.8, 2.5));
+    }
     if (hasField(F_QUEEN) && qDist(this.cell(i)) > 14 && this.travel(i, F_QUEEN) === 0) return;
     if (rand() < 0.5) this.wait(i, rf(0.5, 2.5)); else this.wander(i);
+  },
+  // ---- Honigtopf: hängt kopfüber an der Decke der Honigtopf-Kammer
+  replete(i) {
+    ants.doing[i] = D_HANG;
+    if (this.headHome(i)) return;
+    let home = ants.home[i];
+    if (world.cells[home] !== TUNNEL || roomType(home) !== CH_HONEY) {
+      home = colony.freePotSpot();
+      if (home < 0) { ants.role[i] = R_WORKER; return this.done(i); }
+      ants.home[i] = home;
+    }
+    const c = this.cell(i);
+    if (c !== home) {
+      ants.phase[i] = 0;
+      const st = stepOn(fieldTo(home), ants.cx[i], ants.cy[i]);
+      if (st >= 0) return this.goIdx(i, st);
+      return this.wander(i);
+    }
+    if (ants.phase[i] !== 1) { ants.phase[i] = 1; fieldDirty[F_POTSPACE] = true; }
+    this.wait(i, rf(2, 5));
+  },
+  // ---- Prinzessinnen und Männchen: warten in ihrer Kammer auf den Hochzeitsflug
+  alate(i) {
+    ants.doing[i] = D_ALATE;
+    if (colony.swarming) {
+      if (ants.sub[i] !== 9) { ants.sub[i] = 9; ants.phase[i] = 0; }
+      return this.swarm(i);
+    }
+    if (ants.energy[i] < 0.35 && colony.foodTotal > 0) { ants.setState(i, S_EAT); return this.eat(i); }
+    if (this.headHome(i)) return;
+    const c = this.cell(i);
+    if (hasRoom(CH_ROYAL) && roomType(c) !== CH_ROYAL && hasField(F_ROYALROOM)) { if (this.travel(i, F_ROYALROOM) === 0) return; }
+    const n = randomNeighbor(ants.cx[i], ants.cy[i]);
+    if (roomType(n) === roomType(c) && rand() < 0.35) return this.goIdx(i, n);
+    this.wait(i, rf(1, 3));
+  },
+  swarm(i) {
+    ants.doing[i] = D_SWARM;
+    const x = ants.cx[i], y = ants.cy[i];
+    switch (ants.phase[i]) {
+      case 0:
+        if (this.goSurface(i)) { ants.phase[i] = 1; ants.gx[i] = clamp(ENT + ri(-16, 16), 3, W - 4); ants.gy[i] = SURF - ri(3, 7); return this.swarm(i); }
+        return;
+      case 1:
+        if (y < SURF && x !== ants.gx[i]) return this.go(i, x, y + 1);
+        if (x !== ants.gx[i]) return this.go(i, x + sign(ants.gx[i] - x), SURF);
+        ants.phase[i] = 2;
+        return this.swarm(i);
+      case 2:
+        // einen Grashalm hinaufklettern
+        if (y > ants.gy[i]) return this.go(i, x, y - 1);
+        ants.phase[i] = 3; ants.face[i] = 2;
+        return this.wait(i, rf(0.6, 3));
+      case 3:
+        events.addFlyer(i);
+        if (ants.role[i] === R_PRINCESS) colony.swarmP++; else colony.swarmM++;
+        ants.requestKill(i, false, "flight");
+        return this.wait(i, 1);
+    }
   },
   flee(i) {
     ants.doing[i] = D_FLEE;
@@ -2080,9 +2760,9 @@ const events = {
   time: 0.3, day: 1, raining: false, rainT: 0, nextFlood: 0, drops: [],
   centActive: false, centFleeing: false, centX: 0, centY: 0, centHp: 0, angle: 0, life: 0, segs: [], nextCent: 0, eatCd: 0,
   targetX: 0, targetY: 0, targetT: 0, walk: 0,
-  bird: null, nextBird: 0, nextBeetle: 0, fruitT: 0,
+  bird: null, nextBird: 0, nextBeetle: 0, fruitT: 0, flyers: [], drainLogged: false,
   reset() {
-    this.raining = false; this.centActive = false; this.drops = [];
+    this.raining = false; this.centActive = false; this.drops = []; this.flyers = [];
     this.nextFlood = rf(300, 450); this.nextCent = rf(200, 320); this.bird = null; this.nextBird = rf(160, 260); this.nextBeetle = rf(90, 180);
   },
   daylight() { return clamp(0.5 - 0.5 * Math.cos(this.time * Math.PI * 2), 0, 1); },
@@ -2101,6 +2781,28 @@ const events = {
     this.tickCentipede(dt);
     this.tickBird(dt);
     this.tickSurface(dt);
+    this.tickFlyers(dt);
+    colony.birdAlarm = !!this.bird && this.bird.mode !== 2;
+    // nachts verschließt eine Soldatin den Eingang, sobald es eine Wachkammer gibt
+    if (this.isNight() && hasRoom(CH_GUARD)) {
+      if (colony.doorId < 0 || ants.indexOfId(colony.doorId) < 0) {
+        colony.doorId = -1;
+        for (let i = 0; i < ants.count; i++) if (ants.role[i] === R_SOLDIER) { colony.doorId = ants.id[i]; break; }
+      }
+    } else colony.doorId = -1;
+  },
+  // Geflügelte nach dem Start: sie steigen in Spiralen auf und verschwinden über dem Bild
+  addFlyer(i) {
+    this.flyers.push({ x: ants.px[i], y: ants.py[i] - surfaceOffset(ants.cx[i]), vx: rf(-8, 8), t: 0, princess: ants.role[i] === R_PRINCESS, ph: rand() * 6 });
+  },
+  tickFlyers(dt) {
+    for (let k = this.flyers.length - 1; k >= 0; k--) {
+      const f = this.flyers[k];
+      f.t += dt;
+      f.x += (f.vx + Math.sin(f.t * 2.4 + f.ph) * 14) * dt;
+      f.y -= (6 + f.t * 7) * dt;
+      if (f.y < -24 || f.x < -20 || f.x > WPX + 20) this.flyers.splice(k, 1);
+    }
   },
   tickFlood(dt) {
     if (!this.raining) {
@@ -2117,7 +2819,10 @@ const events = {
     }
     if (this.rainT <= 0) { this.raining = false; this.drops = []; this.nextFlood = rf(220, 420); }
   },
-  startFlood() { this.raining = true; this.rainT = 20; colony.log("Flut! Der Regen läuft ins Nest", true); },
+  startFlood() {
+    this.raining = true; this.rainT = 20; colony.floods++; this.drainLogged = false;
+    colony.log(hasRoom(CH_DRAIN) ? "Flut! Der Regen läuft ins Nest, der Drainage-Schacht fängt ihn auf" : "Flut! Der Regen läuft ins Nest", true);
+  },
   startCentipede() {
     this.centActive = true; this.centFleeing = false; this.centHp = 24; this.life = 0; this.eatCd = 1;
     const left = rand() < 0.5;
@@ -2198,6 +2903,15 @@ const events = {
     b.flap += dt * 10;
     if (b.mode === 0) {
       b.x += b.vx * dt; b.y += Math.sin(b.flap * 0.3) * dt * 3;
+      // Geflügelte beim Hochzeitsflug sind leichte Beute
+      for (let k = 0; k < this.flyers.length; k++) {
+        const f = this.flyers[k];
+        if (Math.hypot(f.x - b.x, f.y - b.y) < 7) {
+          this.flyers.splice(k, 1); b.mode = 2; b.prey = true;
+          if (f.princess) colony.log("Ein Vogel hat eine Prinzessin im Flug erwischt");
+          break;
+        }
+      }
       // Beute suchen: eine Ameise auf dem Boden unter dem Vogel
       for (let i = 0; i < ants.count; i++) {
         if (ants.cy[i] > SURF || ants.role[i] === R_QUEEN) continue;
@@ -2208,7 +2922,15 @@ const events = {
       const i = ants.indexOfId(b.target);
       if (i < 0 || ants.cy[i] > SURF) { b.mode = 2; return; }
       const dx = ants.px[i] - b.x, dy = ants.py[i] - 2 - b.y, d = Math.hypot(dx, dy);
-      if (d < 2.5) { ants.requestKill(i, false, "wurde von einem Vogel geschnappt"); b.mode = 2; b.prey = true; return; }
+      // eine Wächterin in der Nähe beißt zu, und der Vogel lässt ab
+      for (let j = 0; j < ants.count; j++) {
+        if (ants.role[j] !== R_SOLDIER || ants.cy[j] > SURF || Math.abs(ants.px[j] - ants.px[i]) > 3 * T || d > 10) continue;
+        b.mode = 2; b.prey = false; b.bitten = 1;
+        colony.birdsRepelled++;
+        colony.log(`${antName(ants.id[j])} beißt den Vogel. Er fliegt ohne Beute davon`, true);
+        return;
+      }
+      if (d < 2.5) { ants.requestKill(i, false, "wurde von einem Vogel geschnappt"); colony.birdKills++; b.mode = 2; b.prey = true; return; }
       b.x += dx / d * 55 * dt; b.y += dy / d * 55 * dt;
     } else {
       b.y -= 30 * dt; b.x += b.vx * dt;
@@ -2220,6 +2942,11 @@ const events = {
     this.fruitT -= dt;
     if (this.fruitT <= 0) {
       this.fruitT = 1;
+      // geschnittene Stellen im Laub wachsen zu
+      for (const s of world.sources) if (s.cuts) {
+        for (const c of s.cuts) c[2] += 1;
+        while (s.cuts.length && s.cuts[0][2] > 90) { s.cuts.shift(); sky.dirty = true; }
+      }
       for (const s of world.sources) for (const f of s.fruits) if (f.alive && s.kind === 0 && rand() < 0.0015) {
         f.alive = false; f.t = 0; sky.dirty = true;
         addGroundFood(f.x + ri(-1, 1), 2, "fruit");
@@ -2252,8 +2979,21 @@ const events = {
     else { P.line(b.x - dir * 0.5, b.y + 0.3, b.x - dir * 2.5, b.y + 2.6); P.line(b.x + dir * 0.2, b.y + 0.3, b.x - dir * 0.8, b.y + 2.6); }
     P.fill("#2a2d36").line(b.x - dir * 2.4, b.y, b.x - dir * 4, b.y + 0.6);
     if (b.prey) P.fill("#2a140e").rect(b.x + dir * 2.6, b.y + 1, 1.5, 0.5);
+    // nach dem Biss stieben ein paar Federn
+    if (b.bitten) { P.fill("#c9ccd4").dot(b.x - dir * 3, b.y + 2).dot(b.x - dir * 1, b.y + 3.5); }
+  },
+  drawFlyers() {
+    for (const f of this.flyers) {
+      const up = Math.floor(f.t * 18 + f.ph) % 2 === 0, s = f.princess ? 1 : 0.8;
+      // Körper von oben, Flügel schlagen
+      P.fill(f.princess ? "#4a2414" : "#1d1410").ellipse(f.x, f.y + 0.6 * s, 0.6 * s, 1.5 * s).disc(f.x, f.y - 1.1 * s, 0.6 * s);
+      P.fill(up ? "rgba(225,235,245,0.95)" : "rgba(200,215,230,0.8)");
+      if (up) { P.ellipse(f.x - 1.5 * s, f.y - 0.8 * s, 1.4 * s, 0.6 * s); P.ellipse(f.x + 1.5 * s, f.y - 0.8 * s, 1.4 * s, 0.6 * s); }
+      else { P.ellipse(f.x - 1.3 * s, f.y + 0.2 * s, 1.2 * s, 0.5 * s); P.ellipse(f.x + 1.3 * s, f.y + 0.2 * s, 1.2 * s, 0.5 * s); }
+    }
   },
   draw(F) {
+    this.drawFlyers();
     this.drawBird(F);
     if (this.drops.length) {
       P.fill("rgba(190,215,250,0.7)");
@@ -2375,6 +3115,7 @@ const sky = {
       else if (pass === 1) P.fill(css(LEAF[b[3]])).disc(bx, by, br * 0.92);
       else P.fill(css(LEAF_LIGHT)).disc(bx - br * 0.35, by - br * 0.38, br * 0.3);
     }
+    this.cuts(s);
     // Blattstruktur
     P.fill(css(darken(LEAF[0], 0.3)));
     for (let k = 0; k < 26; k++) { const h = hash2(s.trunk, k); P.dot(cx + (h % 100) / 100 * s.r * T * 1.4 - s.r * T * 0.7, cy + ((h >> 8) % 100) / 100 * s.r * T * 1.0 - s.r * T * 0.5); }
@@ -2388,7 +3129,17 @@ const sky = {
       else if (pass === 1) P.fill(css(LEAF[b[3]])).disc(bx, by, br * 0.92);
       else P.fill(css(LEAF_LIGHT)).disc(bx - br * 0.32, by - br * 0.36, br * 0.3);
     }
+    this.cuts(s);
     this.fruits(s);
+  },
+  // runde Bisse im Laub, wo Blattschneiderinnen ein Stück geholt haben
+  cuts(s) {
+    if (!s.cuts) return;
+    for (const c of s.cuts) {
+      const x = c[0] * T + 1.5, y = c[1] * T + 1.5, a = 1 - c[2] / 90;
+      P.fill(css(darken(LEAF[2], 0.45), a.toFixed(2))).disc(x, y, 1.1);
+      P.fill(css(LEAF_LIGHT, (a * 0.8).toFixed(2))).rect(x - 1, y - 1.2, 2, 0.5);
+    }
   },
   fruits(s) {
     for (const f of s.fruits) {
@@ -2441,24 +3192,51 @@ const decor = {
   },
   draw() {
     const foodCols = ["#d8352a", "#f08c2a", "#f2c84b"];
+    this.rooms();
     for (const i of world.tunnels) {
-      const f = world.food[i], c = world.corpses[i], t = world.trash[i];
-      if (!f && !c && !t) continue;
-      const x = (i % W) * T, y = Math.floor(i / W) * T;
-      for (let k = 0; k < f; k++) P.fill(foodCols[hash2(i, k) % 3]).disc(x + this.slots[k][0], y + this.slots[k][1], 0.8);
+      const f = world.food[i], c = world.corpses[i], t = world.trash[i], lf = world.leaf[i];
+      if (!f && !c && !t && !lf) continue;
+      const x = (i % W) * T, y = Math.floor(i / W) * T, rt = world.chamber[i];
+      // Blattstücke im Pilzgarten, darüber weißes Pilzgeflecht
+      for (let k = 0; k < lf; k++) {
+        const h = hash2(i, k + 21), sx = x + this.slots[k + 1][0], sy = y + this.slots[k + 1][1] + 0.3;
+        P.fill(h % 2 ? "#4f8f3f" : "#679f4a").ellipse(sx, sy, 1.1, 0.5);
+        P.fill("#33682b").rect(sx - 0.8, sy, 1.5, 0.5);
+      }
+      if (rt === CH_FUNGUS && (lf || f)) {
+        const fuzz = 2 + Math.floor(world.fgrow[i] * 5) + f;
+        P.fill("#f1ecdf");
+        for (let k = 0; k < fuzz; k++) { const h = hash2(i, k + 40); P.dot(x + (h % 6) * 0.5, y + 1.2 + ((h >> 4) % 4) * 0.5); }
+      }
+      for (let k = 0; k < f; k++) {
+        const sx = x + this.slots[k][0], sy = y + this.slots[k][1];
+        if (rt === CH_FUNGUS) {
+          // Pilzknollen: kleine weiße Kugeln mit Schatten
+          P.fill("#cbbf9f").disc(sx + 0.2, sy + 0.2, 0.8);
+          P.fill("#f7f2e4").disc(sx, sy, 0.75);
+          P.fill("#ffffff").dot(sx - 0.3, sy - 0.3);
+        } else if (rt === CH_HONEY) {
+          P.fill("#c9811f").disc(sx, sy + 0.1, 0.75);
+          P.fill("#f4c35a").disc(sx - 0.1, sy, 0.6);
+        } else P.fill(foodCols[hash2(i, k) % 3]).disc(sx, sy, 0.8);
+      }
       for (let k = 0; k < Math.min(t, 5); k++) P.fill(hash2(i, k + 9) % 2 ? "#8b806b" : "#6e5236").ellipse(x + this.slots[k][0], y + this.slots[k][1] + 0.3, 0.7, 0.45);
       for (let k = 0; k < Math.min(c, 3); k++) this.deadAnt(x + 1.5 + (k % 2 ? 0.6 : -0.3), y + 2.2 - k * 0.9);
     }
     for (const b of colony.brood) {
       if (b.carried) continue;
       const h = hash2(b.id, 3), x = (b.cell % W) * T + 0.6 + (h % 4) * 0.55, y = Math.floor(b.cell / W) * T + 1.4 + ((h >> 4) % 3) * 0.45;
-      if (b.s === 0) P.fill("#fbf6e8").ellipse(x, y, 0.5, 0.8);
+      const k = b.royal ? 1.35 : 1;   // königliche Brut ist deutlich größer
+      if (b.s === 0) P.fill("#fbf6e8").ellipse(x, y, 0.5 * k, 0.8 * k);
       else if (b.s === 1) {
-        P.fill(b.fed > 0.3 ? "#f6e3b0" : "#d2c8b0").ellipse(x, y, 1.1, 0.75);
+        P.fill(b.fed > 0.3 ? "#f6e3b0" : "#d2c8b0").ellipse(x, y, 1.1 * k, 0.75 * k);
         P.fill("rgba(120,90,50,0.5)").rect(x - 0.3, y - 0.5, 0.5, 1);
       } else {
-        P.fill("#c9a46a").ellipse(x, y, 1.3, 0.8);
+        // Puppe im Kokon, in der Puppenkammer leicht glänzend vor Wärme
+        P.fill("#a9844d").ellipse(x + 0.15, y + 0.15, 1.3 * k, 0.8 * k);
+        P.fill(b.royal ? "#d8b170" : "#c9a46a").ellipse(x, y, 1.3 * k, 0.8 * k);
         P.fill("#a9844d").rect(x - 0.6, y - 0.5, 0.5, 1);
+        if (world.chamber[b.cell] === CH_PUPA) P.fill("#efd7a6").dot(x + 0.4, y - 0.4);
       }
     }
     // Futter an der Oberfläche
@@ -2483,6 +3261,74 @@ const decor = {
         P.fill("#1d2a24").disc(x + 3.6 * s, y - 0.4, 1.0 * s);
         P.fill("#5f8f74").rect(x - 1.5 * s, y - 1.9 * s, 2 * s, 0.5);
       } else this.deadAnt(x, y);
+    }
+  },
+  // Einrichtung der Sonderkammern: Wurzeln mit Läusen, Kies, Schlafmulden, Honigflecken
+  rooms() {
+    for (const r of world.rooms) {
+      if (!r.done || r.type < CH_FUNGUS) continue;
+      if (r.type === CH_APHID) this.aphidRoom(r);
+      for (const i of r.cells) {
+        if (world.cells[i] !== TUNNEL) continue;
+        const x = (i % W) * T, y = Math.floor(i / W) * T, h = hash2(i, 77);
+        const floor = i + W < W * H && world.cells[i + W] === SOIL, ceil = i - W >= 0 && world.cells[i - W] === SOIL;
+        if (r.type === CH_FUNGUS) {
+          // der Pilz wächst als schwammiges, helles Polster auf dem Boden
+          if (floor) {
+            P.fill("#cfc6aa").ellipse(x + 1.5, y + 2.4, 1.9, 1);
+            P.fill("#ebe4cf").ellipse(x + 1.3 + (h % 3) * 0.2, y + 2.1, 1.4, 0.7);
+            P.fill("#b9ae90").dot(x + 0.5 + (h % 4) * 0.5, y + 2.5);
+          } else if (h % 4 === 0) P.fill("rgba(240,235,220,0.55)").dot(x + (h >> 3) % 3, y + 1 + (h >> 5) % 2);
+        }
+        if (r.type === CH_DRAIN) {
+          // feuchter Kies im ganzen Schacht
+          for (let k = 0; k < 2; k++) { const q = hash2(i, k + 11); P.fill(["#7e7a73", "#9a968d", "#5f5b55"][q % 3]).dot(x + (q % 6) * 0.5, y + ((q >> 4) % 6) * 0.5); }
+        }
+        if (r.type === CH_DRAIN && floor) {
+          // Kies am Boden, durch den das Wasser versickert
+          for (let k = 0; k < 3; k++) { const q = hash2(i, k + 5); P.fill(["#8d8a84", "#a7a39a", "#6f6b65"][q % 3]).ellipse(x + 0.5 + k, y + 2.4 + (q >> 5) % 2 * 0.3, 0.6, 0.4); }
+        } else if (r.type === CH_SLEEP && floor) {
+          // weiche Mulde aus Pflanzenfasern
+          P.fill("#c8b88e").rect(x, y + 2.5, 3, 0.5);
+          if (h % 2) P.fill("#e0d3ae").rect(x + (h % 3) * 0.5, y + 2, 1.5, 0.5);
+        } else if (r.type === CH_HONEY && ceil && h % 3 === 0) {
+          // klebrige Zuckerflecken an der Decke
+          P.fill("#d99a35").rect(x + (h >> 3) % 2, y, 1, 0.5);
+          if (h % 2) P.fill("#efb850").dot(x + 0.5 + (h >> 3) % 2, y + 0.5);
+        } else if (r.type === CH_GUARD && floor && h % 2 === 0) {
+          P.fill("#8b7d6a").ellipse(x + 1.5, y + 2.4, 0.9, 0.5);
+          P.fill("#b3a68f").dot(x + 1, y + 2);
+        } else if (r.type === CH_ROYAL && h % 7 === 0 && Math.floor(blink * 1.5 + h) % 5 === 0) {
+          P.fill("#ffe58a").dot(x + 1.5, y + 1);
+        }
+      }
+    }
+  },
+  aphidRoom(r) {
+    // die Baumwurzel hängt von der Decke in den Stall
+    let top = H;
+    for (const i of r.cells) if (i % W === r.rootX && world.cells[i] === TUNNEL) top = Math.min(top, Math.floor(i / W));
+    if (top >= H) return;
+    const x0 = r.rootX * T + 1.5, y0 = top * T - 0.5, len = 7.5;
+    P.fill("#5a3a22");
+    P.curve(x0, y0, x0 + 1.5, y0 + len * 0.5, x0 - 0.5, y0 + len, 5);
+    P.curve(x0 + 0.5, y0, x0 + 2, y0 + len * 0.5, x0, y0 + len, 5);
+    P.fill("#7a5234").line(x0 + 1, y0 + 2, x0 + 3, y0 + 3.5);
+    P.line(x0 + 0.5, y0 + 4.5, x0 - 1.8, y0 + 5.8);
+    // Wurzelläuse sitzen am Strang, grün mit hellem Wachs
+    const n = Math.min(r.aphids, 10);
+    for (let k = 0; k < n; k++) {
+      const t = 0.15 + (k / Math.max(1, n)) * 0.8, side = k % 2 ? 1 : -1;
+      const ax = x0 + Math.sin(t * 3) * 0.8 + side * 1.1, ay = y0 + t * len;
+      P.fill("#5f8c2c").ellipse(ax + 0.15, ay + 0.15, 0.9, 0.62);
+      P.fill("#8fbf45").ellipse(ax, ay, 0.85, 0.58);
+      P.fill("#f4f6e8").dot(ax - side * 0.3, ay - 0.3);
+    }
+    // Honigtau-Tropfen, bereit zum Melken
+    for (let k = 0; k < Math.min(3, Math.floor(r.dew)); k++) {
+      const dx = x0 + (k - 1) * 1.6, dy = y0 + len + 0.8 + (k % 2) * 0.4;
+      P.fill("#d99227").disc(dx, dy, 0.6);
+      P.fill("#ffe39a").dot(dx - 0.2, dy - 0.2);
     }
   },
 };
@@ -2523,12 +3369,16 @@ const ICON_PAUSE = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5
 const ICON_PLAY = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5h2v2h2v2h2v2h2v2h-2v2h-2v2h-2v2H8z"/></svg>';
 const TASK_GROUPS = [
   ["Graben", "#b07a4a", [D_DIG, D_HAUL]],
-  ["Futter holen", "#e0a43a", [D_SEARCH, D_FETCH, D_STORE]],
-  ["Brutpflege", "#a07cb0", [D_FEEDLARVA, D_FEEDQUEEN, D_MOVEBROOD]],
+  ["Futter holen", "#e0a43a", [D_SEARCH, D_FETCH, D_STORE, D_SUGARHOME, D_FILLPOT]],
+  ["Blätter, Läuse", "#6fa04f", [D_CUTLEAF, D_LEAFHOME, D_MILK, D_DEWHOME, D_TENDFUNGUS]],
+  ["Brutpflege", "#a07cb0", [D_FEEDLARVA, D_FEEDQUEEN, D_MOVEBROOD, D_MOVEPUPA]],
   ["Aufräumen", "#8e9a7e", [D_CORPSE, D_TRASH]],
-  ["Wache", "#c95a42", [D_PATROL, D_DEFEND]],
+  ["Wache", "#c95a42", [D_PATROL, D_DEFEND, D_GUARD, D_DOOR]],
   ["Ruhe und Essen", "#6f8fa8", [D_REST, D_SLEEP, D_EAT, D_IDLE, D_HOME, D_FLEE, D_LAY]],
+  ["Honigtöpfe", "#f0b448", [D_HANG]],
+  ["Geflügelte", "#d9e2ec", [D_ALATE, D_SWARM]],
 ];
+const ROLE_NAMES = ["Arbeiterin", "Soldatin", "Königin", "Honigtopf", "Prinzessin", "Männchen"];
 const hud = {
   infoT: 0, bannerT: 0, hintT: 12, t: 0, last: {}, panelOpen: false,
   set(id, v) { if (this.last[id] !== v) { this.last[id] = v; $(id).textContent = v; } },
@@ -2571,7 +3421,7 @@ const hud = {
     if (i < 0) { this.closeAnt(); return; }
     const role = ants.role[i];
     this.set("antName", antName(ants.id[i]));
-    this.set("antRole", role === R_QUEEN ? "Königin" : (role === R_SOLDIER ? "Soldatin" : "Arbeiterin"));
+    this.set("antRole", ROLE_NAMES[role]);
     this.set("antDoing", DOING[ants.doing[i]]);
     $("barFood").style.width = Math.round(clamp(ants.energy[i], 0, 1) * 100) + "%";
     $("barTired").style.width = Math.round(clamp(ants.fatigue[i], 0, 1) * 100) + "%";
@@ -2580,6 +3430,8 @@ const hud = {
     const rows = [["Alter", role === R_QUEEN ? `${events.day} Tage` : (ageMin < 1 ? "frisch geschlüpft" : ageMin + " Min.")]];
     if (role === R_WORKER) rows.push(["Liebste Arbeit", TASK_NAMES[ants.favorite(i)]]);
     if (role === R_QUEEN) rows.push(["Eier gelegt", colony.eggsLaid]);
+    else if (role === R_REPLETE) rows.push(["Zucker im Bauch", ants.load[i] + " von " + REPLETE_MAX], ["Futter geholt", ants.fetched[i]]);
+    else if (role === R_PRINCESS || role === R_MALE) rows.push(["Flügel", "bereit"], ["Wartet auf", "warmes Wetter"]);
     else rows.push(["Felder gegraben", ants.dug[i]], ["Futter geholt", ants.fetched[i]]);
     const key = rows.map(r => r.join(":")).join("|");
     if (this.last.antRows !== key) { this.last.antRows = key; this.rows($("antRows"), rows); }
@@ -2594,8 +3446,9 @@ const hud = {
     this.set("tSoldiers", String(ants.countRole(R_SOLDIER)));
     this.set("tBrood", `${eggs + larvae + pupae}`);
     this.set("tBroodSub", `${eggs} Eier · ${larvae} Larven · ${pupae} Puppen`);
-    this.set("tFood", String(colony.foodTotal));
-    this.set("tRooms", String(world.rooms.filter(r => r.done).length));
+    this.set("tFood", String(colony.foodTotal + colony.honey));
+    this.set("tFoodSub", colony.honey ? `${colony.honey} davon in Honigtöpfen` : "");
+    this.set("tRooms", String(world.rooms.filter(r => r.done && r.type > 0).length));
     this.set("tTunnels", String(world.tunnels.length));
     this.set("tBorn", String(colony.born));
     this.set("tDied", String(colony.died));
@@ -2616,6 +3469,7 @@ const hud = {
       row.querySelector(".tnum").textContent = cnt[k];
     });
     this.drawChart();
+    this.updateRooms();
     const ol = $("chron"), key = colony.entries.length + ":" + (colony.entries[0] ? colony.entries[0].text : "");
     if (this.last.chron !== key) {
       this.last.chron = key;
@@ -2628,6 +3482,32 @@ const hud = {
       }
       if (!colony.entries.length) { const li = document.createElement("li"); li.textContent = "Noch ist nichts Besonderes passiert."; ol.append(li); }
     }
+  },
+  // Übersicht über die Sonderkammern und was dort passiert
+  updateRooms() {
+    const c = colony.counts || {}, rows = [];
+    const n = t => world.rooms.filter(r => r.done && r.type === t).length;
+    const building = t => world.rooms.some(r => !r.done && r.type === t);
+    const state = (t, text, need) => rows.push([ROOM_NAMES[t], n(t) ? text : (building(t) ? "wird gebaut" : need)]);
+    let pots = 0, alP = 0, alM = 0, sleeping = 0;
+    for (let i = 0; i < ants.count; i++) {
+      if (ants.role[i] === R_REPLETE) pots++;
+      else if (ants.role[i] === R_PRINCESS) alP++;
+      else if (ants.role[i] === R_MALE) alM++;
+      if (ants.doing[i] === D_SLEEP && roomType(idx(ants.cx[i], ants.cy[i])) === CH_SLEEP) sleeping++;
+    }
+    state(CH_SLEEP, `${sleeping} schlafen gerade`, "ab 14 Ameisen");
+    state(CH_PUPA, (c.pupae || 0) === 1 ? "1 Puppe im Nest" : `${c.pupae || 0} Puppen im Nest`, "sobald es Puppen gibt");
+    state(CH_GUARD, `${colony.birdsRepelled} Vögel vertrieben`, "ab 2 Soldatinnen");
+    state(CH_FUNGUS, `${c.fungus || 0} Knollen, ${c.leaves || 0} Blätter`, "ab 22 Ameisen");
+    state(CH_HONEY, `${pots} Töpfe, ${colony.honey} Zucker`, "ab 28 Ameisen");
+    state(CH_APHID, `${c.aphids || 0} Läuse, ${c.dew || 0} Tropfen`, "ab 34 Ameisen");
+    state(CH_DRAIN, `${colony.floods} Fluten bisher`, "nach der ersten Flut");
+    state(CH_ROYAL, `${alP} Prinzessinnen, ${alM} Männchen`, "ab 60 Ameisen");
+    rows.push(["Hochzeitsflüge", String(colony.flights)]);
+    rows.push(["Gedränge in den Gängen", colony.crowd > 0.3 || colony.jam > 2.5 ? "eng" : (colony.crowd > 0.2 ? "mittel" : "locker")]);
+    const key = rows.map(r => r.join(":")).join("|");
+    if (this.last.roomsList !== key) { this.last.roomsList = key; this.rows($("roomsList"), rows); }
   },
   drawChart() {
     const cvs = $("chart"), g = cvs.getContext("2d"), w = cvs.width, h = cvs.height, hist = colony.history.concat([[ants.count, colony.foodTotal]]);
@@ -2869,16 +3749,18 @@ function serialize() {
   const a = [];
   for (let i = 0; i < ants.count; i++) a.push([ants.id[i], ants.cx[i], ants.cy[i], ants.role[i], Math.round(ants.age[i]), Math.round(ants.maxAge[i]),
     +ants.energy[i].toFixed(2), +ants.fatigue[i].toFixed(2), +ants.speed[i].toFixed(2), Array.from(ants.th.subarray(i * 4, i * 4 + 4), v => +v.toFixed(2)),
-    ants.dug[i], ants.fetched[i], ants.home[i]]);
+    ants.dug[i], ants.fetched[i], ants.home[i], ants.role[i] === R_REPLETE ? ants.load[i] : 0]);
   return {
-    v: 3, seed: world.seed, cells: b64(world.cells), food: b64(world.food), corpses: b64(world.corpses), trash: b64(world.trash),
+    v: 3, seed: world.seed, cells: b64(world.cells), food: b64(world.food), corpses: b64(world.corpses), trash: b64(world.trash), leaf: b64(world.leaf),
     mound: Array.from(world.mound, v => +v.toFixed(2)),
     fruits: world.sources.flatMap(s => s.fruits.map(f => [f.alive ? 1 : 0, +f.t.toFixed(1)])),
     ground: world.groundFood,
     colony: { brood: colony.brood.map(b => ({ ...b, carried: false })), nextBrood: colony.nextBrood, born: colony.born, died: colony.died,
       eggsLaid: colony.eggsLaid, delivered: colony.delivered, dugTotal: colony.dugTotal, history: colony.history, entries: colony.entries,
-      milestones: [...colony.milestones], queenAlive: colony.queenAlive },
-    rooms: world.rooms.map(r => ({ type: r.type, cells: r.cells, path: r.path, cx: r.cx, cy: r.cy, done: r.done })),
+      milestones: [...colony.milestones], queenAlive: colony.queenAlive, floods: colony.floods, flights: colony.flights,
+      birdKills: colony.birdKills, birdsRepelled: colony.birdsRepelled, leavesIn: colony.leavesIn, expandN: colony.expandN, flightCd: colony.flightCd },
+    rooms: world.rooms.map(r => ({ type: r.type, cells: r.cells, path: r.path, cx: r.cx, cy: r.cy, done: r.done,
+      aphids: r.aphids || 0, dew: +(r.dew || 0).toFixed(2), tend: Math.round(r.tend || 0), rootX: r.rootX ?? r.cx, settled: !!r.settled, kind: r.kind, label: r.label })),
     ants: a, nextId: ants.nextId, time: events.time, day: events.day, nextFlood: events.nextFlood, nextCent: events.nextCent,
     nextBird: events.nextBird, nextBeetle: events.nextBeetle, view: [view.x, view.y, view.z], speed: game.speed,
   };
@@ -2889,22 +3771,26 @@ function deserialize(d) {
   if (c.length !== W * H) return false;
   newWorld(d.seed);
   world.cells.set(c); world.food.set(unb64(d.food)); world.corpses.set(unb64(d.corpses)); world.trash.set(unb64(d.trash));
+  if (d.leaf) world.leaf.set(unb64(d.leaf));
   (d.mound || []).forEach((v, x) => { if (x < W) world.mound[x] = v; });
   let k = 0;
   for (const s of world.sources) for (const f of s.fruits) { const q = d.fruits[k++]; if (q) { f.alive = q[0] === 1; f.t = q[1]; } }
   world.groundFood = d.ground || [];
-  world.rooms = (d.rooms || []).map((r, id) => ({ ...r, id, size: r.cells.length }));
+  world.rooms = (d.rooms || []).map((r, id) => ({ aphids: 0, dew: 0, tend: 0, rootX: r.cx, ...r, id, size: r.cells.length }));
   for (const r of world.rooms) for (const i of r.cells) { world.roomOf[i] = r.id; world.chamber[i] = r.type; }
+  refreshRoomTypes();
   phero.clear();
   colony.reset();
   const cd = d.colony;
   Object.assign(colony, { brood: cd.brood, nextBrood: cd.nextBrood, born: cd.born, died: cd.died, eggsLaid: cd.eggsLaid, delivered: cd.delivered,
-    dugTotal: cd.dugTotal, history: cd.history || [], entries: cd.entries || [], milestones: new Set(cd.milestones || []), queenAlive: cd.queenAlive });
+    dugTotal: cd.dugTotal, history: cd.history || [], entries: cd.entries || [], milestones: new Set(cd.milestones || []), queenAlive: cd.queenAlive,
+    floods: cd.floods || 0, flights: cd.flights || 0, birdKills: cd.birdKills || 0, birdsRepelled: cd.birdsRepelled || 0,
+    leavesIn: cd.leavesIn || 0, expandN: cd.expandN || 0, flightCd: cd.flightCd || 0 });
   colony.foodTotal = world.food.reduce((s, v) => s + v, 0);
   rebuildRuntime(); rebuildTiles();
   ants.clear(); ants.nextId = d.nextId || 1;
   for (const q of d.ants) {
-    const i = ants.spawn(q[1], q[2], q[3], { id: q[0], age: q[4], maxAge: q[5], energy: q[6], fatigue: q[7], speed: q[8], th: q[9], dug: q[10], fetched: q[11] });
+    const i = ants.spawn(q[1], q[2], q[3], { id: q[0], age: q[4], maxAge: q[5], energy: q[6], fatigue: q[7], speed: q[8], th: q[9], dug: q[10], fetched: q[11], load: q[13] || 0 });
     if (i >= 0) ants.home[i] = q[12];
   }
   events.reset();

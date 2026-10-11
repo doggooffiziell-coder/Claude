@@ -18,6 +18,17 @@ Das Spiel läuft auf iPhone, Android, Tablet und PC. Die Basisauflösung ist 270
 - Es gibt keinen festen Bauplan. Wenn die Kolonie Platz für Futter, Brut, Tote oder Abfall braucht, wählen die Ameisen einen passenden Ort, graben einen Verbindungsgang und heben die Kammer gemeinsam aus. Danach bringen sie alles an den richtigen Ort: Futter in die Kornkammer, Eier in die Brutkammer, Tote auf den Friedhof, Abfall in die Müllkammer.
 - Die Königin legt nur Eier, wenn sie gefüttert wird und genug Vorrat da ist. Eier werden zu Larven und Puppen. Ammen tragen die Brut in die Brutkammer und füttern die Larven.
 - An der Oberfläche fällt Obst von den Bäumen, tote Käfer liegen im Gras, und ein Vogel jagt Ameisen. Der Tausendfüßler ist vorerst abgeschaltet.
+- Wächst die Kolonie, bauen die Ameisen Sonderkammern:
+  - Schlafkammer: Müde Ameisen erholen sich dort doppelt so schnell. Nachts steigen kleine Zs auf.
+  - Puppenkammer: Sie liegt nah an der Oberfläche. Puppen reifen dort in der Wärme schneller.
+  - Wachkammer: Soldatinnen warten nahe am Eingang. Kommt der Vogel, laufen sie hinaus und beißen ihn weg. Nachts verschließt eine Soldatin den Eingang mit ihrem Kopf.
+  - Pilzgarten: Ameisen schneiden Blätter von Büschen und Bäumen und tragen sie wie Segel nach Hause. Aus jedem Blatt wachsen Pilzknollen, die als Futter dienen. Im Laub bleiben runde Bisse zurück.
+  - Honigtopf-Kammer: Junge Arbeiterinnen werden zu Honigtöpfen. Sie hängen an der Decke, und ihr Hinterleib füllt sich golden mit Zucker und Honigtau. Werden die Vorräte knapp, geben sie ab.
+  - Blattlaus-Stall: Er liegt an einer Baumwurzel. Wurzelläuse geben Honigtau, die Ameisen melken sie auch nachts und bei Regen. Gepflegte Läuse vermehren sich.
+  - Drainage-Schacht: Er liegt unter dem tiefsten Gang. Bei einer Flut versickert das Wasser dort im Kies.
+  - Prinzessinnenkammer: Ab 60 Ameisen zieht die Königin Prinzessinnen und Männchen mit Flügeln auf. An einem warmen, trockenen Tag klettern alle auf Grashalme und starten zum Hochzeitsflug.
+- Wird es eng, laufen die Ameisen in vollen Gängen langsamer. Dann verbreitern sie die meistbenutzten Gänge, graben neue Seitengänge und legen Abkürzungen an.
+- Das Kolonie-Panel zeigt alle Sonderkammern mit ihrem Zustand, die Zahl der Hochzeitsflüge und das Gedränge in den Gängen.
 - Tippe auf eine Ameise, um ihr zu folgen und ihren Steckbrief zu sehen. Das Schild öffnet das Kolonie-Panel mit Aufgabenverteilung, Verlauf und Chronik. Unten links streust du Zucker ins Gras.
 
 Der Spielstand liegt dort im Speicher des Browsers.
