@@ -3828,47 +3828,60 @@ const seasons = {
 const CH_RIVAL = 15, CH_DAUGHTER = 16;
 CHAMBER_COLORS.push([0.32, 0.33, 0.38], [0.62, 0.48, 0.36]);
 const neighbors = {
-  list: [], nextId: 1, t: 0, fightT: 0,
+  list: [], nextId: 1, t: 0, fightT: 0, puffs: [],
   reset() { this.list = []; this.nextId = 1; world.owner.fill(0); world.claim.fill(0); },
   // freier Platz am Rand: Erde ohne eigene Gänge, nicht unter dem Hügel
+  // freier Platz: nur die Zellen des künftigen Nests und zwei Felder Abstand müssen Erde sein
   findSpot(prefer) {
-    const sides = prefer < 0 ? [[8, 18], [67, 78]] : [[67, 78], [8, 18]];
-    for (const [a, b] of sides) for (let tries = 0; tries < 20; tries++) {
-      const ex = ri(a, b);
-      if (this.list.some(n => Math.abs(n.x - ex) < 14)) continue;
-      let ok = true;
-      for (let y = G; y <= G + 11 && ok; y++) for (let x = ex - 6; x <= ex + 6; x++) {
-        if (!inGrid(x, y)) { ok = false; break; }
-        const i = idx(x, y);
-        if (world.cells[i] === TUNNEL || world.roomOf[i] >= 0 || world.claim[i]) { ok = false; break; }
+    const sides = prefer < 0 ? [[3, 31], [55, 82]] : [[55, 82], [3, 31]];
+    const free = ex => {
+      for (const [x, y] of this.layout(ex).cells) for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+        const X = x + dx, Y = y + dy;
+        if (!inGrid(X, Y) || X < 1 || X > W - 2) return false;
+        const i = idx(X, Y);
+        if (Y >= G && (world.cells[i] === TUNNEL || world.roomOf[i] >= 0 || world.claim[i])) return false;
       }
-      if (ok && Math.abs(ex - ENT) > 14) return ex;
+      return true;
+    };
+    for (const [a, b] of sides) for (let tries = 0; tries < 50; tries++) {
+      const ex = ri(a, b);
+      if (this.list.some(n => Math.abs(n.x - ex) < 12) || Math.abs(ex - ENT) < 12) continue;
+      // nicht unter einen Busch oder direkt an einen Stamm, damit man den Hügel sieht
+      if (world.sources.some(q => Math.abs(q.trunk - ex) < (q.kind === 1 ? 4 : 3))) continue;
+      if (free(ex)) return ex;
     }
     return -1;
   },
-  // kleines Nest: Schacht, Königinnenkammer und Vorratskammer
-  carve(n) {
-    const ch = n.kind === "rival" ? CH_RIVAL : CH_DAUGHTER, ex = n.x, side = ex < W / 2 ? 1 : -1;
-    const cells = [];
-    for (let y = G; y <= G + 6; y++) cells.push([ex, y, 0]);
-    for (const [x, y] of ellipseCells(ex, G + 9, 2.8, 1.4)) cells.push([x, y, ch]);
+  layout(ex) {
+    const side = ex < W / 2 ? 1 : -1, cells = [];
+    for (let y = G; y <= G + 9; y++) cells.push([ex, y, 0]);
     for (let k = 1; k <= 3; k++) cells.push([ex + side * k, G + 4, 0]);
-    for (const [x, y] of ellipseCells(ex + side * 5, G + 4, 2.2, 1.2)) cells.push([x, y, ch]);
+    for (let k = 1; k <= 2; k++) cells.push([ex - side * k, G + 7, 0]);
+    const s = ellipseCells(ex + side * 6, G + 4, 2.6, 1.3), b = ellipseCells(ex - side * 4, G + 7, 2.4, 1.3), q = ellipseCells(ex, G + 12, 3, 1.5);
+    for (const [x, y] of [...s, ...b, ...q]) cells.push([x, y, 1]);
+    return { cells: cells.filter(([x, y]) => inGrid(x, y)), s, b, q };
+  },
+  // Nest mit drei Kammern: Königin unten, Brut in der Mitte, Vorrat an der Seite
+  carve(n) {
+    const ch = n.kind === "rival" ? CH_RIVAL : CH_DAUGHTER, L = this.layout(n.x);
+    const cells = L.cells.map(([x, y, c]) => [x, y, c ? ch : 0]);
+    const ids = list => list.filter(([x, y]) => inGrid(x, y)).map(([x, y]) => idx(x, y));
+    n.sCells = ids(L.s); n.bCells = ids(L.b); n.qCells = ids(L.q);
     for (const [x, y, c] of cells) {
-      if (!inGrid(x, y)) continue;
       const i = idx(x, y);
       if (world.cells[i] !== TUNNEL) { world.cells[i] = TUNNEL; world.tunnels.push(i); }
       world.owner[i] = n.id; world.chamber[i] = c; updateTile(x, y);
     }
     // Schutzzone, damit sich die Nester nie verbinden
     for (const [x, y] of cells) for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (inGrid(x + dx, y + dy)) world.claim[idx(x + dx, y + dy)] = n.id;
-    n.store = ellipseCells(ex + side * 5, G + 4, 2.2, 1.2).filter(([x, y]) => inGrid(x, y)).map(([x, y]) => idx(x, y));
+    n.nest = cells.map(([x, y]) => idx(x, y));
+    if (!n.inside) n.inside = [];
     world.topo++; markFields();
   },
   found(kind, opts = {}) {
     const x = this.findSpot(kind === "rival" ? -sign(opts.prefer || 1) : (opts.prefer || 1));
     if (x < 0) return null;
-    const n = Object.assign({ id: this.nextId++, kind, x, pop: kind === "rival" ? 24 : 1, food: kind === "rival" ? 12 : 4, agents: [], raidCd: 240, growT: 0,
+    const n = Object.assign({ id: this.nextId++, kind, x, pop: kind === "rival" ? 12 : 1, stock: kind === "rival" ? [1, 1, 3, 3, 4, 6] : [4, 4], brood: [], reserve: kind === "rival" ? 0 : 4, agents: [], inside: [], raidCd: 300, growT: 0,
       name: COLONY_NAMES[ri(0, COLONY_NAMES.length - 1)], queen: QUEEN_NAMES[ri(0, QUEEN_NAMES.length - 1)] }, opts.data || {});
     this.list.push(n);
     this.carve(n);
@@ -3893,29 +3906,43 @@ const neighbors = {
     const day = !events.isNight() && !events.raining && !seasons.winter();
     for (const n of [...this.list]) {
       n.growT += dt;
-      if (n.growT > 8) {
-        n.growT = 0;
-        // Futter wird zu Brut, Brut zu Ameisen; ohne Futter schrumpft die Kolonie langsam
-        // ein neues Tier kostet 4 Futter, jedes Tier isst etwa so viel wie eine eigene Ameise
-        if (n.food >= 4 && n.pop < (n.kind === "rival" ? 90 : 70) && !seasons.winter()) { n.food -= 4; n.pop++; }
-        n.food = Math.max(0, n.food - n.pop * 0.055 * (seasons.winter() ? 0.35 : 1));
-        if (n.food <= 0 && rand() < 0.15) n.pop = Math.max(0, n.pop - 1);
+      // Brut entwickelt sich wie bei uns: Ei, Larve, Puppe, dann eine neue Arbeiterin
+      for (let k = n.brood.length - 1; k >= 0; k--) {
+        const b = n.brood[k];
+        b.t += dt * seasons.broodK() / tempoK();
+        const need = [14, 22, 12][b.s];
+        if (b.t >= need) { b.t = 0; b.s++; if (b.s > 2) { n.brood.splice(k, 1); n.pop++; } }
       }
-      if (n.pop <= 0 && !n.agents.length) {
+      const cap = n.kind === "rival" ? 40 : 30;
+      if (n.growT > 10) {
+        n.growT = 0;
+        // ein Ei kostet 5 Futter, jedes Tier isst etwas, ohne Futter schrumpft die Kolonie
+        if (n.stock.length >= 5 && n.pop + n.brood.length < cap && !seasons.winter() && n.brood.length < 6) { n.stock.splice(0, 5); n.brood.push({ s: 0, t: 0 }); }
+        // die Gründerin zieht die ersten Töchter aus ihren Körperreserven auf
+        else if ((n.reserve || 0) > 0 && n.pop < 5 && !seasons.winter()) { n.reserve--; n.brood.push({ s: 0, t: 0 }); }
+        n.eat = (n.eat || 0) + Math.max(0, n.pop - 1) * 0.07 * (seasons.winter() ? 0.35 : 1);
+        while (n.eat >= 1 && n.stock.length) { n.stock.shift(); n.eat -= 1; }
+        if (n.eat >= 3 && !n.stock.length) { n.eat = 0; n.pop = Math.max(0, n.pop - 1); }
+      }
+      n.food = n.stock.length;
+      if (n.pop <= 0 && !n.agents.length && !n.brood.length) {
         if (n.kind === "rival") { colony.rivalsBeaten = (colony.rivalsBeaten || 0) + 1; colony.log(`Die fremde Kolonie ${n.name} ist verschwunden. Das Revier gehört euch`, true); }
         else colony.log(`Die Tochterkolonie ${n.name} hat nicht überlebt`, true);
         this.remove(n); continue;
       }
-      const want = day ? Math.min(n.kind === "rival" ? 18 : 12, Math.round(n.pop / (n.kind === "rival" ? 3 : 4))) : 0;
+      this.tickInside(n, dt);
+      // ist die Vorratskammer voll, bleiben die meisten zu Hause
+      const full = n.stock.length >= n.sCells.length * 3;
+      const want = day ? (full ? 1 : Math.min(n.kind === "rival" ? 6 : 4, Math.floor(n.pop / 4))) : 0;
       const out = n.agents.filter(a => !a.raid).length;
       if (out < want && rand() < dt * 1.2) n.agents.push(this.agent(n, false));
       for (let k = n.agents.length - 1; k >= 0; k--) if (this.move(n, n.agents[k], dt, day)) n.agents.splice(k, 1);
       // Raubzug: eine starke Rivalin schickt Kämpferinnen ins Nest, um Futter und Puppen zu stehlen
       if (n.kind === "rival") {
         n.raidCd -= dt;
-        if (n.raidCd <= 0 && day && n.pop > 22 && n.pop > ants.count * 0.8) {
-          n.raidCd = rf(260, 420);
-          const k = Math.min(6, 2 + Math.floor(n.pop / 15));
+        if (n.raidCd <= 0 && day && n.pop > 18 && n.pop > ants.count * 0.6) {
+          n.raidCd = rf(320, 520);
+          const k = Math.min(4, 2 + Math.floor(n.pop / 15));
           for (let r = 0; r < k; r++) { const a = this.agent(n, true); a.delay = r * 0.8; n.agents.push(a); }
           n.pop -= k;
           colony.log(`Räuberinnen der Kolonie ${n.name} ziehen los zu unserem Nest`, true);
@@ -3927,7 +3954,7 @@ const neighbors = {
   },
   agent(n, raid) {
     return { x: n.x * T + 1.5, y: SURF * T + 1.5, cx: n.x, cy: SURF, tx: n.x, ty: SURF, state: raid ? 10 : 0, dir: n.x < ENT ? 1 : -1, t: 0,
-      carry: C_NONE, raid, soldier: raid || rand() < 0.15, hp: raid ? 2 : 1, wait: 0, delay: 0, anim: rand() * 4, under: false, face: 0 };
+      carry: C_NONE, raid, soldier: raid || rand() < 0.25, hp: raid ? 2 : 1, wait: 0, delay: 0, anim: rand() * 4, under: false, face: 0 };
   },
   // Bewegung einer fremden Ameise zum nächsten Feld, danach eine neue Entscheidung.
   // true heißt: sie ist wieder im eigenen Nest verschwunden
@@ -3978,7 +4005,7 @@ const neighbors = {
         a.state = isFoodCarry(a.carry) ? 3 : 0; return this.think(n, a, day);
       case 3:  // heimkehren
         if (x !== n.x) { this.go(a, x + sign(n.x - x), SURF); return false; }
-        if (isFoodCarry(a.carry)) n.food += 3;
+        if (isFoodCarry(a.carry)) for (let k = 0; k < 3 && n.stock.length < n.sCells.length * 3; k++) n.stock.push(foodOfCarry(a.carry));
         return true;
       // ---- Raubzug: zum Eingang, durch die Gänge zum Futter oder zur Brut, mit Beute zurück
       case 10:
@@ -4000,7 +4027,9 @@ const neighbors = {
       }
       case 13:
         if (x !== n.x) { this.go(a, x + sign(n.x - x), SURF); return false; }
-        if (isFoodCarry(a.carry)) n.food += 3; else if (a.carry === C_BROOD) n.pop++;
+        // gestohlene Puppen schlüpfen im fremden Nest
+        if (isFoodCarry(a.carry)) for (let k = 0; k < 3; k++) n.stock.push(foodOfCarry(a.carry));
+        else if (a.carry === C_BROOD) n.brood.push({ s: 2, t: 0 });
         n.pop++;
         return true;
     }
@@ -4018,10 +4047,13 @@ const neighbors = {
         if (a.delay > 0) continue;
         for (let i = 0; i < ants.count; i++) {
           if (ants.role[i] === R_QUEEN || ants.role[i] === R_REPLETE || Math.abs(ants.cx[i] - a.cx) > 1 || Math.abs(ants.cy[i] - a.cy) > 1 || inNest(ants.cx[i], ants.cy[i]) !== a.under) continue;
-          const ours = ants.role[i] === R_SOLDIER ? 0.72 : 0.38, theirs = a.soldier ? 0.6 : 0.45;
-          if (rand() > 0.5) continue;
+          // Arbeiterinnen weichen meist aus, Soldatinnen und Räuberinnen suchen den Kampf
+          const soldier = ants.role[i] === R_SOLDIER;
+          if (rand() > (soldier || a.raid ? 0.6 : 0.15)) continue;
+          const ours = soldier ? 0.7 : 0.32, theirs = a.soldier ? 0.6 : 0.45;
           ants.tx[i] = ants.cx[i]; ants.ty[i] = ants.cy[i]; ants.timer[i] = 0.8; ants.doing[i] = D_FIGHT;
           a.wait = 0.8;
+          this.puffs.push({ x: a.x, y: a.under ? a.y : a.y - surfaceOffset(a.cx), t: 0 });
           addAlarm(ants.cx[i], Math.max(G, ants.cy[i]), 0.6);
           if (rand() * (ours + theirs) < ours) {
             a.hp -= 1;
@@ -4050,14 +4082,32 @@ const neighbors = {
     }
     return best;
   },
+  // Ameisen im eigenen Nest: laufen zwischen den Kammern, nachts und im Winter ruhen sie
+  tickInside(n, dt) {
+    const want = Math.min(5, Math.ceil(n.pop / 5));
+    while (n.inside.length < want) { const c = n.nest[ri(0, n.nest.length - 1)]; n.inside.push({ c, x: (c % W) * T + 1.5, y: Math.floor(c / W) * T + 1.5, to: c, face: 0, anim: rand() * 4, wait: rf(0, 2) }); }
+    if (n.inside.length > want) n.inside.length = want;
+    const rest = events.isNight() || seasons.winter();
+    for (const a of n.inside) {
+      if (a.wait > 0) { a.wait -= dt; continue; }
+      const gx = (a.to % W) * T + 1.5, gy = Math.floor(a.to / W) * T + 1.5, dx = gx - a.x, dy = gy - a.y, d = Math.hypot(dx, dy), sp = 7 * dt;
+      if (d > sp) { a.x += dx / d * sp; a.y += dy / d * sp; a.anim += dt * 3; a.face = Math.abs(dx) >= Math.abs(dy) ? (dx > 0 ? 0 : 1) : (dy < 0 ? 2 : 3); continue; }
+      a.x = gx; a.y = gy; a.c = a.to;
+      const opts = [a.c - 1, a.c + 1, a.c - W, a.c + W].filter(q => world.owner[q] === n.id);
+      if (rest || rand() < 0.3 || !opts.length) a.wait = rest ? rf(3, 8) : rf(0.5, 2.5);
+      else a.to = opts[ri(0, opts.length - 1)];
+    }
+    for (let k = this.puffs.length - 1; k >= 0; k--) { this.puffs[k].t += dt; if (this.puffs[k].t > 0.6) this.puffs.splice(k, 1); }
+  },
   draw() {
     if (!this.list.length) return;
     buildRivalAtlas();
     const half = ACELL >> 1;
+    const sprite = (atlas, fr, face, x, y) => P.g.drawImage(atlas, fr * ACELL, face * ACELL, ACELL, ACELL, P.ox + Math.round(x * PIX) - half, P.oy + Math.round(y * PIX) - half, ACELL, ACELL);
     for (const n of this.list) {
-      // kleiner Erdhügel mit Eingang
+      const atlas = n.kind === "rival" ? rivalAtlas : antAtlas;
+      // kleiner Erdhügel mit Eingang, halbe Kuppel über dem Boden
       const x = n.x * T + 1.5, gy = G * T - surfaceOffset(n.x), hh = n.kind === "rival" ? 4.5 : 3.2;
-      // halbe Kuppel über dem Boden
       for (let yy = 0; yy < hh + 0.6; yy += 0.5) {
         const w = 8 * Math.sqrt(Math.max(0, 1 - (yy / (hh + 0.6)) ** 2));
         P.fill("#a8874c").rect(x - w, gy - yy - 0.5, w * 2, 0.5);
@@ -4066,37 +4116,60 @@ const neighbors = {
       }
       for (let k = 0; k < 6; k++) { const h = hash2(n.id, k); P.fill(k % 2 ? "#8a6a48" : "#6b4a2c").dot(x - 6 + (h % 12), gy - 0.5 - ((h >> 4) % 3)); }
       P.fill("#2a1a0e").ellipse(x, gy - hh + 1, 1.4, 0.8);
-      // Fähnchen der Tochterkolonie in den Farben der Mutter
       if (n.kind === "daughter") { P.fill("#8a6a48").rect(x + 4, gy - hh - 6, 0.5, 6); P.fill("#d1a94e").rect(x + 4.5, gy - hh - 6, 3, 2); }
-      // Vorrat in der Vorratskammer andeuten
-      const cols = ["#d4352a", "#c9a868", "#2f5040", "#eaa634"];
-      for (let k = 0; k < Math.min(n.store.length * 2, Math.floor(n.food / 3)); k++) {
-        const i = n.store[k % n.store.length];
-        P.fill(cols[hash2(i, k) % 4]).disc((i % W) * T + 0.8 + (k % 2) * 1.4, Math.floor(i / W) * T + 2.1, 0.75);
+      // Vorrat: jede Einheit in ihrer echten Sorte, gestapelt in der Vorratskammer
+      const cells = n.sCells.filter(i => world.cells[i] === TUNNEL && world.cells[i + W] === SOIL);
+      for (let k = 0; k < Math.min(n.stock.length, cells.length * 3); k++) {
+        const i = cells[k % cells.length], layer = Math.floor(k / cells.length);
+        decor.food(n.stock[k] || FK_APPLE, (i % W) * T + 1.5 + (layer === 1 ? -0.6 : layer === 2 ? 0.6 : 0), Math.floor(i / W) * T + 2.1 - layer * 0.9, hash2(i, k));
       }
-      const atlas = n.kind === "rival" ? rivalAtlas : antAtlas;
+      // Brut in der Brutkammer
+      n.brood.forEach((b, k) => {
+        const i = n.bCells[(k * 3) % n.bCells.length], bx = (i % W) * T + 1 + (k % 2), by = Math.floor(i / W) * T + 1.8;
+        if (b.s === 0) P.fill("#fbf6e8").ellipse(bx, by, 0.5, 0.8);
+        else if (b.s === 1) { P.fill("#f0dcaa").ellipse(bx, by, 1.1, 0.75); P.fill("rgba(120,90,50,0.5)").rect(bx - 0.3, by - 0.5, 0.5, 1); }
+        else { P.fill("#a9844d").ellipse(bx + 0.15, by + 0.15, 1.3, 0.8); P.fill("#c9a46a").ellipse(bx, by, 1.3, 0.8); }
+      });
+      // die Königin ruht in ihrer Kammer
+      const qc = n.qCells[Math.floor(n.qCells.length / 2)];
+      if (qc !== undefined && n.pop > 0) sprite(atlas, 4 + (Math.floor(blink * 1.5) & 1), n.x < W / 2 ? 0 : 1, (qc % W) * T + 1.5, Math.floor(qc / W) * T + 1.1);
+      for (const a of n.inside) sprite(atlas, Math.floor(a.anim * 2) & 1, a.face, a.x, a.y - 0.4);
       for (const a of n.agents) {
         if (a.delay > 0) continue;
         let py = a.y - 0.4;
         if (!a.under && a.y > SURF * T - 1 && a.y < G * T) py -= surfaceOffset(a.cx);
         let fr = a.soldier ? 2 : 0;
         if (a.carry) fr = 4 + a.carry * 2;
-        fr += Math.floor(a.anim * 2) & 1;
-        P.g.drawImage(atlas, fr * ACELL, a.face * ACELL, ACELL, ACELL, P.ox + Math.round(a.x * PIX) - half, P.oy + Math.round(py * PIX) - half, ACELL, ACELL);
+        sprite(atlas, fr + (Math.floor(a.anim * 2) & 1), a.face, a.x, py);
       }
+    }
+    // Staubwolke, wo gekämpft wird
+    for (const f of this.puffs) {
+      const r = 1 + f.t * 5, a = (1 - f.t / 0.6).toFixed(2);
+      P.fill(`rgba(240,226,190,${a})`);
+      for (let k = 0; k < 6; k++) { const ang = k / 6 * Math.PI * 2 + f.t * 3; P.disc(f.x + Math.cos(ang) * r, f.y - 1 + Math.sin(ang) * r * 0.6, 0.8); }
+      P.fill(`rgba(255,240,140,${a})`).dot(f.x, f.y - 1.5);
     }
   },
   info(n) {
-    const rows = [["Ameisen", n.pop + n.agents.length], ["Vorrat", Math.round(n.food)], ["Königin", n.queen]];
-    if (n.kind === "rival") rows.push(["Raubzüge", n.raidCd < 60 ? "bald" : "ruhig"]);
+    const st = [0, 0, 0], kinds = {};
+    for (const b of n.brood) st[b.s]++;
+    for (const k of n.stock) kinds[k] = (kinds[k] || 0) + 1;
+    const rows = [["Ameisen", n.pop], ["Davon unterwegs", n.agents.filter(q => !q.raid).length], ["Eier / Larven / Puppen", st.join(" / ")], ["Königin", n.queen]];
+    for (const k in kinds) rows.push([FOOD_NAMES[k], kinds[k]]);
+    if (!n.stock.length) rows.push(["Vorrat", "leer"]);
+    if (n.kind === "rival") rows.push(["Nächster Raubzug", n.pop > 18 ? (n.raidCd < 60 ? "bald" : "später") : "zu schwach"]);
     return [n.kind === "rival" ? `Fremde Kolonie ${n.name}` : `Tochterkolonie ${n.name}`, rows,
-      n.kind === "rival" ? "Eine fremde Art. Sie sammelt an denselben Bäumen, kämpft um Futter und schickt Räuberinnen in euer Nest." :
+      n.kind === "rival" ? "Eine fremde Art. Sie sammelt an denselben Bäumen, kämpft um Futter und schickt Räuberinnen in euer Nest. Gestohlene Puppen schlüpfen bei ihr." :
       "Gegründet von einer eurer Prinzessinnen. Sie lebt friedlich nebenan und wächst mit eigenem Futter."];
   },
-  serialize() { return this.list.map(n => ({ id: n.id, kind: n.kind, x: n.x, pop: n.pop + n.agents.filter(a => !a.raid).length, food: n.food, name: n.name, queen: n.queen, raidCd: n.raidCd })); },
+  serialize() { return this.list.map(n => ({ id: n.id, kind: n.kind, x: n.x, pop: n.pop, stock: n.stock.slice(0, 120), brood: n.brood, reserve: n.reserve || 0, name: n.name, queen: n.queen, raidCd: n.raidCd })); },
   load(arr) {
     this.reset();
-    for (const d of arr || []) { const n = Object.assign({ agents: [], growT: 0 }, d); this.list.push(n); this.nextId = Math.max(this.nextId, n.id + 1); this.carve(n); }
+    for (const d of arr || []) {
+      const n = Object.assign({ agents: [], inside: [], growT: 0, stock: [], brood: [] }, d);
+      if (!d.stock && d.food) n.stock = new Array(Math.min(60, Math.round(d.food))).fill(FK_APPLE);
+      n.pop = Math.min(n.pop, n.kind === "rival" ? 40 : 30); this.list.push(n); this.nextId = Math.max(this.nextId, n.id + 1); this.carve(n); }
   },
 };
 
@@ -4740,7 +4813,7 @@ const hud = {
     state(CH_ROYAL, `${alP} Prinzessinnen, ${alM} Männchen`, "ab 60 Ameisen");
     state(CH_SOLAR, sunny() ? "die Brut sonnt sich" : "nachts leer", world.moundOn ? "ab 15 Ameisen" : "sobald der Hügel hoch ist");
     rows.push(["Hochzeitsflüge", String(colony.flights)]);
-    for (const n of neighbors.list) rows.push([n.kind === "rival" ? `Fremde Kolonie ${n.name}` : `Tochter ${n.name}`, `${n.pop + n.agents.length} Ameisen`]);
+    for (const n of neighbors.list) rows.push([n.kind === "rival" ? `Fremde Kolonie ${n.name}` : `Tochter ${n.name}`, `${n.pop} Ameisen`]);
     rows.push(["Gedränge in den Gängen", colony.crowd > 0.3 || colony.jam > 2.5 ? "eng" : (colony.crowd > 0.2 ? "mittel" : "locker")]);
     const key = rows.map(r => r.join(":")).join("|");
     if (this.last.roomsList !== key) { this.last.roomsList = key; this.rows($("roomsList"), rows); }
