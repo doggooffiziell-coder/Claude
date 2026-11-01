@@ -52,6 +52,10 @@ body{font-family:var(--ui);-webkit-user-select:none;user-select:none;-webkit-tap
 .pseg{display:flex}.pseg button{flex:1;min-width:0;font-size:14px;padding:0 2px}.pseg button+button{border-left:0}
 .fooddays{margin:0;font-size:15px;color:#f6c86a}
 .blist{display:flex;flex-direction:column;gap:8px}
+.sub{margin:4px 0 0;font:400 18px var(--display);color:#f6c86a}
+.idea{margin:0;font-size:16px;line-height:1.4}
+button.bitem{text-align:left;width:100%;min-height:0;font:inherit;color:inherit}
+.thought small{color:var(--dust);font-size:13px}
 .bitem{display:flex;gap:10px;align-items:center;padding:8px;background:var(--wood-2);border:2px solid var(--ink)}
 .bitem.locked{opacity:.55}
 .bpic{width:48px;height:48px;flex:none;image-rendering:pixelated;background:#7e8a3c;border:2px solid var(--ink)}
@@ -158,14 +162,10 @@ button.pri{background:var(--rust)}button.danger{background:#8e2e1e}
   </div>
   <button id="bPeople" type="button">Leute</button>
   <button id="bWork" type="button">Arbeit</button>
-  <button id="bBuild" type="button">Bauen</button>
+  <button id="bBuild" type="button">Bauten</button>
   <button id="bLog" type="button">Log</button>
 </div></nav>
 
-<div id="place" class="gut" hidden><div class="pl-in">
-  <div class="pl-txt"><b id="plName"></b><small id="plHint"></small></div>
-  <div class="row"><button type="button" id="plNo">Abbrechen</button><button type="button" id="plGo" class="pri">Hier bauen</button></div>
-</div></div>
 
 <section id="sheet" aria-hidden="true">
   <div class="grab" id="grab"><span></span></div>
@@ -508,7 +508,7 @@ function makeSettlers(n,r){
    ========================================================= */
 const BUILD=[
   {id:'feuer',name:'Lagerfeuer',w:1,h:1,cost:{holz:3,stein:2},work:1,decay:30,desc:'Wärme in der Nacht, warme Mahlzeiten und Geschichten. Braucht Holz zum Nachlegen.'},
-  {id:'zelt',name:'Zelt',w:2,h:1,cost:{holz:2,felle:3},work:1.5,decay:4,beds:2,desc:'Schlafplatz für zwei. Hält nachts etwas warm.'},
+  {id:'zelt',name:'Zelt',w:2,h:1,cost:{holz:3,stroh:3,felle:2},work:1.5,decay:4,beds:2,desc:'Schlafplatz für zwei. Hält nachts etwas warm.'},
   {id:'huette',name:'Holzhütte',w:2,h:2,cost:{holz:20,stein:4,lehm:4,stroh:6},work:8,decay:2,beds:3,desc:'Schlafplatz für drei. Warm und sicher.',
     look:{wall:'#8a5a32',wall2:'#6a4426',roof:'#5a3a24',roof2:'#74503a',wallH:14,logs:1,door:1,win:1,chimney:1}},
   {id:'brunnen',name:'Brunnen',w:1,h:1,cost:{stein:12,holz:4},work:5,decay:1.5,desc:'Frisches Wasser mitten in der Siedlung.'},
@@ -611,7 +611,7 @@ const Build={
   place(d,x,y){
     const b={id:state.nextB++,type:d.id,x,y,w:d.w,h:d.h,done:false,work:0,got:{},transit:{},hp:100};
     for(let yy=0;yy<d.h;yy++)for(let xx=0;xx<d.w;xx++){const i=(y+yy)*W+x+xx;if(world.obj[i])setObj(i,OB.NONE)}
-    state.builds.push(b);Build.sync();log('Bauauftrag erteilt: '+d.name+'.');return b;
+    state.builds.push(b);Build.sync();return b;
   },
   remove(b){
     state.builds.splice(state.builds.indexOf(b),1);Build.sync();
@@ -620,7 +620,7 @@ const Build={
   cancel(b){for(const [k,v] of Object.entries(b.got))state.res[k]=(state.res[k]||0)+v;Build.remove(b);log('Bauauftrag abgebrochen: '+BDEF[b.type].name+'. Das Material liegt wieder im Lager.')},
   demolish(b){const d=BDEF[b.type];for(const [k,v] of Object.entries(d.cost))state.res[k]=(state.res[k]||0)+Math.floor(v/2);Build.remove(b);log(d.name+' wurde abgerissen. Die Hälfte des Materials liegt im Lager.')},
   complete(b){
-    const d=BDEF[b.type],first=!Build.count(d.id);b.done=true;b.hp=100;b.work=d.work;log(d.name+' ist fertig.');Rel.buildingMood(d);
+    const d=BDEF[b.type],first=!Build.count(d.id);b.done=true;b.hp=100;b.work=d.work;state.lastDone=state.t;log(d.name+' ist fertig.');Rel.buildingMood(d);
     if(first){const nx=BUILD[d.idx+1];if(nx&&Build.unlocked(nx))log('Neu im Baumenü: '+nx.name+'.')}
   },
   haulSite(){for(const b of state.builds){if(b.done)continue;const m=Build.missing(b);for(const k in m)if((state.res[k]||0)>0)return b}return null},
@@ -675,21 +675,50 @@ function drawBuilding(b,now){
   if(d.beds){const z=settlers.filter(q=>q.inside&&q.task&&q.task.bed===b.id).length;for(let k=0;k<z;k++)drawZ(bx+sp.width-10+k*4,by+2,now,k+b.id)}
 }
 
-/* Platzieren: Gebäude wählen, dann auf den Bauplatz tippen */
-const Place={
-  d:null,x:0,y:0,
-  start(d){UI.close();Place.d=d;Place.x=Math.floor(cam.x/16-d.w/2+.5);Place.y=Math.floor(cam.y/16-d.h/2+.5);$('place').hidden=false;$('plName').textContent=d.name;Place.upd()},
-  at(wx,wy){Place.x=Math.floor(wx/16-Place.d.w/2+.5);Place.y=Math.floor(wy/16-Place.d.h/2+.5);Place.upd()},
-  ok(){return Place.d&&Build.valid(Place.d,Place.x,Place.y)},
-  upd(){const v=Place.ok();$('plGo').disabled=!v;$('plHint').textContent=v?'Tippe auf die Karte, um den Platz zu ändern.':'Hier ist kein Platz. Bäume, Felsen, Wasser und Gebäude stören.'},
-  confirm(){if(!Place.ok())return;const d=Place.d;Build.place(d,Place.x,Place.y);Place.stop();UI.toast(d.name+': Bauauftrag erteilt')},
-  stop(){Place.d=null;$('place').hidden=true},
-  draw(now){
-    const d=Place.d,ok=Place.ok(),x0=Place.x*16,y0=Place.y*16;
-    ctx.fillStyle=ok?'rgba(150,210,90,.35)':'rgba(220,70,50,.4)';ctx.fillRect(x0,y0,d.w*16,d.h*16);
-    ctx.fillStyle=ok?'#b8e070':'#f07050';for(let x=x0;x<x0+d.w*16;x+=3){ctx.fillRect(x,y0,2,1);ctx.fillRect(x,y0+d.h*16-1,2,1)}for(let y=y0;y<y0+d.h*16;y+=3){ctx.fillRect(x0,y,1,2);ctx.fillRect(x0+d.w*16-1,y,1,2)}
-    const sp=bSprite(d);ctx.globalAlpha=.55+.15*Math.sin(now/200);ctx.drawImage(sp,x0+((d.w*16-sp.width)>>1),y0+d.h*16-sp.height+1);ctx.globalAlpha=1;
-  }
+/* Planung: Die Siedler entscheiden selbst, was sie wo bauen */
+const WHY={feuer:'Nachts wird es kalt. Ein Feuer wärmt und kocht.',zelt:'Wir brauchen mehr Schlafplätze.',huette:'Ein festes Haus hält warm und sicher.',
+  brunnen:'Der Weg zum Fluss ist weit.',stall:'Die Wildpferde ließen sich zähmen, wenn wir einen Stall hätten.',werkstatt:'Mit besserem Werkzeug geht alles schneller.',
+  saloon:'Nach der Arbeit braucht es einen Ort zum Feiern.',sheriff:'Eine Stadt braucht Recht und Ordnung.',kirche:'Wir brauchen einen Ort für Gebet und Ruhe.',schule:'Die Kinder sollen lesen und schreiben lernen.'};
+const VIEW_OF={saloon:'alkohol',kirche:'glaube',sheriff:'gesetz'};
+const Planner={
+  beds(open){return state.builds.filter(b=>open?!b.done:(b.done&&b.hp>0)).reduce((a,b)=>a+(BDEF[b.type].beds||0),0)},
+  avg(k){return settlers.reduce((a,s)=>a+s.views[k],0)/Math.max(1,settlers.length)},
+  planned(id){return Build.count(id)>0||state.builds.some(b=>b.type===id&&!b.done)},
+  options(){
+    const o=[],n=settlers.length,push=(id,score,why)=>{const d=BDEF[id];if(!Build.unlocked(d)||(state.skip[id]||0)>state.t)return;o.push({d,score,why})};
+    if(!Build.fires().length&&!state.builds.some(b=>b.type==='feuer'&&!b.done))push('feuer',100,WHY.feuer);
+    const deficit=n-Planner.beds()-Planner.beds(true);
+    if(deficit>0){if(Build.unlocked(BDEF.huette))push('huette',80+deficit*5,deficit===1?'Eine Person hat kein Dach über dem Kopf.':deficit+' Siedler haben kein Dach über dem Kopf.');
+      else push('zelt',75+deficit*5,deficit===1?'Eine Person schläft unter freiem Himmel.':deficit+' Siedler schlafen unter freiem Himmel.')}
+    const next=BUILD.find(d=>!Planner.planned(d.id));
+    if(next&&(state.t-(state.lastDone||0)>=1.5*1440||next.idx<=1)){const base={feuer:100,zelt:60,huette:55,brunnen:50,stall:35,werkstatt:45,saloon:38+Planner.avg('alkohol')*12,sheriff:34+Planner.avg('gesetz')*10,kirche:34+Planner.avg('glaube')*12,schule:30}[next.id];push(next.id,base,WHY[next.id])}
+    return o.sort((a,b)=>b.score-a.score);
+  },
+  speaker(d){
+    const v=VIEW_OF[d.id];let best=null,bs=-1e9;
+    for(const s of settlers){const sc=(has(s,'fleissig')?2:0)+(v?s.views[v]*2:0)+(d.beds?u(s.needs.waerme)/30:0)+Math.random()*2;if(sc>bs){bs=sc;best=s}}return best;
+  },
+  site(d){
+    const c=world.camp,cands=[],rmin=d.id==='feuer'?1.5:3.5,rmax=d.id==='feuer'?6:20;
+    for(let y=c.y-rmax;y<=c.y+rmax;y++)for(let x=c.x-rmax;x<=c.x+rmax;x++){
+      const dist=Math.hypot(x+d.w/2-c.x-.5,y+d.h/2-c.y-.5);if(dist<rmin||dist>rmax||!Build.valid(d,x,y))continue;
+      let ok=true;
+      for(let yy=y-1;yy<=y+d.h&&ok;yy++)for(let xx=x-1;xx<=x+d.w;xx++){if(yy>=y&&yy<y+d.h&&xx>=x&&xx<x+d.w)continue;if(!World.inb(xx,yy)||world.blocked[yy*W+xx]||world.ground[yy*W+xx]===GR.WATER){ok=false;break}}
+      if(ok)cands.push({x,y,sc:(d.id==='brunnen'?Math.abs(dist-4):dist)+Math.random()*1.5});
+    }
+    cands.sort((a,b)=>a.sc-b.sc);return cands[0]||null;
+  },
+  tick(){
+    const h=hourOf(state.t);if(h<7||h>19)return;
+    if(state.builds.filter(b=>!b.done).length>=(settlers.length>=8?2:1))return;
+    const best=Planner.options()[0];if(!best)return;
+    const d=best.d,v=VIEW_OF[d.id];
+    if(v&&Planner.avg(v)<-.6){state.skip[d.id]=state.t+3*1440;log('Die Siedler streiten über den Bau: '+d.name+'. Sie verschieben ihn um drei Tage.');return}
+    const spot=Planner.site(d);if(!spot){state.skip[d.id]=state.t+720;return}
+    const who=Planner.speaker(d),b=Build.place(d,spot.x,spot.y);b.why=best.why;b.by=who?who.name:'';
+    log((who?who.name+' schlägt vor: ':'Neuer Plan: ')+d.name+'. '+best.why);if(who){who.thought='Wir sollten bauen: '+d.name+'.';remember(who,'Hat den Bau angeregt: '+d.name,3,1)}
+  },
+  missing(){const m={};for(const b of state.builds){if(b.done)continue;for(const [k,v] of Object.entries(Build.missing(b)))m[k]=(m[k]||0)+v}return m}
 };
 
 /* =========================================================
@@ -864,8 +893,8 @@ const AI={
   },
   scarcity(k){
     const r=state.res,n=settlers.length;
-    if(k==='nahrung'||k==='jagd'){const f=r.nahrung||0;return(f<n*2?2.2:f<n*5?1.4:f>n*12?.5:1)*(k==='jagd'?.8:1)}
-    const v=r[k]||0;return v<8?1.2:v>60?.5:1;
+    if(k==='nahrung'||k==='jagd'){const f=r.nahrung||0,fm=k==='jagd'&&(Planner.missing().felle||0)>(r.felle||0)?3:1;return(f<n*2?2.2:f<n*5?1.4:f>n*12?.5:1)*(k==='jagd'?.8:1)*fm}
+    const v=r[k]||0,miss=Planner.missing()[k]||0;return(v<8?1.2:v>60?.5:1)*(miss>v?1.6:1);
   },
   decide(s){
     const n=s.needs,night=isNight(state.t),opts=[],food=state.res.nahrung||0,c=world.camp;
@@ -1190,7 +1219,6 @@ const Render={
       else{const b=e.b,px=Math.round(b.x*16),py=Math.round(b.y*16)+2,fr=b.tx!==null?(Math.floor(b.hop*3)&1):0;
         ctx.drawImage(SPR.sh.rabbit,px-3,py-1);ctx.drawImage(rabbitSpr,fr*10,b.face>0?9:0,10,9,px-5,py-8,10,9)}
     }
-    if(Place.d)Place.draw(now);
   }
 };
 /* Waren als kleine Pixel-Symbole für Lagerhaufen und Traglasten */
@@ -1230,7 +1258,7 @@ function newGame(opt,seed){
   state={seed,opt,t:8*60,speed:1,res:{},log:[],sel:null,flags:{},started:true,hourMark:8,nextRabbit:100,
     prio:{holz:2,stein:2,lehm:2,stroh:2,nahrung:2,jagd:1,bau:2},mod:{obj:{},hp:{},cut:{},regrow:{}}};reserved.clear();skipT.clear();
   state.res=opt.tents?{holz:4,stein:0,lehm:0,stroh:2,felle:3,nahrung:40}:{holz:2,stein:0,lehm:0,stroh:0,felle:1,nahrung:24};
-  state.builds=[];state.nextB=1;
+  state.builds=[];state.nextB=1;state.skip={};
   buildWorld(seed);
   if(opt.tents){const c=world.camp;for(const [x,y] of [[c.x-4,c.y-2],[c.x-4,c.y+2],[c.x+2,c.y+3]]){for(let yy=0;yy<1;yy++)for(let xx=0;xx<2;xx++)world.obj[(y+yy)*W+x+xx]=0;state.builds.push({id:state.nextB++,type:'zelt',x,y,w:2,h:1,done:true,work:1.5,got:{},transit:{},hp:100})}}
   World.placeStart();
@@ -1246,7 +1274,7 @@ function newGame(opt,seed){
 }
 const WorldTick={
   hour(){
-    Build.tick(1);
+    Build.tick(1);Planner.tick();
     const m=state.mod;
     for(const [i,t] of Object.entries(m.regrow))if(t<=state.t){if(world.obj[+i]===OB.BERRY_E)setObj(+i,OB.BERRY);delete m.regrow[i]}
     if(rabbits.length<8&&Math.random()<.35){for(let k=0;k<30;k++){const x=Math.floor(Math.random()*W),y=Math.floor(Math.random()*H);
@@ -1264,7 +1292,7 @@ function buildSheets(){
 }
 function serialize(){return{state,settlers:settlers.map(s=>Object.assign({},s,{path:null,task:null,inside:false,carryTo:null,idle:Math.min(s.idle,1)})),horses,rabbits:rabbits.map(b=>Object.assign({},b,{res:null})),cam:{x:cam.x,y:cam.y,S:cam.S,follow:cam.follow}}}
 function restore(d){
-  if(!d.state.mod||!d.state.builds||!d.state.rel||!d.settlers.every(q=>q.needs&&q.traits))throw new Error('alter Spielstand');
+  if(!d.state.mod||!d.state.builds||!d.state.skip||!d.state.rel||!d.settlers.every(q=>q.needs&&q.traits))throw new Error('alter Spielstand');
   state=d.state;buildWorld(state.seed);for(const b of state.builds)b.transit={};reserved.clear();skipT.clear();
   for(const [i,v] of Object.entries(state.mod.obj))world.obj[+i]=v;
   World.placeStart();
@@ -1384,16 +1412,21 @@ const UI={
     UI.open('Menü','<div class="row"><button type="button" id="mCamp">Zum Lager</button></div><div class="row"><button type="button" id="mMain">Hauptmenü</button></div>'+
       '<p class="soon">Speichern und Laden kommt in Schritt 8. Bis dahin beginnt die Siedlung beim Neuladen der Seite von vorn.</p>','menu');
     $('mCamp').onclick=()=>{cam.x=(world.camp.x+1)*16;cam.y=(world.camp.y+.5)*16;cam.follow=null;clampCam();UI.close()};
-    $('mMain').onclick=()=>{UI.close();Place.stop();Menu.show()};
+    $('mMain').onclick=()=>{UI.close();Menu.show()};
   },
   showBuildMenu(){
-    const rows=BUILD.map(d=>{const un=Build.unlocked(d),has=Build.count(d.id),sites=state.builds.filter(b=>b.type===d.id&&!b.done).length;
-      const costs=Object.entries(d.cost).map(([k,v])=>'<span class="cost'+((state.res[k]||0)>=v?'':' short')+'">'+RES_NAME[k]+' '+v+'</span>').join('');
-      return'<div class="bitem'+(un?'':' locked')+'"><img class="bpic" alt="" src="'+UI.bpic(d)+'"><div class="binfo"><b>'+d.name+'</b><small>'+(un?esc(d.desc):'Erst nach: '+Build.missingPrev(d).name)+'</small>'+
-        '<div class="costs">'+costs+'<span class="cost hrs">'+d.work+' Std.</span></div>'+(has||sites?'<small class="have">Gebaut: '+has+(sites?' · im Bau: '+sites:'')+'</small>':'')+'</div>'+
-        '<button type="button" data-b="'+d.id+'"'+(un?'':' disabled')+'>Bauen</button></div>'}).join('');
-    UI.open('Bauen','<p class="soon">Wähle ein Gebäude und tippe dann auf den Bauplatz. Fehlt Material, bauen die Siedler weiter, sobald es im Lager liegt. Rot markiert, was gerade fehlt.</p><div class="blist">'+rows+'</div>','build');
-    $('sBody').querySelectorAll('.bitem button').forEach(b=>b.onclick=()=>Place.start(BDEF[b.dataset.b]));
+    const open=state.builds.filter(b=>!b.done),idea=Planner.options()[0];
+    const site=b=>{const d=BDEF[b.type];return'<button type="button" class="bitem site" data-id="'+b.id+'"><img class="bpic" alt="" src="'+UI.bpic(d)+'"><span class="binfo"><b>'+d.name+'</b><small>'+(b.by?'Vorschlag von '+esc(b.by)+': ':'')+esc(b.why||d.desc)+'</small>'+
+      '<small class="have">'+Build.status(b)+' · '+Math.round(b.work/d.work*100)+' % gebaut · Material '+Math.round(Build.frac(b)*100)+' %</small></span></button>'};
+    const rows=BUILD.map(d=>{const un=Build.unlocked(d),has=Build.count(d.id);
+      const costs=Object.entries(d.cost).map(([k,v])=>'<span class="cost">'+RES_NAME[k]+' '+v+'</span>').join('');
+      return'<div class="bitem'+(un?'':' locked')+'"><img class="bpic" alt="" src="'+UI.bpic(d)+'"><div class="binfo"><b>'+d.name+(has?' · '+has+'×':'')+'</b><small>'+(un?esc(d.desc):'Erst nach: '+Build.missingPrev(d).name)+'</small>'+
+        '<div class="costs">'+costs+'<span class="cost hrs">'+d.work+' Std.</span></div></div></div>'}).join('');
+    UI.open('Bauten','<p class="soon">Die Siedler entscheiden selbst, was sie bauen und wo. Sie bauen zuerst, was am meisten fehlt: Wärme, Schlafplätze, Wasser. Danach wächst die Stadt Gebäude für Gebäude.</p>'+
+      '<h3 class="sub">Im Bau</h3>'+(open.length?'<div class="blist">'+open.map(site).join('')+'</div>':'<p class="soon">Gerade ist keine Baustelle offen.</p>')+
+      '<h3 class="sub">Nächste Idee</h3><p class="idea">'+(idea?(open.length>=(settlers.length>=8?2:1)?'Sobald die Baustelle fertig ist: ':'')+idea.d.name+'. '+esc(idea.why):'Die Siedler haben gerade keine neue Idee.')+'</p>'+
+      '<h3 class="sub">Alle Gebäude</h3><div class="blist">'+rows+'</div>','build');
+    $('sBody').querySelectorAll('.site').forEach(e=>e.onclick=()=>{const b=Build.byId(+e.dataset.id);if(!b)return;cam.x=(b.x+b.w/2)*16;cam.y=(b.y+b.h/2)*16;clampCam();UI.showBuilding(b)});
   },
   bpics:{},
   bpic(d){if(UI.bpics[d.id])return UI.bpics[d.id];const sp=bSprite(d),c=mk(48,48,g=>{const sc=Math.max(1,Math.floor(Math.min(48/sp.width,48/sp.height)));g.imageSmoothingEnabled=false;
@@ -1401,14 +1434,8 @@ const UI={
   showBuilding(b){
     const d=BDEF[b.type];state.selB=b.id;
     UI.open(d.name,'<div class="who"><img class="bpic" alt="" src="'+UI.bpic(d)+'"><div><div class="act" id="bSt"></div><div class="meta" id="bHp"></div></div></div>'+
-      '<p class="soon">'+esc(d.desc)+'</p><div class="stock" id="bMat"></div><p class="meta" id="bWho"></p><div class="row" id="bAct"></div>','building');
-    UI.buildingActions(b);UI.refresh();
-  },
-  buildingActions(b,confirm){
-    const el=$('bAct');if(!el)return;
-    if(confirm){el.innerHTML='<button type="button" id="bNo">Zurück</button><button type="button" id="bYes" class="danger">'+(b.done?'Ja, abreißen':'Ja, abbrechen')+'</button>';
-      $('bNo').onclick=()=>UI.buildingActions(b);$('bYes').onclick=()=>{b.done?Build.demolish(b):Build.cancel(b);UI.close()};return}
-    el.innerHTML='<button type="button" id="bDel">'+(b.done?'Abreißen':'Bauauftrag abbrechen')+'</button>';$('bDel').onclick=()=>UI.buildingActions(b,true);
+      (b.by?'<p class="thought">„'+esc(b.why)+'“<br><small>Vorschlag von '+esc(b.by)+'</small></p>':'')+'<p class="soon">'+esc(d.desc)+'</p><div class="stock" id="bMat"></div><p class="meta" id="bWho"></p>','building');
+    UI.refresh();
   },
   toast(text,ms=2200){const t=$('toast');t.textContent=text;t.hidden=false;clearTimeout(UI.timer);UI.timer=setTimeout(()=>t.hidden=true,ms)}
 };
@@ -1417,8 +1444,7 @@ $('bPeople').onclick=()=>UI.view==='people'?UI.close():UI.showPeople();
 $('bLog').onclick=()=>UI.view==='log'?UI.close():UI.showLog();
 $('bMenu').onclick=()=>UI.view==='menu'?UI.close():UI.showMenu();
 $('bWork').onclick=()=>UI.view==='work'?UI.close():UI.showWork();
-$('bBuild').onclick=()=>{Place.stop();UI.view==='build'?UI.close():UI.showBuildMenu()};
-$('plNo').onclick=()=>Place.stop();$('plGo').onclick=()=>Place.confirm();
+$('bBuild').onclick=()=>UI.view==='build'?UI.close():UI.showBuildMenu();
 $('sClose').onclick=UI.close;
 
 // Panel per Wischen nach unten schließen
@@ -1465,7 +1491,7 @@ cv.addEventListener('wheel',e=>{e.preventDefault();zoomAt(cam.S+(e.deltaY<0?1:-1
 
 function tap(cx,cy){
   if(!state.started)return;
-  const w=toWorld(cx,cy);if(Place.d){Place.at(w.x,w.y);return}
+  const w=toWorld(cx,cy);
   const w2=w,pad=4;let best=null,bd=1e9;
   for(const s of settlers){if(s.inside)continue;const px=s.x*16,py=s.y*16+4;if(w.x>px-7-pad&&w.x<px+7+pad&&w.y>py-21-pad&&w.y<py+2+pad){const d=Math.hypot(w.x-px,w.y-(py-9));if(d<bd){bd=d;best=s}}}
   if(best){UI.showSettler(best);return}
@@ -1607,7 +1633,7 @@ const Menu={
     else h='<ul class="help"><li><b>Karte bewegen</b>Mit einem Finger ziehen.</li><li><b>Zoomen</b>Zwei Finger auseinander- oder zusammenziehen.</li>'+
       '<li><b>Bewohner ansehen</b>Auf eine Figur tippen. Mit „Folgen“ bleibt die Kamera bei ihr.</li><li><b>Fenster schließen</b>Nach unten wischen oder auf die Karte tippen.</li>'+
       '<li><b>Arbeit</b>Unter „Arbeit“ legst du fest, wie wichtig Holz, Stein, Lehm, Stroh, Nahrung und Jagd sind.</li>'+
-      '<li><b>Bauen</b>Tippe auf „Bauen“, wähle ein Gebäude und tippe auf den Bauplatz. Mit „Hier bauen“ bestätigst du.</li>'+
+      '<li><b>Bauen</b>Die Siedler planen und bauen selbst. Unter „Bauten“ siehst du, was gerade entsteht und was sie als Nächstes vorhaben.</li>'+
       '<li><b>Charakter</b>Im Info-Fenster eines Siedlers findest du Charakterzüge, Ansichten, Beziehungen und Erinnerungen.</li>'+
       '<li><b>Lager</b>Tippe auf den Lagerplatz neben dem Wagen. Dort siehst du alle Vorräte.</li>'+
       '<li><b>Tempo</b>Pause, 1× oder 3× in der unteren Leiste.</li></ul><button type="button" class="mbtn" id="mbBack">Zurück</button>';
