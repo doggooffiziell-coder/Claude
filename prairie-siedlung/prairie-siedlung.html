@@ -61,13 +61,26 @@ button[aria-pressed="true"]{background:var(--rust)}
 .log{display:flex;flex-direction:column;gap:6px;margin:0;padding:0;list-style:none}
 .log li{display:flex;gap:10px;font-size:15px}
 .log time{flex:none;color:var(--dust);font-variant-numeric:tabular-nums;min-width:86px}
-#start{position:fixed;inset:0;z-index:30;display:grid;place-items:center;background:rgba(20,12,6,.55);
-  padding-top:calc(env(safe-area-inset-top,0px) + 16px);padding-bottom:calc(env(safe-area-inset-bottom,0px) + 16px);overflow-y:auto}
-.card{width:100%;max-width:420px;box-sizing:border-box;background:var(--wood);border:3px solid var(--ink);box-shadow:6px 6px 0 rgba(0,0,0,.35);
-  padding:20px 18px;display:flex;flex-direction:column;gap:14px}
-.card h1{font:400 clamp(30px,9vw,40px)/1.05 var(--display);margin:0;color:var(--cream);text-wrap:balance}
-.card .eyebrow{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--dust)}
-.card p{margin:0;font-size:16px;line-height:1.4;color:var(--cream)}
+/* Hauptmenü: Panorama füllt den Schirm, Titel oben im Himmel, Holztafel unten */
+#menu{position:fixed;inset:0;z-index:30;background:#241a36;overflow:hidden}
+#menuCv{position:absolute;inset:0;width:100%;height:100%;display:block;image-rendering:pixelated}
+.m-top{position:absolute;left:0;right:0;top:calc(env(safe-area-inset-top,0px) + 7vh);display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;pointer-events:none}
+.m-top .eyebrow{font-size:13px;letter-spacing:.2em;text-transform:uppercase;color:#f6c86a;text-shadow:2px 2px 0 var(--ink)}
+.m-top h1{font:400 clamp(40px,12.5vw,72px)/1 var(--display);margin:0;color:var(--cream);text-wrap:balance;
+  text-shadow:3px 3px 0 var(--ink),-1px -1px 0 var(--ink),1px -1px 0 var(--ink),-1px 1px 0 var(--ink)}
+.m-top .tag{margin:0;font-size:16px;color:var(--cream);text-shadow:2px 2px 0 var(--ink)}
+.m-board{position:absolute;left:0;right:0;bottom:0;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 16px)}
+.board{max-width:420px;margin:0 auto;box-sizing:border-box;background:var(--wood);border:3px solid var(--ink);box-shadow:6px 6px 0 rgba(0,0,0,.4),inset 0 2px 0 rgba(255,255,255,.08);
+  padding:14px;display:flex;flex-direction:column;gap:10px;position:relative}
+.board::before,.board::after{content:"";position:absolute;top:8px;width:6px;height:6px;background:var(--dust);box-shadow:0 0 0 2px var(--ink)}
+.board::before{left:8px}.board::after{right:8px}
+.mbtn{font:400 20px var(--display);min-height:54px;width:100%}
+.mbtn.pri{background:var(--rust)}
+.mrow{display:flex;gap:10px}.mrow .mbtn{flex:1}
+.mlabel,.mtext{margin:0;font-size:16px;line-height:1.4;text-align:center;padding-inline:12px}
+.mfoot{margin:0;text-align:center;font-size:13px;color:var(--dust);letter-spacing:.06em}
+.help{list-style:none;margin:0;padding:0 4px;display:flex;flex-direction:column;gap:8px;font-size:15px;line-height:1.35}
+.help b{display:block;font:400 17px var(--display);color:#f6c86a}
 .opt{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;padding:12px 14px;width:100%}
 .opt b{font:400 19px var(--display)}
 .opt small{font:400 14px var(--ui);color:var(--cream);opacity:.85}
@@ -102,13 +115,15 @@ button[aria-pressed="true"]{background:var(--rust)}
   <div id="sBody" class="gut"></div>
 </section>
 
-<div id="start" class="gut" hidden><div class="card">
-  <span class="eyebrow">Westernsiedlung · 1868</span>
-  <h1>Prärie-Siedlung</h1>
-  <p>Ein Planwagen erreicht die leere Prärie. Du lenkst die Siedlung, die Siedler entscheiden selbst.</p>
-  <button class="opt" id="optTents" type="button"><b>Mit Zelten</b><small>Planwagen, drei Zelte und Vorräte für eine Woche.</small></button>
-  <button class="opt alt" id="optBare" type="button"><b>Ohne Zelte</b><small>Nur der Planwagen. Weniger Vorräte, harter Start.</small></button>
-</div></div>
+<div id="menu" hidden>
+  <canvas id="menuCv" aria-hidden="true"></canvas>
+  <div class="m-top gut">
+    <span class="eyebrow">Westernsiedlung · 1868</span>
+    <h1>Prärie-Siedlung</h1>
+    <p class="tag">Aus einem Planwagen wird eine Stadt.</p>
+  </div>
+  <div class="m-board gut"><div class="board" id="mBoard"></div></div>
+</div>
 
 <script>
 'use strict';
@@ -406,14 +421,17 @@ const SKIRT=[['#7a3a2a','#5a2a1e'],['#4a5a7a','#36425a'],['#8a7a5a','#6a5a42'],[
 const HATS=[['#6a4a2e','#3e2a18'],['#2e2622','#141010'],['#c8a878','#8a6a48'],['#8a6a48','#5a4430']];
 const BONNET=['#e8dcc0','#c9b7d8','#b8cfe0','#e0c8a0'];
 
+function makeLook(r,female,age){
+  const sk=pick(SKIN,r),sh=pick(SHIRT,r),pa=pick(female?SKIRT:PANTS,r),ha=pick(HATS,r);
+  return{female,skin:sk[0],skinD:sk[1],hair:age>47?'#9a948a':pick(HAIR,r),shirt:sh[0],shirtD:sh[1],pants:pa[0],pantsD:pa[1],boots:r()<.5?'#3a2414':'#241810',
+    hat:female?(r()<.6?'bonnet':'none'):(r()<.85?'hat':'none'),hatC:female?pick(BONNET,r):ha[0],hatD:ha[1],beard:!female&&r()<.4};
+}
 function makeSettlers(n,r){
   const out=[],usedM=new Set(),usedF=new Set(),fams=[];for(let i=0;i<4;i++){let s;do s=pick(SURN,r);while(fams.includes(s));fams.push(s)}
   for(let i=0;i<n;i++){
     const female=i%2===1;
     const pool=female?NAMES_F:NAMES_M,used=female?usedF:usedM;let name;do name=pick(pool,r);while(used.has(name));used.add(name);
-    const age=18+Math.floor(r()*34),sk=pick(SKIN,r),sh=pick(SHIRT,r),pa=pick(female?SKIRT:PANTS,r),ha=pick(HATS,r);
-    const L={female,skin:sk[0],skinD:sk[1],hair:age>47?'#9a948a':pick(HAIR,r),shirt:sh[0],shirtD:sh[1],pants:pa[0],pantsD:pa[1],boots:r()<.5?'#3a2414':'#241810',
-      hat:female?(r()<.6?'bonnet':'none'):(r()<.85?'hat':'none'),hatC:female?pick(BONNET,r):ha[0],hatD:ha[1],beard:!female&&r()<.4};
+    const age=18+Math.floor(r()*34),L=makeLook(r,female,age);
     const sp=World.near(world.camp.x,world.camp.y,3)||{x:world.camp.x,y:world.camp.y+1};
     out.push({id:i,name,sur:fams[Math.floor(i/2)%fams.length],age,female,look:L,x:sp.x+.5,y:sp.y+.5,dir:0,anim:0,moving:false,path:null,
       spd:.9+r()*.35,idle:1+r()*3,act:'Steht am Wagen',thought:'Endlich angekommen.',arrive:null});
@@ -670,14 +688,10 @@ const UI={
     UI.open('Protokoll','<ul class="log">'+state.log.map(l=>'<li><time>'+esc(l.when)+'</time><span>'+esc(l.text)+'</span></li>').join('')+'</ul>','log');
   },
   showMenu(){
-    UI.open('Menü','<div class="row"><button type="button" id="mCamp">Zum Lager</button></div><div class="row"><button type="button" id="mNew">Neues Spiel</button></div>'+
+    UI.open('Menü','<div class="row"><button type="button" id="mCamp">Zum Lager</button></div><div class="row"><button type="button" id="mMain">Hauptmenü</button></div>'+
       '<p class="soon">Speichern und Laden kommt in Schritt 8. Bis dahin beginnt die Siedlung beim Neuladen der Seite von vorn.</p>','menu');
     $('mCamp').onclick=()=>{cam.x=(world.camp.x+1)*16;cam.y=(world.camp.y+.5)*16;cam.follow=null;clampCam();UI.close()};
-    $('mNew').onclick=UI.confirmNew;
-  },
-  confirmNew(){
-    UI.open('Neues Spiel?','<p>Die aktuelle Siedlung geht verloren.</p><div class="row"><button type="button" id="cNo">Abbrechen</button><button type="button" id="cYes" style="background:var(--rust)">Neu beginnen</button></div>','confirm');
-    $('cNo').onclick=UI.showMenu;$('cYes').onclick=()=>{UI.close();showStart()};
+    $('mMain').onclick=()=>{UI.close();Menu.show()};
   },
   toast(text,ms=2200){const t=$('toast');t.textContent=text;t.hidden=false;clearTimeout(UI.timer);UI.timer=setTimeout(()=>t.hidden=true,ms)}
 };
@@ -747,32 +761,160 @@ function tap(cx,cy){
 /* =========================================================
    Start und Spielschleife
    ========================================================= */
-function showStart(){
-  state.started=false;
-  const seed=(Math.random()*1e9)|0;state.pendingSeed=seed;buildWorld(seed);settlers=[];horses=[];rabbits=[];
-  cam.x=(world.camp.x)*16;cam.y=world.camp.y*16;cam.S=clamp(Math.round(dpr*2),Smin(),Smax());clampCam();
-  $('start').hidden=false;$('optTents').focus({preventScroll:true});
+/* =========================================================
+   Hauptmenü mit Pixel-Panorama
+   ========================================================= */
+const BAYER=[0,8,2,10,12,4,14,6,3,11,1,9,15,7,13,5];
+const stops=a=>a.map(([p,c])=>[p,rgb(c)]);
+const SKY=stops([[0,'#241a36'],[.32,'#46284a'],[.55,'#7e3446'],[.74,'#c0563a'],[.88,'#e8904a'],[1,'#f6c86a']]);
+const GROUND=stops([[0,'#e09a52'],[.12,'#c87c40'],[.4,'#9a6434'],[.75,'#74502a'],[1,'#523a1e']]);
+const RIVER=stops([[0,'#f6c86a'],[.3,'#e8904a'],[.65,'#c0563a'],[1,'#7e3446']]);
+function grad(st,t,x,y){let i=0;while(i<st.length-2&&t>st[i+1][0])i++;const a=st[i],b=st[i+1],f=clamp((t-a[0])/(b[0]-a[0]),0,1);return f*16>BAYER[(y&3)*4+(x&3)]+.5?b[1]:a[1]}
+function ridge(n,r,minH,maxH,gap){
+  const h=new Float32Array(n);let x=0,cur=0;
+  while(x<n){const target=r()<gap?0:minH+r()*(maxH-minH),sl=2+Math.floor(r()*4),from=cur;
+    for(let i=1;i<=sl&&x<n;i++,x++)h[x]=from+(target-from)*i/sl;
+    const len=8+Math.floor(r()*28);for(let i=0;i<len&&x<n;i++,x++)h[x]=target;cur=target}
+  return h;
 }
-function begin(tents){$('start').hidden=true;newGame({tents},state.pendingSeed);UI.toast('Ziehe die Karte mit einem Finger. Zoome mit zwei Fingern.',4200)}
-$('optTents').onclick=()=>begin(true);$('optBare').onclick=()=>begin(false);
+const reduceMotion=window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches;
+const Menu={
+  open:false,view:'main',P:4,aw:0,ah:0,hz:0,LW:0,L:null,
+  init(){
+    this.cv=$('menuCv');this.g=this.cv.getContext('2d');this.seed=(Math.random()*1e9)|0;
+    const r=mulberry(this.seed);
+    this.people=[makeLook(r,false,30),makeLook(r,true,26),makeLook(r,false,50)].map(personSheet);
+    this.herd=[0,1,2,3,4].map(i=>({sh:horseSheet(COATS[(i*2+1+Math.floor(r()*6))%COATS.length],i*91+7),off:i*26+r()*10,dy:(i%3)*3}));
+    this.clouds=[0,1,2,3].map(i=>({x:r()*400,y:.12+r()*.4,w:18+Math.floor(r()*30),s:1+r()*2}));
+  },
+  resize(){
+    if(!this.open)return;const c=this.cv,d=Math.min(window.devicePixelRatio||1,3),w=Math.round(c.clientWidth*d),h=Math.round(c.clientHeight*d);if(!w||!h)return;
+    if(w===this.cw&&h===this.ch&&this.L)return;this.cw=w;this.ch=h;c.width=w;c.height=h;
+    this.P=Math.max(1,Math.round(Math.min(w,h*.6)/190));this.aw=Math.ceil(w/this.P);this.ah=Math.ceil(h/this.P);this.build();
+  },
+  build(){
+    const aw=this.aw,ah=this.ah,LW=aw+80,hz=Math.round(ah*.47),gh=ah-hz,r=mulberry(this.seed+1);this.LW=LW;this.hz=hz;this.gh=gh;
+    const sky=mk(LW,hz+1,g=>{
+      const img=g.createImageData(LW,hz+1),d=img.data,star=rgb('#f2e6c8');
+      for(let y=0;y<=hz;y++)for(let x=0;x<LW;x++){let c=grad(SKY,y/hz,x,y);if(y<hz*.3&&hash(x,y,this.seed)<.004)c=star;const o=(y*LW+x)*4;d[o]=c[0];d[o+1]=c[1];d[o+2]=c[2];d[o+3]=255}
+      g.putImageData(img,0,0);
+      const R=Math.max(10,Math.round(aw*.085)),sx=Math.round(LW*.62),sy=hz-Math.round(ah*.12)-Math.round(R*.4);
+      for(let dy=-R-3;dy<=R+3;dy++)for(let dx=-R-3;dx<=R+3;dx++){
+        const dd=Math.hypot(dx,dy);
+        if(dd<=R){const cut=dy>R*.15&&(dy%4===0||(dy>R*.55&&dy%4===1));if(cut)continue;g.fillStyle=dd<R*.6&&dx<0&&dy<0?'#fff1b8':'#fbe08a';g.fillRect(sx+dx,sy+dy,1,1)}
+        else if(dd<=R+3&&((dx+dy)&1)===0){g.fillStyle='#f6c86a';g.fillRect(sx+dx,sy+dy,1,1)}
+      }
+    });
+    const far=mk(LW,hz+1,g=>{const h=ridge(LW,r,ah*.03,ah*.12,.15);
+      for(let x=0;x<LW;x++){const top=Math.round(hz-h[x]);g.fillStyle='#6e3a54';g.fillRect(x,top,1,hz+1-top);if(h[x]>0){g.fillStyle='#8a4a62';g.fillRect(x,top,1,1)}}});
+    const mid=mk(LW,hz+3,g=>{const h=ridge(LW,r,ah*.02,ah*.075,.55),base=hz+2;
+      for(let x=0;x<LW;x++){if(h[x]<1)continue;const top=Math.round(base-h[x]),lit=x>0&&h[x]>h[x-1]+.3;
+        for(let y=top;y<=base;y++){g.fillStyle=lit?'#c0603a':(base-y)%5===2?'#843e2a':'#9a4a30';g.fillRect(x,y,1,1)}
+        g.fillStyle='#d87a4a';g.fillRect(x,top,1,1)}});
+    const riverX=t=>LW*.56+(LW*.3-LW*.56)*t+Math.sin(t*6+1)*10*t;this.riverX=riverX;
+    const ground=mk(LW,gh,g=>{
+      const img=g.createImageData(LW,gh),d=img.data,hi=rgb('#fbe08a'),bank=rgb('#5e3a22');
+      for(let y=0;y<gh;y++){const t=y/gh,cx=riverX(t),wid=1+t*t*aw*.22;
+        for(let x=0;x<LW;x++){let c;const dx=Math.abs(x+.5-cx);
+          if(dx<wid){c=grad(RIVER,t,x,y);if(y%3===0&&hash(x,y,3)<.08)c=hi}
+          else if(dx<wid+1+t*2)c=bank;else c=grad(GROUND,t,x,y);
+          const o=(y*LW+x)*4;d[o]=c[0];d[o+1]=c[1];d[o+2]=c[2];d[o+3]=255}}
+      g.putImageData(img,0,0);
+      const n=Math.round(LW*gh*.025);
+      for(let i=0;i<n;i++){const x=Math.floor(r()*LW),y=Math.floor(r()*gh),t=y/gh;if(Math.abs(x-riverX(t))<3+t*t*aw*.22)continue;
+        const s=1+Math.floor(t*3);g.fillStyle=t<.3?'#b06a36':'#5e4422';g.fillRect(x,y-s+1,1,s);g.fillStyle=t<.3?'#e8a860':'#b49048';g.fillRect(x-1,y-s+1,1,Math.max(1,s-1));if(s>2)g.fillRect(x+1,y-s,1,s-1)}
+    });
+    this.L={sky,far,mid,ground};
+    const cy=hz+Math.round(gh*.32);
+    this.camp={y:cy,tent:Math.round(aw*.11)+40,wagon:Math.round(aw*.33)+40,fire:Math.round(aw*.22)+40,
+      cacti:[[Math.round(aw*.80)+40,hz+Math.round(gh*.2)],[Math.round(aw*.93)+40,hz+Math.round(gh*.42)],[Math.round(aw*.70)+40,hz+Math.round(gh*.1)]]};
+  },
+  frame(now){
+    this.resize();if(!this.L)return;
+    const g=this.g,P=this.P,t=now/1000,LW=this.LW,hz=this.hz,gh=this.gh,pan=f=>reduceMotion?0:Math.round(Math.sin(t*.08)*f);
+    g.setTransform(1,0,0,1,0,0);g.imageSmoothingEnabled=false;g.setTransform(P,0,0,P,0,0);
+    g.drawImage(this.L.sky,-40+pan(3),0);
+    for(const c of this.clouds){const x=Math.round(((c.x+t*c.s)%(LW+60))-60)+pan(3),y=Math.round(hz*c.y);
+      g.fillStyle='#b8506a';g.fillRect(x+4,y,c.w-8,1);g.fillRect(x,y+1,c.w,2);g.fillStyle='#f0a060';g.fillRect(x+2,y+3,c.w-4,1)}
+    for(let i=0;i<3;i++){const bx=Math.round(((t*7+i*14)%(LW+40))-20),by=Math.round(hz*.28+i*5+Math.sin(t+i)*2),up=(Math.floor(t*4+i)&1);
+      g.fillStyle='#24150b';g.fillRect(bx,by,1,1);g.fillRect(bx-1,by-up,1,1);g.fillRect(bx+1,by-up,1,1);g.fillRect(bx-2,by-1+up*0,1,1);g.fillRect(bx+2,by-1,1,1)}
+    g.drawImage(this.L.far,-40+pan(8),0);
+    g.drawImage(this.L.mid,-40+pan(16),0);
+    const gp=-40+pan(28);
+    g.drawImage(this.L.ground,gp,hz);
+    // Herde galoppiert am Horizont entlang
+    const hy=hz+Math.round(gh*.09),hp=-40+pan(20),span=LW+80;
+    for(const h of this.herd){
+      const x=Math.round(LW-((t*14+h.off)%span))+hp-20,y=hy+h.dy,fr=[1,0,2,0][Math.floor(t*9+h.off)&3];
+      g.fillStyle='#e8a868';for(let k=0;k<3;k++)if(hash(k,Math.floor(t*10),h.off|0)<.6)g.fillRect(x+18+k*3,y-1-k,2,1);
+      g.drawImage(SPR.sh.horse,x+3,y-2);g.drawImage(h.sh,fr*HW,0,HW,HH,x,y-16,HW,HH);
+    }
+    // Lager im Vordergrund
+    const c=this.camp,list=[];
+    list.push({y:c.y,f:()=>{const sp=SPR.tent;g.drawImage(SPR.sh.tent,gp+c.tent-13,c.y-3);g.drawImage(sp,gp+c.tent-14,c.y-sp.height+2)}});
+    list.push({y:c.y+1,f:()=>{const sp=SPR.wagon;g.drawImage(SPR.sh.wagon,gp+c.wagon-17,c.y-3);g.drawImage(sp,gp+c.wagon-18,c.y-sp.height+3)}});
+    for(const [x,y] of c.cacti)list.push({y,f:()=>{g.drawImage(SPR.sh.cactus,gp+x-5,y-2);g.drawImage(SPR.cactus,gp+x-7,y-SPR.cactus.height+1)}});
+    const fx=gp+c.fire,fy=c.y+6;
+    list.push({y:fy,f:()=>{
+      g.fillStyle='#5a341c';g.fillRect(fx-4,fy-1,8,2);g.fillStyle='#3a2414';g.fillRect(fx-3,fy,2,1);g.fillRect(fx+1,fy-1,2,1);
+      const tk=Math.floor(t*8);
+      for(let k=-2;k<=2;k++){const hgt=2+Math.floor(hash(k,tk,4)*(5-Math.abs(k)*1.2));
+        g.fillStyle='#d0503a';g.fillRect(fx+k,fy-1-hgt,1,hgt);if(hgt>2){g.fillStyle='#f2a03a';g.fillRect(fx+k,fy-hgt,1,hgt-2)}if(hgt>4&&Math.abs(k)<2){g.fillStyle='#fbe08a';g.fillRect(fx+k,fy-hgt+2,1,2)}}
+      for(let i=0;i<7;i++){const a=(t*.35+i/7)%1,sx=Math.round(fx+a*12+Math.sin(a*6+i)*2),sy=Math.round(fy-8-a*34);g.fillStyle=a<.5?'#a8968c':'#7e6e70';g.fillRect(sx,sy,a<.4?2:1,a<.4?2:1)}
+    }});
+    const ppl=[[fx-13,fy-1,3,0],[fx+13,fy-1,2,1],[fx+2,fy+9,1,2]];
+    for(const [x,y,dir,i] of ppl)list.push({y,f:()=>{g.drawImage(SPR.sh.person,x-5,y-2);g.drawImage(this.people[i],0,dir*CH,CW,CH,x-9,y-21,CW,CH)}});
+    list.sort((a,b)=>a.y-b.y);for(const e of list)e.f();
+    // Feuerschein
+    g.fillStyle='rgba(251,200,106,.10)';for(let ry=-6;ry<=6;ry++){const w=Math.round(Math.sqrt(36-ry*ry)*3);g.fillRect(fx-w,fy+ry-2,w*2,1)}
+  },
+  show(){
+    this.open=true;this.view='main';$('menu').hidden=false;this.cw=0;this.resize();this.render();
+  },
+  hide(){this.open=false;$('menu').hidden=true},
+  render(){
+    const b=$('mBoard'),started=state.started,v=this.view;let h='';
+    if(v==='main')h=(started?'<button type="button" class="mbtn pri" id="mbCont">Weiterspielen</button>':'')+
+      '<button type="button" class="mbtn'+(started?'':' pri')+'" id="mbNew">Neues Spiel</button><button type="button" class="mbtn" id="mbHelp">Anleitung</button><p class="mfoot">Bauschritt 1 von 8</p>';
+    else if(v==='confirm')h='<p class="mtext">Ein neues Spiel ersetzt deine aktuelle Siedlung.</p><div class="mrow"><button type="button" class="mbtn" id="mbBack">Zurück</button><button type="button" class="mbtn pri" id="mbYes">Neu beginnen</button></div>';
+    else if(v==='start')h='<p class="mlabel">Womit beginnt dein Treck?</p>'+
+      '<button class="opt" id="optTents" type="button"><b>Mit Zelten</b><small>Planwagen, drei Zelte und Vorräte für eine Woche.</small></button>'+
+      '<button class="opt alt" id="optBare" type="button"><b>Ohne Zelte</b><small>Nur der Planwagen. Weniger Vorräte, harter Start.</small></button>'+
+      '<button type="button" class="mbtn" id="mbBack">Zurück</button>';
+    else h='<ul class="help"><li><b>Karte bewegen</b>Mit einem Finger ziehen.</li><li><b>Zoomen</b>Zwei Finger auseinander- oder zusammenziehen.</li>'+
+      '<li><b>Bewohner ansehen</b>Auf eine Figur tippen. Mit „Folgen“ bleibt die Kamera bei ihr.</li><li><b>Fenster schließen</b>Nach unten wischen oder auf die Karte tippen.</li>'+
+      '<li><b>Tempo</b>Pause, 1× oder 3× in der unteren Leiste.</li></ul><button type="button" class="mbtn" id="mbBack">Zurück</button>';
+    b.innerHTML=h;
+    const on=(id,fn)=>{const el=$(id);if(el)el.onclick=fn};
+    on('mbCont',()=>this.hide());
+    on('mbNew',()=>{this.view=started?'confirm':'start';this.render()});
+    on('mbYes',()=>{this.view='start';this.render()});
+    on('mbHelp',()=>{this.view='help';this.render()});
+    on('mbBack',()=>{this.view='main';this.render()});
+    on('optTents',()=>begin(true));on('optBare',()=>begin(false));
+    const first=b.querySelector('button');if(first)first.focus({preventScroll:true});
+  }
+};
+function begin(tents){Menu.hide();newGame({tents},(Math.random()*1e9)|0);UI.toast('Ziehe die Karte mit einem Finger. Zoome mit zwei Fingern.',4200)}
 
 let last=performance.now(),hudT=0;
 function loop(now){
   const rdt=Math.min(.1,(now-last)/1000);last=now;
+  if(Menu.open){Menu.frame(now);requestAnimationFrame(loop);return}
   if(state.started){
     const dt=rdt*state.speed;
     if(dt>0){state.t+=dt*10;for(const s of settlers)AI.update(s,dt);Animals.update(dt)}
     if(cam.follow!==null){const s=settlers.find(q=>q.id===cam.follow);if(s){cam.x+=(s.x*16-cam.x)*Math.min(1,rdt*6);cam.y+=(s.y*16-cam.y)*Math.min(1,rdt*6);clampCam()}}
     hudT-=rdt;if(hudT<=0){hudT=.25;UI.hud();UI.refreshSettler()}
-  }else{cam.x+=rdt*6;if(cam.x>PW-cw/2/cam.S-1)cam.x=cw/2/cam.S;clampCam()}
-  Render.frame(now);
+    Render.frame(now);
+  }
   requestAnimationFrame(loop);
 }
 function start(data){
-  buildStaticSprites();resize();
-  window.addEventListener('resize',resize);
-  if(data&&data.save&&data.save.state&&data.save.state.started){try{restore(data.save);UI.setSpeed(state.speed);UI.hud()}catch(e){showStart()}}
-  else showStart();
+  buildStaticSprites();resize();Menu.init();
+  window.addEventListener('resize',()=>{resize();Menu.resize()});
+  if(data&&data.save&&data.save.state&&data.save.state.started){try{restore(data.save);UI.setSpeed(state.speed);UI.hud()}catch(e){Menu.show()}}
+  else Menu.show();
   requestAnimationFrame(loop);
 }
 window.claude?.hot?.snapshot?.(()=>({save:state.started?serialize():null}));
