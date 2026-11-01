@@ -30,6 +30,21 @@ body{font-family:var(--ui);-webkit-user-select:none;user-select:none;-webkit-tap
 .nbar i{display:block;height:100%;background:#8aa04a}
 .nbar i[data-lv="mid"]{background:#d6a640}.nbar i[data-lv="bad"]{background:#c0532e}
 .scores{margin:0;font-size:13px;color:var(--dust)}
+.tabs{display:flex}.tabs button{flex:1;min-width:0;font-size:12px;padding:0 1px;letter-spacing:-.02em}.tabs button+button{border-left:0}
+.tabs button[aria-selected="true"]{background:var(--rust)}
+.tabbody{display:flex;flex-direction:column;gap:12px}
+.tchips{display:flex;flex-wrap:wrap;gap:6px}.tchip{min-height:44px;font-size:15px;padding:0 12px;background:var(--wood-2)}
+.views{display:flex;flex-direction:column;gap:8px}
+.view{display:grid;grid-template-columns:70px 1fr auto;gap:8px;align-items:center;font-size:15px}
+.vn{color:var(--dust)}.vl{min-width:0}
+.pips{display:flex;gap:3px}.pips i{width:9px;height:9px;background:var(--ink);border:1px solid var(--plank)}.pips i.on{background:#f6c86a;border-color:#f6c86a}
+.rinfo{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.rbar{position:relative;display:block;height:6px;background:var(--ink);border:1px solid var(--plank)}
+.rbar i{position:absolute;top:0;bottom:0;display:block}.rbar i.pos{background:#8aa04a}.rbar i.neg{background:#c0532e}
+.rbar::after{content:"";position:absolute;left:50%;top:-2px;bottom:-2px;width:1px;background:var(--dust)}
+.memi{display:flex;gap:10px;align-items:flex-start;padding:6px 0;border-bottom:1px dashed var(--plank);font-size:15px}
+.memi span{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}.memi small{font-size:12px;color:var(--dust)}
+.memi b{font-variant-numeric:tabular-nums}.memi b.pos{color:#b8c870}.memi b.neg{color:#e8805a}.memi.old{opacity:.5}
 .job{display:flex;flex-direction:column;gap:6px}
 .jhead{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
 .jhead b{font:400 17px var(--display)}
@@ -479,10 +494,10 @@ function makeSettlers(n,r){
   for(let i=0;i<n;i++){
     const female=i%2===1;
     const pool=female?NAMES_F:NAMES_M,used=female?usedF:usedM;let name;do name=pick(pool,r);while(used.has(name));used.add(name);
-    const age=18+Math.floor(r()*34),L=makeLook(r,female,age);
+    const age=18+Math.floor(r()*34),L=makeLook(r,female,age),traits=makeTraits(r);
     const sp=World.near(world.camp.x,world.camp.y,3)||{x:world.camp.x,y:world.camp.y+1};
     out.push({id:i,name,sur:fams[Math.floor(i/2)%fams.length],age,female,look:L,x:sp.x+.5,y:sp.y+.5,dir:0,anim:0,moving:false,path:null,
-      spd:.9+r()*.35,idle:1+r()*3,act:'Steht am Wagen',thought:'Endlich angekommen.',task:null,carry:null,inside:false,scores:[],flags:{},
+      spd:.9+r()*.35,idle:1+r()*3,act:'Steht am Wagen',thought:'Endlich angekommen.',task:null,carry:null,inside:false,scores:[],flags:{},traits,views:makeViews(r,traits),mem:[],partner:null,
       needs:{hunger:55+r()*30,durst:50+r()*35,schlaf:65+r()*30,waerme:80,sicher:75,gesell:55+r()*35,spass:45+r()*40}});
   }
   return out;
@@ -605,7 +620,7 @@ const Build={
   cancel(b){for(const [k,v] of Object.entries(b.got))state.res[k]=(state.res[k]||0)+v;Build.remove(b);log('Bauauftrag abgebrochen: '+BDEF[b.type].name+'. Das Material liegt wieder im Lager.')},
   demolish(b){const d=BDEF[b.type];for(const [k,v] of Object.entries(d.cost))state.res[k]=(state.res[k]||0)+Math.floor(v/2);Build.remove(b);log(d.name+' wurde abgerissen. Die Hälfte des Materials liegt im Lager.')},
   complete(b){
-    const d=BDEF[b.type],first=!Build.count(d.id);b.done=true;b.hp=100;b.work=d.work;log(d.name+' ist fertig.');
+    const d=BDEF[b.type],first=!Build.count(d.id);b.done=true;b.hp=100;b.work=d.work;log(d.name+' ist fertig.');Rel.buildingMood(d);
     if(first){const nx=BUILD[d.idx+1];if(nx&&Build.unlocked(nx))log('Neu im Baumenü: '+nx.name+'.')}
   },
   haulSite(){for(const b of state.builds){if(b.done)continue;const m=Build.missing(b);for(const k in m)if((state.res[k]||0)>0)return b}return null},
@@ -678,6 +693,98 @@ const Place={
 };
 
 /* =========================================================
+   Charakter: Züge, Ansichten, Erinnerungen, Beziehungen
+   ========================================================= */
+const TRAITS={
+  mutig:{n:'Mutig',d:'Fürchtet sich selten und jagt gern.',x:'aengstlich'},
+  aengstlich:{n:'Ängstlich',d:'Fühlt sich schnell unsicher und meidet die Jagd.',x:'mutig'},
+  fleissig:{n:'Fleißig',d:'Arbeitet gern und schneller als andere.',x:'faul'},
+  faul:{n:'Faul',d:'Drückt sich vor der Arbeit und braucht mehr Pausen.',x:'fleissig'},
+  gierig:{n:'Gierig',d:'Isst mehr als andere. Ein volles Lager hebt die Laune.'},
+  glaeubig:{n:'Gläubig',d:'Betet oft. Eine Kirche macht glücklich.'},
+  jaehzornig:{n:'Jähzornig',d:'Gerät schnell in Streit und manchmal in eine Prügelei.'},
+  gesellig:{n:'Gesellig',d:'Braucht viel Gesellschaft und schließt leicht Freundschaft.',x:'einzel'},
+  einzel:{n:'Einzelgängerisch',d:'Braucht wenig Gesellschaft.',x:'gesellig'},
+  froh:{n:'Fröhlich',d:'Hat meistens gute Laune.'}
+};
+const TOPICS=[
+  ['gesetz','Gesetz',['Gesetzlos','Misstraut dem Gesetz','Gleichgültig','Achtet das Gesetz','Streng gesetzestreu']],
+  ['glaube','Glaube',['Gottlos','Zweifelt','Gleichgültig','Gläubig','Sehr fromm']],
+  ['alkohol','Alkohol',['Lehnt Alkohol ab','Trinkt selten','Trinkt maßvoll','Trinkt gern','Trinkfest']],
+  ['waffen','Waffen',['Lehnt Waffen ab','Skeptisch','Gleichgültig','Für Waffen','Trägt immer eine Waffe']],
+  ['fremde','Fremde',['Misstraut Fremden','Vorsichtig','Gleichgültig','Offen','Heißt alle willkommen']]
+];
+const has=(s,t)=>s.traits&&s.traits.includes(t);
+function makeTraits(r){const keys=Object.keys(TRAITS),out=[],n=2+(r()<.4?1:0);
+  while(out.length<n){const k=pick(keys,r);if(out.includes(k)||out.some(o=>TRAITS[o].x===k))continue;out.push(k)}return out}
+function makeViews(r,traits){const v={};for(const [k] of TOPICS)v[k]=clamp(Math.round((r()+r()+r())/3*4-2+(r()-.5)),-2,2);
+  if(traits.includes('glaeubig'))v.glaube=Math.max(1,v.glaube);if(traits.includes('mutig'))v.waffen=Math.max(0,v.waffen);return v}
+function viewLabel(k,v){return TOPICS.find(t=>t[0]===k)[2][v+2]}
+function remember(s,text,m,days){s.mem.unshift({t:state.t,text,mood:m,until:state.t+days*1440});if(s.mem.length>14)s.mem.pop()}
+function memMood(s){let m=0;for(const x of s.mem)if(x.until>state.t)m+=x.mood;return clamp(m,-30,30)}
+function traitMood(s){let m=0;if(has(s,'froh'))m+=8;if(s.partner!=null)m+=4;
+  if(has(s,'gierig')){const f=state.res.nahrung||0;m+=f>settlers.length*8?4:f<settlers.length*2?-5:0}return m}
+function emote(s,k){s.emote={k,until:performance.now()+2600}}
+
+const REL_LV=[[-60,'Feind'],[-30,'Rivale'],[-10,'Abneigung'],[15,'Bekannt'],[40,'Freund'],[70,'Enger Freund'],[101,'Vertraut']];
+const Rel={
+  key:(a,b)=>a<b?a+'-'+b:b+'-'+a,
+  get(a,b){const k=Rel.key(a,b);return state.rel[k]||(state.rel[k]={v:0,love:0,kind:null})},
+  compat(s,o){let c=0;for(const [k] of TOPICS)c+=2-Math.abs(s.views[k]-o.views[k]);
+    if(has(s,'jaehzornig'))c-=2;if(has(o,'jaehzornig'))c-=2;if(has(s,'gesellig')&&has(o,'gesellig'))c+=2;
+    if((has(s,'fleissig')&&has(o,'faul'))||(has(o,'fleissig')&&has(s,'faul')))c-=3;if(has(s,'froh')||has(o,'froh'))c+=1;return c},
+  label(s,o){const r=Rel.get(s.id,o.id);if(r.kind==='partner')return o.female?'Partnerin':'Partner';
+    let l='Bekannt';for(const [v,n] of REL_LV)if(r.v<v){l=n;break}
+    if(r.kind==='family')l=(o.female?'Schwester':'Bruder')+' · '+l;if(r.love>25&&r.kind!=='partner')l+=' · verliebt';return l},
+  init(r){
+    for(let i=0;i<settlers.length;i++)for(let j=i+1;j<settlers.length;j++){
+      const a=settlers[i],b=settlers[j],rel=Rel.get(a.id,b.id);
+      if(a.sur===b.sur){if(a.female!==b.female&&Math.abs(a.age-b.age)<12&&r()<.65&&a.partner==null&&b.partner==null){rel.kind='partner';rel.v=55+r()*20;rel.love=80;a.partner=b.id;b.partner=a.id}
+        else{rel.kind='family';rel.v=35+r()*20}}
+      else rel.v=Math.round(Rel.compat(a,b)*2.5+(r()-.5)*20);
+    }
+  },
+  change(s,o,dv){
+    const r=Rel.get(s.id,o.id),b=r.v;r.v=clamp(r.v+dv,-100,100);
+    if(b<40&&r.v>=40&&r.kind==null){log(s.name+' und '+o.name+' sind jetzt Freunde.');remember(s,'Hat sich mit '+o.name+' angefreundet',6,2);remember(o,'Hat sich mit '+s.name+' angefreundet',6,2)}
+    if(b>-30&&r.v<=-30){log(s.name+' und '+o.name+' können sich nicht mehr ausstehen.');remember(s,'Ärgert sich über '+o.name,-5,2);remember(o,'Ärgert sich über '+s.name,-5,2)}
+    if(r.kind==='partner'&&r.v<5){r.kind=null;r.love=15;s.partner=null;o.partner=null;log(s.name+' und '+o.name+' haben sich getrennt.');
+      remember(s,'Trennung von '+o.name,-15,3);remember(o,'Trennung von '+s.name,-15,3)}
+  },
+  talk(s,o){
+    const r=Rel.get(s.id,o.id),c=Rel.compat(s,o),[tk,tn]=pick(TOPICS),diff=Math.abs(s.views[tk]-o.views[tk]);
+    let pq=.03+diff*.05+(c<0?-c*.012:0)+(has(s,'jaehzornig')?.12:0)+(has(o,'jaehzornig')?.12:0)-(r.v>40?.05:0)-(r.kind==='partner'?.03:0);
+    if(diff===0)pq*=.3;
+    if(Math.random()<pq){
+      const hot=has(s,'jaehzornig')||has(o,'jaehzornig'),fight=(has(s,'jaehzornig')&&has(o,'jaehzornig'))||(r.v<-40&&Math.random()<.5)||(hot&&Math.random()<.25);
+      Rel.change(s,o,fight?-22:-12);
+      for(const [a,b] of [[s,o],[o,s]]){remember(a,fight?'Hat sich mit '+b.name+' geprügelt':'Streit mit '+b.name+' über '+tn,fight?-15:-8,fight?2:1);emote(a,'anger');
+        a.thought=fight?b.name+' hat zuerst zugeschlagen!':b.name+' liegt beim Thema '+tn+' völlig falsch!'}
+      log(fight?s.name+' und '+o.name+' haben sich geprügelt.':s.name+' und '+o.name+' haben über '+tn+' gestritten.');
+      return false;
+    }
+    Rel.change(s,o,Math.max(1,3+Math.random()*3+c*.4+(has(s,'gesellig')?1:0)+(has(o,'gesellig')?1:0)));
+    s.thought=diff<=1?'Mit '+o.name+' bin ich mir beim Thema '+tn+' einig.':o.name+' sieht das mit '+tn+' anders. Trotzdem ein gutes Gespräch.';
+    o.thought=diff<=1?s.name+' versteht mich.':'Interessant, wie '+s.name+' über '+tn+' denkt.';
+    // Zuneigung kann zu Liebe werden
+    if(r.kind==null&&s.partner==null&&o.partner==null&&s.age>=18&&o.age>=18&&Math.abs(s.age-o.age)<=14&&r.v>=35){
+      const attr=hash(Math.min(s.id,o.id),Math.max(s.id,o.id),state.seed+77);
+      if(attr>.35){r.love=Math.min(100,r.love+(2+attr*8)*Math.random()*1.4);if(r.love>20)emote(s,'heart');
+        if(r.love>=60){r.kind='partner';s.partner=o.id;o.partner=s.id;emote(s,'heart');emote(o,'heart');log(s.name+' und '+o.name+' sind jetzt ein Paar.');
+          remember(s,'Ist jetzt mit '+o.name+' zusammen',15,4);remember(o,'Ist jetzt mit '+s.name+' zusammen',15,4)}}
+    }
+    if(r.kind==='partner')emote(s,'heart');
+    return true;
+  },
+  buildingMood(d){
+    for(const s of settlers){remember(s,d.name+' ist fertig',5,1);const v=s.views;
+      if(d.id==='kirche'){if(has(s,'glaeubig')||v.glaube>0)remember(s,'Endlich eine Kirche',6,3);else if(v.glaube<=-2)remember(s,'Eine Kirche brauche ich nicht',-3,2)}
+      if(d.id==='saloon'){if(v.alkohol>=1)remember(s,'Endlich ein Saloon',6,3);else if(v.alkohol<=-2)remember(s,'Ein Saloon bringt nur Ärger',-4,3)}
+      if(d.id==='sheriff'){if(v.gesetz>=1)remember(s,'Endlich Recht und Ordnung',4,3);else if(v.gesetz<=-2)remember(s,'Ein Sheriff schnüffelt hier herum',-4,3)}}
+  }
+};
+
+/* =========================================================
    Bedürfnisse
    ========================================================= */
 const NEEDS=[['hunger','Hunger'],['durst','Durst'],['schlaf','Schlaf'],['waerme','Wärme'],['sicher','Sicherheit'],['gesell','Gesellschaft'],['spass','Spaß']];
@@ -687,26 +794,27 @@ const MOODS=[[15,'Verzweifelt'],[35,'Unglücklich'],[55,'Angespannt'],[75,'Zufri
 const GAME_MIN=4; // Spielminuten pro echter Sekunde bei 1×
 const hourOf=t=>(t%1440)/60;
 const isNight=t=>{const h=hourOf(t);return h>=21||h<6};
-function mood(s){const n=s.needs;let sum=0,w=0;for(const [k] of NEEDS){const v=n[k],wt=v<25?2:1;sum+=v*wt;w+=wt}return Math.round(sum/w)}
+function needMood(s){const n=s.needs;let sum=0,w=0;for(const [k] of NEEDS){const v=n[k],wt=v<25?2:1;sum+=v*wt;w+=wt}return Math.round(sum/w)}
+function mood(s){return Math.round(clamp(needMood(s)+memMood(s)+traitMood(s),0,100))}
 function moodName(m){for(const [v,n] of MOODS)if(m<v)return n;return'Glücklich'}
-function workMul(s){const m=mood(s);return m<20?.55:m<40?.8:m>80?1.1:1}
+function workMul(s){const m=mood(s);return(m<20?.55:m<40?.8:m>80?1.1:1)*(has(s,'fleissig')?1.1:has(s,'faul')?.85:1)}
 const Needs={
   update(s,gh){
     const n=s.needs,night=isNight(state.t),tk=s.task,doing=tk&&tk.stage==='do'?tk.k:null;
     n.hunger=clamp(n.hunger-3.2*gh,0,100);n.durst=clamp(n.durst-4.5*gh,0,100);
     n.schlaf=clamp(n.schlaf+(doing==='sleep'?(s.inside?11:8.5):-4.6)*gh,0,100);
-    n.gesell=clamp(n.gesell-2.5*gh,0,100);n.spass=clamp(n.spass-2.5*gh,0,100);
+    n.gesell=clamp(n.gesell-2.5*gh*(has(s,'gesellig')?1.4:has(s,'einzel')?.5:1),0,100);n.spass=clamp(n.spass-2.5*gh*(has(s,'faul')?1.25:1),0,100);
     const fire=Build.nearFire(s.x,s.y,4.5);
     let wt=night?(fire?72:30):85;if(s.inside)wt=s.insideHut?93:86;else if(doing==='warm')wt=fire?82:72;
     n.waerme=clamp(n.waerme+(wt-n.waerme)*Math.min(1,.15*gh),0,100);
     const c=world.camp,dc=Math.hypot(s.x-c.x,s.y-c.y);let comp=false;
     for(const o of settlers)if(o!==s&&Math.abs(o.x-s.x)<6&&Math.abs(o.y-s.y)<6){comp=true;break}
-    let st=dc<12?(comp?90:72):(comp?60:40);if(night&&dc>=12)st-=25;if(Build.active('sheriff').length&&dc<16)st+=8;if(s.inside)st=s.insideHut?96:90;
+    let st=dc<12?(comp?90:72):(comp?60:40);if(night&&dc>=12)st-=25;if(Build.active('sheriff').length&&dc<16&&s.views.gesetz>=0)st+=8;if(has(s,'mutig'))st+=12;if(has(s,'aengstlich'))st-=12;if(s.inside)st=s.insideHut?96:90;
     n.sicher=clamp(n.sicher+(st-n.sicher)*Math.min(1,.2*gh),0,100);
     if(n.schlaf<=0&&doing!=='sleep')AI.collapse(s);
     const m=mood(s),f=s.flags;
     if(m<15&&!f.despair){f.despair=1;log(s.name+' ist verzweifelt.')}else if(m>30)f.despair=0;
-    if(n.hunger<=0&&!f.starve){f.starve=1;log(s.name+' hungert.')}else if(n.hunger>20)f.starve=0;
+    if(n.hunger<=0&&!f.starve){f.starve=1;log(s.name+' hungert.');remember(s,'Hat gehungert',-10,1)}else if(n.hunger>20)f.starve=0;
     if(n.durst<=0&&!f.thirst){f.thirst=1;log(s.name+' ist halb verdurstet.')}else if(n.durst>20)f.thirst=0;
   }
 };
@@ -769,9 +877,9 @@ const AI={
     if(n.schlaf<95&&(night||n.schlaf<45))add(u(n.schlaf)*1.3+(night?70:0)+(n.schlaf<15?60:0),'Schlafen',()=>AI.toBed(s));
     if(n.waerme<60)add(u(n.waerme),'Aufwärmen',()=>AI.toWarm(s));
     if(n.sicher<60&&Math.hypot(s.x-c.x,s.y-c.y)>10)add(u(n.sicher),'Zurück zum Lager',()=>AI.toCamp(s));
-    if(n.gesell<70&&settlers.length>1)add(u(n.gesell)*.9,'Unterhalten',()=>AI.toChat(s));
-    if(n.spass<70)add(u(n.spass)*.8,'Zeitvertreib',()=>AI.toFun(s));
-    const wm=workMul(s);
+    if(n.gesell<70&&settlers.length>1)add(u(n.gesell)*.9*(has(s,'gesellig')?1.3:has(s,'einzel')?.5:1),'Unterhalten',()=>AI.toChat(s));
+    if(n.spass<70)add(u(n.spass)*.8*(has(s,'faul')?1.3:1),'Zeitvertreib',()=>AI.toFun(s));
+    const wm=workMul(s)*(has(s,'fleissig')?1.3:has(s,'faul')?.7:1);
     const bp=PRIO[state.prio.bau]||0;
     if(bp&&!s.carry){
       const nf=night?.35:1,tl=Build.tools();
@@ -779,7 +887,7 @@ const AI={
       const ws=Build.workSite();if(ws)add(36*bp*wm*nf*tl,'Bauen',()=>AI.toBuild(s,ws));
       const rs=Build.repairSite();if(rs)add(rs.type==='feuer'?55*bp:26*bp*wm*nf,rs.type==='feuer'?'Holz nachlegen':'Ausbessern',()=>AI.toRepair(s,rs));
     }
-    for(const [k,name] of JOBS){const p=PRIO[state.prio[k]];if(!p)continue;add(28*p*wm*(night?.35:1)*AI.scarcity(k),name,()=>AI.toJob(s,k))}
+    for(const [k,name] of JOBS){const p=PRIO[state.prio[k]];if(!p)continue;const tm=k==='jagd'?(has(s,'mutig')?1.3:has(s,'aengstlich')?.6:1)*(1+.15*s.views.waffen):1;add(28*p*wm*tm*(night?.35:1)*AI.scarcity(k),name,()=>AI.toJob(s,k))}
     add(6,'Umherschauen',()=>AI.toWander(s));
     opts.sort((a,b)=>b.score-a.score);
     s.scores=opts.slice(0,3).map(o=>[o.label,Math.round(o.score)]);
@@ -798,7 +906,8 @@ const AI={
     if(!t)return false;
     return AI.go(s,{k:'drink',dur:.25,goAct:'Geht zum Fluss trinken',doAct:'Trinkt am Fluss'},t.x,t.y)},
   toBed(s){
-    const beds=state.builds.filter(b=>b.done&&b.hp>0&&BDEF[b.type].beds).sort((a,b)=>BDEF[b.type].beds-BDEF[a.type].beds);
+    const pt=s.partner!=null&&settlers.find(q=>q.id===s.partner),pb=pt&&pt.task&&pt.task.k==='sleep'?pt.task.bed:null;
+    const beds=state.builds.filter(b=>b.done&&b.hp>0&&BDEF[b.type].beds).sort((a,b)=>(b.id===pb)-(a.id===pb)||BDEF[b.type].beds-BDEF[a.type].beds);
     for(const b of beds){
       const used=settlers.filter(o=>o!==s&&o.task&&o.task.k==='sleep'&&o.task.bed===b.id).length;if(used>=BDEF[b.type].beds)continue;
       const p=standRect(s,b);if(!p)continue;const hut=b.type==='huette';
@@ -807,7 +916,7 @@ const AI={
     const f=Build.nearest(Build.fires(),s.x,s.y),w=world.structs.find(q=>q.type==='wagon'),p=f?World.near(f.x+.5,f.y+.5,2):World.near(w.x+1,w.y+1,2);if(!p)return false;
     return AI.go(s,{k:'sleep',goAct:'Sucht einen Schlafplatz',doAct:f?'Schläft am Lagerfeuer':'Schläft unter freiem Himmel'},p.x,p.y);
   },
-  collapse(s){AI.release(s);s.path=null;s.task={k:'sleep',stage:'do',t:0,doAct:'Ist vor Erschöpfung eingeschlafen'};s.act=s.task.doAct;log(s.name+' ist vor Erschöpfung eingeschlafen.')},
+  collapse(s){AI.release(s);s.path=null;s.task={k:'sleep',stage:'do',t:0,doAct:'Ist vor Erschöpfung eingeschlafen'};s.act=s.task.doAct;log(s.name+' ist vor Erschöpfung eingeschlafen.');remember(s,'Ist vor Erschöpfung umgefallen',-6,1)},
   toWarm(s){const f=Build.nearest(Build.fires(),s.x,s.y);if(f){const p=World.near(f.x+.5,f.y+.5,1.6);if(p)return AI.go(s,{k:'warm',dur:1,goAct:'Geht ans Lagerfeuer',doAct:'Wärmt sich am Lagerfeuer'},p.x,p.y)}
     const w=world.structs.find(q=>q.type==='wagon'),p=World.near(w.x+1,w.y+1,2);if(!p)return false;
     return AI.go(s,{k:'warm',dur:1,goAct:'Holt eine Decke vom Wagen',doAct:'Wärmt sich unter einer Decke'},p.x,p.y)},
@@ -815,13 +924,16 @@ const AI={
   toChat(s){
     const os=settlers.filter(o=>o!==s&&!(o.task&&o.task.k==='sleep')&&!o.inside);if(!os.length)return false;
     os.sort((a,b)=>((a.x-s.x)**2+(a.y-s.y)**2)-((b.x-s.x)**2+(b.y-s.y)**2));
-    const o=os[Math.floor(Math.random()*Math.min(3,os.length))],p=World.near(o.x,o.y,1.2);if(!p)return false;
+    const ws=os.slice(0,5).map(o=>{const r=Rel.get(s.id,o.id);return r.kind==='partner'?6:r.v<-30?.1:1+Math.max(0,r.v)/25+r.love/30});
+    let rr=Math.random()*ws.reduce((a,b)=>a+b,0),o=os[0];for(let i=0;i<ws.length;i++){rr-=ws[i];if(rr<=0){o=os[i];break}}
+    const p=World.near(o.x,o.y,1.2);if(!p)return false;
     return AI.go(s,{k:'chat',dur:.5,with:o.id,goAct:'Geht zu '+o.name,doAct:'Unterhält sich mit '+o.name,th:pick(TH.chat)},p.x,p.y);
   },
   toFun(s){
     const r=Math.random(),c=world.camp,sal=Build.nearest(Build.active('saloon'),s.x,s.y),kir=Build.nearest(Build.active('kirche'),s.x,s.y),fi=Build.nearest(Build.fires(),s.x,s.y);
-    if(sal&&Math.random()<.45){const p=standRect(s,sal);if(p)return AI.go(s,{k:'fun',dur:1.2,saloon:1,goAct:'Geht in den Saloon',doAct:'Trinkt einen im Saloon',th:'Ein kühles Getränk nach der Arbeit.'},p.x,p.y)}
-    if(kir&&Math.random()<.35){const p=standRect(s,kir);if(p)return AI.go(s,{k:'fun',dur:1,church:1,goAct:'Geht zur Kirche',doAct:'Sitzt still in der Kirche',th:'Hier finde ich Ruhe.'},p.x,p.y)}
+    if(sal&&s.views.alkohol>-2&&Math.random()<.45*(1+.3*s.views.alkohol)){const p=standRect(s,sal);if(p)return AI.go(s,{k:'fun',dur:1.2,saloon:1,goAct:'Geht in den Saloon',doAct:'Trinkt einen im Saloon',th:'Ein kühles Getränk nach der Arbeit.'},p.x,p.y)}
+    if(kir&&Math.random()<.35*(1+.4*s.views.glaube)*(has(s,'glaeubig')?1.5:1)){const p=standRect(s,kir);if(p)return AI.go(s,{k:'fun',dur:1,church:1,goAct:'Geht zur Kirche',doAct:'Sitzt still in der Kirche',th:'Hier finde ich Ruhe.'},p.x,p.y)}
+    if(s.views.glaube>=1&&Math.random()<.2*s.views.glaube){const p=World.near(s.x,s.y,2);if(p)return AI.go(s,{k:'pray',dur:.6,goAct:'Sucht einen ruhigen Ort',doAct:'Betet in Ruhe',th:'Herr, beschütze unsere Siedlung.'},p.x,p.y)}
     if(fi&&Math.random()<.5){const p=World.near(fi.x+.5,fi.y+.5,1.6);if(p)return AI.go(s,{k:'fun',dur:1,music:1,goAct:'Geht ans Lagerfeuer',doAct:'Erzählt Geschichten am Lagerfeuer',th:'Habt ihr die Geschichte vom alten Trapper gehört?'},p.x,p.y)}
     if(r<.4){const t=nearestTile(s.x,s.y,(x,y)=>World.walk(x,y)&&waterAdj(x,y));if(t)return AI.go(s,{k:'fun',dur:1,goAct:'Geht zum Fluss',doAct:'Lässt Steine übers Wasser springen',th:pick(TH.fun)},t.x,t.y)}
     if(r<.6&&horses.length){const h=horses[0];if(Math.hypot(h.x-c.x,h.y-c.y)<28){const a=Math.atan2(c.y-h.y,c.x-h.x),p=World.near(h.x+Math.cos(a)*6,h.y+Math.sin(a)*6,2);
@@ -875,16 +987,21 @@ const AI={
       const o=settlers.find(q=>q.id===t.with);
       if(o&&Math.hypot(o.x-s.x,o.y-s.y)<2.5&&!o.inside&&!(o.task&&o.task.k==='sleep')){
         s.dir=faceDir(o.x-s.x,o.y-s.y);
-        if(!o.path&&(!o.task||o.task.k==='idle'||o.task.k==='fun')){AI.release(o);o.task={k:'chat',stage:'do',t:0,dur:.5,with:s.id,doAct:'Unterhält sich mit '+s.name};o.act=o.task.doAct;o.thought=pick(TH.chat);o.dir=faceDir(s.x-o.x,s.y-o.y)}
-        if(Math.random()<.2)log(s.name+' und '+o.name+' unterhalten sich.');
+        const free=!o.path&&(!o.task||o.task.k==='idle'||o.task.k==='fun');
+        if(free){AI.release(o);o.task={k:'chat',stage:'do',t:0,dur:.5,with:s.id,doAct:'Unterhält sich mit '+s.name};o.act=o.task.doAct;o.dir=faceDir(s.x-o.x,s.y-o.y)}
+        const ok=Rel.talk(s,o);t.partner=o.id===s.partner;
+        if(!ok){t.quarrel=1;t.dur=.15;s.act='Streitet mit '+o.name;if(free){o.task.quarrel=1;o.task.dur=.15;o.act='Streitet mit '+s.name}}
       }else{t.dur=.1;s.act='Schaut sich um';s.thought=o?o.name+' ist weitergegangen.':'Niemand da.'}
     }
+    if(t.k==='fun'&&t.church&&has(s,'glaeubig')&&Math.random()<.5)remember(s,'Hat in der Kirche gebetet',5,1);
+    if(t.k==='fun'&&t.saloon&&s.views.alkohol>=1&&Math.random()<.4)remember(s,'Ein schöner Abend im Saloon',4,1);
     if(t.k==='fun'&&t.horse&&!state.flags.horseSeen){state.flags.horseSeen=1;log(s.name+' hat eine Herde Wildpferde entdeckt.')}
   },
   finish(s){
     const t=s.task,n=s.needs,o=world.obj;AI.release(s);s.task=null;s.inside=false;s.idle=.2+Math.random()*.6;
     if(!t)return;
-    if(t.k==='eat'){if((state.res.nahrung||0)>0){state.res.nahrung--;const warm=Build.fires().length>0;n.hunger=Math.min(100,n.hunger+(warm?62:50));s.thought=warm?'Eine warme Mahlzeit!':'Das hat gutgetan.'}else s.thought='Das Lager ist leer!'}
+    if(t.k==='eat'){if((state.res.nahrung||0)>0){state.res.nahrung--;const warm=Build.fires().length>0;n.hunger=Math.min(100,n.hunger+(warm?62:50));s.thought=warm?'Eine warme Mahlzeit!':'Das hat gutgetan.';
+      if(has(s,'gierig')&&state.res.nahrung>0&&Math.random()<.4){state.res.nahrung--;n.hunger=100;s.thought='Eine doppelte Portion steht mir zu.'}}else s.thought='Das Lager ist leer!'}
     else if(t.k==='pick'){const b=Build.byId(t.site);if(b&&!b.done){const m=Build.missing(b);let cap=10;const c={};
       for(const [k,v] of Object.entries(m)){const q=Math.min(v,state.res[k]||0,cap);if(q>0){c[k]=q;state.res[k]-=q;cap-=q;b.transit[k]=(b.transit[k]||0)+q}if(cap<=0)break}
       if(Object.keys(c).length){s.carry=c;s.carryTo=b.id}}}
@@ -895,7 +1012,8 @@ const AI={
     else if(t.k==='sleep'){s.thought=n.waerme<40?'Was für eine kalte Nacht.':'Gut geschlafen.'}
     else if(t.k==='warm'){n.waerme=Math.min(100,n.waerme+12)}
     else if(t.k==='camp'){n.sicher=Math.min(100,n.sicher+15)}
-    else if(t.k==='chat'){n.gesell=Math.min(100,n.gesell+35);n.spass=Math.min(100,n.spass+5)}
+    else if(t.k==='chat'){if(!t.quarrel){n.gesell=Math.min(100,n.gesell+(t.partner?45:35)*(has(s,'gesellig')?1.2:1));n.spass=Math.min(100,n.spass+5)}}
+    else if(t.k==='pray'){n.spass=Math.min(100,n.spass+30);n.sicher=Math.min(100,n.sicher+10);if(Math.random()<.3)remember(s,'Hat in Ruhe gebetet',3,1)}
     else if(t.k==='fun'){n.spass=Math.min(100,n.spass+(t.saloon?50:40));if(t.saloon)n.gesell=Math.min(100,n.gesell+25);if(t.church)n.sicher=Math.min(100,n.sicher+15);if(t.music)for(const q of settlers)if(q!==s&&Math.hypot(q.x-s.x,q.y-s.y)<5)q.needs.spass=Math.min(100,q.needs.spass+10)}
     else if(t.k==='job'){
       const i=t.i;
@@ -1061,6 +1179,9 @@ const Render={
           if(s.carry){const k=Object.keys(s.carry)[0];ITEM[k](ctx,px-3,py-26)}
           if(work&&tk.dur){let p=clamp(tk.t/tk.dur,0,1);if(doing==='build'){const b=Build.byId(tk.site);if(b)p=b.work/BDEF[b.type].work}ctx.fillStyle='#24150b';ctx.fillRect(px-6,py-28,12,3);ctx.fillStyle='#f2c64a';ctx.fillRect(px-5,py-27,Math.round(10*p),1)}
         }
+        if(s.emote&&s.emote.until>now&&doing!=='sleep'){const ey=py-31+(Math.floor(now/300)&1);
+          if(s.emote.k==='heart'){ctx.fillStyle='#24150b';ctx.fillRect(px-3,ey,7,5);ctx.fillRect(px-2,ey+5,5,1);ctx.fillRect(px-1,ey+6,3,1);ctx.fillStyle='#e04a5a';ctx.fillRect(px-2,ey+1,2,2);ctx.fillRect(px+1,ey+1,2,2);ctx.fillRect(px-2,ey+2,5,2);ctx.fillRect(px-1,ey+4,3,1);ctx.fillRect(px,ey+5,1,1)}
+          else{ctx.fillStyle='#24150b';ctx.fillRect(px-2,ey-1,5,9);ctx.fillStyle='#f05030';ctx.fillRect(px-1,ey,3,4);ctx.fillRect(px,ey+4,1,1);ctx.fillRect(px-1,ey+6,3,1)}}
         if(state.sel===s.id){const bob=Math.floor(now/250)&1;ctx.fillStyle='#24150b';ctx.fillRect(px-3,py-30+bob,7,4);ctx.fillRect(px-2,py-26+bob,5,2);
           ctx.fillStyle='#f2c64a';ctx.fillRect(px-2,py-29+bob,5,2);ctx.fillRect(px-1,py-27+bob,3,1);ctx.fillRect(px,py-26+bob,1,1)}}
       else if(e.k===3){const h=e.h,px=Math.round(h.x*16),py=Math.round(h.y*16)+3,sh=horseSheets.get(h.id);
@@ -1114,11 +1235,12 @@ function newGame(opt,seed){
   if(opt.tents){const c=world.camp;for(const [x,y] of [[c.x-4,c.y-2],[c.x-4,c.y+2],[c.x+2,c.y+3]]){for(let yy=0;yy<1;yy++)for(let xx=0;xx<2;xx++)world.obj[(y+yy)*W+x+xx]=0;state.builds.push({id:state.nextB++,type:'zelt',x,y,w:2,h:1,done:true,work:1.5,got:{},transit:{},hp:100})}}
   World.placeStart();
   const r=mulberry(seed*13+5);
-  settlers=makeSettlers(5+Math.floor(r()*4),r);
+  state.rel={};settlers=makeSettlers(5+Math.floor(r()*4),r);Rel.init(r);
   const a=makeAnimals(r);horses=a.hs;rabbits=a.rb;
   buildSheets();
   cam.x=(world.camp.x+1)*16;cam.y=(world.camp.y+.5)*16;cam.S=clamp(Math.round(dpr*2.25),Smin(),Smax());clampCam();
   log(settlers.length+' Siedler erreichen mit ihrem Planwagen die Prärie.');
+  for(const a of settlers)if(a.partner!=null&&a.partner>a.id)log(a.name+' und '+settlers.find(q=>q.id===a.partner).name+' kommen als Paar.');
   log(opt.tents?'Die Siedler schlagen drei Zelte auf.':'Ohne Zelte schlafen alle unter freiem Himmel.');
   UI.setSpeed(1);UI.hud();
 }
@@ -1142,7 +1264,7 @@ function buildSheets(){
 }
 function serialize(){return{state,settlers:settlers.map(s=>Object.assign({},s,{path:null,task:null,inside:false,carryTo:null,idle:Math.min(s.idle,1)})),horses,rabbits:rabbits.map(b=>Object.assign({},b,{res:null})),cam:{x:cam.x,y:cam.y,S:cam.S,follow:cam.follow}}}
 function restore(d){
-  if(!d.state.mod||!d.state.builds||!d.settlers.every(q=>q.needs))throw new Error('alter Spielstand');
+  if(!d.state.mod||!d.state.builds||!d.state.rel||!d.settlers.every(q=>q.needs&&q.traits))throw new Error('alter Spielstand');
   state=d.state;buildWorld(state.seed);for(const b of state.builds)b.transit={};reserved.clear();skipT.clear();
   for(const [i,v] of Object.entries(state.mod.obj))world.obj[+i]=v;
   World.placeStart();
@@ -1165,19 +1287,32 @@ const UI={
   setSpeed(v){state.speed=v;$('sp0').setAttribute('aria-pressed',v===0);$('sp1').setAttribute('aria-pressed',v===1);$('sp3').setAttribute('aria-pressed',v===3)},
   open(title,html,view){$('sTitle').textContent=title;$('sBody').innerHTML=html;$('sBody').scrollTop=0;UI.view=view;const sh=$('sheet');sh.classList.add('open');sh.setAttribute('aria-hidden','false');sh.style.transform=''},
   close(){const sh=$('sheet');sh.classList.remove('open');sh.setAttribute('aria-hidden','true');sh.style.transform='';UI.view=null;state.sel=null;state.selB=null;cam.follow=null},
+  tab:'zustand',
   showSettler(s){
     state.sel=s.id;
-    const needs=NEEDS.map(([k,n])=>'<div class="need"><span>'+n+' <em id="nv-'+k+'"></em></span><div class="nbar"><i id="nb-'+k+'"></i></div></div>').join('');
+    const tabs=[['zustand','Zustand'],['charakter','Charakter'],['bez','Beziehungen'],['mem','Erinnerungen']];
     UI.open(s.name+' '+s.sur,
       '<div class="who"><img class="pic" alt="" src="'+pics.get(s.id)+'"><div><div class="meta">'+s.age+' Jahre · '+(s.female?'Frau':'Mann')+'</div>'+
       '<div class="mood" id="pMood"></div><div class="act" id="pAct"></div></div></div>'+
-      '<p class="thought" id="pTh"></p><p class="carry" id="pCarry" hidden></p>'+
-      '<div class="needs">'+needs+'</div>'+
-      '<p class="scores" id="pSc"></p>'+
-      '<div class="row"><button type="button" id="pFollow" aria-pressed="'+(cam.follow===s.id)+'">'+(cam.follow===s.id?'Folgt':'Folgen')+'</button><button type="button" id="pCenter">Zeigen</button></div>'+
-      '<p class="soon">Fähigkeiten, Charakterzüge und Beziehungen kommen in den nächsten Bauschritten dazu.</p>','settler');
+      '<div class="tabs" role="tablist">'+tabs.map(([k,n])=>'<button type="button" role="tab" data-t="'+k+'" aria-selected="'+(UI.tab===k)+'">'+n+'</button>').join('')+'</div>'+
+      '<div id="tabBody" class="tabbody"></div>'+
+      '<div class="row"><button type="button" id="pFollow" aria-pressed="'+(cam.follow===s.id)+'">'+(cam.follow===s.id?'Folgt':'Folgen')+'</button><button type="button" id="pCenter">Zeigen</button></div>','settler');
+    $('sBody').querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{UI.tab=b.dataset.t;$('sBody').querySelectorAll('.tabs button').forEach(q=>q.setAttribute('aria-selected',q===b));UI.renderTab(s)});
     $('pFollow').onclick=()=>{cam.follow=cam.follow===s.id?null:s.id;const b=$('pFollow');b.setAttribute('aria-pressed',cam.follow===s.id);b.textContent=cam.follow===s.id?'Folgt':'Folgen'};
     $('pCenter').onclick=()=>{cam.x=s.x*16;cam.y=s.y*16;clampCam()};
+    UI.renderTab(s);
+  },
+  renderTab(s){
+    const el=$('tabBody');UI.cache='';
+    if(UI.tab==='zustand'){
+      const needs=NEEDS.map(([k,n])=>'<div class="need"><span>'+n+' <em id="nv-'+k+'"></em></span><div class="nbar"><i id="nb-'+k+'"></i></div></div>').join('');
+      el.innerHTML='<p class="thought" id="pTh"></p><p class="carry" id="pCarry" hidden></p><p class="scores" id="pMb"></p><div class="needs">'+needs+'</div><p class="scores" id="pSc"></p>';
+    }else if(UI.tab==='charakter'){
+      el.innerHTML='<div class="tchips">'+s.traits.map(t=>'<button type="button" class="tchip" data-t="'+t+'">'+TRAITS[t].n+'</button>').join('')+'</div><p class="soon" id="tDesc">Tippe auf einen Charakterzug, um seine Wirkung zu sehen.</p>'+
+        '<div class="views">'+TOPICS.map(([k,n])=>{const v=s.views[k];return'<div class="view"><span class="vn">'+n+'</span><span class="vl">'+viewLabel(k,v)+'</span><span class="pips">'+[-2,-1,0,1,2].map(i=>'<i'+(i===v?' class="on"':'')+'></i>').join('')+'</span></div>'}).join('')+'</div>'+
+        '<p class="soon">Ähnliche Ansichten schaffen Freundschaften. Gegensätze führen zu Streit. Ansichten bestimmen auch, wie jemand Saloon, Kirche und Sheriff findet.</p>';
+      el.querySelectorAll('.tchip').forEach(b=>b.onclick=()=>{$('tDesc').textContent=TRAITS[b.dataset.t].n+': '+TRAITS[b.dataset.t].d});
+    }else el.innerHTML='<div class="list" id="tList"></div>';
     UI.refresh();
   },
   refresh(){
@@ -1185,10 +1320,23 @@ const UI={
       const s=settlers.find(q=>q.id===state.sel);if(!s)return;
       const set=(id,t)=>{const el=$(id);if(el&&el.textContent!==t)el.textContent=t};
       const m=mood(s);set('pMood','Stimmung: '+moodName(m)+' ('+m+')');$('pMood').dataset.lv=m<35?'bad':m<55?'mid':'good';
-      set('pAct',s.act);set('pTh','„'+s.thought+'“');
-      const pc=$('pCarry');pc.hidden=!s.carry;if(s.carry)set('pCarry','Trägt '+carryText(s.carry));
-      for(const [k] of NEEDS){const v=Math.round(s.needs[k]),b=$('nb-'+k);b.style.width=v+'%';b.dataset.lv=v<30?'bad':v<60?'mid':'good';set('nv-'+k,String(v))}
-      set('pSc',s.scores&&s.scores.length?'Letzte Abwägung: '+s.scores.map(([l,v])=>l+' '+v).join(' · ')+' Punkte':'');
+      set('pAct',s.act);
+      if(UI.tab==='zustand'){
+        set('pTh','„'+s.thought+'“');
+        const pc=$('pCarry');if(pc){pc.hidden=!s.carry;if(s.carry)set('pCarry','Trägt '+carryText(s.carry))}
+        const mm=memMood(s),tm=traitMood(s),sg=v=>(v>=0?'+':'')+v;
+        set('pMb','Stimmung setzt sich zusammen aus Bedürfnissen '+needMood(s)+', Erinnerungen '+sg(mm)+' und Charakter '+sg(tm)+'.');
+        for(const [k] of NEEDS){const v=Math.round(s.needs[k]),b=$('nb-'+k);if(!b)continue;b.style.width=v+'%';b.dataset.lv=v<30?'bad':v<60?'mid':'good';set('nv-'+k,String(v))}
+        set('pSc',s.scores&&s.scores.length?'Letzte Abwägung: '+s.scores.map(([l,v])=>l+' '+v).join(' · ')+' Punkte':'');
+      }else if(UI.tab==='bez'){
+        const os=settlers.filter(o=>o!==s).map(o=>[o,Rel.get(s.id,o.id)]).sort((a,b)=>(b[1].kind==='partner')-(a[1].kind==='partner')||Math.abs(b[1].v)-Math.abs(a[1].v));
+        const h=os.map(([o,r])=>{const v=Math.round(r.v),w=Math.abs(v)/2;return'<button type="button" class="item rel" data-id="'+o.id+'"><img class="pic" alt="" src="'+pics.get(o.id)+'"><span class="rinfo"><b>'+esc(o.name)+'</b><small>'+Rel.label(s,o)+' · '+(v>0?'+':'')+v+'</small>'+
+          '<span class="rbar"><i class="'+(v<0?'neg':'pos')+'" style="width:'+w+'%;'+(v<0?'right:50%':'left:50%')+'"></i></span></span></button>'}).join('');
+        if(UI.cache!==h){UI.cache=h;const L=$('tList');L.innerHTML=h;L.querySelectorAll('.item').forEach(b=>b.onclick=()=>{const o=settlers.find(q=>q.id===+b.dataset.id);cam.x=o.x*16;cam.y=o.y*16;clampCam();UI.showSettler(o)})}
+      }else if(UI.tab==='mem'){
+        const h=s.mem.length?s.mem.map(x=>{const act=x.until>state.t,d=dateParts(x.t);return'<div class="memi'+(act?'':' old')+'"><span>'+esc(x.text)+'<small>Tag '+d.abs+', '+d.clock+(act?'':' · verblasst')+'</small></span><b class="'+(x.mood<0?'neg':'pos')+'">'+(x.mood>0?'+':'')+x.mood+'</b></div>'}).join(''):'<p class="soon">Noch keine Erinnerungen. Streit, Freundschaften, neue Gebäude und harte Zeiten bleiben hier im Gedächtnis.</p>';
+        if(UI.cache!==h){UI.cache=h;$('tList').innerHTML=h}
+      }
     }else if(UI.view==='work')UI.workCounts();
     else if(UI.view==='building'){
       const b=Build.byId(state.selB);if(!b){UI.close();return}const d=BDEF[b.type],st=Build.stage(b),set=(id,t)=>{const el=$(id);if(el&&el.textContent!==t)el.textContent=t};
@@ -1226,7 +1374,7 @@ const UI={
   storeCounts(){for(const [k] of RES){const el=$('sc-'+k);if(el)el.textContent=state.res[k]||0}const f=$('sFood');if(f)f.textContent=foodText()},
   showPeople(){
     UI.open('Bewohner ('+settlers.length+')','<div class="list">'+settlers.map(s=>
-      '<button type="button" class="item" data-id="'+s.id+'"><img class="pic" alt="" src="'+pics.get(s.id)+'"><span><b>'+esc(s.name+' '+s.sur)+'</b><small>'+s.age+' Jahre · '+esc(s.act)+'</small></span></button>').join('')+'</div>','people');
+      '<button type="button" class="item" data-id="'+s.id+'"><img class="pic" alt="" src="'+pics.get(s.id)+'"><span><b>'+esc(s.name+' '+s.sur)+'</b><small>'+s.age+' Jahre · '+s.traits.map(t=>TRAITS[t].n).join(', ')+'</small><small>'+moodName(mood(s))+' · '+esc(s.act)+'</small></span></button>').join('')+'</div>','people');
     $('sBody').querySelectorAll('.item').forEach(b=>b.onclick=()=>{const s=settlers.find(q=>q.id===+b.dataset.id);cam.x=s.x*16;cam.y=s.y*16;clampCam();UI.showSettler(s)});
   },
   showLog(){
@@ -1450,7 +1598,7 @@ const Menu={
   render(){
     const b=$('mBoard'),started=state.started,v=this.view;let h='';
     if(v==='main')h=(started?'<button type="button" class="mbtn pri" id="mbCont">Weiterspielen</button>':'')+
-      '<button type="button" class="mbtn'+(started?'':' pri')+'" id="mbNew">Neues Spiel</button><button type="button" class="mbtn" id="mbHelp">Anleitung</button><p class="mfoot">Bauschritt 3 von 8</p>';
+      '<button type="button" class="mbtn'+(started?'':' pri')+'" id="mbNew">Neues Spiel</button><button type="button" class="mbtn" id="mbHelp">Anleitung</button><p class="mfoot">Bauschritt 4 von 8</p>';
     else if(v==='confirm')h='<p class="mtext">Ein neues Spiel ersetzt deine aktuelle Siedlung.</p><div class="mrow"><button type="button" class="mbtn" id="mbBack">Zurück</button><button type="button" class="mbtn pri" id="mbYes">Neu beginnen</button></div>';
     else if(v==='start')h='<p class="mlabel">Womit beginnt dein Treck?</p>'+
       '<button class="opt" id="optTents" type="button"><b>Mit Zelten</b><small>Planwagen, drei Zelte und Vorräte für eine Woche.</small></button>'+
@@ -1460,6 +1608,7 @@ const Menu={
       '<li><b>Bewohner ansehen</b>Auf eine Figur tippen. Mit „Folgen“ bleibt die Kamera bei ihr.</li><li><b>Fenster schließen</b>Nach unten wischen oder auf die Karte tippen.</li>'+
       '<li><b>Arbeit</b>Unter „Arbeit“ legst du fest, wie wichtig Holz, Stein, Lehm, Stroh, Nahrung und Jagd sind.</li>'+
       '<li><b>Bauen</b>Tippe auf „Bauen“, wähle ein Gebäude und tippe auf den Bauplatz. Mit „Hier bauen“ bestätigst du.</li>'+
+      '<li><b>Charakter</b>Im Info-Fenster eines Siedlers findest du Charakterzüge, Ansichten, Beziehungen und Erinnerungen.</li>'+
       '<li><b>Lager</b>Tippe auf den Lagerplatz neben dem Wagen. Dort siehst du alle Vorräte.</li>'+
       '<li><b>Tempo</b>Pause, 1× oder 3× in der unteren Leiste.</li></ul><button type="button" class="mbtn" id="mbBack">Zurück</button>';
     b.innerHTML=h;
