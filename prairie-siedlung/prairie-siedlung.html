@@ -38,6 +38,7 @@ body{font-family:var(--ui);-webkit-user-select:none;user-select:none;-webkit-tap
 .view{display:grid;grid-template-columns:70px 1fr auto;gap:8px;align-items:center;font-size:15px}
 .vn{color:var(--dust)}.vl{min-width:0}
 .pips{display:flex;gap:3px}.pips i{width:9px;height:9px;background:var(--ink);border:1px solid var(--plank)}.pips i.on{background:#f6c86a;border-color:#f6c86a}
+.hpic{width:54px;height:40px}.item .hpic{width:44px;height:33px}
 .rinfo{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
 .rbar{position:relative;display:block;height:6px;background:var(--ink);border:1px solid var(--plank)}
 .rbar i{position:absolute;top:0;bottom:0;display:block}.rbar i.pos{background:#8aa04a}.rbar i.neg{background:#c0532e}
@@ -511,7 +512,7 @@ function makeSettlers(n,r){
     const age=18+Math.floor(r()*34),L=makeLook(r,female,age),traits=makeTraits(r);
     const sp=World.near(world.camp.x,world.camp.y,3)||{x:world.camp.x,y:world.camp.y+1};
     out.push({id:i,name,sur:fams[Math.floor(i/2)%fams.length],age,female,look:L,x:sp.x+.5,y:sp.y+.5,dir:0,anim:0,moving:false,path:null,
-      spd:.9+r()*.35,idle:1+r()*3,act:'Steht am Wagen',thought:'Endlich angekommen.',task:null,carry:null,inside:false,scores:[],flags:{},traits,views:makeViews(r,traits),mem:[],partner:null,
+      spd:.9+r()*.35,idle:1+r()*3,act:'Steht am Wagen',thought:'Endlich angekommen.',task:null,carry:null,inside:false,scores:[],flags:{},traits,views:makeViews(r,traits),mem:[],partner:null,mount:null,skills:{reiten:r()*3.5,tierpflege:r()*3.5},
       needs:{hunger:55+r()*30,durst:50+r()*35,schlaf:65+r()*30,waerme:80,sicher:75,gesell:55+r()*35,spass:45+r()*40}});
   }
   return out;
@@ -865,7 +866,7 @@ const Needs={
 /* =========================================================
    KI: Punktesystem für Bedürfnisse und Arbeit
    ========================================================= */
-const JOBS=[['holz','Holz fällen'],['stein','Steine brechen'],['lehm','Lehm graben'],['stroh','Stroh schneiden'],['nahrung','Nahrung sammeln'],['jagd','Jagen']];
+const JOBS=[['holz','Holz fällen'],['stein','Steine brechen'],['lehm','Lehm graben'],['stroh','Stroh schneiden'],['nahrung','Nahrung sammeln'],['jagd','Jagen'],['zaehmen','Pferde zähmen'],['pflege','Pferde versorgen']];
 const PRIO=[0,.55,1,1.7],PRIO_N=['Aus','Wenig','Normal','Viel'];
 const reserved=new Map(),skipT=new Map();
 const u=v=>{const x=clamp((100-v)/100,0,1);return x*x*100};
@@ -897,6 +898,11 @@ const TH={
 };
 const AI={
   go(s,task,tx,ty){
+    if(!s.mount&&(task.k==='job'||task.k==='lasso')&&Math.hypot(tx-s.x,ty-s.y)>12){const h=Horses.ownedBy(s);
+      if(Horses.rideable(h)&&!settlers.some(q=>q!==s&&q.task&&q.task.hid===h.id)){const ok=AI.goPlain(s,{k:'mount',hid:h.id,next:task,ntx:tx,nty:ty,i:task.i,dur:Math.max(.1,.5-s.skills.reiten*.035-(h.bond[s.id]||0)*.002),goAct:'Holt '+h.name+' vom Stall',doAct:'Steigt auf '+h.name},Math.floor(h.x),Math.floor(h.y));if(ok)return true}}
+    return AI.goPlain(s,task,tx,ty);
+  },
+  goPlain(s,task,tx,ty){
     const p=Path.find(Math.floor(s.x),Math.floor(s.y),tx,ty);
     if(!p){if(task.i!==undefined)skipT.set(task.i,state.t+720);return false}
     if(task.i!==undefined)reserved.set(task.i,s.id);
@@ -907,12 +913,15 @@ const AI={
   },
   scarcity(k){
     const r=state.res,n=settlers.length;
+    if(k==='zaehmen'){if(horses.some(h=>h.state==='taming'))return 1.4;if(Horses.free()<=0)return 0;const c=world.camp;return horses.some(h=>h.wild&&Horses.adult(h)&&Math.hypot(h.x-c.x,h.y-c.y)<36)?1:0}
+    if(k==='pflege')return Horses.kept().some(h=>h.state!=='ridden'&&(h.hunger<60||h.durst<60)&&h.res==null)?1.8:0;
     if(k==='nahrung'||k==='jagd'){const f=r.nahrung||0,fm=k==='jagd'&&(Planner.missing().felle||0)>(r.felle||0)?3:1;return(f<n*2?2.2:f<n*5?1.4:f>n*12?.5:1)*(k==='jagd'?.8:1)*fm}
     const v=r[k]||0,miss=Planner.missing()[k]||0;return(v<8?1.2:v>60?.5:1)*(miss>v?1.6:1);
   },
   decide(s){
     const n=s.needs,night=isNight(state.t),opts=[],food=state.res.nahrung||0,c=world.camp;
     const add=(score,label,fn)=>opts.push({score:score*(.9+Math.random()*.2),label,fn});
+    if(s.mount&&!s.carry)add(205,'Pferd zurückbringen',()=>AI.toStable(s));
     if(s.carry&&s.carryTo!=null){const b=Build.byId(s.carryTo);if(b&&!b.done)add(230,'Material zur Baustelle',()=>AI.toDrop(s,b));else s.carryTo=null}
     if(s.carry)add(220,'Ins Lager bringen',()=>AI.toStore(s,'deliver'));
     if(n.hunger<75&&food>0)add(u(n.hunger)*1.6,'Essen',()=>AI.toStore(s,'eat'));
@@ -930,7 +939,7 @@ const AI={
       const ws=Build.workSite();if(ws)add(36*bp*wm*nf*tl,'Bauen',()=>AI.toBuild(s,ws));
       const rs=Build.repairSite();if(rs)add(rs.type==='feuer'?55*bp:26*bp*wm*nf,rs.type==='feuer'?'Holz nachlegen':'Ausbessern',()=>AI.toRepair(s,rs));
     }
-    for(const [k,name] of JOBS){const p=PRIO[state.prio[k]];if(!p)continue;const tm=k==='jagd'?(has(s,'mutig')?1.3:has(s,'aengstlich')?.6:1)*(1+.15*s.views.waffen):1;add(28*p*wm*tm*(night?.35:1)*AI.scarcity(k),name,()=>AI.toJob(s,k))}
+    for(const [k,name] of JOBS){const p=PRIO[state.prio[k]];if(!p)continue;const tm=k==='jagd'?(has(s,'mutig')?1.3:has(s,'aengstlich')?.6:1)*(1+.15*s.views.waffen):1;const sc=AI.scarcity(k);if(sc<=0)continue;add(28*p*wm*tm*(night?.35:1)*sc*(k==='zaehmen'||k==='pflege'?1+s.skills.tierpflege*.04:1),name,()=>AI.toJob(s,k))}
     add(6,'Umherschauen',()=>AI.toWander(s));
     opts.sort((a,b)=>b.score-a.score);
     s.scores=opts.slice(0,3).map(o=>[o.label,Math.round(o.score)]);
@@ -979,7 +988,9 @@ const AI={
     if(s.views.glaube>=1&&Math.random()<.2*s.views.glaube){const p=World.near(s.x,s.y,2);if(p)return AI.go(s,{k:'pray',dur:.6,goAct:'Sucht einen ruhigen Ort',doAct:'Betet in Ruhe',th:'Herr, beschütze unsere Siedlung.'},p.x,p.y)}
     if(fi&&Math.random()<.5){const p=World.near(fi.x+.5,fi.y+.5,1.6);if(p)return AI.go(s,{k:'fun',dur:1,music:1,goAct:'Geht ans Lagerfeuer',doAct:'Erzählt Geschichten am Lagerfeuer',th:'Habt ihr die Geschichte vom alten Trapper gehört?'},p.x,p.y)}
     if(r<.4){const t=nearestTile(s.x,s.y,(x,y)=>World.walk(x,y)&&waterAdj(x,y));if(t)return AI.go(s,{k:'fun',dur:1,goAct:'Geht zum Fluss',doAct:'Lässt Steine übers Wasser springen',th:pick(TH.fun)},t.x,t.y)}
-    if(r<.6&&horses.length){const h=horses[0];if(Math.hypot(h.x-c.x,h.y-c.y)<28){const a=Math.atan2(c.y-h.y,c.x-h.x),p=World.near(h.x+Math.cos(a)*6,h.y+Math.sin(a)*6,2);
+    const mine=Horses.ownedBy(s);if(mine&&Horses.rideable(mine)&&Math.random()<.35){const a=Math.random()*6.283,p=World.near(c.x+Math.cos(a)*11,c.y+Math.sin(a)*11,3);
+      if(p&&AI.go(s,{k:'job',r:'ritt',goAct:'Reitet aus',doAct:'Genießt den Ausritt',dur:.2},p.x,p.y))return true}
+    const wh=horses.find(q=>q.wild);if(r<.6&&wh){const h=wh;if(Math.hypot(h.x-c.x,h.y-c.y)<28){const a=Math.atan2(c.y-h.y,c.x-h.x),p=World.near(h.x+Math.cos(a)*6,h.y+Math.sin(a)*6,2);
       if(p)return AI.go(s,{k:'fun',dur:1,horse:1,goAct:'Geht zu den Wildpferden',doAct:'Beobachtet die Wildpferde',th:'Ein Pferd würde vieles leichter machen.'},p.x,p.y)}}
     const p=World.near(c.x,c.y,4);if(!p)return false;
     return AI.go(s,{k:'fun',dur:1,goAct:'Holt die Mundharmonika',doAct:'Spielt Mundharmonika',th:pick(TH.fun),music:1},p.x,p.y);
@@ -1001,6 +1012,18 @@ const AI={
       const t=nearestTile(s.x,s.y,(x,y,i)=>World.walk(x,y)&&waterAdj(x,y)&&world.ground[i]!==GR.SHALLOW);if(!t)return false;
       return AI.go(s,{k:'job',r:'fisch',i:t.i,tx:t.x,ty:t.y,dur:1.5,goAct:'Geht fischen',doAct:'Angelt am Fluss',th:pick(TH.fish)},t.x,t.y);
     }
+    if(k==='zaehmen'){
+      const tm=horses.find(h=>h.state==='taming'&&h.res==null);
+      if(tm){const P=Horses.paddock(tm),p=World.near(P.x,P.y,1.5);if(!p)return false;tm.res=s.id;const ok=AI.go(s,{k:'tame',hid:tm.id,dur:1.2,goAct:'Geht zum Pferd am Stall',doAct:'Zähmt das Pferd',th:'Ganz ruhig, ganz ruhig.'},p.x,p.y);if(!ok)tm.res=null;return ok}
+      if(Horses.free()<=0)return false;const c=world.camp;let best=null,bd=1e9;
+      for(const h of horses){if(!h.wild||!Horses.adult(h)||h.res!=null)continue;const d=Math.hypot(h.x-c.x,h.y-c.y);if(d<36&&d<bd){bd=d;best=h}}
+      if(!best)return false;best.res=s.id;const ok=AI.go(s,{k:'lasso',hid:best.id,dur:.3,goAct:'Pirscht sich mit dem Lasso an',doAct:'Wirft das Lasso',th:'Langsam. Nur nicht erschrecken.'},Math.floor(best.x),Math.floor(best.y));
+      if(!ok)best.res=null;return ok;
+    }
+    if(k==='pflege'){
+      const h=Horses.kept().filter(q=>q.state!=='ridden'&&q.res==null&&(q.hunger<60||q.durst<60)).sort((a,b)=>Math.min(a.hunger,a.durst)-Math.min(b.hunger,b.durst))[0];if(!h)return false;
+      const P=Horses.paddock(h),p=World.near(P.x,P.y,1.5);if(!p)return false;h.res=s.id;const ok=AI.go(s,{k:'care',hid:h.id,dur:.5,goAct:'Bringt Heu und Wasser zum Stall',doAct:'Versorgt '+(h.name||'ein Pferd')},p.x,p.y);if(!ok)h.res=null;return ok;
+    }
     if(k==='jagd'){
       let best=null,bd=900;for(const b of rabbits){if(b.res!=null)continue;const d=(b.x-s.x)**2+(b.y-s.y)**2;if(d<bd){bd=d;best=b}}
       if(!best)return false;const ok=AI.go(s,{k:'hunt',rid:best.id,dur:.25,goAct:'Pirscht sich an einen Hasen heran',doAct:'Zielt auf einen Hasen',th:pick(TH.hunt)},Math.floor(best.x),Math.floor(best.y));
@@ -1015,8 +1038,10 @@ const AI={
     return AI.go(s,{k:'build',site:b.id,dur:1.5,goAct:'Geht zur Baustelle '+d.name,doAct:'Baut an: '+d.name,th:pick(['Ein Brett nach dem anderen.','Das wird ein schönes Haus.','Hält das Gerüst?'])},p.x,p.y)},
   toRepair(s,b){const p=standRect(s,b);if(!p)return false;const f=b.type==='feuer';
     return AI.go(s,{k:'repair',site:b.id,dur:f?.2:1,goAct:f?'Holt Holz fürs Feuer':'Geht zum Ausbessern',doAct:f?'Legt Holz nach':'Bessert '+BDEF[b.type].name+' aus'},p.x,p.y)},
-  release(s){const t=s.task;if(!t)return;if(t.i!==undefined&&reserved.get(t.i)===s.id)reserved.delete(t.i);if(t.k==='hunt'){const b=rabbits.find(q=>q.id===t.rid);if(b&&b.res===s.id)b.res=null}},
-  abort(s){AI.release(s);s.task=null;s.path=null;s.inside=false;s.idle=.1},
+  toStable(s){const h=Horses.byId(s.mount),P=Horses.paddock(h);const p=World.near(P.x,P.y,1.5)||{x:Math.floor(P.x),y:Math.floor(P.y)};
+    return AI.goPlain(s,{k:'stable',dur:.15,goAct:'Reitet zurück zum Stall',doAct:'Sattelt ab'},p.x,p.y)},
+  release(s){const t=s.task;if(!t)return;if(t.hid!=null){const h=Horses.byId(t.hid);if(h&&h.res===s.id)h.res=null}if(t.i!==undefined&&reserved.get(t.i)===s.id)reserved.delete(t.i);if(t.k==='hunt'){const b=rabbits.find(q=>q.id===t.rid);if(b&&b.res===s.id)b.res=null}},
+  abort(s){AI.release(s);const t=s.task;if(t&&t.k==='lead'){const h=Horses.byId(t.hid);if(h){h.state='home'}}if(s.mount)Horses.dismount(s,false);s.task=null;s.path=null;s.inside=false;s.idle=.1},
   deposit(s){if(!s.carry)return;if(s.carryTo!=null){const b=Build.byId(s.carryTo);if(b)for(const [k,v] of Object.entries(s.carry))b.transit[k]=Math.max(0,(b.transit[k]||0)-v);s.carryTo=null}for(const [k,v] of Object.entries(s.carry))state.res[k]=(state.res[k]||0)+v;s.carry=null},
   arrive(s){
     const t=s.task;if(!t){s.idle=.5;return}
@@ -1072,6 +1097,29 @@ const AI={
       if(b&&Math.hypot(b.x-s.x,b.y-s.y)<6&&Math.random()<.5){rabbits.splice(rabbits.indexOf(b),1);s.carry={nahrung:2,felle:1};s.thought='Getroffen!';log(s.name+' hat einen Präriehasen erlegt.')}
       else{s.thought='Daneben!';if(b){const a=Math.atan2(b.y-s.y,b.x-s.x),tx=b.x+Math.cos(a)*4,ty=b.y+Math.sin(a)*4;if(lineFree(b.x,b.y,tx,ty)){b.tx=tx;b.ty=ty;b.fast=true}}}
     }
+    else if(t.k==='mount'){const h=Horses.byId(t.hid);if(h&&Horses.rideable(h)){s.mount=h.id;h.state='ridden';h.rider=s.id;h.tx=null;h.path=null;Horses.bond(h,s,1);
+      if(AI.goPlain(s,t.next,t.ntx,t.nty))return}else s.thought='Mein Pferd ist nicht bereit.'}
+    else if(t.k==='stable'){const h=Horses.byId(s.mount);Horses.dismount(s,true);if(h){Horses.bond(h,s,1);s.thought='Gut gemacht, '+h.name+'.'}}
+    else if(t.k==='job'&&t.r==='ritt'){n.spass=Math.min(100,n.spass+30);s.thought='Der Wind im Gesicht. Herrlich.'}
+    else if(t.k==='lasso'){const h=Horses.byId(t.hid),sk=s.skills;
+      if(h&&h.wild&&Math.hypot(h.x-s.x,h.y-s.y)<3&&Horses.free()>0&&Math.random()<.22+sk.tierpflege*.04+sk.reiten*.03+TEMPER[h.temper].c+(has(s,'mutig')?.05:0)){
+        h.wild=false;h.state='led';h.lead=s.id;h.res=null;h.tx=null;h.run=0;const st=Horses.stalls().find(q=>horses.filter(o=>!o.wild&&o.stall===q.id).length<4)||Horses.stalls()[0];h.stall=st?st.id:null;
+        log(s.name+' hat ein Wildpferd mit dem Lasso gefangen.');s.thought='Hab dich!';skill(s,'tierpflege',.3);
+        const P=Horses.paddock(h),p=World.near(P.x,P.y,1.5)||{x:Math.floor(P.x),y:Math.floor(P.y)};s.task=null;AI.goPlain(s,{k:'lead',hid:h.id,dur:.2,goAct:'Führt das Pferd zum Stall',doAct:'Bindet das Pferd an'},p.x,p.y);return}
+      s.thought='Das Lasso hat verfehlt.';skill(s,'tierpflege',.12);
+      if(h)for(const q of horses)if(q.wild&&q.herd===h.herd){const a=Math.atan2(q.y-s.y,q.x-s.x),tx=q.x+Math.cos(a)*7,ty=q.y+Math.sin(a)*7;if(lineFree(q.x,q.y,tx,ty)){q.tx=tx;q.ty=ty;q.run=2}}}
+    else if(t.k==='lead'){const h=Horses.byId(t.hid);if(h){h.state='taming';h.tame=5;h.lead=null;h.bond={};Horses.bond(h,s,15);s.thought='Jetzt beginnt die Arbeit.'}}
+    else if(t.k==='tame'){const h=Horses.byId(t.hid);if(h&&h.state==='taming'){
+      h.tame=Math.min(100,h.tame+(8+s.skills.tierpflege*2.2)*TEMPER[h.temper].tame*workMul(s));Horses.bond(h,s,6);skill(s,'tierpflege',.2);
+      if(h.temper==='wild'&&Math.random()<.12){remember(s,'Wurde von einem Pferd getreten',-4,1);s.thought='Autsch! Das Biest hat mich getreten.'}else s.thought='Es fasst langsam Vertrauen.';
+      if(h.tame>=100){h.state='stall';h.name=Horses.nameFor();
+        const cands=Object.entries(h.bond).map(([id,b])=>[settlers.find(q=>q.id===+id),b]).filter(([q])=>q&&!Horses.ownedBy(q)).sort((a,b)=>b[1]-a[1]);
+        const ow=(cands[0]&&cands[0][0])||(!Horses.ownedBy(s)?s:settlers.filter(q=>!Horses.ownedBy(q)).sort((a,b)=>b.skills.reiten-a.skills.reiten)[0])||s;h.owner=ow.id;Horses.bond(h,ow,10);
+        log(s.name+' hat ein Pferd gezähmt. Es heißt '+h.name+' und gehört '+ow.name+'.');remember(ow,'Hat jetzt ein eigenes Pferd: '+h.name,8,3);if(ow!==s)remember(s,'Hat '+h.name+' gezähmt',5,2)}}}
+    else if(t.k==='care'){const h=Horses.byId(t.hid);if(h){if(h.hunger<75&&(state.res.stroh||0)>0){state.res.stroh--;h.hunger=Math.min(100,h.hunger+60)}else if(h.hunger<75)h.hunger=Math.min(100,h.hunger+20);
+      h.durst=Math.min(100,h.durst+80);Horses.bond(h,s,s.id===h.owner?4:2);skill(s,'tierpflege',.1);s.thought=(h.name||'Das Pferd')+' frisst mir aus der Hand.'}}
+    else if(t.k==='fallen'){s.thought='Mir tut alles weh.'}
+    if(t.k==='job'&&s.carry&&s.mount){const m=1+s.skills.reiten*.08;for(const k in s.carry)s.carry[k]=Math.round(s.carry[k]*m)}
     s.act='Überlegt, was als Nächstes kommt';
   },
   update(s,dt){
@@ -1081,16 +1129,27 @@ const AI={
     if(t&&t.k==='sleep'&&t.stage==='do'&&(n.durst<8||(n.hunger<8&&food))){AI.abort(s);s.thought='Ich wache auf, weil ich '+(n.durst<8?'Durst':'Hunger')+' habe.';return}
     if(t&&t.k!=='sleep'&&t.k!=='drink'&&t.k!=='eat'&&t.k!=='deliver'&&(n.durst<6||n.schlaf<4||(n.hunger<5&&food))){AI.abort(s);return}
     if(s.path&&s.path.length){
+      if(t&&t.k==='lasso'){
+        const h=Horses.byId(t.hid);if(!h||!h.wild){AI.abort(s);return}
+        if(Math.hypot(h.x-s.x,h.y-s.y)<2.4){s.path=null;s.moving=false;s.dir=faceDir(h.x-s.x,h.y-s.y);AI.arrive(s);return}
+        t.re=(t.re||0)+dt;if(t.re>2){t.re=0;const p=Path.find(Math.floor(s.x),Math.floor(s.y),Math.floor(h.x),Math.floor(h.y));if(p&&p.length)s.path=p;else{AI.abort(s);return}}
+      }
+      if(t&&t.k==='mount'){const h=Horses.byId(t.hid);if(!h||!Horses.rideable(h)){AI.abort(s);return}if(Math.hypot(h.x-s.x,h.y-s.y)<1.2){s.path=null;s.moving=false;AI.arrive(s);return}}
       if(t&&t.k==='hunt'){
         const b=rabbits.find(q=>q.id===t.rid);if(!b){AI.abort(s);return}
         if(Math.hypot(b.x-s.x,b.y-s.y)<4.2){s.path=null;s.moving=false;s.dir=faceDir(b.x-s.x,b.y-s.y);AI.arrive(s);return}
         t.re=(t.re||0)+dt;if(t.re>2){t.re=0;const p=Path.find(Math.floor(s.x),Math.floor(s.y),Math.floor(b.x),Math.floor(b.y));if(p&&p.length)s.path=p}
       }
       const [tx,ty]=s.path[0],gx=tx+.5,gy=ty+.5,dx=gx-s.x,dy=gy-s.y,d=Math.hypot(dx,dy);
-      const slow=(world.ground[Math.floor(s.y)*W+Math.floor(s.x)]===GR.SHALLOW?.45:1)*(n.schlaf<15||n.hunger<5?.7:1),step=1.6*s.spd*slow*dt;
+      const hr=s.mount!=null?Horses.byId(s.mount):null,rm=hr?(1.25+s.skills.reiten*.09+hr.tempo*.04)*(hr.kraft<20?.6:1):1;
+      const slow=(world.ground[Math.floor(s.y)*W+Math.floor(s.x)]===GR.SHALLOW?.45:1)*(n.schlaf<15||n.hunger<5?.7:1),step=1.6*s.spd*slow*rm*dt;
       if(!World.walk(tx,ty)){AI.abort(s);return}
       if(d<=step){s.x=gx;s.y=gy;s.path.shift();s.anim+=d}else{s.x+=dx/d*step;s.y+=dy/d*step;s.anim+=step;s.dir=faceDir(dx,dy)}
       s.moving=true;
+      if(hr){const dd=Math.min(d,step);hr.kraft=Math.max(0,hr.kraft-dd*(11-hr.ausdauer)*.45);skill(s,'reiten',dd*.012);Horses.bond(hr,s,dd*.15);
+        const fr=(.001+.014*Math.pow(1-s.skills.reiten/10,1.5))*TEMPER[hr.temper].fall*((hr.bond[s.id]||0)>50?.7:1);
+        if(Math.random()<fr*dd){AI.release(s);Horses.dismount(s,false);s.path=null;s.moving=false;s.task={k:'fallen',stage:'do',t:0,dur:.35,doAct:'Ist vom Pferd gefallen'};s.act=s.task.doAct;
+          remember(s,'Ist von '+hr.name+' gefallen',-4,1);skill(s,'reiten',.15);log(s.name+' ist vom Pferd gefallen.');emote(s,'anger');return}}
       if(!s.path.length){s.path=null;s.moving=false;AI.arrive(s)}
       return;
     }
@@ -1106,6 +1165,7 @@ const AI={
     s.idle-=dt;if(s.idle<=0)AI.decide(s);
   }
 };
+function skill(s,k,v){s.skills[k]=Math.min(10,s.skills[k]+v*(1-s.skills[k]/11))}
 function setObj(i,v){world.obj[i]=v;state.mod.obj[i]=v}
 function faceDir(dx,dy){return Math.abs(dx)>Math.abs(dy)?(dx>0?3:2):(dy>0?0:1)}
 
@@ -1113,34 +1173,101 @@ function faceDir(dx,dy){return Math.abs(dx)>Math.abs(dy)?(dx>0?3:2):(dy>0?0:1)}
    Wildtiere: Pferdeherde und Hasen
    ========================================================= */
 function lineFree(x0,y0,x1,y1){const n=Math.ceil(Math.hypot(x1-x0,y1-y0)*2);for(let i=1;i<=n;i++){const t=i/n;if(!World.walk(Math.floor(x0+(x1-x0)*t),Math.floor(y0+(y1-y0)*t)))return false}return true}
+/* =========================================================
+   Pferde: Herden, Zähmen, Pflege, Reiten, Fohlen
+   ========================================================= */
+const HORSE_NAMES=['Nugget','Dusty','Comet','Blaze','Duchess','Pepper','Ranger','Clover','Biscuit','Shadow','Sage','Cinnamon','Thunder','Willow','Buck','Daisy',
+  'Copper','Rusty','Juniper','Maverick','Bonnie','Scout','Honey','Smoky','Belle','Domino','Cricket','Hazel','Marshal','Tumbleweed'];
+const TEMPER={ruhig:{n:'Ruhig',tame:1.3,fall:.8,c:0},sanft:{n:'Sanft',tame:1.5,fall:.7,c:.05},lebhaft:{n:'Lebhaft',tame:.9,fall:1.2,c:-.05},wild:{n:'Wild',tame:.6,fall:1.6,c:-.12}};
+function makeHorse(r,herd,x,y,adult=true){
+  return{id:state.nextH++,coat:Math.floor(r()*COATS.length),seed:Math.floor(r()*1e6),x,y,face:r()<.5?1:-1,anim:0,tx:null,ty:null,wait:r()*4,run:0,
+    ox:(r()*2-1)*2.5,oy:(r()*2-1)*2.5,herd,wild:true,state:'wild',temper:pick(Object.keys(TEMPER),r),ausdauer:1+Math.floor(r()*10),tempo:1+Math.floor(r()*10),
+    sex:r()<.5?'Stute':'Hengst',born:adult?state.t-(10+r()*40)*1440:state.t,name:null,tame:0,owner:null,bond:{},hunger:85,durst:85,kraft:100,stall:null,preg:0,mother:null,res:null,path:null};
+}
+function spawnHerd(r,minD,maxD,herd){
+  const c=world.camp;let hx=0,hy=0,ok=false;
+  for(let k=0;k<80;k++){const a=r()*6.283,d=minD+r()*(maxD-minD);hx=Math.round(c.x+Math.cos(a)*d);hy=Math.round(c.y+Math.sin(a)*d);if(World.walk(hx,hy)&&world.ground[hy*W+hx]<GR.ROCK){ok=true;break}}
+  if(!ok)return[];const out=[],n=4+Math.floor(r()*3);
+  for(let i=0;i<n;i++){const p=World.near(hx,hy,3)||{x:hx,y:hy},h=makeHorse(r,herd,p.x+.5,p.y+.5);h.hx=hx;h.hy=hy;out.push(h)}
+  return out;
+}
 function makeAnimals(r){
-  const c=world.camp,hs=[],rb=[];
-  let hx=0,hy=0;
-  for(let k=0;k<60;k++){const a=r()*6.283,d=18+r()*10;hx=Math.round(c.x+Math.cos(a)*d);hy=Math.round(c.y+Math.sin(a)*d);if(World.walk(hx,hy)&&world.ground[hy*W+hx]<GR.ROCK)break}
-  const n=5+Math.floor(r()*3);
-  for(let i=0;i<n;i++){const p=World.near(hx,hy,3)||{x:hx,y:hy},coat=Math.floor(r()*COATS.length);
-    hs.push({id:i,coat,seed:Math.floor(r()*1e6),x:p.x+.5,y:p.y+.5,face:r()<.5?1:-1,anim:0,tx:null,ty:null,wait:r()*4,run:0,ox:(r()*2-1)*2.5,oy:(r()*2-1)*2.5})}
-  for(let i=0;i<10;i++){for(let k=0;k<40;k++){const x=Math.floor(r()*W),y=Math.floor(r()*H);if(World.walk(x,y)&&world.ground[y*W+x]<=GR.DRY&&Math.hypot(x-c.x,y-c.y)>8){rb.push({id:i,x:x+.5,y:y+.5,face:1,hop:0,wait:r()*3,tx:null,ty:null,res:null});break}}}
+  const c=world.camp,rb=[];state.nextH=1;state.nextHerd=3;
+  const hs=spawnHerd(r,18,26,1).concat(spawnHerd(r,24,34,2));
+  for(let i=0;i<10;i++){for(let k=0;k<40;k++){const x=Math.floor(r()*W),y=Math.floor(r()*H);
+    if(World.walk(x,y)&&world.ground[y*W+x]<=GR.DRY&&Math.hypot(x-c.x,y-c.y)>8){rb.push({id:i,x:x+.5,y:y+.5,face:1,hop:0,wait:r()*3,tx:null,ty:null,res:null});break}}}
   return{hs,rb};
 }
+const Horses={
+  ageDays:h=>(state.t-h.born)/1440,
+  adult:h=>(state.t-h.born)/1440>=8,
+  stalls:()=>Build.active('stall'),
+  cap(){return Horses.stalls().length*4},
+  kept(){return horses.filter(h=>!h.wild)},
+  free(){return Horses.cap()-Horses.kept().length},
+  byId:id=>horses.find(h=>h.id===id),
+  paddock(h){const st=(h&&Build.byId(h.stall))||Horses.stalls()[0];if(!st)return{x:world.camp.x+.5,y:world.camp.y+2};return{x:st.x+st.w/2,y:st.y+st.h+1.3}},
+  rideable(h){return h&&!h.wild&&h.tame>=100&&Horses.adult(h)&&h.state==='stall'&&h.hunger>20&&h.durst>20&&h.kraft>35},
+  ownedBy(s){return horses.find(h=>!h.wild&&h.owner===s.id&&h.tame>=100&&Horses.adult(h))},
+  nameFor(){const used=new Set(horses.map(h=>h.name)),free=HORSE_NAMES.filter(n=>!used.has(n));return pick(free.length?free:HORSE_NAMES)},
+  bond(h,s,dv){h.bond[s.id]=clamp((h.bond[s.id]||0)+dv,0,100)},
+  coat:h=>COATS[h.coat].n,
+  status(h){
+    if(h.wild)return'Läuft mit der Herde';if(h.state==='led')return'Wird zum Stall geführt';if(h.state==='taming')return'Wird gezähmt ('+Math.round(h.tame)+' %)';
+    if(h.state==='ridden'){const s=settlers.find(q=>q.id===h.rider);return'Wird geritten'+(s?' von '+s.name:'')}
+    if(h.state==='home')return'Läuft zurück zum Stall';if(!Horses.adult(h))return'Fohlen, folgt der Mutter';return h.hunger<25||h.durst<25?'Hat Hunger und Durst':'Steht am Stall'},
+  dismount(s,home){
+    const h=Horses.byId(s.mount);s.mount=null;if(!h)return;h.state=home?'stall':'home';h.rider=null;h.x=s.x;h.y=s.y;h.path=null;h.tx=null;
+  },
+  hour(){
+    const day=Math.floor(state.t/1440),hr=Math.floor(hourOf(state.t));
+    for(const h of Horses.kept()){
+      if(h.state!=='ridden')h.kraft=Math.min(100,h.kraft+12);
+      h.hunger=Math.max(0,h.hunger-2.5);h.durst=Math.max(0,h.durst-3.5);
+      if(h.hunger<=0||h.durst<=0){h.starve=(h.starve||0)+1;if(h.starve>=24&&h.state!=='ridden'){
+        const o=settlers.find(q=>q.id===h.owner);log((h.name||'Ein Pferd')+' ist vor Hunger weggelaufen.');if(o)remember(o,(h.name||'Mein Pferd')+' ist weggelaufen',-8,3);
+        h.wild=true;h.state='wild';h.owner=null;h.tame=0;h.herd=state.nextHerd++;h.stall=null}}else h.starve=0;
+      if(h.preg&&h.preg<=state.t){h.preg=0;const f=makeHorse(Math.random,null,h.x+.6,h.y+.3,false);
+        Object.assign(f,{wild:false,state:'stall',tame:100,owner:h.owner,mother:h.id,stall:h.stall,name:Horses.nameFor(),coat:Math.random()<.6?h.coat:f.coat});
+        horses.push(f);ensureHorseSheet(f);log('Ein Fohlen ist geboren. Die Siedler nennen es '+f.name+'.');for(const s of settlers)remember(s,'Das Fohlen '+f.name+' ist geboren',4,2)}
+    }
+    if(hr===6&&state.flags.breed!==day){state.flags.breed=day;
+      const kept=Horses.kept().filter(h=>h.tame>=100&&Horses.adult(h)&&h.hunger>40),stud=kept.some(h=>h.sex==='Hengst');
+      if(stud&&Horses.free()>0)for(const m of kept)if(m.sex==='Stute'&&!m.preg&&Math.random()<.18){m.preg=state.t+6*1440;log((m.name||'Eine Stute')+' ist trächtig.')}}
+    const wild=horses.filter(h=>h.wild).length;
+    if(wild<4&&Math.random()<.06){const hs=spawnHerd(Math.random,28,40,state.nextHerd++);if(hs.length){horses.push(...hs);hs.forEach(ensureHorseSheet);log('Eine Herde Wildpferde zieht durch die Prärie.')}}
+  }
+};
+function hmove(h,tx,ty,sp,dt){const dx=tx-h.x,dy=ty-h.y,d=Math.hypot(dx,dy);if(d<=sp*dt){h.x=tx;h.y=ty;return true}h.x+=dx/d*sp*dt;h.y+=dy/d*sp*dt;h.anim+=sp*dt;if(Math.abs(dx)>.03)h.face=dx>0?1:-1;return false}
 const Animals={
   update(dt){
-    const lead=horses[0];
+    const leaders={};for(const h of horses)if(h.wild&&leaders[h.herd]===undefined)leaders[h.herd]=h;
     for(const h of horses){
-      let fear=null;for(const s of settlers){const d=Math.hypot(s.x-h.x,s.y-h.y);if(d<3.2){fear=s;break}}
-      if(fear&&h.run<=0){const a=Math.atan2(h.y-fear.y,h.x-fear.x),tx=h.x+Math.cos(a)*6,ty=h.y+Math.sin(a)*6;if(lineFree(h.x,h.y,tx,ty)){h.tx=tx;h.ty=ty;h.run=1.5}}
-      h.run-=dt;
-      if(h.tx===null){h.wait-=dt;if(h.wait<=0){
-        let tx,ty;
-        if(h===lead){const a=Math.random()*6.283,d=3+Math.random()*7;tx=h.x+Math.cos(a)*d;ty=h.y+Math.sin(a)*d}
-        else{tx=lead.x+h.ox+(Math.random()-.5);ty=lead.y+h.oy+(Math.random()-.5)}
-        if(lineFree(h.x,h.y,tx,ty)){h.tx=tx;h.ty=ty}else h.wait=.5+Math.random();
-      }}
-      if(h.tx!==null){
-        const dx=h.tx-h.x,dy=h.ty-h.y,d=Math.hypot(dx,dy),sp=(h.run>0?3.4:.9)*dt;
-        if(d<=sp){h.x=h.tx;h.y=h.ty;h.tx=null;h.wait=1+Math.random()*5}else{h.x+=dx/d*sp;h.y+=dy/d*sp;h.anim+=sp*(h.run>0?1.4:1)}
-        if(Math.abs(dx)>.05)h.face=dx>0?1:-1;
+      if(h.wild){
+        const lead=leaders[h.herd];let fear=null;
+        for(const s of settlers){if(s.inside)continue;const d=Math.hypot(s.x-h.x,s.y-h.y),careful=s.task&&s.task.k==='lasso';if(d<(careful?1.4:3.2)){fear=s;break}}
+        if(fear&&h.run<=0){const a=Math.atan2(h.y-fear.y,h.x-fear.x),tx=h.x+Math.cos(a)*6,ty=h.y+Math.sin(a)*6;if(lineFree(h.x,h.y,tx,ty)){h.tx=tx;h.ty=ty;h.run=1.5}}
+        h.run-=dt;
+        if(h.tx===null){h.wait-=dt;if(h.wait<=0){let tx,ty;
+          if(h===lead){let a=Math.random()*6.283;const d=3+Math.random()*7;if(h.hx!=null&&Math.hypot(h.x-h.hx,h.y-h.hy)>12)a=Math.atan2(h.hy-h.y,h.hx-h.x)+(Math.random()-.5);tx=h.x+Math.cos(a)*d;ty=h.y+Math.sin(a)*d}
+          else{tx=lead.x+h.ox+(Math.random()-.5);ty=lead.y+h.oy+(Math.random()-.5)}
+          if(lineFree(h.x,h.y,tx,ty)){h.tx=tx;h.ty=ty}else h.wait=.5+Math.random()}}
+        if(h.tx!==null&&hmove(h,h.tx,h.ty,h.run>0?3.4:.9,dt)){h.tx=null;h.wait=1+Math.random()*5}
+        continue;
       }
+      if(h.state==='ridden'){const s=settlers.find(q=>q.id===h.rider);if(s){h.x=s.x;h.y=s.y;if(s.dir===2)h.face=-1;else if(s.dir===3)h.face=1;h.anim=s.anim}else h.state='home';continue}
+      if(h.state==='led'){const s=settlers.find(q=>q.id===h.lead);if(!s){h.state='home';continue}
+        const d=Math.hypot(s.x-h.x,s.y-h.y);if(d>1.1)hmove(h,s.x-(s.x-h.x)/d*1.0,s.y-(s.y-h.y)/d*1.0,Math.min(3.5,d*2),dt);continue}
+      const mom=h.mother!=null&&!Horses.adult(h)?Horses.byId(h.mother):null;
+      if(mom&&!mom.wild&&mom.state!=='ridden'){const d=Math.hypot(mom.x-h.x,mom.y-h.y);if(d>1.2)hmove(h,mom.x+.7,mom.y+.3,Math.min(3,d*1.5),dt);continue}
+      const P=Horses.paddock(h),dp=Math.hypot(P.x-h.x,P.y-h.y);
+      if(dp>4||h.state==='home'){
+        if(!h.path||!h.path.length){const p=Path.find(Math.floor(h.x),Math.floor(h.y),Math.floor(P.x),Math.floor(P.y));h.path=p&&p.length?p:null;if(!h.path){h.x=P.x;h.y=P.y;h.state='stall';continue}}
+        const [tx,ty]=h.path[0];if(hmove(h,tx+.5,ty+.5,1.6,dt))h.path.shift();
+        if(!h.path.length){h.path=null;if(h.state==='home')h.state='stall'}continue;
+      }
+      if(h.tx===null){h.wait-=dt;if(h.wait<=0){const a=Math.random()*6.283,d=Math.random()*2.2,tx=P.x+Math.cos(a)*d,ty=P.y+Math.sin(a)*d*.7;if(lineFree(h.x,h.y,tx,ty)){h.tx=tx;h.ty=ty}else h.wait=1}}
+      if(h.tx!==null&&hmove(h,h.tx,h.ty,.6,dt)){h.tx=null;h.wait=2+Math.random()*6}
     }
     for(const b of rabbits){
       let fear=null;for(const s of settlers){if(!s.inside&&Math.hypot(s.x-b.x,s.y-b.y)<3){fear=s;break}}
@@ -1155,6 +1282,19 @@ const Animals={
     }
   }
 };
+/* Fohlen-Sprite */
+function drawFoal(g,C,f){
+  const R=(x,y,w,h,c)=>{g.fillStyle=c;g.fillRect(x+1,y+1,w,h)};
+  const legs=f===0?[[8,10],[13,15]]:f===1?[[7,11],[12,16]]:[[9,10],[14,14]];
+  for(const [a,b] of legs){R(a,10,1,5,C.d);R(b,10,1,5,C.c);R(a,15,1,1,'#2a1a10');R(b,15,1,1,'#2a1a10')}
+  R(7,7,9,4,C.c);R(7,10,9,1,C.d);R(15,4,2,5,C.c);R(16,3,3,3,C.c);R(18,4,1,1,C.d);R(17,2,1,1,C.d);R(17,4,1,1,'#1a100a');R(15,3,1,4,C.m);R(5,7,2,1,C.m);R(5,8,1,3,C.m);
+}
+function foalSheet(C){const c=mk(HW*3,HH*2),g=c.getContext('2d');
+  for(let f=0;f<3;f++){g.save();g.translate(f*HW,HH);drawFoal(g,C,f);g.restore();g.save();g.translate(f*HW+HW,0);g.scale(-1,1);drawFoal(g,C,f);g.restore()}return outline(c)}
+const foalSheets=new Map(),hpics=new Map();
+function ensureHorseSheet(h){if(!horseSheets.has(h.id))horseSheets.set(h.id,horseSheet(COATS[h.coat],h.seed));if(!foalSheets.has(h.id))foalSheets.set(h.id,foalSheet(COATS[h.coat]))}
+function hSheet(h){ensureHorseSheet(h);return Horses.adult(h)?horseSheets.get(h.id):foalSheets.get(h.id)}
+function hPic(h){const k=h.id+(Horses.adult(h)?'a':'f');if(!hpics.has(k))hpics.set(k,mk(HW,HH,g=>g.drawImage(hSheet(h),0,HH,HW,HH,0,0,HW,HH)).toDataURL());return hpics.get(k)}
 
 /* =========================================================
    Kamera und Darstellung
@@ -1199,7 +1339,7 @@ const Render={
     for(const s of Build.fixed){if(s.type==='store'){PILE_ORDER.forEach((k,j)=>list.push({y:(s.y+Math.floor(j/3))*16+14,k:5,st:s,r:k,slot:j}));continue}if(Intro.on&&s.type==='wagon')continue;list.push({y:(s.y+s.h)*16-2,k:1,s})}
     if(Intro.on&&Intro.w)list.push({y:Math.round(Intro.w.y*16)+1,k:7});
     for(const b of state.builds)if(!(Intro.on&&Intro.hidden.has(b.id))&&b.x*16<vx1+8&&(b.x+b.w)*16>vx0-8&&(b.y-3)*16<vy1&&(b.y+b.h)*16>vy0)list.push({y:(b.y+b.h)*16-2,k:6,b});
-    for(const h of horses)if(inView(h,vx0,vy0,vx1,vy1))list.push({y:Math.round(h.y*16)+3,k:3,h});
+    for(const h of horses)if(h.state!=='ridden'&&inView(h,vx0,vy0,vx1,vy1))list.push({y:Math.round(h.y*16)+3,k:3,h});
     for(const b of rabbits)if(inView(b,vx0,vy0,vx1,vy1))list.push({y:Math.round(b.y*16)+2,k:4,b});
     for(const s of settlers)if(!s.inside&&inView(s,vx0,vy0,vx1,vy1))list.push({y:Math.round(s.y*16)+4,k:2,p:s});
     list.sort((a,b)=>a.y-b.y);
@@ -1215,12 +1355,16 @@ const Render={
       else if(e.k===5)drawPile(e.st,e.r,e.slot)
       else if(e.k===2){const s=e.p,px=Math.round(s.x*16),py=Math.round(s.y*16)+4,sh=sheets.get(s.id);
         const tk=s.task,doing=tk&&tk.stage==='do'?tk.k:null;
-        if(doing==='sleep'){ctx.drawImage(SPR.sh.person,px-6,py-2);ctx.save();ctx.translate(px,py-5);ctx.rotate(-Math.PI/2);ctx.drawImage(sh,0,0,CW,CH,-9,-9,CW,CH);ctx.restore();drawZ(px+6,py-12,now,s.id)}
+        if(doing==='sleep'||doing==='fallen'){ctx.drawImage(SPR.sh.person,px-6,py-2);ctx.save();ctx.translate(px,py-5);ctx.rotate(-Math.PI/2);ctx.drawImage(sh,0,0,CW,CH,-9,-9,CW,CH);ctx.restore();if(doing==='sleep')drawZ(px+6,py-12,now,s.id)}
+        else if(s.mount!=null){const h=Horses.byId(s.mount);if(h){const f=s.dir===2?-1:s.dir===3?1:h.face;h.face=f;const fr=s.moving?[1,0,2,0][Math.floor(s.anim*3)&3]:0,bob=s.moving&&(fr!==0)?1:0;
+          ctx.drawImage(SPR.sh.horse,px-9,py-2);ctx.drawImage(hSheet(h),fr*HW,f>0?HH:0,HW,HH,px-12,py-16,HW,HH);ctx.drawImage(sh,0,(f>0?3:2)*CH,CW,15,px-9-f,py-28+bob,CW,15);
+          if(s.carry){const k=Object.keys(s.carry)[0];ITEM[k](ctx,px-f*8-3,py-15)}}}
         else{
           const work=doing==='job'||doing==='hunt'||doing==='build'||doing==='repair',fr=s.moving?[1,0,2,0][Math.floor(s.anim*4)&3]:work?(Math.floor(now/220)&1?1:2):0;
           ctx.drawImage(SPR.sh.person,px-5,py-2);ctx.drawImage(sh,fr*CW,s.dir*CH,CW,CH,px-9,py-21,CW,CH);
           if(work&&tk.r!=='fisch'&&(Math.floor(now/220)&1)){const c={holz:'#d8a868',stein:'#c4bcb0',lehm:'#b8704a',stroh:'#f0dc8a',beeren:'#c0304a'}[tk.r]||(doing==='build'?'#d8a868':'#f4e3c1');ctx.fillStyle=c;ctx.fillRect(px+(s.dir===2?-7:6),py-9,1,1);ctx.fillRect(px+(s.dir===2?-6:5),py-11,1,1)}
           if(doing==='job'&&tk.r==='fisch'){const d=s.dir===2?-1:1;ctx.fillStyle='#6a4426';for(let k=0;k<7;k++)ctx.fillRect(px+d*(4+k),py-12-Math.floor(k/2),1,1);ctx.fillStyle='#e8dcc0';ctx.fillRect(px+d*11,py-15,1,8+(Math.floor(now/600)&1))}
+          if(doing==='lasso'||(tk&&tk.k==='lasso'&&!s.moving)){ctx.fillStyle='#d8c8a0';const lx=px+(s.dir===2?-7:5),ly=py-26+(Math.floor(now/150)&1);for(const [a,b] of [[1,0],[2,0],[3,1],[3,2],[2,3],[1,3],[0,2],[0,1]])ctx.fillRect(lx+a,ly+b,1,1)}
           if(doing==='fun'&&tk.music&&(Math.floor(now/400)&1)){ctx.fillStyle='#f4e3c1';ctx.fillRect(px+5,py-24,1,3);ctx.fillRect(px+6,py-24,2,1);ctx.fillRect(px+4,py-22,1,1)}
           if(s.carry){const k=Object.keys(s.carry)[0];ITEM[k](ctx,px-3,py-26)}
           if(work&&tk.dur){let p=clamp(tk.t/tk.dur,0,1);if(doing==='build'){const b=Build.byId(tk.site);if(b)p=b.work/BDEF[b.type].work}ctx.fillStyle='#24150b';ctx.fillRect(px-6,py-28,12,3);ctx.fillStyle='#f2c64a';ctx.fillRect(px-5,py-27,Math.round(10*p),1)}
@@ -1230,9 +1374,11 @@ const Render={
           else{ctx.fillStyle='#24150b';ctx.fillRect(px-2,ey-1,5,9);ctx.fillStyle='#f05030';ctx.fillRect(px-1,ey,3,4);ctx.fillRect(px,ey+4,1,1);ctx.fillRect(px-1,ey+6,3,1)}}
         if(state.sel===s.id){const bob=Math.floor(now/250)&1;ctx.fillStyle='#24150b';ctx.fillRect(px-3,py-30+bob,7,4);ctx.fillRect(px-2,py-26+bob,5,2);
           ctx.fillStyle='#f2c64a';ctx.fillRect(px-2,py-29+bob,5,2);ctx.fillRect(px-1,py-27+bob,3,1);ctx.fillRect(px,py-26+bob,1,1)}}
-      else if(e.k===3){const h=e.h,px=Math.round(h.x*16),py=Math.round(h.y*16)+3,sh=horseSheets.get(h.id);
-        const moving=h.tx!==null,fr=moving?[1,0,2,0][Math.floor(h.anim*3)&3]:0;
-        ctx.drawImage(SPR.sh.horse,px-9,py-2);ctx.drawImage(sh,fr*HW,h.face>0?HH:0,HW,HH,px-12,py-16,HW,HH)}
+      else if(e.k===3){const h=e.h,px=Math.round(h.x*16),py=Math.round(h.y*16)+3,sh=hSheet(h);
+        const moving=h.tx!==null||h.state==='led'||h.state==='home'||(h.path&&h.path.length),fr=moving?[1,0,2,0][Math.floor(h.anim*3)&3]:0;
+        ctx.drawImage(SPR.sh.horse,px-9,py-2);ctx.drawImage(sh,fr*HW,h.face>0?HH:0,HW,HH,px-12,py-16,HW,HH);
+        if(h.state==='led'){const ld=settlers.find(q=>q.id===h.lead);if(ld){ctx.fillStyle='#c8b896';const ax=px+h.face*8,ay=py-12,bx=Math.round(ld.x*16),by=Math.round(ld.y*16)-6,n=Math.max(1,Math.abs(bx-ax)+Math.abs(by-ay));for(let i=0;i<=n;i+=2)ctx.fillRect(Math.round(ax+(bx-ax)*i/n),Math.round(ay+(by-ay)*i/n),1,1)}}
+        if(state.selH===h.id){const bob=Math.floor(now/250)&1;ctx.fillStyle='#24150b';ctx.fillRect(px-3,py-24+bob,7,4);ctx.fillStyle='#f2c64a';ctx.fillRect(px-2,py-23+bob,5,2)}}
       else{const b=e.b,px=Math.round(b.x*16),py=Math.round(b.y*16)+2,fr=b.tx!==null?(Math.floor(b.hop*3)&1):0;
         ctx.drawImage(SPR.sh.rabbit,px-3,py-1);ctx.drawImage(rabbitSpr,fr*10,b.face>0?9:0,10,9,px-5,py-8,10,9)}
     }
@@ -1273,7 +1419,7 @@ function log(text){const d=dateParts(state.t);state.log.unshift({when:'Tag '+d.a
 
 function newGame(opt,seed){
   state={seed,opt,t:8*60,speed:1,res:{},log:[],sel:null,flags:{},started:true,hourMark:8,nextRabbit:100,
-    prio:{holz:2,stein:2,lehm:2,stroh:2,nahrung:2,jagd:1,bau:2},mod:{obj:{},hp:{},cut:{},regrow:{}}};reserved.clear();skipT.clear();
+    prio:{holz:2,stein:2,lehm:2,stroh:2,nahrung:2,jagd:1,bau:2,zaehmen:2,pflege:2},mod:{obj:{},hp:{},cut:{},regrow:{}}};reserved.clear();skipT.clear();
   state.res=opt.tents?{holz:4,stein:0,lehm:0,stroh:2,felle:3,nahrung:40}:{holz:2,stein:0,lehm:0,stroh:0,felle:1,nahrung:24};
   state.builds=[];state.nextB=1;state.skip={};
   buildWorld(seed);
@@ -1291,7 +1437,7 @@ function newGame(opt,seed){
 }
 const WorldTick={
   hour(){
-    Build.tick(1);Planner.tick();
+    Build.tick(1);Planner.tick();Horses.hour();
     const m=state.mod;
     for(const [i,t] of Object.entries(m.regrow))if(t<=state.t){if(world.obj[+i]===OB.BERRY_E)setObj(+i,OB.BERRY);delete m.regrow[i]}
     if(rabbits.length<8&&Math.random()<.35){for(let k=0;k<30;k++){const x=Math.floor(Math.random()*W),y=Math.floor(Math.random()*H);
@@ -1305,11 +1451,11 @@ function buildWorld(seed){world=World.gen(seed);terrain=renderTerrain();rabbitSp
 function buildSheets(){
   sheets=new Map();pics=new Map();horseSheets=new Map();
   for(const s of settlers){const sh=personSheet(s.look);sheets.set(s.id,sh);pics.set(s.id,portrait(sh))}
-  for(const h of horses)horseSheets.set(h.id,horseSheet(COATS[h.coat],h.seed));
+  foalSheets.clear();hpics.clear();for(const h of horses)ensureHorseSheet(h);
 }
-function serialize(){if(Intro.on)Intro.finish();return{state,settlers:settlers.map(s=>Object.assign({},s,{path:null,task:null,inside:false,carryTo:null,idle:Math.min(s.idle,1)})),horses,rabbits:rabbits.map(b=>Object.assign({},b,{res:null})),cam:{x:cam.x,y:cam.y,S:cam.S,follow:cam.follow}}}
+function serialize(){if(Intro.on)Intro.finish();return{state,settlers:settlers.map(s=>Object.assign({},s,{path:null,task:null,inside:false,carryTo:null,mount:null,idle:Math.min(s.idle,1)})),horses:horses.map(h=>Object.assign({},h,{res:null,path:null,state:h.state==='ridden'||h.state==='led'?'home':h.state})),rabbits:rabbits.map(b=>Object.assign({},b,{res:null})),cam:{x:cam.x,y:cam.y,S:cam.S,follow:cam.follow}}}
 function restore(d){
-  if(!d.state.mod||!d.state.builds||!d.state.skip||!d.state.rel||!d.settlers.every(q=>q.needs&&q.traits))throw new Error('alter Spielstand');
+  if(!d.state.mod||!d.state.builds||!d.state.skip||!d.horses.every(h=>h.wild!==undefined)||!d.settlers.every(q=>q.skills)||!d.state.rel||!d.settlers.every(q=>q.needs&&q.traits))throw new Error('alter Spielstand');
   state=d.state;buildWorld(state.seed);for(const b of state.builds)b.transit={};reserved.clear();skipT.clear();
   for(const [i,v] of Object.entries(state.mod.obj))world.obj[+i]=v;
   World.placeStart();
@@ -1331,7 +1477,7 @@ const UI={
   },
   setSpeed(v){state.speed=v;$('sp0').setAttribute('aria-pressed',v===0);$('sp1').setAttribute('aria-pressed',v===1);$('sp3').setAttribute('aria-pressed',v===3)},
   open(title,html,view){$('sTitle').textContent=title;$('sBody').innerHTML=html;$('sBody').scrollTop=0;UI.view=view;const sh=$('sheet');sh.classList.add('open');sh.setAttribute('aria-hidden','false');sh.style.transform=''},
-  close(){const sh=$('sheet');sh.classList.remove('open');sh.setAttribute('aria-hidden','true');sh.style.transform='';UI.view=null;state.sel=null;state.selB=null;cam.follow=null},
+  close(){const sh=$('sheet');sh.classList.remove('open');sh.setAttribute('aria-hidden','true');sh.style.transform='';UI.view=null;state.sel=null;state.selB=null;state.selH=null;cam.follow=null},
   tab:'zustand',
   showSettler(s){
     state.sel=s.id;
@@ -1351,7 +1497,7 @@ const UI={
     const el=$('tabBody');UI.cache='';
     if(UI.tab==='zustand'){
       const needs=NEEDS.map(([k,n])=>'<div class="need"><span>'+n+' <em id="nv-'+k+'"></em></span><div class="nbar"><i id="nb-'+k+'"></i></div></div>').join('');
-      el.innerHTML='<p class="thought" id="pTh"></p><p class="carry" id="pCarry" hidden></p><p class="scores" id="pMb"></p><div class="needs">'+needs+'</div><p class="scores" id="pSc"></p>';
+      el.innerHTML='<p class="thought" id="pTh"></p><p class="carry" id="pCarry" hidden></p><p class="scores" id="pMb"></p><div class="needs">'+needs+'</div><p class="scores" id="pSc"></p><p class="scores" id="pSk"></p>';
     }else if(UI.tab==='charakter'){
       el.innerHTML='<div class="tchips">'+s.traits.map(t=>'<button type="button" class="tchip" data-t="'+t+'">'+TRAITS[t].n+'</button>').join('')+'</div><p class="soon" id="tDesc">Tippe auf einen Charakterzug, um seine Wirkung zu sehen.</p>'+
         '<div class="views">'+TOPICS.map(([k,n])=>{const v=s.views[k];return'<div class="view"><span class="vn">'+n+'</span><span class="vl">'+viewLabel(k,v)+'</span><span class="pips">'+[-2,-1,0,1,2].map(i=>'<i'+(i===v?' class="on"':'')+'></i>').join('')+'</span></div>'}).join('')+'</div>'+
@@ -1372,6 +1518,7 @@ const UI={
         const mm=memMood(s),tm=traitMood(s),sg=v=>(v>=0?'+':'')+v;
         set('pMb','Stimmung setzt sich zusammen aus Bedürfnissen '+needMood(s)+', Erinnerungen '+sg(mm)+' und Charakter '+sg(tm)+'.');
         for(const [k] of NEEDS){const v=Math.round(s.needs[k]),b=$('nb-'+k);if(!b)continue;b.style.width=v+'%';b.dataset.lv=v<30?'bad':v<60?'mid':'good';set('nv-'+k,String(v))}
+        {const mh=Horses.ownedBy(s)||horses.find(h=>!h.wild&&h.owner===s.id);set('pSk','Reiten '+s.skills.reiten.toFixed(1)+' / 10 · Tierpflege '+s.skills.tierpflege.toFixed(1)+' / 10'+(mh?' · Pferd: '+mh.name+' (Bindung '+Math.round(mh.bond[s.id]||0)+')':''))}
         set('pSc',s.scores&&s.scores.length?'Letzte Abwägung: '+s.scores.map(([l,v])=>l+' '+v).join(' · ')+' Punkte':'');
       }else if(UI.tab==='bez'){
         const os=settlers.filter(o=>o!==s).map(o=>[o,Rel.get(s.id,o.id)]).sort((a,b)=>(b[1].kind==='partner')-(a[1].kind==='partner')||Math.abs(b[1].v)-Math.abs(a[1].v));
@@ -1382,7 +1529,8 @@ const UI={
         const h=s.mem.length?s.mem.map(x=>{const act=x.until>state.t,d=dateParts(x.t);return'<div class="memi'+(act?'':' old')+'"><span>'+esc(x.text)+'<small>Tag '+d.abs+', '+d.clock+(act?'':' · verblasst')+'</small></span><b class="'+(x.mood<0?'neg':'pos')+'">'+(x.mood>0?'+':'')+x.mood+'</b></div>'}).join(''):'<p class="soon">Noch keine Erinnerungen. Streit, Freundschaften, neue Gebäude und harte Zeiten bleiben hier im Gedächtnis.</p>';
         if(UI.cache!==h){UI.cache=h;$('tList').innerHTML=h}
       }
-    }else if(UI.view==='work')UI.workCounts();
+    }else if(UI.view==='horse'){const h=Horses.byId(state.selH);if(!h){UI.close();return}const x=UI.horseHtml(h);if(UI.cache!==x){UI.cache=x;$('hBody').innerHTML=x}}
+    else if(UI.view==='work')UI.workCounts();
     else if(UI.view==='building'){
       const b=Build.byId(state.selB);if(!b){UI.close();return}const d=BDEF[b.type],st=Build.stage(b),set=(id,t)=>{const el=$(id);if(el&&el.textContent!==t)el.textContent=t};
       set('bSt',Build.status(b)+(b.done?'':' · '+Math.round(b.work/d.work*100)+' %'));
@@ -1406,7 +1554,8 @@ const UI={
   },
   workCounts(){
     const key={holz:'holz',stein:'stein',lehm:'lehm',stroh:'stroh',nahrung:'nahrung',jagd:'felle'};
-    for(const [k] of JOBS){const el=$('jc-'+k);if(!el)continue;const n=settlers.filter(s=>s.task&&((s.task.k==='job'&&(s.task.r===k||(k==='nahrung'&&(s.task.r==='beeren'||s.task.r==='fisch'))))||(k==='jagd'&&s.task.k==='hunt'))).length;
+    for(const [k] of JOBS){const el=$('jc-'+k);if(!el)continue;
+      if(k==='zaehmen'||k==='pflege'){const n=settlers.filter(s=>s.task&&(k==='zaehmen'?['lasso','lead','tame']:['care']).includes(s.task.k)).length,t=(k==='zaehmen'?(Horses.stalls().length?'Platz im Stall: '+Math.max(0,Horses.free()):'Erst mit Stall'):Horses.kept().length+' Pferde')+' · '+n+' dabei';if(el.textContent!==t)el.textContent=t;continue}const n=settlers.filter(s=>s.task&&((s.task.k==='job'&&(s.task.r===k||(k==='nahrung'&&(s.task.r==='beeren'||s.task.r==='fisch'))))||(k==='jagd'&&s.task.k==='hunt'))).length;
       const t='Lager '+(state.res[key[k]]||0)+' · '+n+' dabei';if(el.textContent!==t)el.textContent=t}
     const jb=$('jc-bau');if(jb){const n=settlers.filter(s=>s.task&&['pick','drop','build','repair'].includes(s.task.k)).length,o=state.builds.filter(b=>!b.done).length,t=o+' Baustellen · '+n+' dabei';if(jb.textContent!==t)jb.textContent=t}
     const f=$('jFood');if(f){const t=foodText();if(f.textContent!==t)f.textContent=t}
@@ -1417,10 +1566,33 @@ const UI={
     UI.storeCounts();
   },
   storeCounts(){for(const [k] of RES){const el=$('sc-'+k);if(el)el.textContent=state.res[k]||0}const f=$('sFood');if(f)f.textContent=foodText()},
+  showHorse(h){state.selH=h.id;UI.cache='';UI.open(h.name||(Horses.adult(h)?'Wildpferd':'Wildes Fohlen'),'<div id="hBody" class="tabbody"></div>','horse');UI.refresh()},
+  horseHtml(h){
+    const ad=Horses.adult(h),age=Horses.ageDays(h),pip=v=>'<span class="pips">'+Array.from({length:10},(_,i)=>'<i'+(i<v?' class="on"':'')+'></i>').join('')+'</span>';
+    const bar=(n,v)=>{v=Math.round(v);return'<div class="need"><span>'+n+' <em>'+v+'</em></span><div class="nbar"><i style="width:'+v+'%" data-lv="'+(v<30?'bad':v<60?'mid':'good')+'"></i></div></div>'};
+    const ow=settlers.find(q=>q.id===h.owner);
+    let x='<div class="who"><img class="pic hpic" alt="" src="'+hPic(h)+'"><div><div class="meta">'+h.sex+' · '+Horses.coat(h)+' · '+(ad?'erwachsen':'Fohlen, reitbar in '+Math.ceil(8-age)+(Math.ceil(8-age)===1?' Tag':' Tagen'))+'</div><div class="act">'+Horses.status(h)+'</div>'+
+      (h.wild?'':'<div class="meta">Besitzer: '+(ow?esc(ow.name):'niemand')+'</div>')+'</div></div>';
+    x+='<div class="views"><div class="view"><span class="vn">Wesen</span><span class="vl">'+TEMPER[h.temper].n+'</span><span></span></div>'+
+      '<div class="view"><span class="vn">Ausdauer</span><span class="vl">'+h.ausdauer+' / 10</span>'+pip(h.ausdauer)+'</div><div class="view"><span class="vn">Tempo</span><span class="vl">'+h.tempo+' / 10</span>'+pip(h.tempo)+'</div></div>';
+    if(h.wild)x+='<p class="soon">Ein freies Tier. Steht ein Stall mit freiem Platz, fangen die Siedler Wildpferde mit dem Lasso und zähmen sie. Das zeigt die Arbeit „Pferde zähmen“.</p>';
+    else{
+      if(h.state==='taming')x+=bar('Zähmung',h.tame);
+      x+='<div class="needs">'+bar('Futter',h.hunger)+bar('Wasser',h.durst)+bar('Kraft',h.kraft)+'</div>';
+      if(h.preg)x+='<p class="carry">Trächtig. Das Fohlen kommt in etwa '+Math.max(1,Math.ceil((h.preg-state.t)/1440))+' Tagen.</p>';
+      const bs=Object.entries(h.bond).map(([id,v])=>[settlers.find(q=>q.id===+id),v]).filter(([q])=>q).sort((a,b)=>b[1]-a[1]).slice(0,4);
+      x+='<h3 class="sub">Bindung</h3>'+(bs.length?'<div class="needs">'+bs.map(([q,v])=>bar(esc(q.name)+(q.id===h.owner?' (Reiter)':''),v)).join('')+'</div>':'<p class="soon">Noch zu niemandem. Pflege und Ausritte stärken die Bindung.</p>');
+      x+='<p class="soon">Mit hoher Bindung steigt der Reiter schneller auf und fällt seltener herunter.</p>';
+    }
+    return x;
+  },
   showPeople(){
     UI.open('Bewohner ('+settlers.length+')','<div class="list">'+settlers.map(s=>
       '<button type="button" class="item" data-id="'+s.id+'"><img class="pic" alt="" src="'+pics.get(s.id)+'"><span><b>'+esc(s.name+' '+s.sur)+'</b><small>'+s.age+' Jahre · '+s.traits.map(t=>TRAITS[t].n).join(', ')+'</small><small>'+moodName(mood(s))+' · '+esc(s.act)+'</small></span></button>').join('')+'</div>','people');
-    $('sBody').querySelectorAll('.item').forEach(b=>b.onclick=()=>{const s=settlers.find(q=>q.id===+b.dataset.id);cam.x=s.x*16;cam.y=s.y*16;clampCam();UI.showSettler(s)});
+    const kept=Horses.kept();
+    if(kept.length){const hl=document.createElement('div');hl.className='list';hl.innerHTML='<h3 class="sub">Pferde ('+kept.length+')</h3>'+kept.map(h=>{const ow=settlers.find(q=>q.id===h.owner);
+      return'<button type="button" class="item" data-h="'+h.id+'"><img class="pic hpic" alt="" src="'+hPic(h)+'"><span><b>'+esc(h.name||'Ohne Namen')+'</b><small>'+Horses.coat(h)+' · '+TEMPER[h.temper].n+(ow?' · gehört '+esc(ow.name):'')+'</small><small>'+Horses.status(h)+'</small></span></button>'}).join('');$('sBody').appendChild(hl)}
+    $('sBody').querySelectorAll('.item').forEach(b=>b.onclick=()=>{if(b.dataset.h){const h=Horses.byId(+b.dataset.h);if(h){cam.x=h.x*16;cam.y=h.y*16;clampCam();UI.showHorse(h)}return}const s=settlers.find(q=>q.id===+b.dataset.id);cam.x=s.x*16;cam.y=s.y*16;clampCam();UI.showSettler(s)});
   },
   showLog(){
     UI.open('Protokoll','<ul class="log">'+state.log.map(l=>'<li><time>'+esc(l.when)+'</time><span>'+esc(l.text)+'</span></li>').join('')+'</ul>','log');
@@ -1514,7 +1686,7 @@ function tap(cx,cy){
   const w2=w,pad=4;let best=null,bd=1e9;
   for(const s of settlers){if(s.inside)continue;const px=s.x*16,py=s.y*16+4;if(w.x>px-7-pad&&w.x<px+7+pad&&w.y>py-21-pad&&w.y<py+2+pad){const d=Math.hypot(w.x-px,w.y-(py-9));if(d<bd){bd=d;best=s}}}
   if(best){UI.showSettler(best);return}
-  for(const h of horses){const px=h.x*16,py=h.y*16+3;if(w.x>px-12&&w.x<px+12&&w.y>py-17&&w.y<py+3){UI.close();UI.toast('Wildpferd · Fellfarbe '+COATS[h.coat].n);return}}
+  for(const h of horses){if(h.state==='ridden')continue;const px=h.x*16,py=h.y*16+3;if(w.x>px-12&&w.x<px+12&&w.y>py-17&&w.y<py+3){UI.showHorse(h);return}}
   for(const b of rabbits){const px=b.x*16,py=b.y*16;if(Math.abs(w.x-px)<8&&w.y>py-10&&w.y<py+4){UI.close();UI.toast('Präriehase');return}}
   if(UI.view){UI.close();return}
   const tx=Math.floor(w.x/16),ty=Math.floor(w.y/16);if(!World.inb(tx,ty))return;
@@ -1745,7 +1917,7 @@ const Menu={
   render(){
     const b=$('mBoard'),started=state.started,v=this.view;let h='';
     if(v==='main')h=(started?'<button type="button" class="mbtn pri" id="mbCont">Weiterspielen</button>':'')+
-      '<button type="button" class="mbtn'+(started?'':' pri')+'" id="mbNew">Neues Spiel</button><button type="button" class="mbtn" id="mbHelp">Anleitung</button><p class="mfoot">Bauschritt 4 von 8</p>';
+      '<button type="button" class="mbtn'+(started?'':' pri')+'" id="mbNew">Neues Spiel</button><button type="button" class="mbtn" id="mbHelp">Anleitung</button><p class="mfoot">Bauschritt 5 von 8</p>';
     else if(v==='confirm')h='<p class="mtext">Ein neues Spiel ersetzt deine aktuelle Siedlung.</p><div class="mrow"><button type="button" class="mbtn" id="mbBack">Zurück</button><button type="button" class="mbtn pri" id="mbYes">Neu beginnen</button></div>';
     else if(v==='start')h='<p class="mlabel">Womit beginnt dein Treck?</p>'+
       '<button class="opt" id="optTents" type="button"><b>Mit Zelten</b><small>Planwagen, drei Zelte und Vorräte für eine Woche.</small></button>'+
@@ -1756,6 +1928,7 @@ const Menu={
       '<li><b>Arbeit</b>Unter „Arbeit“ legst du fest, wie wichtig Holz, Stein, Lehm, Stroh, Nahrung und Jagd sind.</li>'+
       '<li><b>Bauen</b>Die Siedler planen und bauen selbst. Unter „Bauten“ siehst du, was gerade entsteht und was sie als Nächstes vorhaben.</li>'+
       '<li><b>Charakter</b>Im Info-Fenster eines Siedlers findest du Charakterzüge, Ansichten, Beziehungen und Erinnerungen.</li>'+
+      '<li><b>Pferde</b>Steht ein Stall, fangen und zähmen die Siedler Wildpferde. Wer ein eigenes Pferd hat, reitet weite Wege. Tippe auf ein Pferd, um Werte, Bindung und Besitzer zu sehen.</li>'+
       '<li><b>Lager</b>Tippe auf den Lagerplatz neben dem Wagen. Dort siehst du alle Vorräte.</li>'+
       '<li><b>Tempo</b>Pause, 1× oder 3× in der unteren Leiste.</li></ul><button type="button" class="mbtn" id="mbBack">Zurück</button>';
     b.innerHTML=h;
